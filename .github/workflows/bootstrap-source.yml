@@ -24,7 +24,27 @@ jobs:
         run: |
           set -euo pipefail
           test "$(find .bootstrap/source -maxdepth 1 -name 'chunk_*.b64' | wc -l)" -eq 14
-          cat .bootstrap/source/chunk_*.b64 > /tmp/truckbox-source.b64
+          test "$(find .bootstrap/source -maxdepth 1 -name 'fix07_*.txt' | wc -l)" -eq 5
+          {
+            cat .bootstrap/source/chunk_00.b64
+            cat .bootstrap/source/chunk_01.b64
+            cat .bootstrap/source/chunk_02.b64
+            cat .bootstrap/source/chunk_03.b64
+            cat .bootstrap/source/chunk_04.b64
+            cat .bootstrap/source/chunk_05.b64
+            cat .bootstrap/source/chunk_06.b64
+            cat .bootstrap/source/fix07_0.txt
+            cat .bootstrap/source/fix07_1.txt
+            cat .bootstrap/source/fix07_2.txt
+            cat .bootstrap/source/fix07_3.txt
+            cat .bootstrap/source/fix07_4.txt
+            cat .bootstrap/source/chunk_08.b64
+            cat .bootstrap/source/chunk_09.b64
+            cat .bootstrap/source/chunk_10.b64
+            cat .bootstrap/source/chunk_11.b64
+            cat .bootstrap/source/chunk_12.b64
+            cat .bootstrap/source/chunk_13.b64
+          } > /tmp/truckbox-source.b64
           base64 --decode /tmp/truckbox-source.b64 > /tmp/truckbox-source.zip
           echo "8e484614c4cb0350ae5bdeaf79f3fb941bd25db39e803b139713c57a9492e804  /tmp/truckbox-source.zip" | sha256sum --check
           test "$(stat -c%s /tmp/truckbox-source.zip)" -eq 103523
