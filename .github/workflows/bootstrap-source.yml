@@ -23,8 +23,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(find .bootstrap/source -maxdepth 1 -name 'chunk_*.b64' | wc -l)" -eq 14
-          test "$(find .bootstrap/source -maxdepth 1 -name 'fix07_*.txt' | wc -l)" -eq 5
+          for f in 00 01 02 03 04 05 06 08 09 10 11 12 13; do
+            test -f ".bootstrap/source/chunk_${f}.b64"
+          done
+          for f in 0 1 2 3 4; do
+            test -f ".bootstrap/source/fix07_${f}.txt"
+          done
           {
             cat .bootstrap/source/chunk_00.b64
             cat .bootstrap/source/chunk_01.b64
