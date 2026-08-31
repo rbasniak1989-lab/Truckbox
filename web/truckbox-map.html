@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>TruckBox • Mapa GPS</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root{--bg:#06111e;--panel:#0d1b2b;--panel2:#102238;--line:#203d5d;--txt:#f5f8fc;--mut:#8ea4bd;--blue:#25a7ff;--green:#2ad66f;--yellow:#ffc247;--red:#ff5c67}
+    *{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--txt);font-family:Arial,system-ui,sans-serif}
+    body{display:flex;flex-direction:column}.top{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}.brand{font-size:20px;font-weight:900;flex:1;min-width:210px}.brand span{color:var(--blue)}.sub{display:block;color:var(--mut);font-size:11px;font-weight:500;margin-top:2px}.control{background:var(--panel2);color:var(--txt);border:1px solid #294b6e;border-radius:9px;padding:9px 10px;font-weight:700}.btn{cursor:pointer}.main{flex:1;min-height:300px;position:relative}#map{height:100%;width:100%;background:#0a1726}.msg{display:none;position:absolute;z-index:1000;left:50%;top:50%;transform:translate(-50%,-50%);background:#07121eee;border:1px solid #294b6e;border-radius:12px;padding:12px 16px;font-weight:800;max-width:90%;text-align:center}.info{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;padding:10px;background:var(--panel);border-top:1px solid var(--line)}.card{background:#091827;border:1px solid #1b3855;border-radius:10px;padding:9px;min-width:0}.lab{font-size:10px;text-transform:uppercase;color:var(--mut)}.val{font-size:14px;font-weight:800;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}a{color:#62bdff;text-decoration:none}.legend{position:absolute;z-index:700;left:10px;bottom:10px;background:#07121eee;border:1px solid #294b6e;border-radius:10px;padding:8px 10px;font-size:11px;line-height:1.8}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}.d1{background:var(--green)}.d2{background:var(--blue)}.d3{background:var(--yellow)}.d4{background:#ff6b45}.d5{background:var(--red)}
+    @media(max-width:760px){.brand{width:100%}.info{grid-template-columns:repeat(2,1fr)}.top{padding:9px}.control{min-width:0;max-width:100%}}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="brand">TRUCKBOX <span>MAPA GPS</span><span id="subtitle" class="sub">Carregando trajeto…</span></div>
+    <select id="trip" class="control"></select>
+    <button id="refresh" class="control btn">↻ Atualizar</button>
+  </div>
+  <div class="main">
+    <div id="map"></div>
+    <div id="msg" class="msg"></div>
+    <div class="legend"><div><i class="dot d1"></i>Início</div><div><i class="dot d2"></i>Posição mais recente</div><div><i class="dot d3"></i>Parada ≥10 min</div><div><i class="dot d4"></i>Evento</div><div><i class="dot d5"></i>Fim</div></div>
+  </div>
+  <div class="info">
+    <div class="card"><div class="lab">Posição</div><div id="pos" class="val">—</div></div>
+    <div class="card"><div class="lab">Odômetro</div><div id="odo" class="val">—</div></div>
+    <div class="card"><div class="lab">Viagem</div><div id="tripinfo" class="val">—</div></div>
+    <div class="card"><div class="lab">Paradas / eventos</div><div id="counts" class="val">—</div></div>
+    <div class="card"><div class="lab">Navegação</div><div class="val"><a id="gmaps" target="_blank" rel="noopener">Abrir no Google Maps</a></div></div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const API='https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-map-data';
+    const KEY='tbx-public-ro-20260828-7f2c91';
+    const $=id=>document.getElementById(id);
+    const map=L.map('map',{zoomControl:true});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+    const layers=L.layerGroup().addTo(map);
+    map.setView([-24.8,-51.8],7);
+    const num=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
+    const dt=v=>{try{return new Date(v).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}catch(e){return '—'}};
+    const dur=s=>{s=Number(s)||0;if(s<3600)return Math.round(s/60)+' min';const h=Math.floor(s/3600),m=Math.round((s%3600)/60);return h+'h '+m+'min'};
+    function msg(t){$('msg').textContent=t||'';$('msg').style.display=t?'block':'none'}
+    function marker(lat,lon,style,popup){const x=L.circleMarker([lat,lon],style).addTo(layers);if(popup)x.bindPopup(popup);return x}
+    async function load(tripId=''){
+      try{
+        msg('Carregando GPS…');
+        let url=API+'?key='+encodeURIComponent(KEY);if(tripId)url+='&trip_id='+encodeURIComponent(tripId);
+        const r=await fetch(url,{cache:'no-store'});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Falha na API');
+        layers.clearLayers();
+        const id=j.trip?.id||'';
+        $('trip').innerHTML=(j.trips||[]).map(t=>'<option value="'+t.id+'" '+(t.id===id?'selected':'')+'>'+String(t.origin||'—')+' → '+String(t.destination||'—')+(t.status==='ACTIVE'?' • em andamento':'')+'</option>').join('');
+        const gaps=(j.gaps||[]).length;
+        $('subtitle').textContent=(j.trip?j.trip.origin+' → '+j.trip.destination:'Sem viagem')+' • '+j.raw_point_count+' pontos GPS'+(gaps?' • '+gaps+' intervalo(s) sem GPS':'');
+        const bounds=[];
+        (j.segments||[]).forEach(seg=>{const pts=(seg||[]).map(p=>[Number(p.lat),Number(p.lon)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));if(pts.length){L.polyline(pts,{color:'#25a7ff',weight:4,opacity:.85}).addTo(layers);pts.forEach(p=>bounds.push(p))}});
+        const firstSeg=(j.segments||[]).find(s=>s&&s.length),first=firstSeg?.[0];if(first)marker(first.lat,first.lon,{radius:8,color:'#2ad66f',fillColor:'#2ad66f',fillOpacity:1,weight:2},'<b>Início da viagem</b><br>'+dt(first.ts));
+        if(j.trip?.status!=='ACTIVE'){const a=(j.segments||[]).filter(s=>s&&s.length),ls=a[a.length-1],last=ls?.[ls.length-1];if(last)marker(last.lat,last.lon,{radius:8,color:'#ff5c67',fillColor:'#ff5c67',fillOpacity:1,weight:2},'<b>Fim registrado</b><br>'+dt(last.ts))}
+        (j.stops||[]).forEach(s=>marker(s.lat,s.lon,{radius:6,color:'#ffc247',fillColor:'#ffc247',fillOpacity:.9,weight:2},'<b>Parada</b><br>'+dur(s.duration_seconds)+'<br>'+dt(s.start_ts)+' → '+dt(s.end_ts)));
+        (j.events||[]).forEach(e=>marker(e.lat,e.lon,{radius:6,color:'#ff6b45',fillColor:'#ff6b45',fillOpacity:.9,weight:2},'<b>'+String(e.label||'Evento')+'</b><br>'+num(e.value,1)+' '+String(e.unit||'')+'<br>'+dt(e.ts)));
+        const la=Number(j.latest?.lat),lo=Number(j.latest?.lon);if(Number.isFinite(la)&&Number.isFinite(lo)){marker(la,lo,{radius:10,color:'#fff',fillColor:'#25a7ff',fillOpacity:1,weight:3},'<b>Posição mais recente</b><br>'+dt(j.latest?.ts));bounds.push([la,lo]);$('pos').textContent=la.toFixed(5)+', '+lo.toFixed(5)+' • '+dt(j.latest?.ts);$('gmaps').href='https://www.google.com/maps?q='+encodeURIComponent(la+','+lo)}else{$('pos').textContent='GPS indisponível';$('gmaps').removeAttribute('href')}
+        $('odo').textContent=num(j.latest?.odometer_km,1)+' km';$('tripinfo').textContent=num(j.trip?.distance_km,1)+' km • '+num(j.trip?.fuel_liters,1)+' L • '+num(j.trip?.average_kml,2)+' km/L';$('counts').textContent=(j.stops||[]).length+' paradas • '+(j.events||[]).length+' eventos'+(gaps?' • '+gaps+' gaps':'');
+        if(bounds.length===1)map.setView(bounds[0],14);else if(bounds.length>1)map.fitBounds(bounds,{padding:[25,25]});
+        msg('');setTimeout(()=>map.invalidateSize(),50);
+      }catch(e){console.error(e);msg('Não foi possível carregar o mapa: '+e.message)}
+    }
+    $('refresh').onclick=()=>load($('trip').value||'');$('trip').onchange=e=>load(e.target.value||'');load();
+  </script>
+</body>
+</html>
