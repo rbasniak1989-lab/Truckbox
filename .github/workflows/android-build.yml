@@ -38,6 +38,15 @@ jobs:
         with:
           gradle-version: "9.4.1"
 
+      - name: Apply Multimedia compatibility fixes
+        run: |
+          FILE="multimedia/src/main/java/br/com/truckbox/multimedia/MainActivity.kt"
+          sed -i '/import androidx.compose.foundation.layout.weight/d' "$FILE"
+          sed -i 's/private fun JSONObject.findValue(keys: Set<String>/private fun JSONObject.findValue(wantedKeys: Set<String>/' "$FILE"
+          sed -i 's/val names = keys.map/val names = wantedKeys.map/' "$FILE"
+          sed -i 's/v.findValue(keys, depth + 1)/v.findValue(wantedKeys, depth + 1)/g' "$FILE"
+          sed -i 's/item.findValue(keys, depth + 1)/item.findValue(wantedKeys, depth + 1)/g' "$FILE"
+
       - name: Build debug APKs
         run: gradle --no-daemon --stacktrace :app:assembleDebug :multimedia:assembleDebug
 
