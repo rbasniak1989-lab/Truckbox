@@ -38,13 +38,21 @@ jobs:
         with:
           gradle-version: "9.4.1"
 
-      - name: Build debug APK
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Build debug APKs
+        run: gradle --no-daemon --stacktrace :app:assembleDebug :multimedia:assembleDebug
 
-      - name: Upload APK
+      - name: Upload Motorista APK
         uses: actions/upload-artifact@v4
         with:
           name: TruckBox-Motorista-v0.6.1-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Multimedia APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-Multimedia-v0.1.0-debug
+          path: multimedia/build/outputs/apk/debug/multimedia-debug.apk
           if-no-files-found: error
           retention-days: 30
