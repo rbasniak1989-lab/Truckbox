@@ -14,5 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "TruckBox_Motorista_v0_6_0"
+rootProject.name = "TruckBox"
 include(":app")
+include(":multimedia")
