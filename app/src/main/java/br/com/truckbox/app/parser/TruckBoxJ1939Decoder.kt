@@ -210,6 +210,41 @@ class TruckBoxJ1939Decoder {
                 )
             }
 
+            65213 -> if (d.size >= 4) {
+                // FD1 / Fan Drive 1 (FEBD). Layout SAE J1939:
+                // B0      SPN 975  Estimated Percent Fan Speed, 0.4 %/bit.
+                // B1[3:0] SPN 977  Fan Drive State, enum 0..14; 15 = N/A.
+                // B2:B3   SPN 1639 Fan Speed, 0.125 rpm/bit, little-endian.
+                // A identidade da PGN/SPNs está confirmada no banco TruckBox; a variação
+                // física no FH 540 ainda será validada em campo porque os logs antigos
+                // foram coletados com a ventoinha permanentemente acionada.
+                val estimatedRaw = d.u8(0)
+                val estimated = when {
+                    estimatedRaw <= 250 -> valid(estimatedRaw * 0.4, receivedAtMs, "65213/B0-SPN975-SA${frame.sa}")
+                    estimatedRaw == 0xFF -> s.engine.fanEstimatedPct
+                    else -> SensorValue(estimatedRaw * 0.4, DataQuality.SUSPECT, receivedAtMs, "65213/B0-SPN975-SA${frame.sa}")
+                }
+
+                val driveStateRaw = d.u8(1) and 0x0F
+                val driveState = if (driveStateRaw != 0x0F)
+                    valid(driveStateRaw.toDouble(), receivedAtMs, "65213/B1bits0-3-SPN977-SA${frame.sa}")
+                else s.engine.fanDriveStateRaw
+
+                val fanSpeedRaw = d.le16(2)
+                val fanSpeed = if (fanSpeedRaw != 0xFFFF) {
+                    val rpm = fanSpeedRaw * 0.125
+                    if (rpm in 0.0..8031.875)
+                        valid(rpm, receivedAtMs, "65213/B2:B3-SPN1639-SA${frame.sa}")
+                    else SensorValue(rpm, DataQuality.SUSPECT, receivedAtMs, "65213/B2:B3-SPN1639-SA${frame.sa}")
+                } else s.engine.fanSpeedRpm
+
+                s = s.copy(engine = s.engine.copy(
+                    fanEstimatedPct = estimated,
+                    fanSpeedRpm = fanSpeed,
+                    fanDriveStateRaw = driveState,
+                ))
+            }
+
             65262 -> if (d.size >= 4) {
                 val coolant = if (d.u8(0) != 0xFF) valid(d.u8(0) - 40.0, receivedAtMs, "65262/B0") else s.engine.coolantTempC
                 val rawOil = d.le16(2)
