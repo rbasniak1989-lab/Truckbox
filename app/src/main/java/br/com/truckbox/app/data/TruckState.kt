@@ -54,6 +54,12 @@ data class EngineState(
     val fuelPressureBar: SensorValue = SensorValue(),
     val boostBar: SensorValue = SensorValue(),
     val ambientTempC: SensorValue = SensorValue(),
+    /** PGN 65213 / FEBD, SPN 975. Validação funcional em campo em andamento. */
+    val fanEstimatedPct: SensorValue = SensorValue(),
+    /** PGN 65213 / FEBD, SPN 1639. Rotação medida da ventoinha. */
+    val fanSpeedRpm: SensorValue = SensorValue(),
+    /** PGN 65213 / FEBD, SPN 977. Enum J1939 bruto 0..14; 15 = indisponível. */
+    val fanDriveStateRaw: SensorValue = SensorValue(),
 )
 
 data class TransmissionState(
