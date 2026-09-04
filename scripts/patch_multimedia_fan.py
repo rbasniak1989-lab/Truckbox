@@ -35,6 +35,12 @@ replace_once(
 )
 
 replace_once(
+    '            Triple("Potência", s.powerKw, "kW"),',
+    '            Triple("Potência", s.powerKw?.times(1.3596216173), "cv"),',
+    'power display cv',
+)
+
+replace_once(
     '            Triple("Torque freio motor", s.retarderTorquePct, "%"),\n            Triple("Pedal freio", s.brakePedalPct, "%"),',
     '            Triple("Torque freio motor", s.retarderTorquePct, "%"),\n'
     '            Triple("Pedal freio", s.brakePedalPct, "%"),\n'
@@ -94,4 +100,4 @@ private fun LiveState.effectiveAverage(): Double? = tripAverageKml ?: if (tripDi
 )
 
 p.write_text(s, encoding='utf-8')
-print('Multimedia fan patch applied')
+print('Multimedia fan/power patch applied')
