@@ -38,6 +38,9 @@ jobs:
         with:
           gradle-version: "9.4.1"
 
+      - name: Apply Multimedia fan sensor patch
+        run: python scripts/patch_multimedia_fan.py
+
       - name: Apply Multimedia compatibility fixes
         run: |
           FILE="multimedia/src/main/java/br/com/truckbox/multimedia/MainActivity.kt"
@@ -61,7 +64,7 @@ jobs:
       - name: Upload Multimedia APK
         uses: actions/upload-artifact@v4
         with:
-          name: TruckBox-Multimedia-v0.1.0-debug
+          name: TruckBox-Multimedia-v0.3.0-FanExperimental-debug
           path: multimedia/build/outputs/apk/debug/multimedia-debug.apk
           if-no-files-found: error
           retention-days: 30
