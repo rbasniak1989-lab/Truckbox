@@ -102,19 +102,39 @@ private data class LiveState(
     val rpm: Double? = null,
     val acceleratorPct: Double? = null,
     val torquePct: Double? = null,
+    val torqueNm: Double? = null,
     val powerKw: Double? = null,
+    val nominalFrictionTorquePct: Double? = null,
+    val retarderTorquePct: Double? = null,
     val currentGear: Int? = null,
     val selectedGear: Int? = null,
     val coolantTempC: Double? = null,
     val oilTempC: Double? = null,
+    val fuelTempC: Double? = null,
+    val ambientTempC: Double? = null,
     val intakeTempC: Double? = null,
+    val oilLevelPct: Double? = null,
+    val coolantLevelPct: Double? = null,
     val oilPressureBar: Double? = null,
     val fuelPressureBar: Double? = null,
+    val coolantPressureBar: Double? = null,
+    val crankcasePressureKpa: Double? = null,
+    val airInletPressureKpa: Double? = null,
+    val airCleanerDiffPressureKpa: Double? = null,
     val boostBar: Double? = null,
     val gearboxTempC: Double? = null,
     val clutchSlipPct: Double? = null,
+    val transInputRpm: Double? = null,
+    val transOutputRpm: Double? = null,
+    val brakePedalPct: Double? = null,
+    val tachoSpeedKmh: Double? = null,
+    val tachoOutputRpm: Double? = null,
+    val absActive: Boolean? = null,
+    val absAmberWarning: Boolean? = null,
     val combinationWeightKg: Double? = null,
     val driveBogieKg: Double? = null,
+    val axle1fWeightKg: Double? = null,
+    val axle2fWeightKg: Double? = null,
     val odometerKm: Double? = null,
     val coreFuelLiters: Double? = null,
     val fuelRateLph: Double? = null,
@@ -225,7 +245,7 @@ private fun TopStatusBar(s: LiveState) {
         ) {
             Text("TRUCKBOX", fontWeight = FontWeight.Black, fontSize = 22.sp)
             Spacer(Modifier.width(14.dp))
-            Text("Multimídia • v0.1", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            Text("Multimídia • v0.2", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Spacer(Modifier.weight(1f))
             val status = when (s.source) {
                 "CORE" -> "CORE AO VIVO"
@@ -391,20 +411,44 @@ private fun SensorsPage(s: LiveState) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Sensores", fontSize = 25.sp, fontWeight = FontWeight.Bold)
+        Text("Todos os sinais mapeados pelo Core V0.6.2. Quando a ECU publica FF/indisponível, mostramos —.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
         val sensors = listOf(
             Triple("Rotação", s.rpm, "rpm"),
             Triple("Pedal acelerador", s.acceleratorPct, "%"),
             Triple("Torque", s.torquePct, "%"),
+            Triple("Torque motor", s.torqueNm, "Nm"),
             Triple("Potência", s.powerKw, "kW"),
+            Triple("Torque fricção", s.nominalFrictionTorquePct, "%"),
+            Triple("Torque freio motor", s.retarderTorquePct, "%"),
+            Triple("Pedal freio", s.brakePedalPct, "%"),
+
             Triple("Água", s.coolantTempC, "°C"),
+            Triple("Nível arrefecimento", s.coolantLevelPct, "%"),
+            Triple("Pressão arrefecimento", s.coolantPressureBar, "bar"),
             Triple("Óleo motor", s.oilTempC, "°C"),
-            Triple("Ar admissão", s.intakeTempC, "°C"),
+            Triple("Nível óleo motor", s.oilLevelPct, "%"),
             Triple("Pressão óleo", s.oilPressureBar, "bar"),
+            Triple("Pressão cárter", s.crankcasePressureKpa, "kPa"),
+            Triple("Temp. combustível", s.fuelTempC, "°C"),
             Triple("Pressão combustível", s.fuelPressureBar, "bar"),
+
+            Triple("Temp. ambiente", s.ambientTempC, "°C"),
+            Triple("Ar admissão", s.intakeTempC, "°C"),
+            Triple("Pressão entrada ar", s.airInletPressureKpa, "kPa"),
+            Triple("Restrição filtro ar", s.airCleanerDiffPressureKpa, "kPa"),
             Triple("Turbo", s.boostBar, "bar"),
+
             Triple("Óleo câmbio", s.gearboxTempC, "°C"),
             Triple("Slip embreagem", s.clutchSlipPct, "%"),
+            Triple("RPM entrada câmbio", s.transInputRpm, "rpm"),
+            Triple("RPM saída câmbio", s.transOutputRpm, "rpm"),
+
+            Triple("Velocidade tacógrafo", s.tachoSpeedKmh, "km/h"),
+            Triple("RPM saída tacógrafo", s.tachoOutputRpm, "rpm"),
             Triple("Bogie tração", s.driveBogieKg?.div(1000.0), "t"),
+            Triple("Eixo tração 1F", s.axle1fWeightKg?.div(1000.0), "t"),
+            Triple("Eixo tração 2F", s.axle2fWeightKg?.div(1000.0), "t"),
             Triple("Peso conjunto CAN", s.combinationWeightKg?.div(1000.0), "t"),
             Triple("Vazão diesel", s.fuelRateLph, "L/h"),
             Triple("Odômetro", s.odometerKm, "km"),
@@ -413,6 +457,14 @@ private fun SensorsPage(s: LiveState) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { (name, value, unit) -> SensorCard(name, value, unit, Modifier.weight(1f)) }
                 repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF151A20))) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Estados CAN", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                StateLine("ABS ativo", s.absActive)
+                StateLine("Aviso ABS/EBS", s.absAmberWarning, when (s.absAmberWarning) { true -> "ATENÇÃO"; false -> "NORMAL"; null -> "?" })
             }
         }
     }
@@ -628,19 +680,39 @@ private class LiveRepository(private val configuredHost: String) {
             rpm = j.number("rpm", "engineRpm", "engine_rpm"),
             acceleratorPct = j.number("acceleratorPct", "accelerator_pedal_pct", "pedalPct", "pedal_pct"),
             torquePct = j.number("actualTorquePct", "torquePct", "engine_torque_pct", "actual_torque_pct"),
+            torqueNm = j.number("torqueNm", "torque_nm"),
             powerKw = j.number("powerKw", "power_kw"),
+            nominalFrictionTorquePct = j.number("nominalFrictionTorquePct", "nominal_friction_torque_pct"),
+            retarderTorquePct = j.number("retarderTorquePct", "retarder_torque_pct"),
             currentGear = j.integer("currentGear", "current_gear", "gear"),
             selectedGear = j.integer("selectedGear", "selected_gear"),
             coolantTempC = j.number("coolantTempC", "coolant_temp_c", "waterTempC", "engineCoolantTempC"),
             oilTempC = j.number("oilTempC", "oil_temp_c", "engineOilTempC", "engine_oil_temp_c"),
+            fuelTempC = j.number("fuelTempC", "fuel_temp_c"),
+            ambientTempC = j.number("ambientTempC", "ambient_temp_c"),
             intakeTempC = j.number("intakeAirTempC", "intake_temp_c", "intakeTempC"),
+            oilLevelPct = j.number("oilLevelPct", "oil_level_pct"),
+            coolantLevelPct = j.number("coolantLevelPct", "coolant_level_pct"),
             oilPressureBar = j.number("oilPressureBar", "oil_pressure_bar", "engineOilPressureBar"),
             fuelPressureBar = j.number("fuelPressureBar", "fuel_pressure_bar"),
+            coolantPressureBar = j.number("coolantPressureBar", "coolant_pressure_bar"),
+            crankcasePressureKpa = j.number("crankcasePressureKpa", "crankcase_pressure_kpa"),
+            airInletPressureKpa = j.number("airInletPressureKpa", "air_inlet_pressure_kpa"),
+            airCleanerDiffPressureKpa = j.number("airCleanerDiffPressureKpa", "air_cleaner_diff_pressure_kpa"),
             boostBar = j.number("boostBar", "boost_bar", "turboBar", "turbo_pressure_bar"),
             gearboxTempC = j.number("gearboxTempC", "gearbox_temp_c", "transmissionOilTempC", "transmission_temp_c"),
             clutchSlipPct = j.number("clutchSlipPct", "clutch_slip_pct"),
-            combinationWeightKg = j.number("combinationWeightKg", "combination_weight_kg"),
-            driveBogieKg = j.number("driveBogieKg", "drive_bogie_kg"),
+            transInputRpm = j.number("transInputRpm", "trans_input_rpm"),
+            transOutputRpm = j.number("transOutputRpm", "trans_output_rpm"),
+            brakePedalPct = j.number("brakePedalPct", "brake_pedal_pct"),
+            tachoSpeedKmh = j.number("tachoSpeedKmh", "tacho_speed_kmh"),
+            tachoOutputRpm = j.number("tachoOutputRpm", "tacho_output_rpm"),
+            absActive = j.boolean("absActive", "abs_active"),
+            absAmberWarning = j.boolean("absAmberWarning", "abs_amber_warning"),
+            combinationWeightKg = j.number("combinationWeightKg", "combination_weight_kg", "total_weight_can_kg"),
+            driveBogieKg = j.number("driveBogieKg", "drive_bogie_kg", "bogie_weight_kg"),
+            axle1fWeightKg = j.number("axle1fWeightKg", "axle_1f_weight_kg"),
+            axle2fWeightKg = j.number("axle2fWeightKg", "axle_2f_weight_kg"),
             odometerKm = j.number("distanceTotalKm", "odometerKm", "odometer_km", "totalDistanceKm"),
             coreFuelLiters = j.number("fuelLitersTest", "coreFuelLiters", "core_fuel_l", "fuelTotalLiters"),
             fuelRateLph = j.number("fuelRateLph", "fuel_rate_lph"),
