@@ -6,13 +6,11 @@ s=P.read_text(encoding='utf-8')
 net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re.M)}
 
 # CURRENT PASS
-# - remove legacy GND via at (62,11) below the Link-power corridor
-# - keep WDT_3V3 clean
-# - complete 3V3_LINK with verified pad escapes
+# - keep WDT_3V3 and 3V3_LINK clean
 # - route CAN1_RX/CAN2_RX + diagnostic TP3/TP4
-# - bridge CAN2_RX over the CAN1_RX crossing on F.Cu
+# - begin SPI routing with Core<->FRAM SPI_CLK and SPI_MOSI
 
-rebuild={'WDT_3V3','3V3_LINK','CAN1_RX','CAN2_RX'}
+rebuild={'WDT_3V3','3V3_LINK','CAN1_RX','CAN2_RX','SPI_CLK','SPI_MOSI'}
 ids={net_id[n] for n in rebuild}
 new=[]
 for line in s.splitlines():
@@ -50,7 +48,7 @@ r += [
     seg('WDT_3V3',19.2,36.95,24.8,31.5,.40,'B.Cu'),
 ]
 
-# 3V3_LINK: Q1 -> Link ESP32 and local Link decoupling.
+# 3V3_LINK: Q1 -> Link ESP32 and local Link/GNSS decoupling.
 r += [
     seg('3V3_LINK',68.05,7.5,69.5,7.5,.40), via('3V3_LINK',69.5,7.5),
     seg('3V3_LINK',73.25,9.21,71.5,9.21,.35), via('3V3_LINK',71.5,9.21),
@@ -92,8 +90,7 @@ r += [
     seg('CAN1_RX',14.0,58.8,14.0,61.0,.22),
 ]
 
-# CAN2_RX: the vertical trunk briefly moves to F.Cu from y42.5..46.5 so it
-# crosses the CAN1_RX B.Cu horizontal without copper intersection.
+# CAN2_RX preliminary route. The post-pass rebuilds this net with its final bridge.
 r += [
     seg('CAN2_RX',26.75,20.64,28.0,20.64,.22), via('CAN2_RX',28.0,20.64),
     seg('CAN2_RX',69.3,50.405,69.3,52.2,.22), via('CAN2_RX',69.3,52.2),
@@ -110,6 +107,30 @@ r += [
     seg('CAN2_RX',7.5,63.0,17.0,63.0,.22,'B.Cu'),
     via('CAN2_RX',17.0,63.0),
     seg('CAN2_RX',17.0,63.0,17.0,61.0,.22),
+]
+
+# SPI_CLK: Core U1 pad6 -> FRAM U7 pad6.
+# Stay on F.Cu in the empty far-left/lower corridor, then transfer to B.Cu
+# only for the short approach to the FRAM right-side pad.
+r += [
+    seg('SPI_CLK',9.25,14.29,5.0,14.29,.22),
+    seg('SPI_CLK',5.0,14.29,5.0,43.0,.22),
+    seg('SPI_CLK',5.0,43.0,24.0,43.0,.22),
+    via('SPI_CLK',24.0,43.0),
+    seg('SPI_CLK',24.0,43.0,35.2,36.135,.22,'B.Cu'),
+    via('SPI_CLK',35.2,36.135),
+    seg('SPI_CLK',35.2,36.135,33.7,36.135,.22),
+]
+
+# SPI_MOSI: Core U1 pad7 -> FRAM U7 pad5, parallel to but separated from CLK.
+r += [
+    seg('SPI_MOSI',9.25,15.56,6.3,15.56,.22),
+    seg('SPI_MOSI',6.3,15.56,6.3,46.0,.22),
+    seg('SPI_MOSI',6.3,46.0,25.0,46.0,.22),
+    via('SPI_MOSI',25.0,46.0),
+    seg('SPI_MOSI',25.0,46.0,36.2,37.405,.22,'B.Cu'),
+    via('SPI_MOSI',36.2,37.405),
+    seg('SPI_MOSI',36.2,37.405,33.7,37.405,.22),
 ]
 
 pos=s.rfind('\n)')
