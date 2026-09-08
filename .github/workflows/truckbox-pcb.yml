@@ -31,6 +31,7 @@ jobs:
           python3 hardware/reva/apply_layout_fixes.py
           python3 hardware/reva/apply_layout_v3.py
           python3 hardware/reva/apply_layout_v4.py
+          python3 hardware/reva/apply_layout_v5.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC
@@ -47,7 +48,13 @@ jobs:
           text=p.read_text(errors='ignore')
           total=re.search(r'Found\s+(\d+)\s+DRC violations', text)
           c=collections.Counter(re.findall(r'^\[([^\]]+)\]:', text, re.M))
-          lines=[f"total={total.group(1) if total else 'unknown'}"]
+          geom=sum(v for k,v in c.items() if k not in ('lib_footprint_issues','unconnected_items'))
+          lines=[
+              f"drc_total={total.group(1) if total else 'unknown'}",
+              f"geometry_electrical={geom}",
+              f"unconnected={c.get('unconnected_items',0)}",
+              f"library_warnings={c.get('lib_footprint_issues',0)}",
+          ]
           lines += [f"{k}={v}" for k,v in c.most_common()]
           Path('hardware/reva/build/drc_summary.txt').write_text('\n'.join(lines)+'\n')
           print('\n'.join(lines))
