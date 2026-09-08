@@ -22,18 +22,16 @@ def via(x,y,size=.60,drill=.30):
             f'(layers "F.Cu" "B.Cu") (net "PWRGD_TP"))')
 
 r=[
-    # U6 pin6=(55.85,57.00). Keep the initial escape in the pin corridor,
-    # then move upward/left away from FB (pin7) and SW_NODE before the via.
-    seg(55.85,57.00,55.20,57.00,.20),
-    seg(55.20,57.00,54.80,56.20,.20),
-    via(54.80,56.20),
+    # U6 pin6=(55.85,57.00). Stay on F.Cu while moving left beyond the
+    # FB/COMP analog escape bundle, then change layer at (52.8,57.8).
+    # This keeps the via comfortably away from COMP's B.Cu segment/via.
+    seg(55.85,57.00,53.00,57.00,.20),
+    seg(53.00,57.00,52.80,57.20,.20),
+    seg(52.80,57.20,52.80,57.80,.20),
+    via(52.80,57.80),
 
-    # On B.Cu first move upward to y=53.0; this goes between the FB route on
-    # the left and COMP route on the right without crossing either. Then run
-    # left above the analog bundle and return to the existing service corridor.
-    seg(54.80,56.20,54.80,53.00,.20,'B.Cu'),
-    seg(54.80,53.00,46.00,53.00,.20,'B.Cu'),
-    seg(46.00,53.00,46.00,57.50,.20,'B.Cu'),
+    # Rejoin the already-validated service corridor on B.Cu at (46,57.5).
+    seg(52.80,57.80,46.00,57.50,.20,'B.Cu'),
     seg(46.00,57.50,34.00,59.50,.20,'B.Cu'),
     seg(34.00,59.50,23.00,59.50,.20,'B.Cu'),
     via(23.00,59.50),
@@ -44,4 +42,4 @@ pos=s.rfind('\n)')
 if pos<0: raise RuntimeError('final PCB paren not found')
 s=s[:pos]+'\n'+'\n'.join(r)+s[pos:]
 P.write_text(s,encoding='utf-8')
-print(f'Applied revised PWRGD_TP routing pass to {P}')
+print(f'Applied COMP-clear PWRGD_TP routing pass to {P}')
