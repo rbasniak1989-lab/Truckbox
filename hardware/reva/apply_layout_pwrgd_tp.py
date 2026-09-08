@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 P=Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 s=P.read_text(encoding='utf-8')
@@ -23,17 +22,21 @@ def via(x,y,size=.60,drill=.30):
             f'(layers "F.Cu" "B.Cu") (net "PWRGD_TP"))')
 
 r=[
-    # U6 pin6=(55.85,57.00). Exit straight left first, then rise above the
-    # analog FB escape before changing layer.
-    seg(55.85,57.00,54.90,57.00,.20),
-    seg(54.90,57.00,54.60,55.80,.20),
-    via(54.60,55.80),
-    # B.Cu service corridor along the lower part of the board.
-    seg(54.60,55.80,46.00,57.50,.20,'B.Cu'),
+    # U6 pin6=(55.85,57.00). Keep the initial escape in the pin corridor,
+    # then move upward/left away from FB (pin7) and SW_NODE before the via.
+    seg(55.85,57.00,55.20,57.00,.20),
+    seg(55.20,57.00,54.80,56.20,.20),
+    via(54.80,56.20),
+
+    # On B.Cu first move upward to y=53.0; this goes between the FB route on
+    # the left and COMP route on the right without crossing either. Then run
+    # left above the analog bundle and return to the existing service corridor.
+    seg(54.80,56.20,54.80,53.00,.20,'B.Cu'),
+    seg(54.80,53.00,46.00,53.00,.20,'B.Cu'),
+    seg(46.00,53.00,46.00,57.50,.20,'B.Cu'),
     seg(46.00,57.50,34.00,59.50,.20,'B.Cu'),
     seg(34.00,59.50,23.00,59.50,.20,'B.Cu'),
     via(23.00,59.50),
-    # Short F.Cu finish into TP6=(23,61).
     seg(23.00,59.50,23.00,61.00,.20),
 ]
 
@@ -41,4 +44,4 @@ pos=s.rfind('\n)')
 if pos<0: raise RuntimeError('final PCB paren not found')
 s=s[:pos]+'\n'+'\n'.join(r)+s[pos:]
 P.write_text(s,encoding='utf-8')
-print(f'Applied PWRGD_TP routing pass to {P}')
+print(f'Applied revised PWRGD_TP routing pass to {P}')
