@@ -16,10 +16,10 @@ r = [
     seg(64.50, 39.00, 63.20, 39.00),
     via(63.20, 39.00),
 
-    # CAN1 decoupling C11: move plane entry away from CAN2_RX via.
-    seg(66.00, 41.00, 66.00, 42.20, .32),
-    seg(66.00, 42.20, 66.70, 42.20, .32),
-    via(66.70, 42.20),
+    # CAN1 decoupling C11: escape left from pad 1. This leaves the GND pad's
+    # thermal relief unobstructed and stays clear of the CAN2_RX via/trunk.
+    seg(66.00, 41.00, 65.40, 41.20, .32),
+    via(65.40, 41.20),
 
     # U3 VCC
     seg(69.30, 43.135, 68.00, 43.135, .32),
@@ -31,7 +31,7 @@ r = [
     seg(63.00, 52.00, 62.80, 52.00, .32),
     via(62.80, 52.00),
 
-    # U4 VCC: shift plane-entry via upward/right to clear C2 GND pad.
+    # U4 VCC: shifted upward/right to clear C2 GND pad.
     seg(69.30, 49.135, 68.00, 48.90, .32),
     via(68.00, 48.90),
 ]
