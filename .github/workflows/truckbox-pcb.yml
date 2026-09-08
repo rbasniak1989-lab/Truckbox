@@ -8,6 +8,9 @@ on:
       - '.github/workflows/truckbox-pcb.yml'
   workflow_dispatch:
 
+env:
+  KICAD_IMAGE: kicad/kicad:10.0.6
+
 jobs:
   kicad:
     runs-on: ubuntu-latest
@@ -16,14 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install KiCad 10 CLI
+      - name: Pull pinned KiCad 10 CLI image
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends software-properties-common
-          sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends kicad
-          kicad-cli version
+          docker pull "$KICAD_IMAGE"
+          docker run --rm "$KICAD_IMAGE" kicad-cli version
 
       - name: Generate board
         run: |
@@ -64,11 +63,12 @@ jobs:
       - name: Run real PCB DRC with filled zones
         run: |
           mkdir -p hardware/reva/build
-          kicad-cli pcb drc \
-            --refill-zones --save-board \
-            --severity-all \
-            --output hardware/reva/build/drc.rpt \
-            hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work "$KICAD_IMAGE" \
+            kicad-cli pcb drc \
+              --refill-zones --save-board \
+              --severity-all \
+              --output hardware/reva/build/drc.rpt \
+              hardware/reva/TruckBox_RevA.kicad_pcb
           python3 - <<'PY'
           from pathlib import Path
           import re, collections
@@ -97,21 +97,25 @@ jobs:
       - name: Export fabrication candidate
         run: |
           mkdir -p hardware/reva/build/gerbers
-          kicad-cli pcb export gerbers --check-zones \
-            --output hardware/reva/build/gerbers/ \
-            hardware/reva/TruckBox_RevA.kicad_pcb
-          kicad-cli pcb export drill \
-            --output hardware/reva/build/gerbers/ \
-            hardware/reva/TruckBox_RevA.kicad_pcb
-          kicad-cli pcb export pos \
-            --format csv --units mm --side both \
-            --output hardware/reva/build/positions.csv \
-            hardware/reva/TruckBox_RevA.kicad_pcb
-          kicad-cli pcb export svg --check-zones \
-            --fit-page-to-board --exclude-drawing-sheet \
-            --layers F.Cu,F.Silkscreen,Edge.Cuts \
-            --output hardware/reva/build/top.svg \
-            hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work "$KICAD_IMAGE" \
+            kicad-cli pcb export gerbers --check-zones \
+              --output hardware/reva/build/gerbers/ \
+              hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work "$KICAD_IMAGE" \
+            kicad-cli pcb export drill \
+              --output hardware/reva/build/gerbers/ \
+              hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work "$KICAD_IMAGE" \
+            kicad-cli pcb export pos \
+              --format csv --units mm --side both \
+              --output hardware/reva/build/positions.csv \
+              hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work "$KICAD_IMAGE" \
+            kicad-cli pcb export svg --check-zones \
+              --fit-page-to-board --exclude-drawing-sheet \
+              --layers F.Cu,F.Silkscreen,Edge.Cuts \
+              --output hardware/reva/build/top.svg \
+              hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Upload PCB CI artifact
         uses: actions/upload-artifact@v4
