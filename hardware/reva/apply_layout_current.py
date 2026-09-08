@@ -6,10 +6,10 @@ s=P.read_text(encoding='utf-8')
 net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re.M)}
 
 # CURRENT PASS
-# - remove one legacy GND stitching via at (62,11) that collides with 3V3_LINK
+# - remove legacy GND via at (62,11) below the Link-power corridor
 # - keep WDT_3V3 clean
-# - complete 3V3_LINK for Link ESP32, GNSS, decoupling, boot pull-up
-# - route CAN1_RX and CAN2_RX on B.Cu, including diagnostic test pads
+# - complete 3V3_LINK with verified pad escapes
+# - route CAN1_RX/CAN2_RX on separated B.Cu corridors + TP3/TP4
 
 rebuild={'WDT_3V3','3V3_LINK','CAN1_RX','CAN2_RX'}
 ids={net_id[n] for n in rebuild}
@@ -19,9 +19,6 @@ for line in s.splitlines():
         m=re.search(r'\(net (\d+)\)',line)
         if m and int(m.group(1)) in ids:
             continue
-        # Legacy v8 GND stitching point sits directly under the new 3V3_LINK
-        # back-layer trunk. Remove this single via; surrounding GND stitching
-        # remains ample.
         if line.startswith('  (via '):
             at=re.search(r'\(at ([-0-9.]+) ([-0-9.]+)\)',line)
             if at and abs(float(at.group(1))-62.0)<1e-6 and abs(float(at.group(2))-11.0)<1e-6:
@@ -41,7 +38,7 @@ def via(net,x,y,size=.70,drill=.35):
 
 r=[]
 
-# WDT_3V3: route around the WDT_REXT back-layer trace.
+# WDT_3V3: route around WDT_REXT.
 r += [
     seg('WDT_3V3',20.9,36.95,19.2,36.95,.30), via('WDT_3V3',19.2,36.95),
     seg('WDT_3V3',17.5,36.0,14.5,36.0,.30), via('WDT_3V3',14.5,36.0),
@@ -71,28 +68,28 @@ r += [
     via('3V3_LINK',57.0,13.7),
     seg('3V3_LINK',57.0,13.7,60.0,11.5,.55,'B.Cu'),
     seg('3V3_LINK',60.0,11.5,66.5,9.0,.55,'B.Cu'),
-    # C17 + R41 are joined locally on F.Cu, then enter the same B.Cu bus.
-    seg('3V3_LINK',59.4,17.0,61.0,17.0,.35), via('3V3_LINK',61.0,17.0),
+    # C17: its GND pad is on the right, therefore escape upward from pad1.
+    seg('3V3_LINK',59.4,17.0,59.4,15.3,.30), via('3V3_LINK',59.4,15.3),
+    seg('3V3_LINK',59.4,15.3,57.0,13.7,.45,'B.Cu'),
+    # R41 joins C17 locally without approaching its GNSS_ON pad on the right.
     seg('3V3_LINK',58.5,20.0,57.2,20.0,.28),
-    seg('3V3_LINK',57.2,20.0,57.2,18.5,.28),
-    seg('3V3_LINK',57.2,18.5,59.4,17.0,.28),
-    seg('3V3_LINK',61.0,17.0,61.0,15.2,.45,'B.Cu'),
-    seg('3V3_LINK',61.0,15.2,57.0,13.7,.45,'B.Cu'),
-    # Link BOOT pull-up R30: route above USB/BOOT traffic on the back layer.
-    seg('3V3_LINK',93.5,24.5,91.8,24.5,.30), via('3V3_LINK',91.8,24.5),
-    seg('3V3_LINK',91.8,24.5,91.8,9.5,.45,'B.Cu'),
-    seg('3V3_LINK',91.8,9.5,71.5,9.21,.45,'B.Cu'),
+    seg('3V3_LINK',57.2,20.0,57.2,18.3,.28),
+    seg('3V3_LINK',57.2,18.3,59.4,18.3,.28),
+    seg('3V3_LINK',59.4,18.3,59.4,17.0,.28),
+    # R30 pad1: escape vertically upward, away from U2 LINK_BOOT pad15.
+    seg('3V3_LINK',93.5,24.5,93.5,22.8,.30), via('3V3_LINK',93.5,22.8),
+    seg('3V3_LINK',93.5,22.8,93.5,9.5,.45,'B.Cu'),
+    seg('3V3_LINK',93.5,9.5,71.5,9.21,.45,'B.Cu'),
 ]
 
-# CAN1_RX: Core -> CAN1 transceiver; separate low-speed branch to TP3.
-# Straight pad escapes are kept on F.Cu; long transport is on B.Cu.
+# CAN1_RX: no crossing with CAN2. Long horizontal first, then vertical at x60.5.
 r += [
     seg('CAN1_RX',26.75,23.18,29.2,23.18,.22), via('CAN1_RX',29.2,23.18),
     seg('CAN1_RX',69.3,44.405,66.8,44.405,.22), via('CAN1_RX',66.8,44.405),
-    seg('CAN1_RX',29.2,23.18,42.0,23.18,.25,'B.Cu'),
-    seg('CAN1_RX',42.0,23.18,42.0,44.405,.25,'B.Cu'),
-    seg('CAN1_RX',42.0,44.405,66.8,44.405,.25,'B.Cu'),
-    # TP3 branch uses the far-left corridor, clear of WDT routing.
+    seg('CAN1_RX',29.2,23.18,60.5,23.18,.25,'B.Cu'),
+    seg('CAN1_RX',60.5,23.18,60.5,44.405,.25,'B.Cu'),
+    seg('CAN1_RX',60.5,44.405,66.8,44.405,.25,'B.Cu'),
+    # TP3 branch in far-left corridor.
     seg('CAN1_RX',29.2,23.18,11.0,23.18,.22,'B.Cu'),
     seg('CAN1_RX',11.0,23.18,11.0,58.8,.22,'B.Cu'),
     seg('CAN1_RX',11.0,58.8,14.0,58.8,.22,'B.Cu'),
@@ -100,16 +97,17 @@ r += [
     seg('CAN1_RX',14.0,58.8,14.0,61.0,.22),
 ]
 
-# CAN2_RX: parallel but spatially separated from CAN1_RX.
+# CAN2_RX: U1 escape stops before R20; U4 escape goes downward, away from C2.
 r += [
-    seg('CAN2_RX',26.75,20.64,29.2,20.64,.22), via('CAN2_RX',29.2,20.64),
-    seg('CAN2_RX',69.3,50.405,66.8,50.405,.22), via('CAN2_RX',66.8,50.405),
-    seg('CAN2_RX',29.2,20.64,39.0,20.64,.25,'B.Cu'),
-    seg('CAN2_RX',39.0,20.64,39.0,50.405,.25,'B.Cu'),
-    seg('CAN2_RX',39.0,50.405,66.8,50.405,.25,'B.Cu'),
-    # TP4 branch goes below the CAN1 test branch before turning right.
-    seg('CAN2_RX',29.2,20.64,7.5,20.64,.22,'B.Cu'),
-    seg('CAN2_RX',7.5,20.64,7.5,63.0,.22,'B.Cu'),
+    seg('CAN2_RX',26.75,20.64,28.0,20.64,.22), via('CAN2_RX',28.0,20.64),
+    seg('CAN2_RX',69.3,50.405,69.3,52.2,.22), via('CAN2_RX',69.3,52.2),
+    seg('CAN2_RX',28.0,20.64,28.0,21.0,.25,'B.Cu'),
+    seg('CAN2_RX',28.0,21.0,64.5,21.0,.25,'B.Cu'),
+    seg('CAN2_RX',64.5,21.0,64.5,52.2,.25,'B.Cu'),
+    seg('CAN2_RX',64.5,52.2,69.3,52.2,.25,'B.Cu'),
+    # TP4 branch below CAN1 test branch.
+    seg('CAN2_RX',28.0,21.0,7.5,21.0,.22,'B.Cu'),
+    seg('CAN2_RX',7.5,21.0,7.5,63.0,.22,'B.Cu'),
     seg('CAN2_RX',7.5,63.0,17.0,63.0,.22,'B.Cu'),
     via('CAN2_RX',17.0,63.0),
     seg('CAN2_RX',17.0,63.0,17.0,61.0,.22),
