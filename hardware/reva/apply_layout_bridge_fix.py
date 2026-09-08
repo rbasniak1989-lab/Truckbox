@@ -7,17 +7,23 @@ net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re
 
 # Final post-pass for the CAN control region:
 # 1) rebuild CAN2_RX with its clean F.Cu bridge;
-# 2) route CAN_MODE to U1, R20 and both control pins on U3/U4.
-# CAN_MODE crosses the two CAN RX vertical trunks at y=30 mm, a verified
-# pad/track-free F.Cu corridor, avoiding the Link USB service routing.
+# 2) route CAN_MODE to U1, R20 and both control pins on U3/U4;
+# 3) remove legacy GND stitching vias that sit exactly on the y=30 CAN_MODE path.
 rebuild={'CAN2_RX','CAN_MODE'}
 ids={net_id[n] for n in rebuild}
+legacy_stitch={(62.0,30.0),(76.0,30.0)}
 new=[]
 for line in s.splitlines():
     if line.startswith('  (segment ') or line.startswith('  (via '):
         m=re.search(r'\(net (\d+)\)',line)
         if m and int(m.group(1)) in ids:
             continue
+        if line.startswith('  (via '):
+            at=re.search(r'\(at ([-0-9.]+) ([-0-9.]+)\)',line)
+            if at:
+                pt=(float(at.group(1)),float(at.group(2)))
+                if pt in legacy_stitch:
+                    continue
     new.append(line)
 s='\n'.join(new)+'\n'
 
@@ -62,7 +68,7 @@ r += [
     seg('CAN_MODE',32.0,24.5,38.0,24.5,.22), via('CAN_MODE',38.0,24.5),
 ]
 
-# Long CAN_MODE trunk. Move to the verified y=30 F.Cu crossing corridor.
+# Long CAN_MODE trunk using verified y=30 F.Cu crossing corridor.
 r += [
     seg('CAN_MODE',38.0,24.5,52.0,24.5,.28,'B.Cu'),
     seg('CAN_MODE',52.0,24.5,58.5,30.0,.28,'B.Cu'),
