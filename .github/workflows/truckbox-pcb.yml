@@ -34,6 +34,7 @@ jobs:
           python3 hardware/reva/apply_layout_v5.py
           sed -i 's/for blk in blocks(text):/for _,_,blk in blocks(text):/' hardware/reva/apply_layout_v6.py
           python3 hardware/reva/apply_layout_v6.py
+          python3 hardware/reva/apply_layout_v7.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
