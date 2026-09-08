@@ -9,11 +9,18 @@ s = P.read_text(encoding='utf-8')
 # SW_NODE and 3V3_MAIN copper endpoints, so electrical connectivity is kept
 # while creating >0.2 mm manufacturable clearance around the FB via.
 
-def blocks(text, token='\t(footprint '):
+def blocks(text):
     out=[]; i=0
+    # Pre-DRC generated boards use two-space indentation; KiCad-reserialized
+    # boards use tabs. Search the token independent of indentation.
+    token='(footprint '
     while True:
         a=text.find(token,i)
         if a<0: break
+        # Ensure this is a top-level footprint, not text inside a string.
+        line_start=text.rfind('\n',0,a)+1
+        if text[line_start:a].strip():
+            i=a+len(token); continue
         depth=0; ins=False; esc=False; b=None
         for j in range(a,len(text)):
             c=text[j]
@@ -40,11 +47,15 @@ def ref_of(blk):
     return m.group(1) if m else None
 
 def set_at(blk,x,y,rot=0):
-    return re.sub(r'\n\t\t\(at [^\n]+\)',f'\n\t\t(at {x:.3f} {y:.3f} {rot})',blk,count=1)
+    # Match either generated two-space or KiCad tab indentation.
+    return re.sub(r'\n\s*\(at [^\n]+\)',f'\n    (at {x:.3f} {y:.3f} {rot})',blk,count=1)
 
 for a,b,blk in blocks(s):
     if ref_of(blk)=='L1':
-        s=s[:a]+set_at(blk,49.5,59.0,0)+s[b:]
+        edited=set_at(blk,49.5,59.0,0)
+        if edited==blk:
+            raise RuntimeError('L1 found but position was not edited')
+        s=s[:a]+edited+s[b:]
         break
 else:
     raise RuntimeError('L1 not found')
