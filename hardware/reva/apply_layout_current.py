@@ -90,7 +90,7 @@ r += [
     seg('CAN1_RX',14.0,58.8,14.0,61.0,.22),
 ]
 
-# CAN2_RX preliminary route. The post-pass rebuilds this net with its final bridge.
+# CAN2_RX preliminary route; post-pass rebuilds it with final bridge.
 r += [
     seg('CAN2_RX',26.75,20.64,28.0,20.64,.22), via('CAN2_RX',28.0,20.64),
     seg('CAN2_RX',69.3,50.405,69.3,52.2,.22), via('CAN2_RX',69.3,52.2),
@@ -109,24 +109,26 @@ r += [
     seg('CAN2_RX',17.0,63.0,17.0,61.0,.22),
 ]
 
-# SPI_CLK: Core U1 pad6 -> FRAM U7 pad6.
-# Stay on F.Cu in the empty far-left/lower corridor, then transfer to B.Cu
-# only for the short approach to the FRAM right-side pad.
+# SPI_CLK: escape above R13/C19, then use the inner left-side corridor.
 r += [
-    seg('SPI_CLK',9.25,14.29,5.0,14.29,.22),
-    seg('SPI_CLK',5.0,14.29,5.0,43.0,.22),
-    seg('SPI_CLK',5.0,43.0,24.0,43.0,.22),
+    seg('SPI_CLK',9.25,14.29,7.7,14.29,.22),
+    seg('SPI_CLK',7.7,14.29,7.7,12.3,.22),
+    seg('SPI_CLK',7.7,12.3,4.8,12.3,.22),
+    seg('SPI_CLK',4.8,12.3,4.8,43.0,.22),
+    seg('SPI_CLK',4.8,43.0,24.0,43.0,.22),
     via('SPI_CLK',24.0,43.0),
     seg('SPI_CLK',24.0,43.0,35.2,36.135,.22,'B.Cu'),
     via('SPI_CLK',35.2,36.135),
     seg('SPI_CLK',35.2,36.135,33.7,36.135,.22),
 ]
 
-# SPI_MOSI: Core U1 pad7 -> FRAM U7 pad5, parallel to but separated from CLK.
+# SPI_MOSI: outermost left corridor so it cannot cross the CLK horizontal leg.
 r += [
-    seg('SPI_MOSI',9.25,15.56,6.3,15.56,.22),
-    seg('SPI_MOSI',6.3,15.56,6.3,46.0,.22),
-    seg('SPI_MOSI',6.3,46.0,25.0,46.0,.22),
+    seg('SPI_MOSI',9.25,15.56,7.0,15.56,.22),
+    seg('SPI_MOSI',7.0,15.56,7.0,13.5,.22),
+    seg('SPI_MOSI',7.0,13.5,3.5,13.5,.22),
+    seg('SPI_MOSI',3.5,13.5,3.5,46.0,.22),
+    seg('SPI_MOSI',3.5,46.0,25.0,46.0,.22),
     via('SPI_MOSI',25.0,46.0),
     seg('SPI_MOSI',25.0,46.0,36.2,37.405,.22,'B.Cu'),
     via('SPI_MOSI',36.2,37.405),
