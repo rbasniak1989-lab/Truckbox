@@ -31,26 +31,33 @@ r = []
 # SD_PWR_N endpoints:
 # U1 GPIO17/pad24 (26.75,13.02) -> R27.2 (55.5,30.0)
 # -> Q2 gate/pad1 (54.45,33.95).
-# Escape the ESP32 edge on F.Cu, drop to B.Cu at x=28.5 and move to y=14.8
-# so this trunk stays clear of LINK_PWR_N/SD_CS. Return to F.Cu to approach
-# R27 from the right, avoiding its adjacent 3V3_MAIN pad.
+#
+# Revised route after real KiCad DRC of the first pass:
+# - move away from LINK_PWR_N before changing layer;
+# - use a clear B.Cu horizontal corridor at y=14.2, above CAN1/CAN2;
+# - return to F.Cu at x=50 so CAN RX tracks can be crossed on the opposite layer;
+# - approach R27 pad 2 from the RIGHT, never crossing R27 pad 1 (3V3_MAIN).
 r += [
-    seg('SD_PWR_N', 26.75, 13.02, 28.5, 13.02),
-    via('SD_PWR_N', 28.5, 13.02),
-    seg('SD_PWR_N', 28.5, 13.02, 28.5, 14.8, .22, 'B.Cu'),
-    seg('SD_PWR_N', 28.5, 14.8, 57.5, 14.8, .22, 'B.Cu'),
-    seg('SD_PWR_N', 57.5, 14.8, 57.5, 30.0, .22, 'B.Cu'),
-    via('SD_PWR_N', 57.5, 30.0),
-    seg('SD_PWR_N', 57.5, 30.0, 55.5, 30.0),
+    seg('SD_PWR_N', 26.75, 13.02, 28.50, 13.02),
+    seg('SD_PWR_N', 28.50, 13.02, 28.50, 14.20),
+    via('SD_PWR_N', 28.50, 14.20),
+    seg('SD_PWR_N', 28.50, 14.20, 50.00, 14.20, .22, 'B.Cu'),
+    via('SD_PWR_N', 50.00, 14.20),
+    seg('SD_PWR_N', 50.00, 14.20, 50.00, 28.50),
+    seg('SD_PWR_N', 50.00, 28.50, 57.00, 28.50),
+    seg('SD_PWR_N', 57.00, 28.50, 57.00, 30.00),
+    seg('SD_PWR_N', 57.00, 30.00, 55.50, 30.00),
 ]
 
-# R27 -> Q2 gate. Go around the right/bottom of Q2 so its source/drain pads
-# (3V3_MAIN and 3V3_SD) are never crossed.
+# R27 -> Q2 gate. Exit R27 pad 2 to the right, pass ABOVE Q2, then go
+# around the LEFT side of Q2 pad 2 (3V3_MAIN) and enter gate pad 1 from left.
+# This avoids both Q2 source/drain copper and the existing 3V3_SD via/track.
 r += [
-    seg('SD_PWR_N', 55.5, 30.0, 57.8, 30.0),
-    seg('SD_PWR_N', 57.8, 30.0, 57.8, 35.2),
-    seg('SD_PWR_N', 57.8, 35.2, 54.45, 35.2),
-    seg('SD_PWR_N', 54.45, 35.2, 54.45, 33.95),
+    seg('SD_PWR_N', 55.50, 30.00, 56.30, 30.00),
+    seg('SD_PWR_N', 56.30, 30.00, 56.30, 31.00),
+    seg('SD_PWR_N', 56.30, 31.00, 53.50, 31.00),
+    seg('SD_PWR_N', 53.50, 31.00, 53.50, 33.95),
+    seg('SD_PWR_N', 53.50, 33.95, 54.45, 33.95),
 ]
 
 pos = s.rfind('\n)')
