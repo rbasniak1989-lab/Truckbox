@@ -5,11 +5,12 @@ P=Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 s=P.read_text(encoding='utf-8')
 net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re.M)}
 
-# Final post-pass for the CAN control region:
+# Final post-pass:
 # 1) rebuild CAN2_RX with its clean F.Cu bridge;
 # 2) route CAN_MODE to U1, R20 and both control pins on U3/U4;
-# 3) remove legacy GND stitching vias that sit exactly on the y=30 CAN_MODE path.
-rebuild={'CAN2_RX','CAN_MODE'}
+# 3) remove legacy GND stitching vias on the y=30 CAN_MODE path;
+# 4) rebuild SPI_CLK with an immediate layer change to bypass C15/R13/C19.
+rebuild={'CAN2_RX','CAN_MODE','SPI_CLK'}
 ids={net_id[n] for n in rebuild}
 legacy_stitch={(62.0,30.0),(76.0,30.0)}
 new=[]
@@ -88,8 +89,24 @@ for y in (40.595,44.405,46.595,50.405):
     ]
 r += [seg('CAN_MODE',78.0,40.595,78.0,50.405,.28,'B.Cu')]
 
+# SPI_CLK final escape. Leave U1 on F.Cu, change layers immediately, use the
+# far-left B.Cu edge corridor to bypass C15/R13/C19, and return to F.Cu at y=43
+# so the CAN diagnostic trunks remain on the opposite copper layer.
+r += [
+    seg('SPI_CLK',9.25,14.29,7.7,14.29,.22),
+    via('SPI_CLK',7.7,14.29),
+    seg('SPI_CLK',7.7,14.29,2.0,14.29,.22,'B.Cu'),
+    seg('SPI_CLK',2.0,14.29,2.0,43.0,.22,'B.Cu'),
+    via('SPI_CLK',2.0,43.0),
+    seg('SPI_CLK',2.0,43.0,24.0,43.0,.22,'F.Cu'),
+    via('SPI_CLK',24.0,43.0),
+    seg('SPI_CLK',24.0,43.0,35.2,36.135,.22,'B.Cu'),
+    via('SPI_CLK',35.2,36.135),
+    seg('SPI_CLK',35.2,36.135,33.7,36.135,.22,'F.Cu'),
+]
+
 pos=s.rfind('\n)')
 if pos<0: raise RuntimeError('final PCB paren not found')
 s=s[:pos]+'\n'+'\n'.join(r)+s[pos:]
 P.write_text(s,encoding='utf-8')
-print(f'Applied CAN2 bridge + CAN_MODE routing to {P}')
+print(f'Applied final CAN + SPI_CLK post-pass to {P}')
