@@ -153,7 +153,7 @@ extras=[
 ]
 
 # ---------- Reroute only coordinate-verified critical nets -----------------
-s='\n'.join(line for line in s.splitlines() if not line.startswith('  (segment ')) and not line.startswith('  (via '))+'\n'
+s='\n'.join(line for line in s.splitlines() if not line.startswith('  (segment ') and not line.startswith('  (via '))+'\n'
 def seg(netid,x1,y1,x2,y2,w=.30,layer='F.Cu'):
     return f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) (width {w:.3f}) (layer "{layer}") (net {netid}))'
 def via(netid,x,y,size=.8,drill=.4):
