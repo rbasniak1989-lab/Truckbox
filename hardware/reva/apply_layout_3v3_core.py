@@ -26,9 +26,10 @@ r=[
     seg(4.90,12.00,3.60,12.00,.32),
     via(3.60,12.00),
 
-    # R13 pull-up: independent plane entry below the SPI corridor.
-    seg(5.00,15.00,3.60,15.00,.28),
-    via(3.60,15.00),
+    # R13: escape downward to the plane. Going west would cross the long
+    # SPI_MOSI trunk at x=3.5 (run95); x=5.0 is clear of that corridor.
+    seg(5.00,15.00,5.00,16.00,.28),
+    via(5.00,16.00),
 
     # U1 supply: short escape to a via just outside the ESP32 courtyard/body.
     seg(9.25,9.21,7.80,9.21,.32),
