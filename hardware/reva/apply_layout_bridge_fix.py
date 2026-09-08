@@ -7,7 +7,9 @@ net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re
 
 # Final post-pass for the CAN control region:
 # 1) rebuild CAN2_RX with its clean F.Cu bridge;
-# 2) route CAN_MODE to U1, R20 and both pins on U3/U4.
+# 2) route CAN_MODE to U1, R20 and both control pins on U3/U4.
+# CAN_MODE crosses the two CAN RX vertical trunks at y=30 mm, a verified
+# pad/track-free F.Cu corridor, avoiding the Link USB service routing.
 rebuild={'CAN2_RX','CAN_MODE'}
 ids={net_id[n] for n in rebuild}
 new=[]
@@ -49,43 +51,36 @@ r += [
 ]
 
 # CAN_MODE local Core branch: U1 GPIO2/pin27 -> R20 pad2.
-# The narrow corridor immediately to the right of U1 is free of the nearby
-# EN/BOOT RC parts, so keep this local part on F.Cu.
 r += [
     seg('CAN_MODE',26.75,9.21,28.6,9.21,.22),
     seg('CAN_MODE',28.6,9.21,29.2,10.0,.22),
     seg('CAN_MODE',29.2,10.0,29.2,19.2,.22),
     seg('CAN_MODE',29.2,19.2,30.5,20.2,.22),
     seg('CAN_MODE',30.5,20.2,30.5,21.0,.22),
-    # Branch from R20 toward the long control trunk.
     seg('CAN_MODE',30.5,21.0,32.0,22.2,.22),
     seg('CAN_MODE',32.0,22.2,32.0,24.5,.22),
     seg('CAN_MODE',32.0,24.5,38.0,24.5,.22), via('CAN_MODE',38.0,24.5),
 ]
 
-# Long CAN_MODE trunk. On B.Cu it approaches from the right. A short F.Cu
-# bridge from x66.5 to x58.5 crosses both CAN2_RX (x64.5) and CAN1_RX (x60.5)
-# without copper intersection.
+# Long CAN_MODE trunk. Move to the verified y=30 F.Cu crossing corridor.
 r += [
-    seg('CAN_MODE',38.0,24.5,58.5,24.5,.28,'B.Cu'),
-    via('CAN_MODE',58.5,24.5),
-    seg('CAN_MODE',58.5,24.5,66.5,24.5,.22,'F.Cu'),
-    via('CAN_MODE',66.5,24.5),
-    seg('CAN_MODE',66.5,24.5,78.0,24.5,.28,'B.Cu'),
-    seg('CAN_MODE',78.0,24.5,78.0,40.595,.28,'B.Cu'),
+    seg('CAN_MODE',38.0,24.5,52.0,24.5,.28,'B.Cu'),
+    seg('CAN_MODE',52.0,24.5,58.5,30.0,.28,'B.Cu'),
+    via('CAN_MODE',58.5,30.0),
+    seg('CAN_MODE',58.5,30.0,66.5,30.0,.22,'F.Cu'),
+    via('CAN_MODE',66.5,30.0),
+    seg('CAN_MODE',66.5,30.0,78.0,30.0,.28,'B.Cu'),
+    seg('CAN_MODE',78.0,30.0,78.0,40.595,.28,'B.Cu'),
 ]
 
-# Both control pins of both TCAN3404s. Straight pad escapes to individual vias,
-# then one common B.Cu spine at x78.0.
+# Both control pins of both TCAN3404s.
 for y in (40.595,44.405,46.595,50.405):
     r += [
         seg('CAN_MODE',74.7,y,76.5,y,.22),
         via('CAN_MODE',76.5,y),
         seg('CAN_MODE',76.5,y,78.0,y,.28,'B.Cu'),
     ]
-r += [
-    seg('CAN_MODE',78.0,40.595,78.0,50.405,.28,'B.Cu'),
-]
+r += [seg('CAN_MODE',78.0,40.595,78.0,50.405,.28,'B.Cu')]
 
 pos=s.rfind('\n)')
 if pos<0: raise RuntimeError('final PCB paren not found')
