@@ -24,7 +24,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y kicad
           kicad-cli version
-          kicad-cli pcb drc --help | head -40
 
       - name: Generate board
         run: |
@@ -37,7 +36,6 @@ jobs:
           mkdir -p hardware/reva/build
           kicad-cli pcb drc \
             --severity-all \
-            --refill-zones \
             --output hardware/reva/build/drc.rpt \
             hardware/reva/TruckBox_RevA.kicad_pcb
           cat hardware/reva/build/drc.rpt
