@@ -16,11 +16,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install KiCad 9 CLI
+      - name: Install KiCad 10 CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends software-properties-common
-          sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
+          sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends kicad
           kicad-cli version
@@ -32,12 +32,14 @@ jobs:
           python3 hardware/reva/apply_layout_v3.py
           python3 hardware/reva/apply_layout_v4.py
           python3 hardware/reva/apply_layout_v5.py
+          python3 hardware/reva/apply_layout_v6.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
-      - name: Run real PCB DRC
+      - name: Run real PCB DRC with filled zones
         run: |
           mkdir -p hardware/reva/build
           kicad-cli pcb drc \
+            --refill-zones --save-board \
             --severity-all \
             --output hardware/reva/build/drc.rpt \
             hardware/reva/TruckBox_RevA.kicad_pcb
@@ -63,7 +65,7 @@ jobs:
       - name: Export fabrication candidate
         run: |
           mkdir -p hardware/reva/build/gerbers
-          kicad-cli pcb export gerbers \
+          kicad-cli pcb export gerbers --check-zones \
             --output hardware/reva/build/gerbers/ \
             hardware/reva/TruckBox_RevA.kicad_pcb
           kicad-cli pcb export drill \
@@ -73,7 +75,8 @@ jobs:
             --format csv --units mm --side both \
             --output hardware/reva/build/positions.csv \
             hardware/reva/TruckBox_RevA.kicad_pcb
-          kicad-cli pcb export svg \
+          kicad-cli pcb export svg --check-zones \
+            --fit-page-to-board --exclude-drawing-sheet \
             --layers F.Cu,F.Silkscreen,Edge.Cuts \
             --output hardware/reva/build/top.svg \
             hardware/reva/TruckBox_RevA.kicad_pcb
