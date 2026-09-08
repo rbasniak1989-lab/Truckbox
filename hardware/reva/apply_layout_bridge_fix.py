@@ -89,16 +89,17 @@ for y in (40.595,44.405,46.595,50.405):
     ]
 r += [seg('CAN_MODE',78.0,40.595,78.0,50.405,.28,'B.Cu')]
 
-# SPI_CLK final escape. Leave U1 on F.Cu, change layers immediately, use the
-# far-left B.Cu edge corridor to bypass C15/R13/C19, and return to F.Cu at y=43
-# so the CAN diagnostic trunks remain on the opposite copper layer.
+# SPI_CLK final escape. Stay on B.Cu through x=4.5 at y=43 so the track passes
+# underneath the MOSI vertical at x=3.5. Then return to F.Cu before the CAN
+# diagnostic B.Cu trunks at x=7.5 and x=11.
 r += [
     seg('SPI_CLK',9.25,14.29,7.7,14.29,.22),
     via('SPI_CLK',7.7,14.29),
     seg('SPI_CLK',7.7,14.29,2.0,14.29,.22,'B.Cu'),
     seg('SPI_CLK',2.0,14.29,2.0,43.0,.22,'B.Cu'),
-    via('SPI_CLK',2.0,43.0),
-    seg('SPI_CLK',2.0,43.0,24.0,43.0,.22,'F.Cu'),
+    seg('SPI_CLK',2.0,43.0,4.5,43.0,.22,'B.Cu'),
+    via('SPI_CLK',4.5,43.0),
+    seg('SPI_CLK',4.5,43.0,24.0,43.0,.22,'F.Cu'),
     via('SPI_CLK',24.0,43.0),
     seg('SPI_CLK',24.0,43.0,35.2,36.135,.22,'B.Cu'),
     via('SPI_CLK',35.2,36.135),
