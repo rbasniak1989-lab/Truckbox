@@ -19,10 +19,10 @@ jobs:
       - name: Install KiCad 9 CLI
         run: |
           sudo apt-get update
-          sudo apt-get install -y software-properties-common
+          sudo apt-get install -y --no-install-recommends software-properties-common
           sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
           sudo apt-get update
-          sudo apt-get install -y kicad
+          sudo apt-get install -y --no-install-recommends kicad
           kicad-cli version
 
       - name: Generate board
@@ -38,7 +38,18 @@ jobs:
             --severity-all \
             --output hardware/reva/build/drc.rpt \
             hardware/reva/TruckBox_RevA.kicad_pcb
-          cat hardware/reva/build/drc.rpt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, collections
+          p=Path('hardware/reva/build/drc.rpt')
+          text=p.read_text(errors='ignore')
+          total=re.search(r'Found\s+(\d+)\s+DRC violations', text)
+          c=collections.Counter(re.findall(r'^\[([^\]]+)\]:', text, re.M))
+          lines=[f"total={total.group(1) if total else 'unknown'}"]
+          lines += [f"{k}={v}" for k,v in c.most_common()]
+          Path('hardware/reva/build/drc_summary.txt').write_text('\n'.join(lines)+'\n')
+          print('\n'.join(lines))
+          PY
 
       - name: Export fabrication candidate
         run: |
