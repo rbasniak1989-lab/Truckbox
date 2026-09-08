@@ -29,6 +29,7 @@ jobs:
         run: |
           python3 hardware/reva/generate_board.py
           python3 hardware/reva/apply_layout_fixes.py
+          python3 hardware/reva/apply_layout_v3.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC
