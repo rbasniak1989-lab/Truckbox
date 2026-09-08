@@ -29,18 +29,22 @@ r = []
 
 # WDT_DONE endpoints:
 # U1 GPIO1/pad9 (9.25,18.10) -> U8 DONE/pad4 (23.10,35.05).
-# Escape LEFT from the ESP32 module, then use B.Cu at x=6.5. This stays
-# 1.0 mm left of the CAN2_RX vertical trunk at x=7.5. Return to F.Cu below
-# the module and jog around the WDT_REXT via/pad before entering U8 from right.
+#
+# DRC-corrected route:
+# 1) the first via is kept at x=8.0, well clear of C19 GND pad at (6,18),
+#    then B.Cu moves left to x=6.5 before descending parallel to CAN2_RX;
+# 2) near U8 the route detours DOWN to y=32.9, passing below the WDT_REXT
+#    via/diagonal and left of Q4 ACC_N pad, then returns to y=33.5.
 r += [
-    seg('WDT_DONE', 9.25, 18.10, 6.50, 18.10),
-    via('WDT_DONE', 6.50, 18.10),
+    seg('WDT_DONE', 9.25, 18.10, 8.00, 18.10),
+    via('WDT_DONE', 8.00, 18.10),
+    seg('WDT_DONE', 8.00, 18.10, 6.50, 18.10, .22, 'B.Cu'),
     seg('WDT_DONE', 6.50, 18.10, 6.50, 33.50, .22, 'B.Cu'),
     via('WDT_DONE', 6.50, 33.50),
     seg('WDT_DONE', 6.50, 33.50, 18.00, 33.50),
-    seg('WDT_DONE', 18.00, 33.50, 18.00, 34.70),
-    seg('WDT_DONE', 18.00, 34.70, 20.00, 34.70),
-    seg('WDT_DONE', 20.00, 34.70, 20.00, 33.50),
+    seg('WDT_DONE', 18.00, 33.50, 18.00, 32.90),
+    seg('WDT_DONE', 18.00, 32.90, 20.00, 32.90),
+    seg('WDT_DONE', 20.00, 32.90, 20.00, 33.50),
     seg('WDT_DONE', 20.00, 33.50, 24.50, 33.50),
     seg('WDT_DONE', 24.50, 33.50, 24.50, 35.05),
     seg('WDT_DONE', 24.50, 35.05, 23.10, 35.05),
