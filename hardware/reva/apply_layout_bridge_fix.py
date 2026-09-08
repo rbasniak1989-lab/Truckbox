@@ -10,7 +10,7 @@ net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re
 # 2) route CAN_MODE to U1, R20 and both control pins on U3/U4;
 # 3) remove legacy GND stitching vias on the y=30 CAN_MODE path;
 # 4) rebuild SPI_CLK with an immediate layer change to bypass C15/R13/C19;
-# 5) extend SPI_CLK/SPI_MOSI from FRAM to microSD using separated B.Cu lanes.
+# 5) extend SPI_CLK/SPI_MOSI from FRAM to microSD using separated lanes.
 rebuild={'CAN2_RX','CAN_MODE','SPI_CLK'}
 ids={net_id[n] for n in rebuild}
 legacy_stitch={(62.0,30.0),(76.0,30.0)}
@@ -105,15 +105,18 @@ r += [
     seg('SPI_CLK',35.2,36.135,33.7,36.135,.22,'F.Cu'),
 ]
 
-# SPI_CLK FRAM -> microSD pad5. Escape right first while still above both MOSI
-# paths, then drop to a lower B.Cu corridor and rise at the microSD target x.
+# SPI_CLK FRAM -> microSD pad5. Use a short F.Cu escape from the FRAM-side via
+# to get past both MOSI B.Cu approaches, then travel below them on B.Cu. Near
+# the microSD, return to F.Cu below the 3V3_SD B.Cu fanout and enter pad5 from
+# the bottom; this avoids the 3V3_SD diagonal entirely.
 r += [
-    seg('SPI_CLK',35.2,36.135,38.5,36.135,.22,'B.Cu'),
+    seg('SPI_CLK',35.2,36.135,38.5,36.135,.22,'F.Cu'),
+    via('SPI_CLK',38.5,36.135),
     seg('SPI_CLK',38.5,36.135,38.5,40.0,.22,'B.Cu'),
     seg('SPI_CLK',38.5,40.0,47.295,40.0,.22,'B.Cu'),
-    seg('SPI_CLK',47.295,40.0,47.295,32.5,.22,'B.Cu'),
-    via('SPI_CLK',47.295,32.5),
-    seg('SPI_CLK',47.295,32.5,47.295,36.55,.22,'F.Cu'),
+    seg('SPI_CLK',47.295,40.0,47.295,37.8,.22,'B.Cu'),
+    via('SPI_CLK',47.295,37.8),
+    seg('SPI_CLK',47.295,37.8,47.295,36.55,.22,'F.Cu'),
 ]
 
 # SPI_MOSI FRAM -> microSD pad3. Its existing via is at (36.2,37.405); use a
