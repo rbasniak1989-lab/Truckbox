@@ -85,6 +85,12 @@ jobs:
           lines += [f"{k}={v}" for k,v in c.most_common()]
           Path('hardware/reva/build/drc_summary.txt').write_text('\n'.join(lines)+'\n')
           print('\n'.join(lines))
+          blocks=re.split(r'(?=^\[[^\]]+\]:)', text, flags=re.M)
+          for block in blocks:
+              m=re.match(r'^\[([^\]]+)\]:', block)
+              if m and m.group(1) not in ('lib_footprint_issues','unconnected_items'):
+                  print('--- DRC DETAIL ---')
+                  print('\n'.join(block.strip().splitlines()[:14]))
           PY
 
       - name: Export fabrication candidate
