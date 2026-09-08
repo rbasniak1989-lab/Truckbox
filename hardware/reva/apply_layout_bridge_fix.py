@@ -9,7 +9,8 @@ net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re
 # 1) rebuild CAN2_RX with its clean F.Cu bridge;
 # 2) route CAN_MODE to U1, R20 and both control pins on U3/U4;
 # 3) remove legacy GND stitching vias on the y=30 CAN_MODE path;
-# 4) rebuild SPI_CLK with an immediate layer change to bypass C15/R13/C19.
+# 4) rebuild SPI_CLK with an immediate layer change to bypass C15/R13/C19;
+# 5) extend SPI_CLK/SPI_MOSI from FRAM to microSD using separated B.Cu lanes.
 rebuild={'CAN2_RX','CAN_MODE','SPI_CLK'}
 ids={net_id[n] for n in rebuild}
 legacy_stitch={(62.0,30.0),(76.0,30.0)}
@@ -89,9 +90,7 @@ for y in (40.595,44.405,46.595,50.405):
     ]
 r += [seg('CAN_MODE',78.0,40.595,78.0,50.405,.28,'B.Cu')]
 
-# SPI_CLK final escape. Stay on B.Cu through x=4.5 at y=43 so the track passes
-# underneath the MOSI vertical at x=3.5. Then return to F.Cu before the CAN
-# diagnostic B.Cu trunks at x=7.5 and x=11.
+# SPI_CLK: edge corridor around Core, then FRAM pad6.
 r += [
     seg('SPI_CLK',9.25,14.29,7.7,14.29,.22),
     via('SPI_CLK',7.7,14.29),
@@ -106,8 +105,26 @@ r += [
     seg('SPI_CLK',35.2,36.135,33.7,36.135,.22,'F.Cu'),
 ]
 
+# SPI_CLK FRAM -> microSD pad5. Branch from the existing FRAM-side via, travel
+# above the connector on B.Cu, then descend straight into the target pad.
+r += [
+    seg('SPI_CLK',35.2,36.135,39.0,32.5,.22,'B.Cu'),
+    seg('SPI_CLK',39.0,32.5,47.295,32.5,.22,'B.Cu'),
+    via('SPI_CLK',47.295,32.5),
+    seg('SPI_CLK',47.295,32.5,47.295,36.55,.22,'F.Cu'),
+]
+
+# SPI_MOSI FRAM -> microSD pad3. Its existing via is at (36.2,37.405); use a
+# separate B.Cu lane at y=33.6 so CLK and MOSI never intersect.
+r += [
+    seg('SPI_MOSI',36.2,37.405,40.0,33.6,.22,'B.Cu'),
+    seg('SPI_MOSI',40.0,33.6,45.095,33.6,.22,'B.Cu'),
+    via('SPI_MOSI',45.095,33.6),
+    seg('SPI_MOSI',45.095,33.6,45.095,36.55,.22,'F.Cu'),
+]
+
 pos=s.rfind('\n)')
 if pos<0: raise RuntimeError('final PCB paren not found')
 s=s[:pos]+'\n'+'\n'.join(r)+s[pos:]
 P.write_text(s,encoding='utf-8')
-print(f'Applied final CAN + SPI_CLK post-pass to {P}')
+print(f'Applied final CAN + SPI storage post-pass to {P}')
