@@ -16,28 +16,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install KiCad CLI
+      - name: Install KiCad 9 CLI
         run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
           sudo apt-get update
           sudo apt-get install -y kicad
           kicad-cli version
+          kicad-cli pcb drc --help | head -40
 
       - name: Generate board
         run: |
           python3 hardware/reva/generate_board.py
+          python3 hardware/reva/apply_layout_fixes.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
-      - name: Run PCB DRC
-        continue-on-error: true
+      - name: Run real PCB DRC
         run: |
           mkdir -p hardware/reva/build
           kicad-cli pcb drc \
+            --severity-all \
+            --refill-zones \
             --output hardware/reva/build/drc.rpt \
             hardware/reva/TruckBox_RevA.kicad_pcb
-          cat hardware/reva/build/drc.rpt || true
+          cat hardware/reva/build/drc.rpt
 
       - name: Export fabrication candidate
-        continue-on-error: true
         run: |
           mkdir -p hardware/reva/build/gerbers
           kicad-cli pcb export gerbers \
@@ -50,6 +55,10 @@ jobs:
             --format csv --units mm --side both \
             --output hardware/reva/build/positions.csv \
             hardware/reva/TruckBox_RevA.kicad_pcb
+          kicad-cli pcb export svg \
+            --layers F.Cu,F.Silkscreen,Edge.Cuts \
+            --output hardware/reva/build/top.svg \
+            hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Upload PCB CI artifact
         uses: actions/upload-artifact@v4
@@ -58,4 +67,4 @@ jobs:
           path: |
             hardware/reva/TruckBox_RevA.kicad_pcb
             hardware/reva/build/**
-          if-no-files-found: warn
+          if-no-files-found: error
