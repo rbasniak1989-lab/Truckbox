@@ -57,6 +57,7 @@ jobs:
           python3 hardware/reva/apply_layout_buck_fb.py
           python3 hardware/reva/apply_layout_l1_fb_clearance.py
           python3 hardware/reva/apply_layout_buck_analog_escape.py
+          python3 hardware/reva/apply_layout_pwrgd_tp.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
