@@ -48,6 +48,7 @@ jobs:
           python3 hardware/reva/apply_layout_sd_cs.py
           python3 hardware/reva/apply_layout_link_power.py
           python3 hardware/reva/apply_layout_acc_base.py
+          python3 hardware/reva/apply_layout_acc_raw.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
