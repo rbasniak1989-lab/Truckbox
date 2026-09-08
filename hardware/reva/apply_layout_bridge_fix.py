@@ -10,8 +10,9 @@ net_id={name:int(i) for i,name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',s,re
 # 2) route CAN_MODE to U1, R20 and both control pins on U3/U4;
 # 3) remove legacy GND stitching vias on the y=30 CAN_MODE path;
 # 4) rebuild SPI_CLK with an immediate layer change to bypass C15/R13/C19;
-# 5) extend SPI_CLK/SPI_MOSI from FRAM to microSD using separated lanes.
-rebuild={'CAN2_RX','CAN_MODE','SPI_CLK'}
+# 5) extend SPI_CLK/SPI_MOSI from FRAM to microSD using separated lanes;
+# 6) route SPI_MISO Core -> FRAM -> microSD in a separate lower corridor.
+rebuild={'CAN2_RX','CAN_MODE','SPI_CLK','SPI_MISO'}
 ids={net_id[n] for n in rebuild}
 legacy_stitch={(62.0,30.0),(76.0,30.0)}
 new=[]
@@ -105,10 +106,7 @@ r += [
     seg('SPI_CLK',35.2,36.135,33.7,36.135,.22,'F.Cu'),
 ]
 
-# SPI_CLK FRAM -> microSD pad5. Use a short F.Cu escape from the FRAM-side via
-# to get past both MOSI B.Cu approaches, then travel below them on B.Cu. Near
-# the microSD, return to F.Cu below the 3V3_SD B.Cu fanout and enter pad5 from
-# the bottom; this avoids the 3V3_SD diagonal entirely.
+# SPI_CLK FRAM -> microSD pad5.
 r += [
     seg('SPI_CLK',35.2,36.135,38.5,36.135,.22,'F.Cu'),
     via('SPI_CLK',38.5,36.135),
@@ -119,13 +117,39 @@ r += [
     seg('SPI_CLK',47.295,37.8,47.295,36.55,.22,'F.Cu'),
 ]
 
-# SPI_MOSI FRAM -> microSD pad3. Its existing via is at (36.2,37.405); use a
-# separate B.Cu lane at y=33.6 so CLK and MOSI never intersect.
+# SPI_MOSI FRAM -> microSD pad3.
 r += [
     seg('SPI_MOSI',36.2,37.405,40.0,33.6,.22,'B.Cu'),
     seg('SPI_MOSI',40.0,33.6,45.095,33.6,.22,'B.Cu'),
     via('SPI_MOSI',45.095,33.6),
     seg('SPI_MOSI',45.095,33.6,45.095,36.55,.22,'F.Cu'),
+]
+
+# SPI_MISO Core -> FRAM pad2. Use the empty left B.Cu corridor, then a F.Cu
+# trunk at y=41 and a short B.Cu diagonal into the FRAM-side escape.
+r += [
+    seg('SPI_MISO',9.25,19.37,5.5,19.37,.22,'F.Cu'),
+    via('SPI_MISO',5.5,19.37),
+    seg('SPI_MISO',5.5,19.37,5.5,41.0,.22,'B.Cu'),
+    via('SPI_MISO',5.5,41.0),
+    seg('SPI_MISO',5.5,41.0,23.0,41.0,.22,'F.Cu'),
+    via('SPI_MISO',23.0,41.0),
+    seg('SPI_MISO',23.0,41.0,25.5,34.865,.22,'B.Cu'),
+    via('SPI_MISO',25.5,34.865),
+    seg('SPI_MISO',25.5,34.865,28.3,34.865,.22,'F.Cu'),
+]
+
+# SPI_MISO branch to microSD pad7. Continue the F.Cu trunk far enough right to
+# clear the old MOSI diagonal, then use a lower B.Cu lane and return to F.Cu
+# immediately below the microSD pad.
+r += [
+    seg('SPI_MISO',23.0,41.0,40.5,41.0,.22,'F.Cu'),
+    via('SPI_MISO',40.5,41.0),
+    seg('SPI_MISO',40.5,41.0,40.5,44.5,.22,'B.Cu'),
+    seg('SPI_MISO',40.5,44.5,49.495,44.5,.22,'B.Cu'),
+    seg('SPI_MISO',49.495,44.5,49.495,38.0,.22,'B.Cu'),
+    via('SPI_MISO',49.495,38.0),
+    seg('SPI_MISO',49.495,38.0,49.495,36.55,.22,'F.Cu'),
 ]
 
 pos=s.rfind('\n)')
