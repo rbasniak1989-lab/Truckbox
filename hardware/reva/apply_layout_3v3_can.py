@@ -12,17 +12,28 @@ def via(x, y, size=.70, drill=.35):
             f'(layers "F.Cu" "B.Cu") (net "3V3_MAIN"))')
 
 r = [
+    # CAN1 TXD pull-up R3
     seg(64.50, 39.00, 63.20, 39.00),
     via(63.20, 39.00),
-    seg(66.00, 41.00, 66.20, 42.00, .32),
-    via(66.20, 42.00),
+
+    # CAN1 decoupling C11: move plane entry away from CAN2_RX via.
+    seg(66.00, 41.00, 66.00, 42.20, .32),
+    seg(66.00, 42.20, 66.70, 42.20, .32),
+    via(66.70, 42.20),
+
+    # U3 VCC
     seg(69.30, 43.135, 68.00, 43.135, .32),
     via(68.00, 43.135),
+
+    # CAN2 R4 + C12 share the same 3V3 surface link. Enter the internal plane
+    # sideways at y=52 instead of below C12, keeping clear of buck input C1.
     seg(63.00, 51.00, 63.00, 53.00, .28),
-    seg(63.00, 53.00, 63.00, 54.20, .32),
-    via(63.00, 54.20),
-    seg(69.30, 49.135, 67.80, 49.135, .32),
-    via(67.80, 49.135),
+    seg(63.00, 52.00, 62.80, 52.00, .32),
+    via(62.80, 52.00),
+
+    # U4 VCC: shift plane-entry via upward/right to clear C2 GND pad.
+    seg(69.30, 49.135, 68.00, 48.90, .32),
+    via(68.00, 48.90),
 ]
 
 pos = s.rfind('\n)')
