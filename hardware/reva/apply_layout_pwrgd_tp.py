@@ -22,16 +22,16 @@ def via(x,y,size=.60,drill=.30):
             f'(layers "F.Cu" "B.Cu") (net "PWRGD_TP"))')
 
 r=[
-    # U6 pin6=(55.85,57.00). Keep a short local F.Cu escape and change layer
-    # at (54.6,56.1). This point is >0.6 mm center-distance from the COMP B.Cu
-    # trace and remains well clear of FB and the shifted L1 SW pad.
+    # U6 pin6=(55.85,57.00). Local escape with a 0.05-mm rightward nudge
+    # relative to the previous pass. This clears SW_NODE while retaining
+    # comfortable clearance to COMP and FB.
     seg(55.85,57.00,55.20,57.00,.20),
-    seg(55.20,57.00,54.60,56.10,.20),
-    via(54.60,56.10),
+    seg(55.20,57.00,54.65,56.10,.20),
+    via(54.65,56.10),
 
-    # Reuse the service corridor that was already clean in the earlier pass.
-    seg(54.60,56.10,54.60,53.00,.20,'B.Cu'),
-    seg(54.60,53.00,46.00,53.00,.20,'B.Cu'),
+    # Reuse the service corridor already validated downstream.
+    seg(54.65,56.10,54.65,53.00,.20,'B.Cu'),
+    seg(54.65,53.00,46.00,53.00,.20,'B.Cu'),
     seg(46.00,53.00,46.00,57.50,.20,'B.Cu'),
     seg(46.00,57.50,34.00,59.50,.20,'B.Cu'),
     seg(34.00,59.50,23.00,59.50,.20,'B.Cu'),
@@ -43,4 +43,4 @@ pos=s.rfind('\n)')
 if pos<0: raise RuntimeError('final PCB paren not found')
 s=s[:pos]+'\n'+'\n'.join(r)+s[pos:]
 P.write_text(s,encoding='utf-8')
-print(f'Applied local COMP/L1-clear PWRGD_TP routing pass to {P}')
+print(f'Applied final-nudge PWRGD_TP routing pass to {P}')
