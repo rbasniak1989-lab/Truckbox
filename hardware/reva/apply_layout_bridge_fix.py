@@ -105,13 +105,13 @@ r += [
     seg('SPI_CLK',35.2,36.135,33.7,36.135,.22,'F.Cu'),
 ]
 
-# SPI_CLK FRAM -> microSD pad5. Branch from the existing FRAM-side via, move
-# horizontally first to keep clearance from the FRAM_HOLD via at (35.5,35.0),
-# then turn upward at x=39 before continuing above the connector.
+# SPI_CLK FRAM -> microSD pad5. Drop below the MOSI diagonal on B.Cu, cross at
+# y=39, then rise only at x=42 where MOSI has already ended.
 r += [
-    seg('SPI_CLK',35.2,36.135,39.0,36.135,.22,'B.Cu'),
-    seg('SPI_CLK',39.0,36.135,39.0,32.5,.22,'B.Cu'),
-    seg('SPI_CLK',39.0,32.5,47.295,32.5,.22,'B.Cu'),
+    seg('SPI_CLK',35.2,36.135,35.2,39.0,.22,'B.Cu'),
+    seg('SPI_CLK',35.2,39.0,42.0,39.0,.22,'B.Cu'),
+    seg('SPI_CLK',42.0,39.0,42.0,32.5,.22,'B.Cu'),
+    seg('SPI_CLK',42.0,32.5,47.295,32.5,.22,'B.Cu'),
     via('SPI_CLK',47.295,32.5),
     seg('SPI_CLK',47.295,32.5,47.295,36.55,.22,'F.Cu'),
 ]
