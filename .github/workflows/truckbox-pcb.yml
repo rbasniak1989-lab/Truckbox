@@ -1,0 +1,61 @@
+name: TruckBox PCB CI
+
+on:
+  push:
+    branches: [hardware-reva-pcb]
+    paths:
+      - 'hardware/reva/**'
+      - '.github/workflows/truckbox-pcb.yml'
+  workflow_dispatch:
+
+jobs:
+  kicad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install KiCad CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y kicad
+          kicad-cli version
+
+      - name: Generate board
+        run: |
+          python3 hardware/reva/generate_board.py
+          test -s hardware/reva/TruckBox_RevA.kicad_pcb
+
+      - name: Run PCB DRC
+        continue-on-error: true
+        run: |
+          mkdir -p hardware/reva/build
+          kicad-cli pcb drc \
+            --output hardware/reva/build/drc.rpt \
+            hardware/reva/TruckBox_RevA.kicad_pcb
+          cat hardware/reva/build/drc.rpt || true
+
+      - name: Export fabrication candidate
+        continue-on-error: true
+        run: |
+          mkdir -p hardware/reva/build/gerbers
+          kicad-cli pcb export gerbers \
+            --output hardware/reva/build/gerbers/ \
+            hardware/reva/TruckBox_RevA.kicad_pcb
+          kicad-cli pcb export drill \
+            --output hardware/reva/build/gerbers/ \
+            hardware/reva/TruckBox_RevA.kicad_pcb
+          kicad-cli pcb export pos \
+            --format csv --units mm --side both \
+            --output hardware/reva/build/positions.csv \
+            hardware/reva/TruckBox_RevA.kicad_pcb
+
+      - name: Upload PCB CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: truckbox-reva-pcb-ci
+          path: |
+            hardware/reva/TruckBox_RevA.kicad_pcb
+            hardware/reva/build/**
+          if-no-files-found: warn
