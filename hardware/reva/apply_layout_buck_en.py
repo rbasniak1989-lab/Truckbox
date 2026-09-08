@@ -29,15 +29,15 @@ def via(net, x, y, size=.70, drill=.35):
 
 r = [
     # BUCK_SS: U6 pin4 (60.15,57.50) -> C5.1 (61.50,63.00).
-    # Move the first via from y=57.5 to (61.0,56.2), leaving room for EN.
-    seg('BUCK_SS', 60.15, 57.50, 60.90, 57.50, .20),
-    seg('BUCK_SS', 60.90, 57.50, 61.00, 57.20, .20),
-    seg('BUCK_SS', 61.00, 57.20, 61.00, 56.20, .20),
-    via('BUCK_SS', 61.00, 56.20),
-    seg('BUCK_SS', 61.00, 56.20, 61.00, 61.50, .22, 'B.Cu'),
-    via('BUCK_SS', 61.00, 61.50),
-    seg('BUCK_SS', 61.00, 61.50, 61.00, 63.00, .22),
-    seg('BUCK_SS', 61.00, 63.00, 61.50, 63.00, .22),
+    # Straight lateral escape, then a 0.60/0.30 via at x=61.15. This clears
+    # U6 pin5/BUCK_RT while still leaving room for the BUCK_EN x=61.8 channel.
+    seg('BUCK_SS', 60.15, 57.50, 61.15, 57.50, .20),
+    seg('BUCK_SS', 61.15, 57.50, 61.15, 56.20, .20),
+    via('BUCK_SS', 61.15, 56.20, .60, .30),
+    seg('BUCK_SS', 61.15, 56.20, 61.15, 61.50, .22, 'B.Cu'),
+    via('BUCK_SS', 61.15, 61.50),
+    seg('BUCK_SS', 61.15, 61.50, 61.15, 63.00, .22),
+    seg('BUCK_SS', 61.15, 63.00, 61.50, 63.00, .22),
 
     # BUCK_EN divider: R31.2=(55.5,47), R32.1=(57.5,47).
     seg('BUCK_EN', 55.50, 47.00, 57.50, 47.00, .22),
