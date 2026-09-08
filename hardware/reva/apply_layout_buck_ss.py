@@ -7,10 +7,9 @@ net_id = {name: int(i) for i, name in re.findall(r'^  \(net (\d+) "([^"]+)"\)$',
 
 # BUCK_SS endpoint geometry:
 # U6 pin 4 = (60.15,57.50), C5 pad 1 = (61.50,63.00).
-# The original VIN_PROT dogleg blocks the manufacturable escape from the
-# 0.5-mm-pitch SS pin. Move C1 only +1.0 mm in X and approach the VIN pin
-# on the left side of C1's GND pad; this preserves a compact input loop while
-# opening a real routing corridor for BUCK_SS.
+# The cleanest breakout is to keep C1 in its original courtyard and flip its
+# orientation so the VIN pad faces U6. This shortens the high-current VIN loop,
+# removes the original x=61.4 dogleg that blocked SS, and avoids courtyard moves.
 
 def blocks(text, token='  (footprint '):
     out=[]; i=0
@@ -48,8 +47,9 @@ def edit_ref(text,ref,fn):
 def set_at(blk,x,y,rot=0):
     return re.sub(r'\n    \(at [^\n]+\)',f'\n    (at {x:.3f} {y:.3f} {rot})',blk,count=1)
 
-# C1 remains rotated 90 degrees; move center from (63.5,57) to (64.5,57).
-s = edit_ref(s,'C1',lambda b:set_at(b,64.5,57.0,90))
+# Keep C1 at the original center, flip it so VIN pad 1 is at (63.5,58.475)
+# and GND pad 2 is at (63.5,55.525).
+s = edit_ref(s,'C1',lambda b:set_at(b,63.5,57.0,90))
 
 # Remove the old C3->C1 and C1->U6 VIN approach.
 old_vin = [
@@ -85,13 +85,11 @@ def via(net, x, y, size=.70, drill=.35):
             f'(drill {drill:.3f}) (layers "F.Cu" "B.Cu") (net {net_id[net]}))')
 
 r = [
-    # Revised C3 -> C1 -> U6 VIN path. C1 pad1 is now (64.5,55.525),
-    # C1 pad2/GND is (64.5,58.475). x=62.8 stays 0.35 mm left of the
-    # GND pad copper edge, giving >0.20 mm copper clearance with 0.20-mm trace.
-    seg('VIN_PROT', 66.50, 56.40, 64.50, 55.525, .45),
-    seg('VIN_PROT', 64.50, 55.525, 62.80, 55.525, .28),
-    seg('VIN_PROT', 62.80, 55.525, 62.80, 58.50, .20),
-    seg('VIN_PROT', 62.80, 58.50, 60.15, 58.50, .20),
+    # C3 -> flipped C1 VIN pad, then a short direct run into U6 VIN/pin2.
+    # C1 pad 1 copper spans roughly x=62.15..64.85 at y=58.475, so the
+    # 0.20-mm segment exits from its left edge and stays clear of BUCK_SS.
+    seg('VIN_PROT', 66.50, 56.40, 63.50, 58.475, .35),
+    seg('VIN_PROT', 63.50, 58.475, 60.15, 58.50, .20),
 
     # Soft-start: escape laterally beyond adjacent TPS pads, then use B.Cu.
     # x=61.30 keeps the vias clear of both adjacent U6 pins and BUCK_RT x=62.
@@ -108,4 +106,4 @@ if pos < 0:
     raise RuntimeError('final PCB paren not found')
 s = s[:pos] + '\n' + '\n'.join(r) + s[pos:]
 P.write_text(s, encoding='utf-8')
-print(f'Applied BUCK_SS routing + C1/VIN clearance pass to {P}')
+print(f'Applied BUCK_SS routing + flipped C1 VIN pass to {P}')
