@@ -16,15 +16,18 @@ r = [
     # inside the pad-9 corridor so it does not approach COMP (pad 8) or SW.
     seg('GND', 'F.Cu', 55.85, 58.50, 57.25, 58.50, .20),
 
-    # R31 VIN_PROT branch. y=45.2 gives the required clearance from the
-    # CAN1_RX via at (66.8,44.405) while remaining clear of BUCK_EN at y=45.8.
-    # Drop outside the CAN/buck cluster at x=70 and make only a short F.Cu hop
-    # into the existing VIN_PROT endpoint.
+    # R31 VIN_PROT branch. Use a two-height B.Cu corridor: y=45.0 through the
+    # BUCK_EN area, then step at x=63 to y=45.3 before approaching CAN1_RX.
+    # This gives comfortable clearance from both vias instead of threading a
+    # single horizontal line tightly between them. Drop outside the cluster at
+    # x=70 and make only a short F.Cu hop into existing VIN_PROT.
     seg('VIN_PROT', 'F.Cu', 54.50, 47.00, 53.30, 47.00, .25),
     via('VIN_PROT', 53.30, 47.00),
-    seg('VIN_PROT', 'B.Cu', 53.30, 47.00, 53.30, 45.20, .25),
-    seg('VIN_PROT', 'B.Cu', 53.30, 45.20, 70.00, 45.20, .25),
-    seg('VIN_PROT', 'B.Cu', 70.00, 45.20, 70.00, 53.50, .25),
+    seg('VIN_PROT', 'B.Cu', 53.30, 47.00, 53.30, 45.00, .25),
+    seg('VIN_PROT', 'B.Cu', 53.30, 45.00, 63.00, 45.00, .25),
+    seg('VIN_PROT', 'B.Cu', 63.00, 45.00, 63.00, 45.30, .25),
+    seg('VIN_PROT', 'B.Cu', 63.00, 45.30, 70.00, 45.30, .25),
+    seg('VIN_PROT', 'B.Cu', 70.00, 45.30, 70.00, 53.50, .25),
     via('VIN_PROT', 70.00, 53.50),
     seg('VIN_PROT', 'F.Cu', 70.00, 53.50, 69.50, 53.975, .25),
 
