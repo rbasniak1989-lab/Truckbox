@@ -14,9 +14,10 @@ def via(x, y, size=.70, drill=.35):
             f'(layers "F.Cu" "B.Cu") (net "3V3_MAIN"))')
 
 r = [
-    # TP1: local plane entry above the lower-edge CAN2_RX B.Cu corridor.
-    seg(8.00, 61.00, 8.00, 59.80, .32),
-    via(8.00, 59.80),
+    # TP1: escape east so the plane-entry via stays well clear of the
+    # CAN2_RX B.Cu vertical at x=7.5 and its lower horizontal corridor.
+    seg(8.00, 61.00, 9.50, 61.00, .32),
+    via(9.50, 61.00),
 
     # Q4 source (watchdog 3V3): escape west, away from WDT_3V3 and FRAM_CS.
     seg(20.95, 30.55, 19.55, 30.55, .32),
