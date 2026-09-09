@@ -16,16 +16,17 @@ r = [
     # inside the pad-9 corridor so it does not approach COMP (pad 8) or SW.
     seg('GND', 'F.Cu', 55.85, 58.50, 57.25, 58.50, .20),
 
-    # R31 VIN_PROT branch. Drop to B.Cu west of the resistor, pass under the
-    # analog area through the clear y=54 corridor, then return beside the
-    # existing VIN_PROT branch at x=67.5.
+    # R31 VIN_PROT branch. The first attempt through y=54 crossed COMP and
+    # approached the BUCK_EN via. Route above those two on B.Cu instead:
+    # y=45 stays below the CAN1_RX endpoint and above BUCK_EN, then x=63 drops
+    # between BUCK_EN (x=61.8) and CAN2_RX (x=64.5). Return to F.Cu at y=54.
     seg('VIN_PROT', 'F.Cu', 54.50, 47.00, 53.30, 47.00, .25),
     via('VIN_PROT', 53.30, 47.00),
-    seg('VIN_PROT', 'B.Cu', 53.30, 47.00, 55.20, 47.00, .25),
-    seg('VIN_PROT', 'B.Cu', 55.20, 47.00, 55.20, 54.00, .25),
-    seg('VIN_PROT', 'B.Cu', 55.20, 54.00, 66.00, 54.00, .25),
-    via('VIN_PROT', 66.00, 54.00),
-    seg('VIN_PROT', 'F.Cu', 66.00, 54.00, 67.50, 53.975, .25),
+    seg('VIN_PROT', 'B.Cu', 53.30, 47.00, 53.30, 45.00, .25),
+    seg('VIN_PROT', 'B.Cu', 53.30, 45.00, 63.00, 45.00, .25),
+    seg('VIN_PROT', 'B.Cu', 63.00, 45.00, 63.00, 54.00, .25),
+    via('VIN_PROT', 63.00, 54.00),
+    seg('VIN_PROT', 'F.Cu', 63.00, 54.00, 67.50, 53.975, .25),
 
     # Three isolated F.Cu GND islands identified from the filled-zone
     # polygons in run 110. Stitch each directly to the continuous inner GND
