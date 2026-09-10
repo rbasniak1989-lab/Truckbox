@@ -71,6 +71,7 @@ jobs:
           python3 hardware/reva/apply_layout_gnss_uart_pps.py
           python3 hardware/reva/apply_layout_usb_service_v2.py
           python3 hardware/reva/apply_layout_usb_service_v3.py
+          python3 hardware/reva/apply_layout_usb_service_v4.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
