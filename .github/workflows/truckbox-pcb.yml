@@ -69,6 +69,7 @@ jobs:
           python3 hardware/reva/apply_layout_acc_gnd_stitch.py
           python3 hardware/reva/apply_layout_uart_core_link.py
           python3 hardware/reva/apply_layout_gnss_uart_pps.py
+          sed -i 's/(property "Reference" "{ref}"/(fp_text reference "{ref}"/g' hardware/reva/apply_layout_usb_service_restore.py
           python3 hardware/reva/apply_layout_usb_service_restore.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
