@@ -100,10 +100,10 @@ def via(net,x,y,size=.55,drill=.30):
             f'(layers "F.Cu" "B.Cu") (net "{net}"))')
 
 
-# 1) LINK_BOOT is rebuilt from scratch. Run-141 proved that routing upward on
-# F.Cu from U2 pin 15 clips pins 16/17. Exit horizontally to the right instead,
-# change layer just outside U2's courtyard/body, run on B.Cu above J3, then
-# re-enter beside R30. No via is placed under the ESP32 module.
+# 1) LINK_BOOT is rebuilt from scratch. Exit U2 pin 15 horizontally to the
+# right, change layer just outside the U2 courtyard/body, traverse the free
+# POWER_SIGNALS/In2.Cu corridor (L3 explicitly permits slow signals), then
+# re-enter above J3 beside R30. This avoids the B.Cu 3V3_LINK column entirely.
 s=remove_blocks(s,'segment',lambda b:block_net(b)=='LINK_BOOT')
 s=remove_blocks(s,'via',lambda b:block_net(b)=='LINK_BOOT')
 
@@ -121,13 +121,13 @@ s=remove_blocks(
 s=shrink_u2_right_courtyard(s,.35)
 
 r=[
-    # LINK_BOOT: straight escape from U2 pin 15. Via at x=91.65 is outside
-    # the shrunken U2 courtyard (right edge x=91.45) and has >0.2-mm copper
-    # and >0.25-mm hole clearance to J3's nearest shell stake.
+    # LINK_BOOT: straight F.Cu escape, then a short L3 slow-signal diagonal.
+    # Via x=91.65 is outside the shrunken U2 courtyard (right edge x=91.45)
+    # and clears J3's nearest shell stake. There are no other In2 tracks in
+    # this local corridor; zone refill creates the required 3V3 plane clearance.
     seg('LINK_BOOT','F.Cu',90.75,24.45,91.65,24.45,.20),
     via('LINK_BOOT',91.65,24.45),
-    seg('LINK_BOOT','B.Cu',91.65,24.45,91.65,20.50,.20),
-    seg('LINK_BOOT','B.Cu',91.65,20.50,95.20,20.50,.20),
+    seg('LINK_BOOT','In2.Cu',91.65,24.45,95.20,20.50,.20),
     via('LINK_BOOT',95.20,20.50),
     seg('LINK_BOOT','F.Cu',95.20,20.50,94.50,20.50,.20),
     # R30 pad 2 also feeds the relocated BOOT switch pad 1 at (94.5,16.5).
