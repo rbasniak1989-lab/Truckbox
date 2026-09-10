@@ -95,14 +95,20 @@ def seg(net,layer,x1,y1,x2,y2,w=.20):
             f'(width {w:.3f}) (layer "{layer}") (net "{net}"))')
 
 
-# 1) LINK_BOOT: run-138 showed both vias were the source of ten separate
-# clearance/hole-clearance violations. The pad-to-R30 connection has a clean
-# all-F.Cu corridor above J3, so remove the whole old net and use no vias.
+def via(net,x,y,size=.55,drill=.30):
+    return (f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) '
+            f'(layers "F.Cu" "B.Cu") (net "{net}"))')
+
+
+# 1) LINK_BOOT is rebuilt from scratch. Run-141 proved that routing upward on
+# F.Cu from U2 pin 15 clips pins 16/17. Exit horizontally to the right instead,
+# change layer just outside U2's courtyard/body, run on B.Cu above J3, then
+# re-enter beside R30. No via is placed under the ESP32 module.
 s=remove_blocks(s,'segment',lambda b:block_net(b)=='LINK_BOOT')
 s=remove_blocks(s,'via',lambda b:block_net(b)=='LINK_BOOT')
 
 # 2) CAN_MODE: only replace the B.Cu x=66.5..78, y=30 crossbar. D- occupies
-# x=72.8 on B.Cu from y=24..32.2; the new y=33 dogleg clears it by >0.38 mm.
+# x=72.8 on B.Cu from y=24..32.2; the y=33 dogleg clears it safely.
 s=remove_blocks(
     s,'segment',
     lambda b: block_net(b)=='CAN_MODE' and block_layer(b)=='B.Cu'
@@ -115,12 +121,17 @@ s=remove_blocks(
 s=shrink_u2_right_courtyard(s,.35)
 
 r=[
-    # LINK_BOOT from U2 pin 15 to R30 pad 2. First move up/right away from U2
-    # pin 16 (GNSS_PPS), then traverse above the USB-C shell stake.
-    seg('LINK_BOOT','F.Cu',90.75,24.45,91.50,23.50,.20),
-    seg('LINK_BOOT','F.Cu',91.50,23.50,91.50,22.00,.20),
-    seg('LINK_BOOT','F.Cu',91.50,22.00,94.50,22.00,.20),
-    seg('LINK_BOOT','F.Cu',94.50,22.00,94.50,20.50,.20),
+    # LINK_BOOT: straight escape from U2 pin 15. Via at x=91.65 is outside
+    # the shrunken U2 courtyard (right edge x=91.45) and has >0.2-mm copper
+    # and >0.25-mm hole clearance to J3's nearest shell stake.
+    seg('LINK_BOOT','F.Cu',90.75,24.45,91.65,24.45,.20),
+    via('LINK_BOOT',91.65,24.45),
+    seg('LINK_BOOT','B.Cu',91.65,24.45,91.65,20.50,.20),
+    seg('LINK_BOOT','B.Cu',91.65,20.50,95.20,20.50,.20),
+    via('LINK_BOOT',95.20,20.50),
+    seg('LINK_BOOT','F.Cu',95.20,20.50,94.50,20.50,.20),
+    # R30 pad 2 also feeds the relocated BOOT switch pad 1 at (94.5,16.5).
+    seg('LINK_BOOT','F.Cu',94.50,20.50,94.50,16.50,.20),
 
     # CAN_MODE B.Cu dogleg below the D- vertical bridge.
     seg('CAN_MODE','B.Cu',66.50,30.00,66.50,33.00,.28),
