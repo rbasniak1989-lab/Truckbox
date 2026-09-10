@@ -125,11 +125,11 @@ r += [
     seg('GND','F.Cu',88.207,30.446,87.500,29.750,.20),
     via('GND',87.500,29.750),
 
-    # CC1. Leave J3 pad 4 horizontally so the track never approaches adjacent
-    # NC pad 3, descend left of the USB fanout, then use a free L3 corridor.
-    seg('USB_CC1','F.Cu',92.645,29.850,91.800,29.850,.20),
-    seg('USB_CC1','F.Cu',91.800,29.850,91.800,33.500,.20),
-    seg('USB_CC1','F.Cu',91.800,33.500,91.200,33.500,.20),
+    # CC1. Leave J3 pad 4 horizontally and keep the vertical column at x=91.70,
+    # which provides >0.20 mm copper clearance to J3's adjacent long NC pad 2.
+    seg('USB_CC1','F.Cu',92.645,29.850,91.700,29.850,.20),
+    seg('USB_CC1','F.Cu',91.700,29.850,91.700,33.500,.20),
+    seg('USB_CC1','F.Cu',91.700,33.500,91.200,33.500,.20),
     via('USB_CC1',91.200,33.500),
     seg('USB_CC1','In2.Cu',91.200,33.500,91.200,37.000,.20),
     seg('USB_CC1','In2.Cu',91.200,37.000,81.500,37.000,.20),
@@ -143,7 +143,6 @@ r += [
     seg('USB_CC2','F.Cu',91.200,26.700,87.800,26.700,.20),
     via('USB_CC2',87.800,26.700),
     seg('USB_CC2','B.Cu',87.800,26.700,87.800,29.000,.20),
-    # Dogleg left around D6's GND via at (87.5,29.75).
     seg('USB_CC2','B.Cu',87.800,29.000,86.700,29.000,.20),
     seg('USB_CC2','B.Cu',86.700,29.000,86.700,34.900,.20),
     seg('USB_CC2','B.Cu',86.700,34.900,81.500,34.900,.20),
