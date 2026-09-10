@@ -65,17 +65,29 @@ def ref_marker_pos(text, ref):
     return min(hits) if hits else -1
 
 
-def shrink_u2_right_courtyard(text):
+def shrink_u2_right_courtyard(text, delta=.35):
+    """Reduce only U2's right F.CrtYd edge, independent of KiCad formatting."""
     m=ref_marker_pos(text,'U2')
     if m<0: raise RuntimeError('U2 not found')
     i=text.rfind('(footprint',0,m)
     j=balanced_block(text,i)
     b=text[i:j]
-    pat=(r'(\(fp_rect\s*\(start\s+-9\.8\s+-16\.05\)\s*'
-         r'\(end\s+)9\.8(\s+10\.55\).*?\(layer\s+"F\.CrtYd"\))')
-    b2,n=re.subn(pat,r'\g<1>9.45\g<2>',b,count=1,flags=re.S)
-    if n!=1: raise RuntimeError('U2 F.CrtYd rectangle not found')
-    return text[:i]+b2+text[j:]
+    pos=0
+    while True:
+        k=b.find('(fp_rect',pos)
+        if k<0: break
+        e=balanced_block(b,k)
+        blk=b[k:e]
+        if '(layer "F.CrtYd")' in blk:
+            mm=re.search(r'\(end\s+([-+0-9.]+)\s+([-+0-9.]+)\)',blk)
+            if not mm: raise RuntimeError('U2 F.CrtYd end not found')
+            old_x=float(mm.group(1)); y=mm.group(2); new_x=old_x-delta
+            repl=f'(end {new_x:.3f} {y})'
+            blk2=blk[:mm.start()]+repl+blk[mm.end():]
+            b2=b[:k]+blk2+b[e:]
+            return text[:i]+b2+text[j:]
+        pos=e
+    raise RuntimeError('U2 F.CrtYd rectangle not found')
 
 
 def seg(net,layer,x1,y1,x2,y2,w=.20):
@@ -90,7 +102,7 @@ s=remove_blocks(s,'segment',lambda b:block_net(b)=='LINK_BOOT')
 s=remove_blocks(s,'via',lambda b:block_net(b)=='LINK_BOOT')
 
 # 2) CAN_MODE: only replace the B.Cu x=66.5..78, y=30 crossbar. D- occupies
-# x=72.8 on B.Cu from y=24..32.2; the new y=33 dogleg clears it by >0.5 mm.
+# x=72.8 on B.Cu from y=24..32.2; the new y=33 dogleg clears it by >0.38 mm.
 s=remove_blocks(
     s,'segment',
     lambda b: block_net(b)=='CAN_MODE' and block_layer(b)=='B.Cu'
@@ -98,10 +110,9 @@ s=remove_blocks(
 )
 
 # 3) U2/J3: J3's connector datum is intentionally aligned to the 100-mm board
-# edge, so do not move J3. U2's existing right courtyard margin is 0.80 mm;
-# reducing only that side to 0.45 mm preserves a conservative assembly margin
-# while eliminating the 0.235-mm courtyard-only overlap. Copper/pads stay put.
-s=shrink_u2_right_courtyard(s)
+# edge, so do not move J3. Reduce only U2's right courtyard edge by 0.35 mm;
+# component copper/pads and physical placement remain unchanged.
+s=shrink_u2_right_courtyard(s,.35)
 
 r=[
     # LINK_BOOT from U2 pin 15 to R30 pad 2. First move up/right away from U2
