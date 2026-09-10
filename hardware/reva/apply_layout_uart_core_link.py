@@ -57,6 +57,12 @@ r = [
     seg('CORE_TO_LINK', 'In2.Cu', 94.50, 16.83, 92.00, 16.83),
     via('CORE_TO_LINK', 92.00, 16.83),
     seg('CORE_TO_LINK', 'F.Cu', 92.00, 16.83, 90.75, 16.83),
+
+    # The two long UART clearances split a narrow local 3V3_MAIN neck around
+    # R27/Q2 on In2.Cu. Preserve the intended plane connectivity explicitly
+    # on B.Cu between the two existing 3V3 vias. This short bridge has >0.7 mm
+    # copper clearance to the nearest foreign B.Cu feature.
+    seg('3V3_MAIN', 'B.Cu', 53.00, 30.00, 55.20, 31.90, .28),
 ]
 
 pos = s.rfind('\n)')
