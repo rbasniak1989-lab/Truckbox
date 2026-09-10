@@ -101,9 +101,9 @@ def via(net,x,y,size=.55,drill=.30):
 
 
 # 1) LINK_BOOT is rebuilt from scratch. Exit U2 pin 15 horizontally to the
-# right, change layer just outside the U2 courtyard/body, traverse the free
-# POWER_SIGNALS/In2.Cu corridor (L3 explicitly permits slow signals), then
-# re-enter above J3 beside R30. This avoids the B.Cu 3V3_LINK column entirely.
+# right, change layer just outside the U2 courtyard/body, traverse L3 as a
+# slow signal, then re-enter above J3 beside R30. The L3 dogleg goes below
+# J3's upper-left shell stake/guide hole and to the right of the 3V3_LINK via.
 s=remove_blocks(s,'segment',lambda b:block_net(b)=='LINK_BOOT')
 s=remove_blocks(s,'via',lambda b:block_net(b)=='LINK_BOOT')
 
@@ -121,13 +121,15 @@ s=remove_blocks(
 s=shrink_u2_right_courtyard(s,.35)
 
 r=[
-    # LINK_BOOT: straight F.Cu escape, then a short L3 slow-signal diagonal.
-    # Via x=91.65 is outside the shrunken U2 courtyard (right edge x=91.45)
-    # and clears J3's nearest shell stake. There are no other In2 tracks in
-    # this local corridor; zone refill creates the required 3V3 plane clearance.
+    # LINK_BOOT straight escape. Via x=91.65 is outside U2's shrunken
+    # courtyard. On L3 first go down to y=26.6 while staying left of the J3
+    # shell stake, pass below the J3 guide hole, then rise at x=95.2. This
+    # also stays clear of the 3V3_LINK through-via at (93.5,22.8).
     seg('LINK_BOOT','F.Cu',90.75,24.45,91.65,24.45,.20),
     via('LINK_BOOT',91.65,24.45),
-    seg('LINK_BOOT','In2.Cu',91.65,24.45,95.20,20.50,.20),
+    seg('LINK_BOOT','In2.Cu',91.65,24.45,91.65,26.60,.20),
+    seg('LINK_BOOT','In2.Cu',91.65,26.60,95.20,26.60,.20),
+    seg('LINK_BOOT','In2.Cu',95.20,26.60,95.20,20.50,.20),
     via('LINK_BOOT',95.20,20.50),
     seg('LINK_BOOT','F.Cu',95.20,20.50,94.50,20.50,.20),
     # R30 pad 2 also feeds the relocated BOOT switch pad 1 at (94.5,16.5).
