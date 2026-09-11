@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import runpy
 
 P = Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 s = P.read_text(encoding='utf-8')
@@ -193,3 +194,8 @@ if '430450818' not in j4:
 
 P.write_text(s, encoding='utf-8')
 print(f'Applied final J4 DRC cleanup to {P}')
+
+# The right-angle variant is the actual manufacturing choice. Keeping it as a
+# separate final pass makes the Run-159-derived cleanup auditable and lets CI
+# validate the final 430450806 geometry with no hidden manual edits.
+runpy.run_path(str(Path(__file__).with_name('apply_layout_j4_right_angle.py')), run_name='__main__')
