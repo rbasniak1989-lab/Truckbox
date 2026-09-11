@@ -12,8 +12,8 @@ s = P.read_text(encoding='utf-8')
 #   3) declare the standard solder-mask layers for fabrication export.
 #
 # J4 harness circuits after this pass (Molex circuit number -> signal):
-#   1 NC/RESERVE, 2 ACC, 3 GND, 4 CAN2_H,
-#   5 CAN1_H, 6 CAN1_L, 7 CAN2_L, 8 +24V.
+#   1 +24V, 2 CAN2_L, 3 CAN1_L, 4 CAN1_H,
+#   5 CAN2_H, 6 GND, 7 ACC, 8 NC/RESERVE.
 # The header is centered at (93.5,48) and rotated 90 deg so the 11.2 mm body
 # depth fits at the right board edge. D3/D4 move only 1.5 mm left to preserve
 # copper/courtyard clearance from J4.
@@ -72,7 +72,6 @@ def find_footprint(text, ref):
 
 def move_footprint(text, ref, x, y, rot=0):
     i, j, block = find_footprint(text, ref)
-    # The first (at ...) in a footprint is the footprint origin.
     nb, n = re.subn(
         r'\(at\s+[-+0-9.]+\s+[-+0-9.]+(?:\s+[-+0-9.]+)?\)',
         f'(at {x:.3f} {y:.3f} {rot})',
@@ -84,9 +83,6 @@ def move_footprint(text, ref, x, y, rot=0):
     return text[:i] + nb + text[j:]
 
 
-# Net table is present in both the hand-generated input and KiCad-normalized
-# board. Use it so the same patch is deterministic in CI and easy to replay on
-# a saved board during review.
 net_id = {name: int(idx) for idx, name in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"\)', s)}
 modern_net_syntax = re.search(r'\(segment\b.*?\(net\s+"[^"]+"\)', s, re.S) is not None
 if not modern_net_syntax:
@@ -103,9 +99,6 @@ def net_expr(name, for_pad=False):
     return f'(net {net_id[name]})'
 
 
-# --- J4: Molex Micro-Fit 3.0 430450818, vertical SMT, 2x4, 3.00 mm pitch ---
-# Signal-pad centers/sizes and the two metal hold-down pads follow the standard
-# KiCad/Molex 43045-0818 footprint. J4 is rotated 90 degrees on the board.
 def j4_pad(num, x, y, net=None, pin1=False):
     shape = 'rect'
     rr = ''
@@ -123,20 +116,18 @@ j4_lines = [
     '    (fp_text value "Molex 430450818" (at 0 7.17 90) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))',
     '    (fp_rect (start -8.075 -3.940) (end 8.075 4.830) (stroke (width 0.10) (type solid)) (fill none) (layer "F.Fab"))',
     '    (fp_line (start -5.25 -5.95) (end -3.75 -5.95) (stroke (width 0.20) (type solid)) (layer "F.SilkS"))',
-    # Standard KiCad 43045-0818 courtyard is added below after this list.
-    j4_pad(1,-4.5,-4.7,None,True),
-    j4_pad(2,-1.5,-4.7,'ACC_RAW'),
-    j4_pad(3, 1.5,-4.7,'GND'),
-    j4_pad(4, 4.5,-4.7,'CAN2_H'),
-    j4_pad(5,-4.5, 4.7,'CAN1_H'),
-    j4_pad(6,-1.5, 4.7,'CAN1_L'),
-    j4_pad(7, 1.5, 4.7,'CAN2_L'),
-    j4_pad(8, 4.5, 4.7,'BATT24_FUSED'),
+    j4_pad(1,-4.5,-4.7,'BATT24_FUSED',True),
+    j4_pad(2,-1.5,-4.7,'CAN2_L'),
+    j4_pad(3, 1.5,-4.7,'CAN1_L'),
+    j4_pad(4, 4.5,-4.7,'CAN1_H'),
+    j4_pad(5,-4.5, 4.7,'CAN2_H'),
+    j4_pad(6,-1.5, 4.7,'GND'),
+    j4_pad(7, 1.5, 4.7,'ACC_RAW'),
+    j4_pad(8, 4.5, 4.7,None),
     '    (pad "MP" smd rect (at -8.385 0) (size 3.430 1.650) (layers "F.Cu" "F.Paste" "F.Mask"))',
     '    (pad "MP" smd rect (at 8.385 0) (size 3.430 1.650) (layers "F.Cu" "F.Paste" "F.Mask"))',
     '  )',
 ]
-# Exact non-rectangular courtyard from the standard KiCad/Molex 43045-0818 footprint.
 crtyd = [
     (-10.6,-1.33,-10.6,1.33), (-10.6,1.33,-8.58,1.33),
     (-8.58,-4.44,-8.58,-1.33), (-8.58,-1.33,-10.6,-1.33),
@@ -154,19 +145,17 @@ crtyd_lines = [
     f'    (fp_line (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))'
     for x1,y1,x2,y2 in crtyd
 ]
-# Insert courtyard immediately before the two MP pads / closing parenthesis; ordering is not electrically significant.
 j4_lines[-1:-1] = crtyd_lines
 j4 = '\n'.join(j4_lines)
 i, j, _old_j4 = find_footprint(s, 'J4')
 s = s[:i] + j4 + s[j:]
 
-# Move only the two CAN TVS footprints 1.5 mm left. Their orientation and pad/net
-# assignment stay unchanged.
 s = move_footprint(s, 'D3', 85.5, 42.5, 0)
 s = move_footprint(s, 'D4', 85.5, 49.5, 0)
+s = move_footprint(s, 'D1', 80.9, 59.5, 0)
+s = move_footprint(s, 'R28', 90.9, 37.0, 0)
 
-# Remove the old connector-side CAN fanout. Keep the transceiver-side segments
-# (they extend left of x=85.9) and reconnect them below.
+
 def segment_info(block):
     ms = re.search(r'\(start\s+([-+0-9.]+)\s+([-+0-9.]+)\)', block)
     me = re.search(r'\(end\s+([-+0-9.]+)\s+([-+0-9.]+)\)', block)
@@ -195,7 +184,17 @@ for a, b, block in iter_blocks(s, 'segment'):
         and {tuple(round(v,3) for v in p1), tuple(round(v,3) for v in p2)}
             == {(97.8,53.0),(90.1,53.0)}
     )
-    if drop_can or drop_old_batt_j4:
+    drop_old_r28_accbase = (
+        name == 'ACC_BASE'
+        and {tuple(round(v,3) for v in p1), tuple(round(v,3) for v in p2)}
+            == {(92.5,38.0),(92.5,37.0)}
+    )
+    drop_old_r28_accmid1 = (
+        name == 'ACC_MID1'
+        and {tuple(round(v,3) for v in p1), tuple(round(v,3) for v in p2)}
+            == {(92.1,36.0),(91.5,37.0)}
+    )
+    if drop_can or drop_old_batt_j4 or drop_old_r28_accbase or drop_old_r28_accmid1:
         remove_ranges.append((a,b))
 for a,b in reversed(remove_ranges):
     s = s[:a] + s[b:]
@@ -207,61 +206,47 @@ def seg(name, x1, y1, x2, y2, width=0.30):
         f'(width {width:.3f}) (layer "F.Cu") {net_expr(name)})'
     )
 
-# Reconnect moved D3/D4 to the frozen transceiver-side copper.
 new_segments = [
-    # Reconnect moved D3/D4 to the frozen transceiver-side copper.
     seg('CAN1_H',84.5,41.85,86.0,41.85),
     seg('CAN1_L',84.5,43.15,86.0,43.15),
     seg('CAN2_H',84.5,48.85,86.0,48.85),
     seg('CAN2_L',84.5,50.15,86.0,50.15),
-    # J4 -> D3/D4, short local fanout with physical separation between pairs.
     seg('CAN1_H',88.8,43.5,87.7,41.85),
     seg('CAN1_H',87.7,41.85,84.5,41.85),
     seg('CAN1_L',88.8,46.5,87.8,45.0),
     seg('CAN1_L',87.8,45.0,84.5,43.15),
-    # CAN2_L stays on the inner row; this avoids the large protected-input
-    # copper at D2. CAN2_H uses the outer row and approaches D4 from above.
     seg('CAN2_L',88.8,49.5,87.2,50.15),
     seg('CAN2_L',87.2,50.15,84.5,50.15),
     seg('CAN2_H',98.2,52.5,92.5,52.5),
     seg('CAN2_H',92.5,52.5,92.5,48.0),
-    seg('CAN2_H',92.5,48.0,87.2,48.0),
-    seg('CAN2_H',87.2,48.0,84.5,48.85),
-    # +24 V pin 8 joins the existing D2/D1 protected-input branch locally.
+    seg('CAN2_H',92.5,48.0,86.8,48.0),
+    seg('CAN2_H',86.8,48.0,84.5,48.85),
     seg('BATT24_FUSED',88.8,52.5,90.1,53.0,1.20),
-    # ACC reuses the frozen J4-side copper endpoint.
     seg('ACC_RAW',98.2,46.5,97.8,45.5,0.28),
-    # J4 GND gets its own short stitch to the continuous inner GND plane so
-    # CAN2_H can pass inward without crossing a long ground trace.
     seg('GND',98.2,49.5,96.0,49.5,0.60),
+    seg('BATT24_FUSED',90.1,59.5,87.1,59.5,1.20),
+    seg('ACC_MID1',92.1,36.0,91.4,36.0,0.25),
+    seg('ACC_MID1',91.4,36.0,90.4,37.0,0.25),
+    seg('ACC_BASE',91.4,37.0,91.4,38.0,0.22),
 ]
 close = s.rfind(')')
 if close < 0:
     raise RuntimeError('board closing paren not found')
-# Dedicated GND stitch next to J4. Existing Rev.A uses the same 0.7/0.35 mm
-# via geometry for local ground-island stitching.
-if modern_net_syntax:
-    gnd_via = '  (via (at 96.000 49.500) (size 0.700) (drill 0.350) (layers "F.Cu" "B.Cu") (net "GND"))'
-else:
+if "GND" in net_id:
     gnd_via = f'  (via (at 96.000 49.500) (size 0.700) (drill 0.350) (layers "F.Cu" "B.Cu") (net {net_id["GND"]}))'
+else:
+    gnd_via = '  (via (at 96.000 49.500) (size 0.700) (drill 0.350) (layers "F.Cu" "B.Cu") (net "GND"))'
 s = s[:close] + '\n' + '\n'.join(new_segments) + '\n' + gnd_via + '\n' + s[close:]
 
-# Postconditions for the connector change.
 _, _, chk_j4 = find_footprint(s, 'J4')
 if '430450818' not in chk_j4 or '(at 93.500 48.000 90)' not in chk_j4:
     raise RuntimeError('J4 Micro-Fit replacement failed')
-for ref, expected in [('D3','(at 85.500 42.500 0)'),('D4','(at 85.500 49.500 0)')]:
+for ref, expected in [('D3','(at 85.500 42.500 0)'),('D4','(at 85.500 49.500 0)'),('D1','(at 80.900 59.500 0)'),('R28','(at 90.900 37.000 0)')]:
     _, _, blk = find_footprint(s, ref)
     if expected not in blk:
         raise RuntimeError(f'{ref} relocation failed')
 
 # --- Fabrication layer declaration ---
-# KiCad 9/10 current layer IDs used by this generated board:
-#   1 = F.Mask
-#   3 = B.Mask
-# Find the top-level layer table, and inspect ONLY that table. Pad definitions
-# also contain the strings F.Mask/B.Mask and must not be mistaken for enabled
-# board layers.
 i = s.find('(layers')
 if i < 0:
     raise RuntimeError('top-level layers block not found')
@@ -288,7 +273,6 @@ if not (has_fmask and has_bmask):
     blk = before + '\n' + '\n'.join(rows) + '\n' + parent_indent + ')'
     s = s[:i] + blk + s[j:]
 
-# Re-read only the resulting layer table for a strict postcondition.
 i2 = s.find('(layers')
 j2 = balanced_block(s, i2)
 blk2 = s[i2:j2]
