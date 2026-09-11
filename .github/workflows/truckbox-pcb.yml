@@ -75,6 +75,7 @@ jobs:
           python3 hardware/reva/apply_layout_usb_service_v5.py
           python3 hardware/reva/apply_layout_usb_service_v6.py
           python3 hardware/reva/apply_layout_usb_protection_cc.py
+          python3 hardware/reva/apply_layout_input_protection_final.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
