@@ -79,6 +79,7 @@ jobs:
           python3 hardware/reva/apply_layout_usb_diffpair_final.py
           python3 hardware/reva/apply_fabrication_layers.py
           python3 hardware/reva/apply_layout_j4_drc_cleanup.py
+          python3 hardware/reva/apply_layout_j4_final2.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
