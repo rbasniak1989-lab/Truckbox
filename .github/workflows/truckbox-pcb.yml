@@ -78,6 +78,7 @@ jobs:
           python3 hardware/reva/apply_layout_input_protection_final.py
           python3 hardware/reva/apply_layout_usb_diffpair_final.py
           python3 hardware/reva/apply_fabrication_layers.py
+          python3 hardware/reva/apply_layout_j4_drc_cleanup.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
@@ -96,10 +97,11 @@ jobs:
           total=re.search(r'Found\s+(\d+)\s+DRC violations', text)
           c=collections.Counter(re.findall(r'^\[([^\]]+)\]:', text, re.M))
           geom=sum(v for k,v in c.items() if k not in ('lib_footprint_issues','unconnected_items'))
+          unconnected=c.get('unconnected_items',0)
           lines=[
               f"drc_total={total.group(1) if total else 'unknown'}",
               f"geometry_electrical={geom}",
-              f"unconnected={c.get('unconnected_items',0)}",
+              f"unconnected={unconnected}",
               f"library_warnings={c.get('lib_footprint_issues',0)}",
           ]
           lines += [f"{k}={v}" for k,v in c.most_common()]
@@ -111,6 +113,9 @@ jobs:
               if m and m.group(1) not in ('lib_footprint_issues','unconnected_items'):
                   print('--- DRC DETAIL ---')
                   print('\n'.join(block.strip().splitlines()[:14]))
+          if geom or unconnected:
+              print(f'Manufacturing DRC gate failed: geometry_electrical={geom}, unconnected={unconnected}')
+              raise SystemExit(2)
           PY
 
       - name: Export fabrication candidate
