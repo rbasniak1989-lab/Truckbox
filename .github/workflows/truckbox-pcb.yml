@@ -77,6 +77,7 @@ jobs:
           python3 hardware/reva/apply_layout_usb_protection_cc.py
           python3 hardware/reva/apply_layout_input_protection_final.py
           python3 hardware/reva/apply_layout_usb_diffpair_final.py
+          python3 hardware/reva/apply_fabrication_layers.py
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Run real PCB DRC with filled zones
@@ -123,6 +124,29 @@ jobs:
           kicad-cli pcb export drill \
             --output hardware/reva/build/gerbers/ \
             hardware/reva/TruckBox_RevA.kicad_pcb
+          test -s hardware/reva/build/gerbers/TruckBox_RevA-F_Cu.gtl
+          test -s hardware/reva/build/gerbers/TruckBox_RevA-GND_PLANE.g1
+          test -s hardware/reva/build/gerbers/TruckBox_RevA-POWER_SIGNALS.g2
+          test -s hardware/reva/build/gerbers/TruckBox_RevA-B_Cu.gbl
+          test -s hardware/reva/build/gerbers/TruckBox_RevA-F_Mask.gts
+          test -s hardware/reva/build/gerbers/TruckBox_RevA-B_Mask.gbs
+          test -s hardware/reva/build/gerbers/TruckBox_RevA-Edge_Cuts.gm1
+          test -s hardware/reva/build/gerbers/TruckBox_RevA.drl
+          ! find hardware/reva/build/gerbers -maxdepth 1 -type f \( -name '*Courtyard*' -o -name '*Margin*' \) | grep -q .
+          (
+            cd hardware/reva/build/gerbers
+            zip -q ../TruckBox_RevA_Gerbers_JLC.zip \
+              TruckBox_RevA-F_Cu.gtl \
+              TruckBox_RevA-GND_PLANE.g1 \
+              TruckBox_RevA-POWER_SIGNALS.g2 \
+              TruckBox_RevA-B_Cu.gbl \
+              TruckBox_RevA-F_Mask.gts \
+              TruckBox_RevA-B_Mask.gbs \
+              TruckBox_RevA-F_Silkscreen.gto \
+              TruckBox_RevA-B_Silkscreen.gbo \
+              TruckBox_RevA-Edge_Cuts.gm1 \
+              TruckBox_RevA.drl
+          )
           kicad-cli pcb export pos \
             --format csv --units mm --side both \
             --output hardware/reva/build/positions.csv \
