@@ -74,7 +74,6 @@ def move_ref(text, ref, x, y, rot):
         raise RuntimeError(f'reference marker not found inside {ref} footprint')
     head = blk[:rel]
     tail = blk[rel:]
-    # The first (at ...) before the reference marker is the footprint origin.
     head2, n = re.subn(
         r'\(at\s+-?[\d.]+\s+-?[\d.]+(?:\s+-?[\d.]+)?\)',
         f'(at {x:.3f} {y:.3f} {rot:.3f})',
@@ -119,31 +118,22 @@ def remove_mcu_copper(text, token):
     return text
 
 
-def seg(net, layer, x1, y1, x2, y2, width=.15):
+def seg(net, layer, x1, y1, x2, y2, width=.20):
     return (f'  (segment (start {x1:.3f} {y1:.3f}) '
             f'(end {x2:.3f} {y2:.3f}) (width {width:.3f}) '
             f'(layer "{layer}") (net "{net}"))')
 
 
-# Start from the proven previous-pass geometry. Move only the series resistors.
 s = move_ref(s, 'R42', 70.000, 23.000, 180.0)
 s = move_ref(s, 'R43', 70.000, 25.000, 180.0)
-
-# Delete only the old MCU-side D+/D- tracks and vias. Connector-side LINK nets
-# are deliberately untouched.
 s = remove_mcu_copper(s, 'segment')
 s = remove_mcu_copper(s, 'via')
 
 r = [
-    # MCU -> R42 pad1 (D-), entirely on F.Cu.
     seg('USB_D-_LINK_MCU', 'F.Cu', 73.250, 23.180, 71.300, 23.180),
     seg('USB_D-_LINK_MCU', 'F.Cu', 71.300, 23.180, 70.500, 23.000),
-
-    # MCU -> R43 pad1 (D+), entirely on F.Cu.
     seg('USB_D+_LINK_MCU', 'F.Cu', 73.250, 24.450, 71.300, 24.450),
     seg('USB_D+_LINK_MCU', 'F.Cu', 71.300, 24.450, 70.500, 25.000),
-
-    # Reconnect the moved LINK-side pads to the exact old proven route starts.
     seg('USB_D-_LINK', 'F.Cu', 69.500, 23.000, 68.500, 23.000),
     seg('USB_D+_LINK', 'F.Cu', 69.500, 25.000, 68.500, 25.000),
 ]
