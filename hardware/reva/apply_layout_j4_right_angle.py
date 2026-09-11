@@ -5,15 +5,22 @@ P = Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 s = P.read_text(encoding='utf-8')
 
 # Final J4 mechanical revision:
-# Molex Micro-Fit 3.0 430450806 / JLCPCB C587585, 8-way right-angle SMT.
-# The right-angle body exits the board edge, avoiding the D1/J3 collision that
-# the larger vertical 430450818 courtyard created.  Pin assignment is unchanged:
-#   1 +24V, 2 CAN2_L, 3 CAN1_L, 4 CAN1_H,
-#   5 CAN2_H, 6 GND, 7 ACC, 8 NC/RESERVE.
-# Recommended land geometry follows Molex SD-43045-003 / 43045-0806:
-#   signal lands 1.27 x 2.92 mm, 3.00 mm pitch;
-#   row Y = 5.47 / 10.10 mm from clip-hole centerline;
-#   solderable retention clips at X = +/-6.65 mm, drill 2.41 mm.
+#   Molex Micro-Fit 3.0 430450806 / JLCPCB C587585
+#   8-way, 2x4, 3.00 mm pitch, right-angle SMT.
+#
+# Pinout kept intentionally independent of the future CAN2 vehicle choice:
+#   1 +24V       2 CAN2_L      3 CAN1_L      4 CAN1_H
+#   5 CAN2_H     6 GND         7 ACC         8 RESERVE/NC
+#
+# Land/retention geometry follows Molex 43045-0806 family data:
+#   signal lands 2.92 x 1.27 mm, 3.00 mm pitch;
+#   local row Y = 5.47 / 10.10 mm from the retention-clip centerline;
+#   retention holes X = +/-6.65 mm, drill = 2.41 mm.
+#
+# The connector is rotated 270 degrees so its mating body projects out of the
+# right-hand PCB edge and its signal lands extend inward.  Only J4, D3/D4 and
+# their immediate fanout are touched; the Run-159 validated board stays frozen
+# everywhere else.
 
 
 def balanced_block(text, start):
@@ -84,7 +91,7 @@ net_id = {name: int(idx) for idx, name in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"
 for required in ('GND','BATT24_FUSED','ACC_RAW','CAN1_H','CAN1_L','CAN2_H','CAN2_L'):
     if required not in net_id:
         raise RuntimeError(f'net {required} not found')
-inv_net = {v:k for k,v in net_id.items()}
+inv_net = {v: k for k, v in net_id.items()}
 
 
 def net_expr(name, for_pad=False):
@@ -95,37 +102,40 @@ def net_expr(name, for_pad=False):
 
 def smd_pad(num, x, y, net=None):
     ne = (' ' + net_expr(net, True)) if net else ''
-    # Molex land is 1.27 x 2.92 in the local coordinate system.
+    # In this hand-generated board KiCad keeps the pad size axes absolute when
+    # the footprint is transformed.  2.92 x 1.27 therefore leaves 1.73 mm
+    # copper-to-copper pitch clearance along the 3.00 mm pin pitch after the
+    # footprint rotation (the prior 1.27 x 2.92 declaration was incorrect).
     return (
         f'    (pad "{num}" smd roundrect (at {x:.3f} {y:.3f}) '
-        f'(size 1.270 2.920) (layers "F.Cu" "F.Paste" "F.Mask") '
+        f'(size 2.920 1.270) (layers "F.Cu" "F.Paste" "F.Mask") '
         f'(roundrect_rratio 0.15){ne})'
     )
 
 
 def mp_pad(x):
-    # Solderable retention clip.  2.41 mm drill per Molex drawing; annular ring
-    # retained so JLC can solder the clip for vibration resistance.
+    # Solderable retention clip / board-lock hole.  With J4 x=97.70 the outer
+    # annular ring remains 0.65 mm inside the 100 mm board edge, satisfying the
+    # project 0.50 mm edge-copper rule.
     return (
         f'    (pad "MP" thru_hole circle (at {x:.3f} 0.000) '
         f'(size 3.300 3.300) (drill 2.410) (layers "*.Cu" "*.Mask"))'
     )
 
 
-# Origin is the centerline between the two retention clips.  Rotated 90 degrees
-# at x=98.70 so both 2.41-mm clip holes remain fully inside the 100-mm board,
-# while the mating body projects beyond the right board edge.  y=44.00 centers
-# the 16-mm body between J3 (above) and D1 (below).
 j4_lines = [
     '  (footprint "TruckBox:Molex_Micro-Fit_3.0_43045-0806_2x04_P3.00mm_RightAngle" (layer "F.Cu")',
-    '    (at 98.700 44.000 90)',
+    '    (at 97.700 44.000 270)',
     '    (attr smd)',
-    '    (fp_text reference "J4" (at 0 -6.2 90) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))',
-    '    (fp_text value "Molex 430450806" (at 0 12.7 90) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))',
-    # Approximate housing outline from SD-43045-003; the mating face is on -Y.
+    '    (fp_text reference "J4" (at 0 -6.2 270) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))',
+    '    (fp_text value "Molex 430450806" (at 0 12.7 270) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))',
+    # Housing/mating-face envelope from the Molex family drawing.  Negative
+    # local Y is the mating side and therefore projects beyond x=100 after 270°.
     '    (fp_rect (start -7.825 -4.600) (end 7.825 3.710) (stroke (width 0.10) (type solid)) (fill none) (layer "F.Fab"))',
     '    (fp_line (start -7.825 -4.600) (end 7.825 -4.600) (stroke (width 0.20) (type solid)) (layer "F.SilkS"))',
-    # Realistic assembly courtyard includes housing, lands and retention clips.
+    # Includes body, signal lands and both retention clips.  This deliberately
+    # extends past the board edge on the mating side, which is normal for a
+    # right-angle edge connector.
     '    (fp_rect (start -8.400 -4.850) (end 8.400 11.810) (stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd"))',
     smd_pad(1, 4.5, 5.47, 'BATT24_FUSED'),
     smd_pad(2, 1.5, 5.47, 'CAN2_L'),
@@ -143,10 +153,11 @@ j4 = '\n'.join(j4_lines)
 i, j, _old = find_footprint(s, 'J4')
 s = s[:i] + j4 + s[j:]
 
-# One extra millimeter of leftward clearance gives the connector courtyard more
-# than 1 mm separation from D3/D4 while preserving the validated CAN fanout.
-s = move_footprint(s, 'D3', 84.5, 42.5, 0)
-s = move_footprint(s, 'D4', 84.5, 49.5, 0)
+# Shift the two CAN TVS parts only far enough to open a real courtyard channel
+# between them and the inward J4 land row.  D4 also moves 1 mm upward to clear
+# D2's courtyard.
+s = move_footprint(s, 'D3', 84.2, 42.5, 0)
+s = move_footprint(s, 'D4', 84.2, 48.5, 0)
 
 
 def segment_info(block):
@@ -166,41 +177,58 @@ def segment_info(block):
     return name, tuple(map(float, ms.groups())), tuple(map(float, me.groups())), ml.group(1)
 
 
-# Remove all previous vertical-J4 CAN fanout while retaining the frozen
-# transceiver-side trunks (their opposite endpoint is x<=80/74.7).  Also remove
-# the old J4 BATT/ACC/GND stubs.
+def edge(a, b):
+    return {tuple(round(v, 3) for v in a), tuple(round(v, 3) for v in b)}
+
+
+# Delete the complete former J4-side CAN fanout.  Rebuilding from the known
+# U3/U4-side endpoints is safer than leaving fragments from the vertical-J4
+# experiment.  Everything left of x=80 stays exactly as in Run 159.
 remove = []
 for a, b, block in iter_blocks(s, 'segment'):
     info = segment_info(block)
     if not info:
         continue
     name, p1, p2, layer = info
-    minx = min(p1[0], p2[0])
-    pts = {tuple(round(v,3) for v in p1), tuple(round(v,3) for v in p2)}
+    pts = edge(p1, p2)
+    maxx = max(p1[0], p2[0])
     drop = False
-    if name in {'CAN1_H','CAN1_L','CAN2_H','CAN2_L'} and minx >= 84.4:
+
+    if name in {'CAN1_H','CAN1_L','CAN2_H','CAN2_L'} and maxx >= 80.0:
         drop = True
+
+    # Old vertical-J4 power/ACC/GND tails.  Preserve the established backbone
+    # nodes at BATT 90.1,53 and ACC B.Cu 90.5,35 -> 96,35.
     if name == 'BATT24_FUSED' and pts == {(88.8,52.5),(90.1,53.0)}:
-        drop = True
-    if name == 'ACC_RAW' and pts == {(98.2,46.5),(97.8,45.5)}:
         drop = True
     if name == 'GND' and pts == {(98.2,49.5),(96.0,49.5)}:
         drop = True
+    if name == 'ACC_RAW' and layer == 'F.Cu' and maxx >= 96.0:
+        drop = True
+
     if drop:
-        remove.append((a,b))
-for a,b in reversed(remove):
+        remove.append((a, b))
+
+for a, b in reversed(remove):
     s = s[:a] + s[b:]
 
-# Remove vias created only for the previous vertical-J4 fanout.
+# Remove only CAN vias belonging to the superseded J4 fanout/cleanup.  Other
+# global stitching vias are untouched.
 via_remove = []
 for a, b, block in iter_blocks(s, 'via'):
     ma = re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)\)', block)
     if not ma:
         continue
-    xy = tuple(round(float(v),3) for v in ma.groups())
-    if xy in {(96.0,49.5),(96.0,52.5),(86.8,48.0)}:
-        via_remove.append((a,b))
-for a,b in reversed(via_remove):
+    mn = re.search(r'\(net\s+"([^"]+)"\)', block)
+    if mn:
+        name = mn.group(1)
+    else:
+        mi = re.search(r'\(net\s+(\d+)\)', block)
+        name = inv_net.get(int(mi.group(1))) if mi else None
+    x = float(ma.group(1))
+    if name in {'CAN1_H','CAN1_L','CAN2_H','CAN2_L'} and x >= 80.0:
+        via_remove.append((a, b))
+for a, b in reversed(via_remove):
     s = s[:a] + s[b:]
 
 
@@ -218,48 +246,65 @@ def via(name, x, y):
     )
 
 
-# Global J4 signal-pad centers after 90-degree rotation:
-#   p1 93.23,48.50  p2 93.23,45.50  p3 93.23,42.50  p4 93.23,39.50
-#   p5 88.60,48.50  p6 88.60,45.50  p7 88.60,42.50  p8 88.60,39.50
-# D3/D4 CAN pad centers after the 1-mm left shift:
-#   CAN1_H 83.50,41.85; CAN1_L 83.50,43.15
-#   CAN2_H 83.50,48.85; CAN2_L 83.50,50.15
+# Expected global signal-pad centers after the 270° J4 rotation:
+#   p1 92.23,48.50   p2 92.23,45.50   p3 92.23,42.50   p4 92.23,39.50
+#   p5 87.60,48.50   p6 87.60,45.50   p7 87.60,42.50   p8 87.60,39.50
+#
+# D3 @84.2,42.5: H 83.2,41.85 / L 83.2,43.15 / GND 85.2,42.5
+# D4 @84.2,48.5: H 83.2,47.85 / L 83.2,49.15 / GND 85.2,48.5
 new_items = [
-    # CAN1 outer-row pads escape right, cross on B.Cu, and rejoin the existing
-    # validated F.Cu trunks through vias just left of the TVS pads.
-    seg('CAN1_H',93.23,39.50,95.00,39.50,0.30,'F.Cu'),
-    via('CAN1_H',95.00,39.50),
-    seg('CAN1_H',95.00,39.50,82.50,41.85,0.30,'B.Cu'),
-    via('CAN1_H',82.50,41.85),
-    seg('CAN1_H',82.50,41.85,83.50,41.85,0.30,'F.Cu'),
+    # Restore the four validated transceiver-side CAN trunks to the relocated
+    # TVS lands.  These short F.Cu runs contain no layer transitions.
+    seg('CAN1_H',74.70,41.865,83.20,41.850,0.30,'F.Cu'),
+    seg('CAN1_L',74.70,43.135,83.20,43.150,0.30,'F.Cu'),
+    seg('CAN2_H',74.70,47.865,83.20,47.850,0.30,'F.Cu'),
+    seg('CAN2_L',74.70,49.135,83.20,49.150,0.30,'F.Cu'),
 
-    seg('CAN1_L',93.23,42.50,95.00,42.50,0.30,'F.Cu'),
-    via('CAN1_L',95.00,42.50),
-    seg('CAN1_L',95.00,42.50,82.50,43.15,0.30,'B.Cu'),
-    via('CAN1_L',82.50,43.15),
-    seg('CAN1_L',82.50,43.15,83.50,43.15,0.30,'F.Cu'),
+    # CAN1-H: J4 escape -> back-layer crossing -> D3 pad.
+    seg('CAN1_H',92.23,39.50,93.50,39.50,0.30,'F.Cu'),
+    via('CAN1_H',93.50,39.50),
+    seg('CAN1_H',93.50,39.50,82.20,41.85,0.30,'B.Cu'),
+    via('CAN1_H',82.20,41.85),
+    seg('CAN1_H',82.20,41.85,83.20,41.85,0.30,'F.Cu'),
 
-    # CAN2_L needs the crossover; CAN2_H can remain a short direct top trace.
-    seg('CAN2_L',93.23,45.50,95.00,45.50,0.30,'F.Cu'),
-    via('CAN2_L',95.00,45.50),
-    seg('CAN2_L',95.00,45.50,82.50,50.15,0.30,'B.Cu'),
-    via('CAN2_L',82.50,50.15),
-    seg('CAN2_L',82.50,50.15,83.50,50.15,0.30,'F.Cu'),
-    seg('CAN2_H',88.60,48.50,83.50,48.85,0.30,'F.Cu'),
+    # CAN1-L: parallel, vertically separated back-layer route.
+    seg('CAN1_L',92.23,42.50,93.50,42.50,0.30,'F.Cu'),
+    via('CAN1_L',93.50,42.50),
+    seg('CAN1_L',93.50,42.50,82.20,43.15,0.30,'B.Cu'),
+    via('CAN1_L',82.20,43.15),
+    seg('CAN1_L',82.20,43.15,83.20,43.15,0.30,'F.Cu'),
 
-    # +24 V follows the lower edge of the connector and joins the established
-    # protected-input node at 90.1,53.0.
-    seg('BATT24_FUSED',93.23,48.50,93.23,51.50,1.00,'F.Cu'),
-    seg('BATT24_FUSED',93.23,51.50,90.10,53.00,1.00,'F.Cu'),
+    # CAN2-L uses B.Cu for the long run.
+    seg('CAN2_L',92.23,45.50,93.50,45.50,0.30,'F.Cu'),
+    via('CAN2_L',93.50,45.50),
+    seg('CAN2_L',93.50,45.50,82.20,49.15,0.30,'B.Cu'),
+    via('CAN2_L',82.20,49.15),
+    seg('CAN2_L',82.20,49.15,83.20,49.15,0.30,'F.Cu'),
 
-    # GND gets a dedicated stitch straight into the continuous inner plane.
-    seg('GND',88.60,45.50,87.20,45.50,0.60,'F.Cu'),
-    via('GND',87.20,45.50),
+    # CAN2-H starts on the inward J4 row; dogleg away from D4's GND pad before
+    # dropping to B.Cu.
+    seg('CAN2_H',87.60,48.50,86.70,47.20,0.30,'F.Cu'),
+    via('CAN2_H',86.70,47.20),
+    seg('CAN2_H',86.70,47.20,82.20,47.85,0.30,'B.Cu'),
+    via('CAN2_H',82.20,47.85),
+    seg('CAN2_H',82.20,47.85,83.20,47.85,0.30,'F.Cu'),
 
-    # ACC crosses on the back layer to the existing ACC_RAW backbone at 90.5,35.
-    seg('ACC_RAW',88.60,42.50,88.60,41.00,0.28,'F.Cu'),
-    via('ACC_RAW',88.60,41.00),
-    seg('ACC_RAW',88.60,41.00,90.50,35.00,0.28,'B.Cu'),
+    # +24 V: short, wide top-layer route into the existing protected-input
+    # backbone node.  No power routing elsewhere is changed.
+    seg('BATT24_FUSED',92.23,48.50,92.23,51.20,1.00,'F.Cu'),
+    seg('BATT24_FUSED',92.23,51.20,90.10,53.00,1.00,'F.Cu'),
+
+    # GND: direct stitch into the continuous inner ground plane.
+    seg('GND',87.60,45.50,86.70,45.50,0.60,'F.Cu'),
+    via('GND',86.70,45.50),
+
+    # ACC: escape toward the right on F.Cu, then run on B.Cu outside the CAN
+    # corridor to the existing ACC_RAW backbone endpoint at 96,35.
+    seg('ACC_RAW',87.60,42.50,89.50,42.50,0.28,'F.Cu'),
+    seg('ACC_RAW',89.50,42.50,89.50,44.20,0.28,'F.Cu'),
+    via('ACC_RAW',89.50,44.20),
+    seg('ACC_RAW',89.50,44.20,96.00,44.20,0.28,'B.Cu'),
+    seg('ACC_RAW',96.00,44.20,96.00,35.00,0.28,'B.Cu'),
 ]
 
 close = s.rfind(')')
@@ -267,14 +312,15 @@ if close < 0:
     raise RuntimeError('board closing paren not found')
 s = s[:close] + '\n' + '\n'.join(new_items) + '\n' + s[close:]
 
-# Postconditions: exact final connector and local placements.
+# Strict postconditions catch stale/partial CI generations before KiCad sees
+# them.
 _, _, chk = find_footprint(s, 'J4')
-if '430450806' not in chk or '(at 98.700 44.000 90)' not in chk:
+if '430450806' not in chk or '(at 97.700 44.000 270)' not in chk:
     raise RuntimeError('right-angle J4 replacement failed')
-for ref, expected in [('D3','(at 84.500 42.500 0)'),('D4','(at 84.500 49.500 0)')]:
+for ref, expected in [('D3','(at 84.200 42.500 0)'),('D4','(at 84.200 48.500 0)')]:
     _, _, blk = find_footprint(s, ref)
     if expected not in blk:
         raise RuntimeError(f'{ref} final placement failed')
 
 P.write_text(s, encoding='utf-8')
-print(f'Applied right-angle Micro-Fit J4 final revision to {P}')
+print(f'Applied corrected right-angle Micro-Fit J4 revision to {P}')
