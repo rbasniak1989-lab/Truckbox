@@ -199,3 +199,4 @@ print(f'Applied final J4 DRC cleanup to {P}')
 # separate final pass makes the Run-159-derived cleanup auditable and lets CI
 # validate the final 430450806 geometry with no hidden manual edits.
 runpy.run_path(str(Path(__file__).with_name('apply_layout_j4_right_angle.py')), run_name='__main__')
+runpy.run_path(str(Path(__file__).with_name('apply_layout_j4_final_clearance.py')), run_name='__main__')
