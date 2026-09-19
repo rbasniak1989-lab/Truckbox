@@ -164,6 +164,8 @@ for a,b,blk in iter_blocks(s,'segment'):
         drop=True
     if name=='J1708_RX' and same_pair(p1,p2,(64.5,46.5),(64.5,52.2)):
         drop=True
+    if same_pair(p1,p2,(65.5,46.5),(64.5,46.5)):
+        drop=True
     if name=='CAN_MODE' and (
         same_pair(p1,p2,(74.7,50.405),(76.5,50.405)) or
         same_pair(p1,p2,(76.5,50.405),(78.0,50.405)) or
@@ -171,6 +173,12 @@ for a,b,blk in iter_blocks(s,'segment'):
         same_pair(p1,p2,(76.5,46.595),(78.0,46.595))
     ):
         drop=True
+    # Geometry fallback: remove the old CAN_MODE vertical continuation to U4
+    # even if a previous KiCad normalization changed how the net is serialized.
+    if abs(p1[0]-78.0)<.015 and abs(p2[0]-78.0)<.015:
+        ymin=min(p1[1],p2[1]); ymax=max(p1[1],p2[1])
+        if ymin <= 40.610 and ymax >= 50.390:
+            drop=True
     if drop:
         remove.append((a,b))
 for a,b in reversed(remove):
