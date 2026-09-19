@@ -97,7 +97,7 @@ def set_value(block, value):
                   lambda m: m.group(1) + value + m.group(2), block, count=1)
 
 a, b, u4 = find_footprint(s, 'U4')
-u4 = set_value(u4, 'MAX3485ESA J1708 RX ONLY')
+u4 = set_value(u4, 'SP3485EEN C668205 J1708 RX ONLY')
 for pin, net in {
     1:'J1708_RX',
     2:'GND',
@@ -231,7 +231,7 @@ s=s.replace('TruckBox Rev.A | 100x65 | 4L | PROTOTYPE',
             'TruckBox Rev.B | 100x95 | J1939 + J1708 + LTE')
 
 _,_,u4chk=find_footprint(s,'U4')
-for needle in ('MAX3485ESA J1708 RX ONLY','J1708_A','J1708_B','J1708_RX'):
+for needle in ('SP3485EEN C668205 J1708 RX ONLY','J1708_A','J1708_B','J1708_RX'):
     if needle not in u4chk:
         raise RuntimeError(f'U4 postcondition missing {needle}')
 _,_,j4chk=find_footprint(s,'J4')
