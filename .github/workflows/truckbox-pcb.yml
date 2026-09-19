@@ -2,7 +2,7 @@ name: TruckBox PCB CI
 
 on:
   push:
-    branches: [hardware-reva-pcb]
+    branches: [hardware-reva-pcb, hardware-revb-j1708-4g]
     paths:
       - 'hardware/reva/**'
       - '.github/workflows/truckbox-pcb.yml'
