@@ -162,6 +162,8 @@ for a,b,blk in iter_blocks(s,'segment'):
         drop=True
     if name=='J1708_RX' and same_pair(p1,p2,(64.5,52.2),(69.3,52.2)):
         drop=True
+    if name=='J1708_RX' and same_pair(p1,p2,(64.5,46.5),(64.5,52.2)):
+        drop=True
     if name=='CAN_MODE' and (
         same_pair(p1,p2,(74.7,50.405),(76.5,50.405)) or
         same_pair(p1,p2,(76.5,50.405),(78.0,50.405)) or
@@ -181,7 +183,7 @@ for a,b,blk in iter_blocks(s,'via'):
         continue
     xy=tuple(map(float,ma.groups()))
     if any(abs(xy[0]-x)<.015 and abs(xy[1]-y)<.015 for x,y in [
-        (69.3,52.2),(76.5,50.405),(76.5,46.595)
+        (69.3,52.2),(76.5,50.405),(76.5,46.595),(68.0,48.9)
     ]):
         remove.append((a,b))
 for a,b in reversed(remove):
@@ -197,6 +199,7 @@ def via(name,x,y,size=.70,drill=.35):
 
 items=[
     seg('J1708_RX',69.300,46.595,65.500,46.500,.22),
+    seg('CAN_MODE',78.000,40.595,78.000,44.405,.28,'B.Cu'),
     seg('3V3_MAIN',74.700,46.595,76.000,45.700,.30),
     via('3V3_MAIN',76.000,45.700),
 ]
