@@ -191,7 +191,7 @@ for a,b,blk in iter_blocks(s,'via'):
         continue
     xy=tuple(map(float,ma.groups()))
     if any(abs(xy[0]-x)<.015 and abs(xy[1]-y)<.015 for x,y in [
-        (69.3,52.2),(76.5,50.405),(76.5,46.595),(68.0,48.9)
+        (69.3,52.2),(76.5,50.405),(76.5,46.595),(68.0,48.9),(65.5,46.5)
     ]):
         remove.append((a,b))
 for a,b in reversed(remove):
