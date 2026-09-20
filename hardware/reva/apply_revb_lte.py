@@ -234,7 +234,7 @@ def fp0603(ref,val,x,y,rot,n1,n2):
     return f'''  (footprint "RevB:0603_RF" (layer "F.Cu")
     (at {x:.3f} {y:.3f} {rot})
     (attr smd)
-    (fp_text reference "{ref}" (at 0 -1.6 {rot}) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.1))))
+    (fp_text reference "{ref}" (at 0 -1.6 {rot}) (layer "F.SilkS") hide (effects (font (size 0.8 0.8) (thickness 0.1))))
     (fp_text value "{val}" (at 0 1.4 {rot}) (layer "F.Fab") (effects (font (size 0.6 0.6) (thickness 0.1))))
     (pad "1" smd roundrect (at -0.5 0 {rot}) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {netexpr(n1,True)}{(' (zone_connect 2)' if n1=='GND' else '')})
     (pad "2" smd roundrect (at 0.5 0 {rot}) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {netexpr(n2,True)}{(' (zone_connect 2)' if n2=='GND' else '')})
@@ -279,8 +279,10 @@ routes=[
     # added by the dedicated LTE power pass.
     seg('LTE_3V8',p34[0],p34[1],p35[0],p35[1],.80),
 
-    # ANT_MAIN exits directly away from the module into the pi network.
-    seg('LTE_ANT_MOD',p32[0],p32[1],r50_1[0],r50_1[1],.38),
+    # ANT_MAIN first escapes straight outward between pad 32 and adjacent
+    # GND pad 33, then widens after clearing the module edge.
+    seg('LTE_ANT_MOD',p32[0],p32[1],p32[0],71.40,.22),
+    seg('LTE_ANT_MOD',p32[0],71.40,r50_1[0],r50_1[1],.38),
     seg('LTE_ANT_MOD',r50_1[0],r50_1[1],c50_1[0],c50_1[1],.22),
 
     # Connector side of the pi network and U.FL.
