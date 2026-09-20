@@ -148,12 +148,12 @@ r4 = pad_net(r4, 1, '3V3_MAIN')
 r4 = pad_net(r4, 2, 'J1708_RX')
 s = s[:a] + r4 + s[b:]
 
-# ESP32-C6 free module pads: 12=GPIO11 (UART TX), 13=GPIO12 (DE).
-# Using the left-side free pads lets both new signals enter an internal layer
-# without disturbing the frozen Rev.A routing on the right side of U1.
+# ESP32-C6-MINI-1 official module pins:
+# pad 17 = GPIO12 -> J1708 UART TX
+# pad 19 = GPIO14 -> J1708 driver-enable
 a,b,u1=find_footprint(s,'U1')
-u1=assign_pad_net(u1,12,'J1708_TX')
-u1=assign_pad_net(u1,13,'J1708_DE')
+u1=assign_pad_net(u1,17,'J1708_TX')
+u1=assign_pad_net(u1,19,'J1708_DE')
 s=s[:a]+u1+s[b:]
 
 new_ranges = []
@@ -219,6 +219,14 @@ for a,b,blk in iter_blocks(s,'segment'):
         drop=True
     if same_pair(p1,p2,(65.5,46.5),(64.5,46.5)):
         drop=True
+    if name=='VIN_PROT' and (
+        same_pair(p1,p2,(67.5,53.975),(68.5,55.0)) or
+        same_pair(p1,p2,(70.0,53.5),(69.5,53.975)) or
+        same_pair(p1,p2,(71.0,55.0),(69.5,53.975)) or
+        same_pair(p1,p2,(69.5,53.975),(67.5,53.975)) or
+        same_pair(p1,p2,(70.0,45.3),(70.0,53.5))
+    ):
+        drop=True
     if name=='CAN_MODE' and (
         same_pair(p1,p2,(74.7,50.405),(76.5,50.405)) or
         same_pair(p1,p2,(76.5,50.405),(78.0,50.405)) or
@@ -244,7 +252,8 @@ for a,b,blk in iter_blocks(s,'via'):
         continue
     xy=tuple(map(float,ma.groups()))
     if any(abs(xy[0]-x)<.015 and abs(xy[1]-y)<.015 for x,y in [
-        (69.3,52.2),(76.5,50.405),(76.5,46.595),(68.0,48.9),(65.5,46.5)
+        (69.3,52.2),(76.5,50.405),(76.5,46.595),(68.0,48.9),(65.5,46.5),
+        (70.0,53.5)
     ]):
         remove.append((a,b))
 for a,b in reversed(remove):
@@ -271,41 +280,69 @@ close=s.rfind(')')
 s=s[:close]+'\n'+r52+'\n'+s[close:]
 
 items=[
-    # C2 rotated 90 deg in place to open U4 pin-4 escape. Reconnect both pads
-    # explicitly so connectivity does not depend on local zone geometry.
-    seg('VIN_PROT',66.025,52.500,66.025,54.400,.40),
-    seg('VIN_PROT',66.025,54.400,67.500,54.400,.40),
-    seg('VIN_PROT',67.500,54.400,67.500,53.975,.40),
-    seg('GND',68.975,52.500,71.000,52.500,.40),
-    via('GND',71.000,52.500,.70,.35),
+    # Rotate C2 in place, then rebuild the local VIN/GND fanout around it.
+    seg('VIN_PROT',70.000,45.300,70.000,55.000,.40,'B.Cu'),
+    via('VIN_PROT',70.000,55.000,.70,.35),
+    seg('VIN_PROT',70.000,55.000,71.000,55.000,.40),
+    seg('VIN_PROT',70.000,55.000,68.500,55.000,.40),
+    seg('VIN_PROT',66.025,52.500,66.025,55.000,.40),
+    seg('VIN_PROT',66.025,55.000,68.500,55.000,.40),
+    seg('GND',68.975,52.500,72.000,52.500,.40),
+    via('GND',72.000,52.500,.70,.35),
+
+    # Existing receive path and surviving CAN1 support nets.
     seg('J1708_RX',69.300,46.595,65.500,46.500,.22),
     seg('CAN_MODE',78.000,40.595,78.000,44.405,.28,'B.Cu'),
     seg('3V3_MAIN',74.700,46.595,76.000,45.700,.30),
     via('3V3_MAIN',76.000,45.700),
 
-    # TX: GPIO11 (U1 pad12) -> In2.Cu down a verified clear corridor.
-    seg('J1708_TX',9.250,21.910,8.200,21.910,.22),
-    via('J1708_TX',8.200,21.910,.60,.30),
-    seg('J1708_TX',8.200,21.910,7.800,22.500,.22,'In2.Cu'),
-    seg('J1708_TX',7.800,22.500,7.800,67.000,.22,'In2.Cu'),
-    seg('J1708_TX',7.800,67.000,67.800,67.000,.22,'In2.Cu'),
-    seg('J1708_TX',67.800,67.000,67.800,50.405,.22,'In2.Cu'),
+    # J1708 TX: GPIO12 / module pad17 -> B.Cu -> U4 DI.
+    seg('J1708_TX',26.750,21.910,28.000,21.910,.22),
+    via('J1708_TX',28.000,21.910,.60,.30),
+    seg('J1708_TX',28.000,21.910,10.750,22.750,.22,'B.Cu'),
+    seg('J1708_TX',10.750,22.750,10.500,23.000,.22,'B.Cu'),
+    seg('J1708_TX',10.500,23.000,9.250,52.750,.22,'B.Cu'),
+    seg('J1708_TX',9.250,52.750,10.500,59.000,.22,'B.Cu'),
+    seg('J1708_TX',10.500,59.000,16.250,62.250,.22,'B.Cu'),
+    seg('J1708_TX',16.250,62.250,17.250,62.250,.22,'B.Cu'),
+    seg('J1708_TX',17.250,62.250,17.750,62.750,.22,'B.Cu'),
+    seg('J1708_TX',17.750,62.750,17.750,63.250,.22,'B.Cu'),
+    seg('J1708_TX',17.750,63.250,17.250,63.750,.22,'B.Cu'),
+    seg('J1708_TX',17.250,63.750,10.000,67.000,.22,'B.Cu'),
+    seg('J1708_TX',10.000,67.000,65.000,67.000,.22,'B.Cu'),
+    seg('J1708_TX',65.000,67.000,67.800,50.405,.22,'B.Cu'),
     via('J1708_TX',67.800,50.405,.60,.30),
     seg('J1708_TX',67.800,50.405,69.300,50.405,.22),
 
-    # DE: GPIO12 (U1 pad13) -> independent In2.Cu corridor.
-    seg('J1708_DE',9.250,23.180,8.800,23.180,.22),
-    via('J1708_DE',8.800,23.180,.60,.30),
-    seg('J1708_DE',8.800,23.180,10.800,25.000,.22,'In2.Cu'),
-    seg('J1708_DE',10.800,25.000,10.800,65.500,.22,'In2.Cu'),
-    seg('J1708_DE',10.800,65.500,67.000,65.500,.22,'In2.Cu'),
-    seg('J1708_DE',67.000,65.500,67.000,49.135,.22,'In2.Cu'),
-    via('J1708_DE',67.000,49.135,.60,.30),
-    seg('J1708_DE',67.000,49.135,69.300,49.135,.22),
+    # J1708 DE: GPIO14 / module pad19 stays on F.Cu; no power plane is cut.
+    seg('J1708_DE',26.750,19.370,25.500,18.750,.22),
+    seg('J1708_DE',25.500,18.750,18.000,11.500,.22),
+    seg('J1708_DE',18.000,11.500,9.500,6.750,.22),
+    seg('J1708_DE',9.500,6.750,8.500,7.000,.22),
+    seg('J1708_DE',8.500,7.000,6.000,10.250,.22),
+    seg('J1708_DE',6.000,10.250,3.000,11.500,.22),
+    seg('J1708_DE',3.000,11.500,0.750,18.750,.22),
+    seg('J1708_DE',0.750,18.750,0.750,57.250,.22),
+    seg('J1708_DE',0.750,57.250,4.250,59.000,.22),
+    seg('J1708_DE',4.250,59.000,5.000,59.250,.22),
+    seg('J1708_DE',5.000,59.250,7.250,61.750,.22),
+    seg('J1708_DE',7.250,61.750,10.000,67.000,.22),
+    seg('J1708_DE',10.000,67.000,39.750,66.000,.22),
+    seg('J1708_DE',39.750,66.000,60.000,72.000,.22),
+    seg('J1708_DE',60.000,72.000,50.000,60.000,.22),
+    seg('J1708_DE',50.000,60.000,49.750,58.500,.22),
+    seg('J1708_DE',49.750,58.500,50.500,51.250,.22),
+    seg('J1708_DE',50.500,51.250,52.750,46.500,.22),
+    seg('J1708_DE',52.750,46.500,63.000,38.250,.22),
+    seg('J1708_DE',63.000,38.250,65.500,38.000,.22),
+    seg('J1708_DE',65.500,38.000,69.750,39.500,.22),
+    seg('J1708_DE',69.750,39.500,70.500,40.250,.22),
+    seg('J1708_DE',70.500,40.250,70.500,48.250,.22),
+    seg('J1708_DE',70.500,48.250,69.750,49.000,.22),
+    seg('J1708_DE',69.750,49.000,69.300,49.135,.22),
 
-    # R52 fail-safe pull-down in LTE bay; pad1 returns through the F.Cu GND pour.
-    via('J1708_DE',12.500,65.500,.60,.30),
-    seg('J1708_DE',12.500,65.500,12.500,70.000,.22),
+    # Hardware fail-safe: DE low at boot even before firmware configures GPIO14.
+    seg('J1708_DE',10.000,67.000,12.500,70.000,.22),
     seg('GND',11.500,70.000,10.500,70.000,.25),
     via('GND',10.500,70.000,.60,.30),
 ]
@@ -341,9 +378,13 @@ for needle in ('SP3485EEN C668205 J1708 BIDIR','J1708_A','J1708_B','J1708_RX','J
     if needle not in u4chk:
         raise RuntimeError(f'U4 postcondition missing {needle}')
 _,_,u1chk=find_footprint(s,'U1')
-for needle in ('J1708_TX','J1708_DE'):
-    if needle not in u1chk:
-        raise RuntimeError(f'U1 postcondition missing {needle}')
+for pin,needle in ((17,'J1708_TX'),(19,'J1708_DE')):
+    pm=re.search(r'\(pad\s+"?'+str(pin)+r'"?\s+',u1chk)
+    if not pm:
+        raise RuntimeError(f'U1 postcondition missing pad {pin}')
+    pj=balanced_block(u1chk,pm.start())
+    if needle not in u1chk[pm.start():pj]:
+        raise RuntimeError(f'U1 pad {pin} postcondition missing {needle}')
 if 'reference "R52"' not in s and '(property "Reference" "R52"' not in s:
     raise RuntimeError('R52 DE pull-down missing')
 _,_,j4chk=find_footprint(s,'J4')
