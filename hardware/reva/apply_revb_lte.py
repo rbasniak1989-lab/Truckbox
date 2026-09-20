@@ -136,8 +136,10 @@ def footprint_pad_xy(filename, padnum, x, y, rot):
     import math
     lx,ly=target
     a=math.radians(rot)
-    gx=x + lx*math.cos(a) - ly*math.sin(a)
-    gy=y + lx*math.sin(a) + ly*math.cos(a)
+    # KiCad board coordinates use +Y downward on screen, therefore positive
+    # footprint rotation transforms local coordinates clockwise in XY space.
+    gx=x + lx*math.cos(a) + ly*math.sin(a)
+    gy=y - lx*math.sin(a) + ly*math.cos(a)
     return (gx,gy)
 
 def embed_fp(filename, ref, value, x, y, rot, pad_nets=None, force_smd=False):
