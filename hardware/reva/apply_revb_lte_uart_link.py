@@ -135,7 +135,7 @@ def fp0603(ref,val,x,y,rot,n1,n2):
   )'''
 
 # VCCB decoupling close to U10.
-c74=fp0603('C74','100nF TXU0202 VCCB',63.5,73.0,90,'3V3_LINK','GND')
+c74=fp0603('C74','100nF TXU0202 VCCB',52.4,73.5,0,'3V3_LINK','GND')
 close=s.rfind(')')
 s=s[:close]+'\n'+c74+'\n'+s[close:]
 
@@ -146,47 +146,57 @@ def via(n,x,y,size=.60,drill=.30):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
 r=[
-    # LTE RX at U2: leave module edge, rise above LINK_BOOT on In2,
-    # move left of the LINK_BOOT/USB corridors, then descend on x=90.0.
-    seg('LTE_UART_RX_3V3',p_u2_rx[0],p_u2_rx[1],92.50,p_u2_rx[1],.20),
-    via('LTE_UART_RX_3V3',92.50,p_u2_rx[1],.60,.30),
-    seg('LTE_UART_RX_3V3',92.50,p_u2_rx[1],92.50,18.00,.20,'In2.Cu'),
-    seg('LTE_UART_RX_3V3',92.50,18.00,90.00,18.00,.20,'In2.Cu'),
-    seg('LTE_UART_RX_3V3',90.00,18.00,90.00,66.00,.20,'In2.Cu'),
-    seg('LTE_UART_RX_3V3',90.00,66.00,59.50,66.00,.20,'In2.Cu'),
-    seg('LTE_UART_RX_3V3',59.50,66.00,59.50,70.75,.20,'In2.Cu'),
-    via('LTE_UART_RX_3V3',59.50,70.75,.60,.30),
-    seg('LTE_UART_RX_3V3',59.50,70.75,p_u10_rx[0],p_u10_rx[1],.20),
+    # RX: pad 17 -> far-right edge -> B.Cu -> lower LTE bay -> pin 8.
+    # The x=99.1 / x=99.5 dogleg clears the USB shell and J4 through-hole pads.
+    seg('LTE_UART_RX_3V3',p_u2_rx[0],p_u2_rx[1],99.10,p_u2_rx[1],.20),
+    via('LTE_UART_RX_3V3',99.10,p_u2_rx[1],.60,.30),
+    seg('LTE_UART_RX_3V3',99.10,p_u2_rx[1],99.10,40.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.10,40.0,99.50,40.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.50,40.0,99.50,55.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.50,55.0,99.10,55.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.10,55.0,99.10,66.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.10,66.0,55.0,66.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',55.0,66.0,55.0,70.75,.20,'B.Cu'),
+    via('LTE_UART_RX_3V3',55.0,70.75,.60,.30),
+    seg('LTE_UART_RX_3V3',55.0,70.75,p_u10_rx[0],p_u10_rx[1],.20),
 
-    # LTE TX at U2: second lane at x=90.8, one millimetre below RX lane.
-    seg('LTE_UART_TX_3V3',p_u2_tx[0],p_u2_tx[1],91.80,p_u2_tx[1],.20),
-    via('LTE_UART_TX_3V3',91.80,p_u2_tx[1],.60,.30),
-    seg('LTE_UART_TX_3V3',91.80,p_u2_tx[1],91.80,17.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',91.80,17.00,90.80,17.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',90.80,17.00,90.80,67.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',90.80,67.00,68.50,67.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',68.50,67.00,68.50,71.50,.20,'In2.Cu'),
-    via('LTE_UART_TX_3V3',68.50,71.50,.60,.30),
-    seg('LTE_UART_TX_3V3',68.50,71.50,68.50,70.75,.20),
-    seg('LTE_UART_TX_3V3',68.50,70.75,p_u10_tx[0],p_u10_tx[1],.20),
+    # TX: same perimeter on In2, then a short B.Cu drop outside the power stage.
+    seg('LTE_UART_TX_3V3',p_u2_tx[0],p_u2_tx[1],99.10,p_u2_tx[1],.20),
+    via('LTE_UART_TX_3V3',99.10,p_u2_tx[1],.60,.30),
+    seg('LTE_UART_TX_3V3',99.10,p_u2_tx[1],99.10,40.0,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.10,40.0,99.50,40.0,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.50,40.0,99.50,55.0,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.50,55.0,99.10,55.0,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.10,55.0,99.10,67.0,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.10,67.0,70.0,67.0,.20,'In2.Cu'),
+    via('LTE_UART_TX_3V3',70.0,67.0,.60,.30),
+    seg('LTE_UART_TX_3V3',70.0,67.0,70.0,71.25,.20,'B.Cu'),
+    via('LTE_UART_TX_3V3',70.0,71.25,.60,.30),
+    seg('LTE_UART_TX_3V3',70.0,71.25,70.0,70.75,.20),
+    seg('LTE_UART_TX_3V3',70.0,70.75,p_u10_tx[0],p_u10_tx[1],.20),
 
-    # VCCB=3V3_LINK. Reuse the existing 3V3_LINK endpoint at x=93.5/y=22.8.
-    # Route above/right of LINK_BOOT, descend at x=96 and fan out only below
-    # the old board/power-plane boundary.
-    via('3V3_LINK',93.50,22.80,.70,.35),
-    seg('3V3_LINK',93.50,22.80,93.50,19.00,.28,'In2.Cu'),
-    seg('3V3_LINK',93.50,19.00,96.00,19.00,.28,'In2.Cu'),
-    seg('3V3_LINK',96.00,19.00,96.00,68.50,.28,'In2.Cu'),
-    seg('3V3_LINK',96.00,68.50,60.50,68.50,.28,'In2.Cu'),
-    seg('3V3_LINK',60.50,68.50,60.50,69.20,.28,'In2.Cu'),
-    via('3V3_LINK',60.50,69.20,.70,.35),
-    seg('3V3_LINK',60.50,69.20,60.50,p_u10_vccb[1],.25),
-    seg('3V3_LINK',60.50,p_u10_vccb[1],p_u10_vccb[0],p_u10_vccb[1],.25),
+    # VCCB: tap the existing 3V3_LINK via at 93.5/22.8 on F.Cu, use the same
+    # safe perimeter, then enter In2 only after the old 100x65 board area.
+    seg('3V3_LINK',93.50,22.80,99.10,22.80,.25),
+    seg('3V3_LINK',99.10,22.80,99.10,40.0,.25),
+    seg('3V3_LINK',99.10,40.0,99.50,40.0,.25),
+    seg('3V3_LINK',99.50,40.0,99.50,55.0,.25),
+    seg('3V3_LINK',99.50,55.0,99.10,55.0,.25),
+    seg('3V3_LINK',99.10,55.0,99.10,68.0,.25),
+    via('3V3_LINK',99.10,68.0,.60,.30),
+    seg('3V3_LINK',99.10,68.0,51.60,68.0,.25,'In2.Cu'),
 
-    # Local VCCB bypass.
-    seg('3V3_LINK',p_u10_vccb[0],p_u10_vccb[1],63.50,72.20,.22),
-    seg('GND',63.50,73.80,64.30,73.80,.22),
-    via('GND',64.30,73.80,.70,.35),
+    # Pin 7 fan-out: one straight row into U10.
+    seg('3V3_LINK',57.20,68.0,57.20,70.25,.22,'In2.Cu'),
+    via('3V3_LINK',57.20,70.25,.60,.30),
+    seg('3V3_LINK',57.20,70.25,p_u10_vccb[0],p_u10_vccb[1],.20),
+
+    # C74 VCCB bypass branches from the same quiet In2 trunk.
+    seg('3V3_LINK',51.60,68.0,51.60,73.50,.22,'In2.Cu'),
+    via('3V3_LINK',51.60,73.50,.60,.30),
+    seg('3V3_LINK',51.60,73.50,51.60,73.50,.20),
+    seg('GND',53.20,73.50,54.20,73.50,.20),
+    via('GND',54.20,73.50,.70,.35),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
