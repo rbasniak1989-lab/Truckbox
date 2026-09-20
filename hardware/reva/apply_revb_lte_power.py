@@ -156,7 +156,7 @@ parts=[
 
     # Local UVLO / enable: ~9.2-V turn-on threshold from protected VIN.
     fp2('R64','100k EN HIGH',85.0,88.0,0,'LTE_EN','VIN_PROT','0603'),
-    fp2('R65','15k EN LOW',89.0,88.0,0,'LTE_EN','GND','0603'),
+    fp2('R65','15k EN LOW',81.0,90.0,0,'LTE_EN','GND','0603'),
 
     # A7683E local VBAT reservoir / RF decoupling.
     # 180-deg rotation puts LTE_3V8 pads toward the modem/trunk and GND outward.
@@ -257,10 +257,10 @@ r=[
     seg('LTE_FB',p_fb[0],p_fb[1],p_fb[0],69.5,.25),
     seg('LTE_FB',p_fb[0],69.5,83.2,69.5,.25),
     seg('LTE_FB',83.2,69.5,83.2,72.0,.25),
-    seg('LTE_3V8',84.8,69.5,86.0,69.5,.25),
-    via('LTE_3V8',86.0,69.5,.70,.35),
-    seg('LTE_3V8',86.0,69.5,86.0,73.5,.30,'B.Cu'),
-    seg('LTE_3V8',86.0,73.5,65.5,76.0,.30,'B.Cu'),
+    seg('LTE_3V8',84.8,69.5,87.0,69.5,.25),
+    via('LTE_3V8',87.0,69.5,.70,.35),
+    seg('LTE_3V8',87.0,69.5,87.0,73.5,.30,'B.Cu'),
+    seg('LTE_3V8',87.0,73.5,65.5,76.0,.30,'B.Cu'),
     seg('GND',84.8,72.0,85.5,72.0,.25), via('GND',85.5,72.0,.60,.30),
 
     # U11 bottom row escapes vertically outward (toward increasing Y).
@@ -273,8 +273,8 @@ r=[
     # EN goes straight down to the local UVLO divider.
     seg('LTE_EN',p_en[0],p_en[1],p_en[0],88.0,.25),
     seg('LTE_EN',p_en[0],88.0,84.2,88.0,.25),
-    seg('LTE_EN',84.2,88.0,88.2,88.0,.25),
-    seg('GND',89.8,88.0,90.5,88.0,.25), via('GND',90.5,88.0,.60,.30),
+    seg('LTE_EN',82.0,88.0,80.2,90.0,.25),
+    seg('GND',81.8,90.0,82.6,90.0,.25), via('GND',82.6,90.0,.60,.30),
 
     # U11 exposed pad ground.
     seg('GND',p_ep[0],p_ep[1],80.8,75.0,.80),
