@@ -284,6 +284,8 @@ items=[
     seg('CAN_MODE',78.000,40.595,78.000,44.405,.28,'B.Cu'),
     seg('3V3_MAIN',74.700,46.595,76.000,45.700,.30),
     via('3V3_MAIN',76.000,45.700),
+    # Restore C12 feed after removing the old segment that crossed the former R4 pad.
+    seg('3V3_MAIN',63.000,52.000,63.000,53.000,.30),
 
     # J1708 transmit control: inverted UART TX -> DE.
     # This exact B.Cu corridor already passed the Rev.B DRC in Run 205.
