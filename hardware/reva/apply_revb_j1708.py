@@ -74,7 +74,14 @@ if not net_pairs:
     raise RuntimeError('expected numeric net table before Rev.B J1708 conversion')
 if 'J1708_DE' not in {name for _,name in net_pairs}:
     new_id=max(idx for idx,_ in net_pairs)+1
-    matches=list(re.finditer(r'^  \(net \d+ "[^"]+"\)modern = re.search(r'\(segment\b.*?\(net\s+"[^"]+"\)', s, re.S) is not None
+    matches=list(re.finditer(r'^  \(net \d+ "[^"]+"\)$',s,re.M))
+    if not matches:
+        raise RuntimeError('J1708_DE net insertion point not found')
+    pos=matches[-1].end()
+    s=s[:pos]+f'\n  (net {new_id} "J1708_DE")'+s[pos:]
+
+net_id = {name: int(idx) for idx, name in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"\)', s)}
+modern = re.search(r'\(segment\b.*?\(net\s+"[^"]+"\)', s, re.S) is not None
 for required in ('GND','3V3_MAIN','J1708_RX','J1708_TX','J1708_DE','J1708_A','J1708_B'):
     if required not in net_id and not modern:
         raise RuntimeError(f'net {required} not found')
