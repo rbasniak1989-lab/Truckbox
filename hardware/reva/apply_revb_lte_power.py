@@ -147,7 +147,7 @@ parts=[
     fp2('C64','47uF 10V OUT',74.0,82.0,90,'LTE_3V8','GND','1210'),
 
     # 400-kHz programming, 3.8-V feedback and compensation.
-    fp2('R60','243k RT 400kHz',84.0,76.0,0,'LTE_RT','GND','0603'),
+    fp2('R60','243k RT 400kHz',88.0,75.0,0,'LTE_RT','GND','0603'),
     fp2('R61','38.3k FB HIGH',84.0,70.0,0,'LTE_3V8','LTE_FB','0603'),
     fp2('R62','10.2k FB LOW',88.0,72.0,0,'LTE_FB','GND','0603'),
     fp2('R63','6.34k COMP',84.0,65.8,0,'LTE_COMP','LTE_COMP_RC','0603'),
@@ -155,8 +155,8 @@ parts=[
     fp2('C66','100pF COMP POLE',84.0,67.8,0,'LTE_COMP','GND','0603'),
 
     # Local UVLO / enable: ~9.2-V turn-on threshold from protected VIN.
-    fp2('R64','100k EN HIGH',84.0,79.0,0,'VIN_PROT','LTE_EN','0603'),
-    fp2('R65','15k EN LOW',88.0,79.0,0,'LTE_EN','GND','0603'),
+    fp2('R64','100k EN HIGH',85.0,88.0,0,'VIN_PROT','LTE_EN','0603'),
+    fp2('R65','15k EN LOW',89.0,88.0,0,'LTE_EN','GND','0603'),
 
     # A7683E local VBAT reservoir / RF decoupling.
     # 180-deg rotation puts LTE_3V8 pads toward the modem/trunk and GND outward.
@@ -178,9 +178,9 @@ def via(n,x,y,size=.75,drill=.35):
 # L50: out=(67.8,68.3), SW=(74.2,68.3)
 r=[
     # Protected 24-V input. Drop to B.Cu after D2 and run through the empty LTE bay.
-    seg('VIN_PROT',p_vinsrc[0],p_vinsrc[1],p_vinsrc[0],54.5,.80,'F.Cu'),
-    via('VIN_PROT',p_vinsrc[0],54.5,.90,.45),
-    seg('VIN_PROT',p_vinsrc[0],54.5,93.0,65.0,1.00,'B.Cu'),
+    seg('VIN_PROT',p_vinsrc[0],p_vinsrc[1],77.000,52.000,.80,'F.Cu'),
+    via('VIN_PROT',77.000,52.000,.90,.45),
+    seg('VIN_PROT',77.000,52.000,93.0,65.0,1.00,'B.Cu'),
     seg('VIN_PROT',93.0,65.0,93.0,84.7,1.00,'B.Cu'),
     seg('VIN_PROT',93.0,84.7,89.2,84.7,1.00,'B.Cu'),
     via('VIN_PROT',89.2,84.7,.90,.45),
@@ -191,9 +191,8 @@ r=[
     seg('VIN_PROT',p_vin[0],p_vin[1],p_vin[0],80.3,.70),
     via('VIN_PROT',p_vin[0],80.3,.85,.40),
     seg('VIN_PROT',p_vin[0],80.3,80.5,84.7,.70,'B.Cu'),
-    via('VIN_PROT',83.0,79.0,.70,.35),
-    seg('VIN_PROT',83.0,79.0,80.5,84.7,.30,'B.Cu'),
-    seg('VIN_PROT',83.0,79.0,83.2,79.0,.25),
+    via('VIN_PROT',84.2,88.0,.70,.35),
+    seg('VIN_PROT',84.2,88.0,80.5,84.7,.30,'B.Cu'),
 
     # Compact switch node: U11 SW, catch diode, inductor and bootstrap.
     seg('LTE_SW',p_sw[0],p_sw[1],74.2,70.5,.80),
@@ -211,7 +210,7 @@ r=[
     via('LTE_3V8',65.5,76.0,1.00,.50),
     seg('LTE_3V8',65.5,76.0,65.5,91.5,2.00,'B.Cu'),
     seg('LTE_3V8',65.5,91.5,39.5,91.5,2.00,'B.Cu'),
-    seg('LTE_3V8',39.5,91.5,39.5,76.15,2.00,'B.Cu'),
+    seg('LTE_3V8',39.5,91.5,39.5,74.2,2.00,'B.Cu'),
     via('LTE_3V8',39.5,76.15,1.00,.50),
     seg('LTE_3V8',39.5,76.15,41.0,76.15,1.20),
     seg('LTE_3V8',41.0,76.15,p34[0],p34[1],1.00),
@@ -242,32 +241,38 @@ r=[
     # FB sense from the quiet 3.8-V output, then divider to U11 FB.
     via('LTE_3V8',83.2,70.0,.70,.35),
     seg('LTE_3V8',83.2,70.0,65.5,76.0,.25,'B.Cu'),
-    seg('LTE_FB',p_fb[0],p_fb[1],82.0,72.0,.25),
-    seg('LTE_FB',82.0,72.0,84.8,70.0,.25),
+    seg('LTE_FB',p_fb[0],p_fb[1],81.0,71.0,.25),
+    seg('LTE_FB',81.0,71.0,84.8,70.0,.25),
     seg('LTE_FB',84.8,70.0,87.2,72.0,.25),
     seg('GND',88.8,72.0,89.5,72.0,.25), via('GND',89.5,72.0,.60,.30),
 
-    # Compensation stays above/right of U11, away from the SW copper.
-    seg('LTE_COMP',p_comp[0],p_comp[1],77.5,69.5,.25),
-    seg('LTE_COMP',77.5,69.5,77.5,66.8,.25),
-    seg('LTE_COMP',77.5,66.8,83.2,65.8,.25),
+    # COMP escapes to the right; GND escapes to the left, so they never cross.
+    seg('LTE_COMP',p_comp[0],p_comp[1],80.0,72.0,.25),
+    seg('LTE_COMP',80.0,72.0,81.0,68.0,.25),
+    seg('LTE_COMP',81.0,68.0,83.2,65.8,.25),
     seg('LTE_COMP',83.2,65.8,83.2,67.8,.25),
     seg('LTE_COMP_RC',84.8,65.8,87.2,65.8,.25),
     seg('GND',88.8,65.8,89.5,65.8,.25), via('GND',89.5,65.8,.60,.30),
     seg('GND',84.8,67.8,85.5,67.8,.25), via('GND',85.5,67.8,.60,.30),
 
-    # RT and local UVLO/enable divider.
-    seg('LTE_RT',p_rt[0],p_rt[1],82.0,78.0,.25),
-    seg('LTE_RT',82.0,78.0,83.2,76.0,.25),
-    seg('GND',84.8,76.0,85.5,76.0,.25), via('GND',85.5,76.0,.60,.30),
-    seg('LTE_EN',p_en[0],p_en[1],81.0,78.8,.25),
-    seg('LTE_EN',81.0,78.8,84.8,79.0,.25),
-    seg('LTE_EN',84.8,79.0,87.2,79.0,.25),
-    seg('GND',88.8,79.0,89.5,79.0,.25), via('GND',89.5,79.0,.60,.30),
+    # RT and EN each escape straight outward from adjacent U11 pads, then fan out.
+    seg('LTE_RT',p_rt[0],p_rt[1],79.910,80.2,.25),
+    via('LTE_RT',79.910,80.2,.60,.30),
+    seg('LTE_RT',79.910,80.2,87.2,75.0,.25,'B.Cu'),
+    via('LTE_RT',87.2,75.0,.60,.30),
+    seg('LTE_RT',87.2,75.0,87.2,75.0,.25),
+    seg('GND',88.8,75.0,89.5,75.0,.25), via('GND',89.5,75.0,.60,.30),
+
+    seg('LTE_EN',p_en[0],p_en[1],78.640,80.8,.25),
+    via('LTE_EN',78.640,80.8,.60,.30),
+    seg('LTE_EN',78.640,80.8,85.8,88.0,.25,'B.Cu'),
+    via('LTE_EN',85.8,88.0,.60,.30),
+    seg('LTE_EN',85.8,88.0,88.2,88.0,.25),
+    seg('GND',89.8,88.0,90.5,88.0,.25), via('GND',90.5,88.0,.60,.30),
 
     # U11 ground pin + exposed pad.
-    seg('GND',p_gnd[0],p_gnd[1],78.5,69.5,.60),
-    via('GND',78.5,69.5,.85,.40),
+    seg('GND',p_gnd[0],p_gnd[1],76.0,72.0,.60),
+    via('GND',76.0,72.0,.85,.40),
     seg('GND',p_ep[0],p_ep[1],80.8,75.0,.80),
     via('GND',80.8,75.0,.90,.45),
 
