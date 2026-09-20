@@ -118,6 +118,28 @@ def iter_local_blocks(text, token):
         yield i,j,text[i:j]
         i=j
 
+def footprint_pad_xy(filename, padnum, x, y, rot):
+    """Return board-space pad center using the exact fetched JLC footprint."""
+    fp=read_fp(filename)
+    target=None
+    for _,_,blk in iter_local_blocks(fp,'pad'):
+        pm=re.match(r'\(pad\s+"?([^"\s]+)"?',blk)
+        if not pm or pm.group(1) != str(padnum):
+            continue
+        ma=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)(?:\s+[-+0-9.]+)?\)',blk)
+        if not ma:
+            raise RuntimeError(f'pad {padnum} has no at() in {filename}')
+        target=tuple(map(float,ma.groups()))
+        break
+    if target is None:
+        raise RuntimeError(f'pad {padnum} missing in {filename}')
+    import math
+    lx,ly=target
+    a=math.radians(rot)
+    gx=x + lx*math.cos(a) - ly*math.sin(a)
+    gy=y + lx*math.sin(a) + ly*math.cos(a)
+    return (gx,gy)
+
 def embed_fp(filename, ref, value, x, y, rot, pad_nets=None, force_smd=False):
     fp=read_fp(filename)
     # remove model references: geometry must be reproducible without external 3D assets
@@ -215,17 +237,28 @@ def seg(name,x1,y1,x2,y2,w=.30,layer='F.Cu'):
     return (f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) '
             f'(width {w:.3f}) (layer "{layer}") {netexpr(name)})')
 
-# U9 at 90 degrees:
-# pin32 ANT_MAIN -> (54.95,87.25)
-# pins34/35 VBAT -> (58.20,84.40)/(58.20,83.30)
-# R50 pads -> (60.30,88.00)/(61.30,88.00)
-# J6 signal pad2 -> (67.38,89.00)
+# Derive the A7683E electrical pad centres from the exact JLC footprint.
+# This avoids hand-maintained coordinates drifting from EasyEDA/JLC geometry.
+u9_file='COMM-SMD_L17.6-W15.7_A7683E.kicad_mod'
+p32=footprint_pad_xy(u9_file,32,50,80,90)  # ANT_MAIN
+p34=footprint_pad_xy(u9_file,34,50,80,90)  # VBAT
+p35=footprint_pad_xy(u9_file,35,50,80,90)  # VBAT
+print(f'U9 exact pads: 32={p32}, 34={p34}, 35={p35}')
+
+# R50 pad1/pad2 and J6 RF pad are fixed by our own local footprints/placement.
+r50_1=(60.30,88.00)
+r50_2=(61.30,88.00)
+j6_rf=(67.38,89.00)
+
 routes=[
-    seg('LTE_3V8',58.20,83.30,58.20,84.40,.80),
-    seg('LTE_ANT_MOD',54.95,87.25,57.20,87.25,.38),
-    seg('LTE_ANT_MOD',57.20,87.25,60.30,88.00,.38),
-    seg('LTE_ANT_CONN',61.30,88.00,64.50,88.00,.38),
-    seg('LTE_ANT_CONN',64.50,88.00,67.38,89.00,.38),
+    # Tie the two modem VBAT pins together locally. The regulator connection is
+    # added by the dedicated LTE power pass.
+    seg('LTE_3V8',p34[0],p34[1],p35[0],p35[1],.80),
+
+    # Keep the RF fanout short from the real ANT_MAIN pad to the pi-match.
+    seg('LTE_ANT_MOD',p32[0],p32[1],r50_1[0],r50_1[1],.38),
+    seg('LTE_ANT_CONN',r50_2[0],r50_2[1],64.50,88.00,.38),
+    seg('LTE_ANT_CONN',64.50,88.00,j6_rf[0],j6_rf[1],.38),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(routes)+'\n'+s[close:]
