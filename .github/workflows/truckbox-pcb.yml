@@ -25,6 +25,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends kicad
           kicad-cli version
 
+      - name: Fetch RevB JLC footprints
+        if: github.ref_name == 'hardware-revb-j1708-4g'
+        run: |
+          python3 -m pip install --disable-pip-version-check easyeda2kicad
+          rm -rf hardware/reva/revb_jlc.pretty
+          easyeda2kicad --footprint --lcsc_id C20617360 C5186957 C2687968 C3033025 C88373 --output hardware/reva/revb_jlc
+          find hardware/reva/revb_jlc.pretty -maxdepth 1 -type f -print
+
       - name: Generate board
         run: |
           python3 hardware/reva/generate_board.py
@@ -171,4 +179,5 @@ jobs:
           path: |
             hardware/reva/TruckBox_RevA.kicad_pcb
             hardware/reva/build/**
+            hardware/reva/revb_jlc.pretty/**
           if-no-files-found: error
