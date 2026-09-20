@@ -121,7 +121,7 @@ jobs:
           blocks=re.split(r'(?=^\[[^\]]+\]:)', text, flags=re.M)
           for block in blocks:
               m=re.match(r'^\[([^\]]+)\]:', block)
-              if m and m.group(1) not in ('lib_footprint_issues','unconnected_items'):
+              if m and m.group(1) != 'lib_footprint_issues':
                   print('--- DRC DETAIL ---')
                   print('\n'.join(block.strip().splitlines()[:14]))
           if geom or unconnected:

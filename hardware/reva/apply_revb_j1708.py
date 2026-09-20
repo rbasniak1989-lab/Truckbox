@@ -181,7 +181,7 @@ def move_footprint(text, ref, x, y, rot=None):
 
 # In Rev.B, U4 pin 4 is no longer GND; move C2 slightly downward to create
 # a real manufacturing escape channel for J1708_TX without touching Rev.A.
-s=move_footprint(s,'C2',67.500,53.600,90)
+s=move_footprint(s,'C2',67.500,52.500,0)
 
 def seg_info(blk):
     ms = re.search(r'\(start\s+([-+0-9.]+)\s+([-+0-9.]+)\)', blk)
@@ -271,8 +271,13 @@ close=s.rfind(')')
 s=s[:close]+'\n'+r52+'\n'+s[close:]
 
 items=[
-    # C2 moved +1.1 mm in Y; stitch its VIN pad back to the frozen Rev.A node.
-    seg('VIN_PROT',67.500,55.075,67.500,53.975,.40),
+    # C2 rotated 90 deg in place to open U4 pin-4 escape. Reconnect both pads
+    # explicitly so connectivity does not depend on local zone geometry.
+    seg('VIN_PROT',66.025,52.500,66.025,54.400,.40),
+    seg('VIN_PROT',66.025,54.400,67.500,54.400,.40),
+    seg('VIN_PROT',67.500,54.400,67.500,53.975,.40),
+    seg('GND',68.975,52.500,71.000,52.500,.40),
+    via('GND',71.000,52.500,.70,.35),
     seg('J1708_RX',69.300,46.595,65.500,46.500,.22),
     seg('CAN_MODE',78.000,40.595,78.000,44.405,.28,'B.Cu'),
     seg('3V3_MAIN',74.700,46.595,76.000,45.700,.30),
