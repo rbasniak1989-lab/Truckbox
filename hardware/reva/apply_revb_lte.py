@@ -124,6 +124,18 @@ def embed_fp(filename, ref, value, x, y, rot, pad_nets=None, force_smd=False):
     ranges=[(a,b) for a,b,_ in iter_local_blocks(fp,'model')]
     for a,b in reversed(ranges):
         fp=fp[:a]+fp[b:]
+
+    # easyeda2kicad can emit legacy fp_arc syntax:
+    #   (fp_arc (start ...) (end ...) (angle ...))
+    # KiCad 10 expects start/mid/end and refuses to parse the whole board.
+    # These legacy arcs are footprint drawing primitives only; remove only the
+    # incompatible legacy form while preserving pads, drills, nets and placement.
+    legacy_arcs=[]
+    for a,b,blk in iter_local_blocks(fp,'fp_arc'):
+        if '(angle ' in blk and '(mid ' not in blk:
+            legacy_arcs.append((a,b))
+    for a,b in reversed(legacy_arcs):
+        fp=fp[:a]+fp[b:]
     first=fp.find('(module ')
     if first != 0:
         raise RuntimeError(f'unexpected footprint format {filename}')
