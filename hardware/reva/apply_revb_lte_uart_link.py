@@ -146,64 +146,60 @@ def via(n,x,y,size=.60,drill=.30):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
 r=[
-    # New U2 pins have clean right-side exits: GPIO21/pin19 for RX,
-    # GPIO3/pin26 for TX.
-    seg('LTE_UART_RX_3V3',p_u2_rx[0],p_u2_rx[1],99.00,p_u2_rx[1],.20),
-    via('LTE_UART_RX_3V3',99.00,p_u2_rx[1],.60,.30),
-    seg('LTE_UART_TX_3V3',p_u2_tx[0],p_u2_tx[1],99.00,p_u2_tx[1],.20),
-    via('LTE_UART_TX_3V3',99.00,p_u2_tx[1],.60,.30),
+    # U2 RX (GPIO21/pin19): escape upward before SW1/LINK_BOOT, then to B.Cu.
+    seg('LTE_UART_RX_3V3',p_u2_rx[0],p_u2_rx[1],91.00,p_u2_rx[1],.20),
+    seg('LTE_UART_RX_3V3',91.00,p_u2_rx[1],91.00,14.00,.20),
+    seg('LTE_UART_RX_3V3',91.00,14.00,97.80,14.00,.20),
+    via('LTE_UART_RX_3V3',97.80,14.00,.60,.30),
 
-    # RX on B.Cu. x=99 clears J3; x=96 passes between J4's two columns.
-    seg('LTE_UART_RX_3V3',99.00,p_u2_rx[1],99.00,36.50,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',99.00,36.50,96.00,36.50,.20,'B.Cu'),
+    # U2 TX (GPIO3/pin26): direct clean escape on a separate perimeter column.
+    seg('LTE_UART_TX_3V3',p_u2_tx[0],p_u2_tx[1],98.00,p_u2_tx[1],.20),
+    via('LTE_UART_TX_3V3',98.00,p_u2_tx[1],.60,.30),
+
+    # RX reaches below J4 on B.Cu, then changes to In2 before the VIN_PROT wall.
+    seg('LTE_UART_RX_3V3',97.80,14.00,97.80,36.50,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',97.80,36.50,96.00,36.50,.20,'B.Cu'),
     seg('LTE_UART_RX_3V3',96.00,36.50,96.00,55.00,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',96.00,55.00,99.00,55.00,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',99.00,55.00,99.00,66.00,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',96.00,55.00,97.80,55.00,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',97.80,55.00,97.80,60.00,.20,'B.Cu'),
+    via('LTE_UART_RX_3V3',97.80,60.00,.60,.30),
+    seg('LTE_UART_RX_3V3',97.80,60.00,97.80,66.00,.20,'In2.Cu'),
+    seg('LTE_UART_RX_3V3',97.80,66.00,61.20,66.00,.20,'In2.Cu'),
+    seg('LTE_UART_RX_3V3',61.20,66.00,61.20,71.35,.20,'In2.Cu'),
+    via('LTE_UART_RX_3V3',61.20,71.35,.60,.30),
+    seg('LTE_UART_RX_3V3',61.20,71.35,61.70,70.75,.20),
+    seg('LTE_UART_RX_3V3',61.70,70.75,p_u10_rx[0],p_u10_rx[1],.20),
 
-    # Dogleg around the existing GND via at 89.5/65.8, then stay 1 mm
-    # above the existing LTE_RX_1V8 B.Cu corridor.
-    seg('LTE_UART_RX_3V3',99.00,66.00,91.00,66.00,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',91.00,66.00,91.00,67.20,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',91.00,67.20,88.00,67.20,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',88.00,67.20,88.00,66.00,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',88.00,66.00,55.00,66.00,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',55.00,66.00,55.00,70.75,.20,'B.Cu'),
-    via('LTE_UART_RX_3V3',55.00,70.75,.60,.30),
-    seg('LTE_UART_RX_3V3',55.00,70.75,p_u10_rx[0],p_u10_rx[1],.20),
-
-    # TX on In2 through the perimeter/J4 corridor, then drop to B.Cu before
-    # reaching the 3V3_LINK horizontal trunk.
-    seg('LTE_UART_TX_3V3',99.00,p_u2_tx[1],99.00,36.50,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',99.00,36.50,95.70,36.50,.20,'In2.Cu'),
+    # TX remains on In2 to the lower bay, then fans into pin 1 from below.
+    seg('LTE_UART_TX_3V3',98.00,p_u2_tx[1],98.00,36.50,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',98.00,36.50,95.70,36.50,.20,'In2.Cu'),
     seg('LTE_UART_TX_3V3',95.70,36.50,95.70,56.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',95.70,56.00,98.50,56.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',98.50,56.00,98.50,67.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',98.50,67.00,66.50,67.00,.20,'In2.Cu'),
-    via('LTE_UART_TX_3V3',66.50,67.00,.60,.30),
-    seg('LTE_UART_TX_3V3',66.50,67.00,66.50,69.80,.20,'B.Cu'),
-    via('LTE_UART_TX_3V3',66.50,69.80,.60,.30),
-    seg('LTE_UART_TX_3V3',66.50,69.80,67.50,69.80,.20),
-    seg('LTE_UART_TX_3V3',67.50,69.80,67.50,70.75,.20),
-    seg('LTE_UART_TX_3V3',67.50,70.75,p_u10_tx[0],p_u10_tx[1],.20),
+    seg('LTE_UART_TX_3V3',95.70,56.00,98.00,56.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',98.00,56.00,98.00,67.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',98.00,67.00,66.80,67.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',66.80,67.00,66.80,71.35,.20,'In2.Cu'),
+    via('LTE_UART_TX_3V3',66.80,71.35,.60,.30),
+    seg('LTE_UART_TX_3V3',66.80,71.35,66.30,70.75,.20),
+    seg('LTE_UART_TX_3V3',66.30,70.75,p_u10_tx[0],p_u10_tx[1],.20),
 
-    # 3V3_LINK starts on F.Cu at the existing 93.5/22.8 via, stays at x=99
-    # through J3, then changes to In2 below the ACC routing.
-    seg('3V3_LINK',93.50,22.80,99.00,22.80,.20),
-    seg('3V3_LINK',99.00,22.80,99.00,37.50,.20),
-    via('3V3_LINK',99.00,37.50,.60,.30),
-    seg('3V3_LINK',99.00,37.50,96.30,37.50,.20,'In2.Cu'),
+    # 3V3_LINK: move the F.Cu perimeter leg inward so the outer GND pour can
+    # reconnect around its lower endpoint instead of becoming an isolated strip.
+    seg('3V3_LINK',93.50,22.80,97.80,22.80,.20),
+    seg('3V3_LINK',97.80,22.80,97.80,37.50,.20),
+    via('3V3_LINK',97.80,37.50,.60,.30),
+    seg('3V3_LINK',97.80,37.50,96.30,37.50,.20,'In2.Cu'),
     seg('3V3_LINK',96.30,37.50,96.30,54.50,.20,'In2.Cu'),
     seg('3V3_LINK',96.30,54.50,99.00,54.50,.20,'In2.Cu'),
     seg('3V3_LINK',99.00,54.50,99.00,73.00,.20,'In2.Cu'),
 
-    # Quiet 3V3_LINK trunk at y=73 clears the lower-bay vias and the 1V8
-    # local fanout at y=74.
-    seg('3V3_LINK',99.00,73.00,53.00,73.00,.20,'In2.Cu'),
-    seg('3V3_LINK',53.00,73.00,53.00,70.25,.20,'In2.Cu'),
-    via('3V3_LINK',53.00,70.25,.60,.30),
-    seg('3V3_LINK',53.00,70.25,p_u10_vccb[0],p_u10_vccb[1],.20),
+    # Lower-bay trunk. Pin 7 stays on F.Cu all the way to a remote via, so no
+    # via sits between the 0.5-mm-pitch U10 rows.
+    seg('3V3_LINK',99.00,73.00,43.00,73.00,.20,'In2.Cu'),
+    seg('3V3_LINK',43.00,73.00,43.00,70.25,.20,'In2.Cu'),
+    via('3V3_LINK',43.00,70.25,.60,.30),
+    seg('3V3_LINK',43.00,70.25,p_u10_vccb[0],p_u10_vccb[1],.20),
 
-    # C74 moved outside U9. Feed its VCCB pad from the same In2 trunk.
+    # C74 decoupling branch remains outside U9.
     seg('3V3_LINK',61.70,73.00,61.70,84.00,.20,'In2.Cu'),
     via('3V3_LINK',61.70,84.00,.60,.30),
     seg('GND',63.30,84.00,62.50,85.00,.20),
