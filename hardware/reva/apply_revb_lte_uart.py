@@ -121,7 +121,7 @@ def fp0603(ref,val,x,y,rot,n1,n2):
   )'''
 
 # VCCA decoupling close to U10.
-part=fp0603('C73','100nF LTE 1V8',59.5,73.5,0,'LTE_1V8','GND')
+part=fp0603('C73','100nF LTE 1V8',60.5,76.0,0,'LTE_1V8','GND')
 close=s.rfind(')'); s=s[:close]+'\n'+part+'\n'+s[close:]
 
 def seg(n,x1,y1,x2,y2,w=.22,layer='F.Cu'):
@@ -147,24 +147,32 @@ r=[
     via('LTE_UART_RX_1V8',p4[0],67.5),
     seg('LTE_UART_RX_1V8',p4[0],67.5,p4[0],p4[1],.20),
 
-    # VDD_EXT 1.8V: short front escape, then B.Cu up the left side of U10.
-    seg('LTE_1V8',p_1v8[0],p_1v8[1],41.3,p_1v8[1],.25),
-    seg('LTE_1V8',41.3,p_1v8[1],41.3,83.6,.25),
-    via('LTE_1V8',41.3,83.6,.70,.35),
-    seg('LTE_1V8',41.3,83.6,58.0,83.6,.30,'B.Cu'),
-    seg('LTE_1V8',58.0,83.6,58.0,72.0,.30,'B.Cu'),
-    via('LTE_1V8',58.0,72.0,.70,.35),
-    seg('LTE_1V8',58.0,72.0,p6[0],p6[1],.25),
+    # VDD_EXT 1.8V: leave modem pad 40 straight to the left and drop to B.Cu
+    # outside the module edge, away from pads 41/42.
+    seg('LTE_1V8',p_1v8[0],p_1v8[1],40.0,p_1v8[1],.20),
+    via('LTE_1V8',40.0,p_1v8[1],.70,.35),
+    seg('LTE_1V8',40.0,p_1v8[1],59.0,82.2,.30,'B.Cu'),
+    seg('LTE_1V8',59.0,82.2,59.0,76.0,.30,'B.Cu'),
+    via('LTE_1V8',59.0,76.0,.70,.35),
+    seg('LTE_1V8',59.0,76.0,59.7,76.0,.20),
 
-    # Tie OE and VCCA together above U10, clear of signal pins.
-    seg('LTE_1V8',p6[0],p6[1],62.0,68.0,.25),
-    seg('LTE_1V8',62.0,68.0,66.0,68.0,.25),
-    seg('LTE_1V8',66.0,68.0,p3[0],p3[1],.25),
+    # Feed U10 OE/VCCA from opposite sides with narrow straight escapes.
+    # Join them only on B.Cu above the package so no 1V8 trace crosses UART pins.
+    seg('LTE_1V8',p6[0],p6[1],59.5,p6[1],.15),
+    via('LTE_1V8',59.5,p6[1],.60,.30),
+    seg('LTE_1V8',59.5,p6[1],59.5,66.0,.20,'B.Cu'),
+    seg('LTE_1V8',59.5,66.0,68.0,66.0,.20,'B.Cu'),
+    seg('LTE_1V8',68.0,66.0,68.0,p3[1],.20,'B.Cu'),
+    via('LTE_1V8',68.0,p3[1],.60,.30),
+    seg('LTE_1V8',68.0,p3[1],p3[0],p3[1],.15),
 
-    # 1.8-V bypass and U10 GND.
-    seg('LTE_1V8',58.0,72.0,58.7,73.5,.25),
-    seg('GND',60.3,73.5,60.8,73.5,.25),
-    via('GND',60.8,73.5,.70,.35),
+    # Join the modem-derived 1V8 rail to the U10 feed on B.Cu.
+    seg('LTE_1V8',59.0,76.0,59.5,69.75,.25,'B.Cu'),
+
+    # Local bypass ground is kept clear of the RX B.Cu corridor at x=61.
+    seg('GND',61.3,76.0,62.2,76.0,.20),
+    via('GND',62.2,76.0,.70,.35),
+
     seg('GND',p2[0],p2[1],66.2,70.25,.25),
     via('GND',66.2,70.25,.70,.35),
 ]
