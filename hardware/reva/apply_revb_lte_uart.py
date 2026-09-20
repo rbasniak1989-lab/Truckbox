@@ -159,9 +159,9 @@ r=[
     # approaching the fine-pitch package only from its outside edges.
     seg('LTE_1V8',60.0,72.0,60.0,p6[1],.20),
     seg('LTE_1V8',60.0,p6[1],p6[0],p6[1],.20),
-    seg('LTE_1V8',60.0,72.0,67.5,72.0,.20),
-    seg('LTE_1V8',67.5,72.0,67.5,p3[1],.20),
-    seg('LTE_1V8',67.5,p3[1],p3[0],p3[1],.20),
+    seg('LTE_1V8',60.0,72.0,64.0,72.0,.20),
+    seg('LTE_1V8',64.0,72.0,64.0,p3[1],.20),
+    seg('LTE_1V8',64.0,p3[1],p3[0],p3[1],.20),
 
     # Local VCCA bypass, left of the power inductor.
     seg('LTE_1V8',60.0,74.5,60.2,74.5,.20),
