@@ -78,7 +78,14 @@ for name in ('J1708_TX','J1708_DE'):
         adds.append(f'  (net {next_id} "{name}")')
         next_id+=1
 if adds:
-    matches=list(re.finditer(r'^  \(net \d+ "[^"]+"\)modern = re.search(r'\(segment\b.*?\(net\s+"[^"]+"\)', s, re.S) is not None
+    matches=list(re.finditer(r'^  \(net \d+ "[^"]+"\)$',s,re.M))
+    if not matches:
+        raise RuntimeError('J1708 TX/DE net insertion point not found')
+    pos=matches[-1].end()
+    s=s[:pos]+'\n'+'\n'.join(adds)+s[pos:]
+
+net_id = {name: int(idx) for idx, name in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"\)', s)}
+modern = re.search(r'\(segment\b.*?\(net\s+"[^"]+"\)', s, re.S) is not None
 for required in ('GND','3V3_MAIN','J1708_RX','J1708_TX','J1708_DE','J1708_A','J1708_B'):
     if required not in net_id and not modern:
         raise RuntimeError(f'net {required} not found')
