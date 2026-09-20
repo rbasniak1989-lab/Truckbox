@@ -169,6 +169,20 @@ for a, b, blk in iter_blocks(s, 'segment'):
 for a,b,nb in reversed(new_ranges):
     s = s[:a] + nb + s[b:]
 
+def move_footprint(text, ref, x, y, rot=None):
+    a,b,blk=find_footprint(text,ref)
+    m=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)(?:\s+([-+0-9.]+))?\)',blk)
+    if not m:
+        raise RuntimeError(f'footprint {ref} has no at()')
+    old_rot=float(m.group(3) or 0)
+    nr=old_rot if rot is None else rot
+    nb=blk[:m.start()]+f'(at {x:.3f} {y:.3f} {nr:g})'+blk[m.end():]
+    return text[:a]+nb+text[b:]
+
+# In Rev.B, U4 pin 4 is no longer GND; move C2 slightly downward to create
+# a real manufacturing escape channel for J1708_TX without touching Rev.A.
+s=move_footprint(s,'C2',67.500,53.600,90)
+
 def seg_info(blk):
     ms = re.search(r'\(start\s+([-+0-9.]+)\s+([-+0-9.]+)\)', blk)
     me = re.search(r'\(end\s+([-+0-9.]+)\s+([-+0-9.]+)\)', blk)
@@ -257,6 +271,8 @@ close=s.rfind(')')
 s=s[:close]+'\n'+r52+'\n'+s[close:]
 
 items=[
+    # C2 moved +1.1 mm in Y; stitch its VIN pad back to the frozen Rev.A node.
+    seg('VIN_PROT',67.500,55.075,67.500,53.975,.40),
     seg('J1708_RX',69.300,46.595,65.500,46.500,.22),
     seg('CAN_MODE',78.000,40.595,78.000,44.405,.28,'B.Cu'),
     seg('3V3_MAIN',74.700,46.595,76.000,45.700,.30),
@@ -267,10 +283,10 @@ items=[
     via('J1708_TX',8.200,21.910,.60,.30),
     seg('J1708_TX',8.200,21.910,7.800,22.500,.22,'In2.Cu'),
     seg('J1708_TX',7.800,22.500,7.800,67.000,.22,'In2.Cu'),
-    seg('J1708_TX',7.800,67.000,68.000,67.000,.22,'In2.Cu'),
-    seg('J1708_TX',68.000,67.000,68.000,49.700,.22,'In2.Cu'),
-    via('J1708_TX',68.000,49.700,.60,.30),
-    seg('J1708_TX',68.000,49.700,69.300,50.405,.22),
+    seg('J1708_TX',7.800,67.000,67.800,67.000,.22,'In2.Cu'),
+    seg('J1708_TX',67.800,67.000,67.800,50.405,.22,'In2.Cu'),
+    via('J1708_TX',67.800,50.405,.60,.30),
+    seg('J1708_TX',67.800,50.405,69.300,50.405,.22),
 
     # DE: GPIO12 (U1 pad13) -> independent In2.Cu corridor.
     seg('J1708_DE',9.250,23.180,8.800,23.180,.22),
