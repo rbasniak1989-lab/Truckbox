@@ -121,7 +121,7 @@ def fp0603(ref,val,x,y,rot,n1,n2):
   )'''
 
 # VCCA decoupling close to U10.
-part=fp0603('C73','100nF LTE 1V8',60.5,76.0,0,'LTE_1V8','GND')
+part=fp0603('C73','100nF LTE 1V8',64.0,74.0,0,'LTE_1V8','GND')
 close=s.rfind(')'); s=s[:close]+'\n'+part+'\n'+s[close:]
 
 def seg(n,x1,y1,x2,y2,w=.22,layer='F.Cu'):
@@ -130,51 +130,46 @@ def via(n,x,y,size=.60,drill=.30):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
 r=[
-    # Modem TXD: escape below module, run in free B.Cu LTE bay, enter U10 pin5 from left.
+    # Modem TXD: bottom escape, then dedicated B.Cu corridor at x=58.
     seg('LTE_UART_TX_1V8',p_tx[0],p_tx[1],p_tx[0],89.0,.20),
     via('LTE_UART_TX_1V8',p_tx[0],89.0),
-    seg('LTE_UART_TX_1V8',p_tx[0],89.0,60.0,89.0,.22,'B.Cu'),
-    seg('LTE_UART_TX_1V8',60.0,89.0,60.0,p5[1],.22,'B.Cu'),
-    via('LTE_UART_TX_1V8',60.0,p5[1]),
-    seg('LTE_UART_TX_1V8',60.0,p5[1],p5[0],p5[1],.20),
+    seg('LTE_UART_TX_1V8',p_tx[0],89.0,58.0,89.0,.20,'B.Cu'),
+    seg('LTE_UART_TX_1V8',58.0,89.0,58.0,p5[1],.20,'B.Cu'),
+    via('LTE_UART_TX_1V8',58.0,p5[1]),
+    seg('LTE_UART_TX_1V8',58.0,p5[1],p5[0],p5[1],.20),
 
-    # Modem RXD: separate B.Cu corridor, then approach U10 pin4 vertically from above.
+    # Modem RXD: separate x=59 B.Cu corridor and short vertical pad escape.
     seg('LTE_UART_RX_1V8',p_rx[0],p_rx[1],p_rx[0],90.0,.20),
     via('LTE_UART_RX_1V8',p_rx[0],90.0),
-    seg('LTE_UART_RX_1V8',p_rx[0],90.0,61.0,90.0,.22,'B.Cu'),
-    seg('LTE_UART_RX_1V8',61.0,90.0,61.0,67.5,.22,'B.Cu'),
-    seg('LTE_UART_RX_1V8',61.0,67.5,p4[0],67.5,.22,'B.Cu'),
-    via('LTE_UART_RX_1V8',p4[0],67.5),
-    seg('LTE_UART_RX_1V8',p4[0],67.5,p4[0],p4[1],.20),
+    seg('LTE_UART_RX_1V8',p_rx[0],90.0,59.0,90.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_1V8',59.0,90.0,59.0,67.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_1V8',59.0,67.0,p4[0],67.0,.20,'B.Cu'),
+    via('LTE_UART_RX_1V8',p4[0],67.0),
+    seg('LTE_UART_RX_1V8',p4[0],67.0,p4[0],p4[1],.20),
 
-    # VDD_EXT 1.8V: leave modem pad 40 straight to the left and drop to B.Cu
-    # outside the module edge, away from pads 41/42.
-    seg('LTE_1V8',p_1v8[0],p_1v8[1],40.0,p_1v8[1],.20),
-    via('LTE_1V8',40.0,p_1v8[1],.70,.35),
-    seg('LTE_1V8',40.0,p_1v8[1],59.0,82.2,.30,'B.Cu'),
-    seg('LTE_1V8',59.0,82.2,59.0,76.0,.30,'B.Cu'),
-    via('LTE_1V8',59.0,76.0,.70,.35),
-    seg('LTE_1V8',59.0,76.0,59.7,76.0,.20),
+    # VDD_EXT 1.8V gets its own B.Cu column at x=39.5, now clear of LTE_3V8.
+    seg('LTE_1V8',p_1v8[0],p_1v8[1],39.5,p_1v8[1],.20),
+    via('LTE_1V8',39.5,p_1v8[1],.60,.30),
+    seg('LTE_1V8',39.5,p_1v8[1],39.5,64.0,.25,'B.Cu'),
+    seg('LTE_1V8',39.5,64.0,67.0,64.0,.25,'B.Cu'),
 
-    # Feed U10 OE/VCCA from opposite sides with narrow straight escapes.
-    # Join them only on B.Cu above the package so no 1V8 trace crosses UART pins.
-    seg('LTE_1V8',p6[0],p6[1],59.5,p6[1],.15),
-    via('LTE_1V8',59.5,p6[1],.60,.30),
-    seg('LTE_1V8',59.5,p6[1],59.5,66.0,.20,'B.Cu'),
-    seg('LTE_1V8',59.5,66.0,68.0,66.0,.20,'B.Cu'),
-    seg('LTE_1V8',68.0,66.0,68.0,p3[1],.20,'B.Cu'),
-    via('LTE_1V8',68.0,p3[1],.60,.30),
-    seg('LTE_1V8',68.0,p3[1],p3[0],p3[1],.15),
+    # U10 OE and VCCA escape straight outward from the fine-pitch package.
+    seg('LTE_1V8',p6[0],p6[1],61.0,p6[1],.20),
+    via('LTE_1V8',61.0,p6[1],.60,.30),
+    seg('LTE_1V8',61.0,p6[1],61.0,64.0,.20,'B.Cu'),
+    seg('LTE_1V8',p3[0],p3[1],67.0,p3[1],.20),
+    via('LTE_1V8',67.0,p3[1],.60,.30),
+    seg('LTE_1V8',67.0,p3[1],67.0,64.0,.20,'B.Cu'),
 
-    # Join the modem-derived 1V8 rail to the U10 feed on B.Cu.
-    seg('LTE_1V8',59.0,76.0,59.5,69.75,.25,'B.Cu'),
+    # Local VCCA bypass below U10.
+    via('LTE_1V8',63.2,74.0,.60,.30),
+    seg('LTE_1V8',63.2,74.0,61.0,p6[1],.20,'B.Cu'),
+    seg('GND',64.8,74.0,65.8,74.0,.20),
+    via('GND',65.8,74.0,.70,.35),
 
-    # Local bypass ground is kept clear of the RX B.Cu corridor at x=61.
-    seg('GND',61.3,76.0,62.2,76.0,.20),
-    via('GND',62.2,76.0,.70,.35),
-
-    seg('GND',p2[0],p2[1],66.2,70.25,.25),
-    via('GND',66.2,70.25,.70,.35),
+    # U10 ground exits to the right, clear of VCCA and the power-stage GND via.
+    seg('GND',p2[0],p2[1],69.0,p2[1],.20),
+    via('GND',69.0,p2[1],.70,.35),
 ]
 close=s.rfind(')'); s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
 

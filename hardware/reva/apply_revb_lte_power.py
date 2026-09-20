@@ -160,8 +160,8 @@ parts=[
 
     # A7683E local VBAT reservoir / RF decoupling.
     # 180-deg rotation puts LTE_3V8 pads toward the modem/trunk and GND outward.
-    fp2('C67','100uF 10V VBAT',36.0,84.0,180,'LTE_3V8','GND','7343'),
-    fp2('C68','100uF 10V VBAT',36.0,90.0,180,'LTE_3V8','GND','7343'),
+    fp2('C67','100uF 10V VBAT',34.0,84.0,180,'LTE_3V8','GND','7343'),
+    fp2('C68','100uF 10V VBAT',34.0,90.0,180,'LTE_3V8','GND','7343'),
     fp2('C69','1uF VBAT',38.0,74.2,180,'LTE_3V8','GND','0603'),
     fp2('C70','100nF VBAT',38.0,76.4,180,'LTE_3V8','GND','0603'),
     fp2('C71','33pF VBAT',38.0,78.6,180,'LTE_3V8','GND','0603'),
@@ -206,15 +206,19 @@ r=[
     seg('GND',69.8,68.5,68.5,68.5,.60),
     via('GND',68.5,68.5,.85,.40),
 
-    # 3.8-V output: short F.Cu neck, then a 2-mm B.Cu trunk around the modem.
+    # 3.8-V output: keep the high-current trunk left of the new 1.8-V corridor.
     seg('LTE_3V8',66.8,75.0,65.5,76.0,1.20),
     via('LTE_3V8',65.5,76.0,1.00,.50),
     seg('LTE_3V8',65.5,76.0,65.5,91.5,2.00,'B.Cu'),
-    seg('LTE_3V8',65.5,91.5,39.5,91.5,2.00,'B.Cu'),
-    seg('LTE_3V8',39.5,91.5,39.5,74.2,2.00,'B.Cu'),
-    via('LTE_3V8',39.5,76.15,1.00,.50),
-    seg('LTE_3V8',39.5,76.15,41.0,76.15,1.20),
-    seg('LTE_3V8',41.0,76.15,p34[0],p34[1],1.00),
+    seg('LTE_3V8',65.5,91.5,35.5,91.5,2.00,'B.Cu'),
+    seg('LTE_3V8',35.5,91.5,35.5,72.0,2.00,'B.Cu'),
+
+    # Main modem VBAT branch leaves the B.Cu trunk on F.Cu at y=80,
+    # then runs just outside the module edge to VBAT pad 35.
+    via('LTE_3V8',35.5,80.0,.90,.45),
+    seg('LTE_3V8',35.5,80.0,40.5,80.0,.80),
+    seg('LTE_3V8',40.5,80.0,40.5,p35[1],.80),
+    seg('LTE_3V8',40.5,p35[1],p35[0],p35[1],.80),
     seg('LTE_3V8',p34[0],p34[1],p35[0],p35[1],1.00),
 
     # Output caps join the B.Cu trunk individually.
@@ -225,16 +229,15 @@ r=[
     seg('GND',69.0,80.3,67.5,80.3,.60), via('GND',67.5,80.3,.85,.40),
     seg('GND',74.0,80.3,75.5,80.3,.60), via('GND',75.5,80.3,.85,.40),
 
-    # Modem bulk / HF decoupling: each power pad goes to the vertical B.Cu trunk.
-    seg('LTE_3V8',38.7,84.0,39.5,84.0,.80), via('LTE_3V8',39.5,84.0,.85,.40),
-    seg('LTE_3V8',38.7,90.0,39.5,90.0,.80), via('LTE_3V8',39.5,90.0,.85,.40),
-    seg('LTE_3V8',38.8,74.2,39.5,74.2,.45), via('LTE_3V8',39.5,74.2,.70,.35),
-    seg('LTE_3V8',38.8,76.4,39.5,76.4,.45),
-    seg('LTE_3V8',38.8,78.6,39.5,78.6,.45), via('LTE_3V8',39.5,78.6,.70,.35),
+    # Modem bulk / HF decoupling: all power vias sit on the x=35.5 trunk.
+    seg('LTE_3V8',36.7,84.0,35.5,84.0,.80), via('LTE_3V8',35.5,84.0,.85,.40),
+    seg('LTE_3V8',36.7,90.0,35.5,90.0,.80), via('LTE_3V8',35.5,90.0,.85,.40),
+    seg('LTE_3V8',38.8,74.2,35.5,74.2,.45), via('LTE_3V8',35.5,74.2,.70,.35),
+    seg('LTE_3V8',38.8,76.4,35.5,76.4,.45), via('LTE_3V8',35.5,76.4,.70,.35),
+    seg('LTE_3V8',38.8,78.6,35.5,78.6,.45), via('LTE_3V8',35.5,78.6,.70,.35),
     seg('LTE_3V8',34.8,72.0,35.5,72.0,.45), via('LTE_3V8',35.5,72.0,.70,.35),
-    seg('LTE_3V8',35.5,72.0,39.5,74.2,.45,'B.Cu'),
-    seg('GND',33.3,84.0,32.3,84.0,.60), via('GND',32.3,84.0,.85,.40),
-    seg('GND',33.3,90.0,32.3,90.0,.60), via('GND',32.3,90.0,.85,.40),
+    seg('GND',31.3,84.0,30.3,84.0,.60), via('GND',30.3,84.0,.85,.40),
+    seg('GND',31.3,90.0,30.3,90.0,.60), via('GND',30.3,90.0,.85,.40),
     seg('GND',37.2,74.2,36.5,74.2,.25), via('GND',36.5,74.2,.60,.30),
     seg('GND',37.2,76.4,36.5,76.4,.25), via('GND',36.5,76.4,.60,.30),
     seg('GND',37.2,78.6,36.5,78.6,.25), via('GND',36.5,78.6,.60,.30),
