@@ -143,9 +143,9 @@ for pin, net in {
 s = s[:a] + u4 + s[b:]
 
 a, b, r4 = find_footprint(s, 'R4')
-r4 = set_value(r4, '10k J1708_RX PULLUP')
-r4 = pad_net(r4, 1, '3V3_MAIN')
-r4 = pad_net(r4, 2, 'J1708_RX')
+r4 = set_value(r4, '10k J1708_DE PULLDOWN')
+r4 = pad_net(r4, 1, 'GND')
+r4 = pad_net(r4, 2, 'J1708_DE')
 s = s[:a] + r4 + s[b:]
 
 # ESP32-C6-MINI-1 official module pins:
@@ -219,6 +219,10 @@ for a,b,blk in iter_blocks(s,'segment'):
         drop=True
     if same_pair(p1,p2,(65.5,46.5),(64.5,46.5)):
         drop=True
+    if name=='3V3_MAIN' and same_pair(p1,p2,(63.0,51.0),(63.0,53.0)):
+        drop=True
+    if name=='J1708_RX' and same_pair(p1,p2,(64.0,51.0),(65.2,49.3)):
+        drop=True
     if name=='VIN_PROT' and (
         same_pair(p1,p2,(67.5,53.975),(68.5,55.0)) or
         same_pair(p1,p2,(70.0,53.5),(69.5,53.975)) or
@@ -267,18 +271,6 @@ def via(name,x,y,size=.70,drill=.35):
     return (f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) '
             f'(layers "F.Cu" "B.Cu") {net_expr(name)})')
 
-# Dedicated fail-safe DE pull-down. Keep the original R4/RX geometry untouched.
-r52=f'''  (footprint "RevB:0603_J1708_DE_PD" (layer "F.Cu")
-    (at 12.000 70.000)
-    (attr smd)
-    (fp_text reference "R52" (at 0 -1.5) (layer "F.SilkS") hide (effects (font (size 0.8 0.8) (thickness 0.1))))
-    (fp_text value "10k J1708_DE PULLDOWN" (at 0 1.4) (layer "F.Fab") (effects (font (size 0.6 0.6) (thickness 0.1))))
-    (pad "1" smd roundrect (at -0.5 0) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {net_expr('GND',True)} (zone_connect 2))
-    (pad "2" smd roundrect (at 0.5 0) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {net_expr('J1708_DE',True)})
-  )'''
-close=s.rfind(')')
-s=s[:close]+'\n'+r52+'\n'+s[close:]
-
 items=[
     # Rotate C2 in place, then rebuild the local VIN/GND fanout around it.
     seg('VIN_PROT',70.000,45.300,70.000,55.000,.40,'B.Cu'),
@@ -314,37 +306,33 @@ items=[
     via('J1708_TX',67.800,50.405,.60,.30),
     seg('J1708_TX',67.800,50.405,69.300,50.405,.22),
 
-    # J1708 DE: GPIO14 / module pad19 stays on F.Cu; no power plane is cut.
-    seg('J1708_DE',26.750,19.370,25.500,18.750,.22),
-    seg('J1708_DE',25.500,18.750,18.000,11.500,.22),
-    seg('J1708_DE',18.000,11.500,9.500,6.750,.22),
-    seg('J1708_DE',9.500,6.750,8.500,7.000,.22),
-    seg('J1708_DE',8.500,7.000,6.000,10.250,.22),
-    seg('J1708_DE',6.000,10.250,3.000,11.500,.22),
-    seg('J1708_DE',3.000,11.500,0.750,18.750,.22),
-    seg('J1708_DE',0.750,18.750,0.750,57.250,.22),
-    seg('J1708_DE',0.750,57.250,4.250,59.000,.22),
-    seg('J1708_DE',4.250,59.000,5.000,59.250,.22),
-    seg('J1708_DE',5.000,59.250,7.250,61.750,.22),
-    seg('J1708_DE',7.250,61.750,10.000,67.000,.22),
-    seg('J1708_DE',10.000,67.000,39.750,66.000,.22),
-    seg('J1708_DE',39.750,66.000,60.000,72.000,.22),
-    seg('J1708_DE',60.000,72.000,50.000,60.000,.22),
-    seg('J1708_DE',50.000,60.000,49.750,58.500,.22),
-    seg('J1708_DE',49.750,58.500,50.500,51.250,.22),
-    seg('J1708_DE',50.500,51.250,52.750,46.500,.22),
-    seg('J1708_DE',52.750,46.500,63.000,38.250,.22),
-    seg('J1708_DE',63.000,38.250,65.500,38.000,.22),
-    seg('J1708_DE',65.500,38.000,69.750,39.500,.22),
-    seg('J1708_DE',69.750,39.500,70.500,40.250,.22),
-    seg('J1708_DE',70.500,40.250,70.500,48.250,.22),
-    seg('J1708_DE',70.500,48.250,69.750,49.000,.22),
-    seg('J1708_DE',69.750,49.000,69.300,49.135,.22),
-
-    # Hardware fail-safe: DE low at boot even before firmware configures GPIO14.
-    seg('J1708_DE',10.000,67.000,12.500,70.000,.22),
-    seg('GND',11.500,70.000,10.500,70.000,.25),
-    via('GND',10.500,70.000,.60,.30),
+    # J1708 DE: GPIO14 / module pad19 -> B.Cu top/right corridor -> U4 DE.
+    seg('J1708_DE',26.750,19.370,28.000,19.370,.22),
+    via('J1708_DE',28.000,19.370,.60,.30),
+    seg('J1708_DE',28.000,19.370,27.250,18.000,.22,'B.Cu'),
+    seg('J1708_DE',27.250,18.000,27.250,10.250,.22,'B.Cu'),
+    seg('J1708_DE',27.250,10.250,30.750,6.750,.22,'B.Cu'),
+    seg('J1708_DE',30.750,6.750,35.000,5.000,.22,'B.Cu'),
+    seg('J1708_DE',35.000,5.000,66.250,4.500,.22,'B.Cu'),
+    seg('J1708_DE',66.250,4.500,80.000,5.000,.22,'B.Cu'),
+    seg('J1708_DE',80.000,5.000,93.750,9.000,.22,'B.Cu'),
+    seg('J1708_DE',93.750,9.000,94.250,8.500,.22,'B.Cu'),
+    seg('J1708_DE',94.250,8.500,94.000,9.250,.22,'B.Cu'),
+    seg('J1708_DE',94.000,9.250,94.250,10.500,.22,'B.Cu'),
+    seg('J1708_DE',94.250,10.500,94.750,31.250,.22,'B.Cu'),
+    seg('J1708_DE',94.750,31.250,94.750,33.250,.22,'B.Cu'),
+    seg('J1708_DE',94.750,33.250,93.750,34.500,.22,'B.Cu'),
+    seg('J1708_DE',93.750,34.500,90.250,34.250,.22,'B.Cu'),
+    seg('J1708_DE',90.250,34.250,70.250,54.250,.22,'B.Cu'),
+    seg('J1708_DE',70.250,54.250,69.750,54.250,.22,'B.Cu'),
+    seg('J1708_DE',69.750,54.250,68.500,52.750,.22,'B.Cu'),
+    seg('J1708_DE',68.500,52.750,68.500,50.000,.22,'B.Cu'),
+    seg('J1708_DE',68.500,50.000,67.000,49.250,.22,'B.Cu'),
+    seg('J1708_DE',67.000,49.250,67.000,49.135,.22,'B.Cu'),
+    via('J1708_DE',67.000,49.135,.60,.30),
+    seg('J1708_DE',67.000,49.135,69.300,49.135,.22),
+    # Reused R4 is the hardware fail-safe pull-down close to the transceiver.
+    seg('J1708_DE',67.000,49.135,64.000,51.000,.22),
 ]
 close=s.rfind(')')
 if close<0:
@@ -385,8 +373,10 @@ for pin,needle in ((17,'J1708_TX'),(19,'J1708_DE')):
     pj=balanced_block(u1chk,pm.start())
     if needle not in u1chk[pm.start():pj]:
         raise RuntimeError(f'U1 pad {pin} postcondition missing {needle}')
-if 'reference "R52"' not in s and '(property "Reference" "R52"' not in s:
-    raise RuntimeError('R52 DE pull-down missing')
+_,_,r4chk=find_footprint(s,'R4')
+for needle in ('10k J1708_DE PULLDOWN','GND','J1708_DE'):
+    if needle not in r4chk:
+        raise RuntimeError(f'R4 postcondition missing {needle}')
 _,_,j4chk=find_footprint(s,'J4')
 if 'J1708_A' not in j4chk or 'J1708_B' not in j4chk:
     raise RuntimeError('J4 J1708 remap failed')
