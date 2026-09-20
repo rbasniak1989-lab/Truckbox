@@ -12,7 +12,7 @@ s = P.read_text(encoding='utf-8')
 #   J5  nano-SIM C3033025 at (25,80), 90 deg
 #   U10 TXU0202 C5186957 at (64,70)
 #   U11 TPS54360B-Q1 C2687968 at (78,75)
-#   J6  U.FL C88373 at (68,89)
+#   J6  U.FL C88373 near ANT_MAIN at (37.5,69)
 # Only the modem ground/VBAT and the complete RF chain are electrically
 # introduced in this pass. Power, UART and SIM circuitry follow in later passes.
 
@@ -118,6 +118,15 @@ def iter_local_blocks(text, token):
         yield i,j,text[i:j]
         i=j
 
+def board_xy(lx, ly, x, y, rot):
+    """Transform footprint-local XY to KiCad board XY."""
+    import math
+    a=math.radians(rot)
+    return (
+        x + lx*math.cos(a) + ly*math.sin(a),
+        y - lx*math.sin(a) + ly*math.cos(a),
+    )
+
 def footprint_pad_xy(filename, padnum, x, y, rot):
     """Return board-space pad center using the exact fetched JLC footprint."""
     fp=read_fp(filename)
@@ -133,16 +142,12 @@ def footprint_pad_xy(filename, padnum, x, y, rot):
         break
     if target is None:
         raise RuntimeError(f'pad {padnum} missing in {filename}')
-    import math
     lx,ly=target
-    a=math.radians(rot)
     # KiCad board coordinates use +Y downward on screen, therefore positive
     # footprint rotation transforms local coordinates clockwise in XY space.
-    gx=x + lx*math.cos(a) + ly*math.sin(a)
-    gy=y - lx*math.sin(a) + ly*math.cos(a)
-    return (gx,gy)
+    return board_xy(lx,ly,x,y,rot)
 
-def embed_fp(filename, ref, value, x, y, rot, pad_nets=None, force_smd=False):
+def embed_fp(filename, ref, value, x, y, rot, pad_nets=None, force_smd=False, npth_unnumbered=False):
     fp=read_fp(filename)
     # remove model references: geometry must be reproducible without external 3D assets
     ranges=[(a,b) for a,b,_ in iter_local_blocks(fp,'model')]
@@ -174,6 +179,13 @@ def embed_fp(filename, ref, value, x, y, rot, pad_nets=None, force_smd=False):
     fp=re.sub(r'\(fp_text\s+value\s+[^\s\)]+', f'(fp_text value "{value}"', fp, count=1)
     if force_smd:
         fp=fp.replace('(attr through_hole)','(attr smd)')
+    if npth_unnumbered:
+        mech=[]
+        for a,b,blk in iter_local_blocks(fp,'pad'):
+            if re.match(r'\(pad\s+""\s+thru_hole\b',blk):
+                mech.append((a,b,blk.replace('(pad "" thru_hole','(pad "" np_thru_hole',1)))
+        for a,b,nb in reversed(mech):
+            fp=fp[:a]+nb+fp[b:]
     pad_nets=pad_nets or {}
     # Add board net to selected numbered pads.
     replacements=[]
@@ -183,7 +195,10 @@ def embed_fp(filename, ref, value, x, y, rot, pad_nets=None, force_smd=False):
             continue
         pn=pm.group(1)
         if pn in pad_nets:
-            nb=blk[:-1]+' '+netexpr(pad_nets[pn],pad=True)+')'
+            extra=' '+netexpr(pad_nets[pn],pad=True)
+            if pad_nets[pn]=='GND':
+                extra+=' (zone_connect 2)'
+            nb=blk[:-1]+extra+')'
             replacements.append((a,b,nb))
     for a,b,nb in reversed(replacements):
         fp=fp[:a]+nb+fp[b:]
@@ -193,12 +208,25 @@ modem_gnd = {str(n):'GND' for n in [8,13,19,21,27,30,31,33,36,37,45,63,66,67,69,
 modem_nets = dict(modem_gnd)
 modem_nets.update({'34':'LTE_3V8','35':'LTE_3V8','32':'LTE_ANT_MOD'})
 
+u9_file='COMM-SMD_L17.6-W15.7_A7683E.kicad_mod'
+p32=footprint_pad_xy(u9_file,32,50,80,90)  # ANT_MAIN
+p34=footprint_pad_xy(u9_file,34,50,80,90)  # VBAT
+p35=footprint_pad_xy(u9_file,35,50,80,90)  # VBAT
+print(f'U9 exact pads: 32={p32}, 34={p34}, 35={p35}')
+
+# RF components sit immediately outside the ANT_MAIN corner so the 50-ohm
+# fanout never crosses underneath the modem.
+r50_pos=(43.00,70.80,180)
+c50_pos=(44.00,69.00,90)
+c51_pos=(40.50,69.00,90)
+j6_pos=(37.50,69.00,0)
+
 fps=[
     embed_fp('COMM-SMD_L17.6-W15.7_A7683E.kicad_mod','U9','A7683E C20617360',50,80,90,modem_nets),
-    embed_fp('SIM-SMD_SIM8051-6-0-14-01-A.kicad_mod','J5','Nano-SIM C3033025',25,80,90,{}),
+    embed_fp('SIM-SMD_SIM8051-6-0-14-01-A.kicad_mod','J5','Nano-SIM C3033025',25,80,90,{},npth_unnumbered=True),
     embed_fp('VSSOP-8_L2.3-W2.0-P0.50-LS3.1-BR.kicad_mod','U10','TXU0202DCUR C5186957',64,70,0,{},True),
     embed_fp('SO-8_L4.9-W3.9-P1.27-LS6.0-BL-EP.kicad_mod','U11','TPS54360BQDDARQ1 C2687968',78,75,0,{}),
-    embed_fp('ANT-SMD_UFL-R-SMT-1-10.kicad_mod','J6','U.FL-R-SMT-1(10) C88373',68,89,0,{'1':'GND','2':'LTE_ANT_CONN','3':'GND'}),
+    embed_fp('ANT-SMD_UFL-R-SMT-1-10.kicad_mod','J6','U.FL-R-SMT-1(10) C88373',j6_pos[0],j6_pos[1],j6_pos[2],{'1':'GND','2':'LTE_ANT_CONN','3':'GND'}),
 ]
 
 # Generic 0603 for the LTE pi match. C50/C51 are DNP tuning positions.
@@ -206,16 +234,16 @@ def fp0603(ref,val,x,y,rot,n1,n2):
     return f'''  (footprint "RevB:0603_RF" (layer "F.Cu")
     (at {x:.3f} {y:.3f} {rot})
     (attr smd)
-    (fp_text reference "{ref}" (at 0 -1.4 {rot}) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+    (fp_text reference "{ref}" (at 0 -1.6 {rot}) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.1))))
     (fp_text value "{val}" (at 0 1.4 {rot}) (layer "F.Fab") (effects (font (size 0.6 0.6) (thickness 0.1))))
-    (pad "1" smd roundrect (at -0.5 0 {rot}) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {netexpr(n1,True)})
-    (pad "2" smd roundrect (at 0.5 0 {rot}) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {netexpr(n2,True)})
+    (pad "1" smd roundrect (at -0.5 0 {rot}) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {netexpr(n1,True)}{(' (zone_connect 2)' if n1=='GND' else '')})
+    (pad "2" smd roundrect (at 0.5 0 {rot}) (size 0.65 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.2) {netexpr(n2,True)}{(' (zone_connect 2)' if n2=='GND' else '')})
   )'''
 
 fps += [
-    fp0603('R50','0R RF MATCH',60.8,88.0,0,'LTE_ANT_MOD','LTE_ANT_CONN'),
-    fp0603('C50','DNP RF SHUNT',59.2,89.6,90,'LTE_ANT_MOD','GND'),
-    fp0603('C51','DNP RF SHUNT',62.4,89.6,90,'LTE_ANT_CONN','GND'),
+    fp0603('R50','0R RF MATCH',r50_pos[0],r50_pos[1],r50_pos[2],'LTE_ANT_MOD','LTE_ANT_CONN'),
+    fp0603('C50','DNP RF SHUNT',c50_pos[0],c50_pos[1],c50_pos[2],'LTE_ANT_MOD','GND'),
+    fp0603('C51','DNP RF SHUNT',c51_pos[0],c51_pos[1],c51_pos[2],'LTE_ANT_CONN','GND'),
 ]
 
 # Add two bottom mounting holes to support the longer 100x95 board.
@@ -239,36 +267,32 @@ def seg(name,x1,y1,x2,y2,w=.30,layer='F.Cu'):
     return (f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) '
             f'(width {w:.3f}) (layer "{layer}") {netexpr(name)})')
 
-# Derive the A7683E electrical pad centres from the exact JLC footprint.
-# This avoids hand-maintained coordinates drifting from EasyEDA/JLC geometry.
-u9_file='COMM-SMD_L17.6-W15.7_A7683E.kicad_mod'
-p32=footprint_pad_xy(u9_file,32,50,80,90)  # ANT_MAIN
-p34=footprint_pad_xy(u9_file,34,50,80,90)  # VBAT
-p35=footprint_pad_xy(u9_file,35,50,80,90)  # VBAT
-print(f'U9 exact pads: 32={p32}, 34={p34}, 35={p35}')
-
-# R50 pad1/pad2 and J6 RF pad are fixed by our own local footprints/placement.
-r50_1=(60.30,88.00)
-r50_2=(61.30,88.00)
-j6_rf=(67.38,89.00)
+# Exact pad centres for our local RF footprints.
+r50_1=board_xy(-0.5,0,r50_pos[0],r50_pos[1],r50_pos[2])
+r50_2=board_xy( 0.5,0,r50_pos[0],r50_pos[1],r50_pos[2])
+c50_1=board_xy(-0.5,0,c50_pos[0],c50_pos[1],c50_pos[2])
+c51_1=board_xy(-0.5,0,c51_pos[0],c51_pos[1],c51_pos[2])
+j6_rf=footprint_pad_xy('ANT-SMD_UFL-R-SMT-1-10.kicad_mod',2,j6_pos[0],j6_pos[1],j6_pos[2])
 
 routes=[
     # Tie the two modem VBAT pins together locally. The regulator connection is
     # added by the dedicated LTE power pass.
     seg('LTE_3V8',p34[0],p34[1],p35[0],p35[1],.80),
 
-    # Keep the RF fanout short from the real ANT_MAIN pad to the pi-match.
+    # ANT_MAIN exits directly away from the module into the pi network.
     seg('LTE_ANT_MOD',p32[0],p32[1],r50_1[0],r50_1[1],.38),
-    seg('LTE_ANT_CONN',r50_2[0],r50_2[1],64.50,88.00,.38),
-    seg('LTE_ANT_CONN',64.50,88.00,j6_rf[0],j6_rf[1],.38),
+    seg('LTE_ANT_MOD',r50_1[0],r50_1[1],c50_1[0],c50_1[1],.22),
+
+    # Connector side of the pi network and U.FL.
+    seg('LTE_ANT_CONN',r50_2[0],r50_2[1],c51_1[0],c51_1[1],.22),
+    seg('LTE_ANT_CONN',c51_1[0],c51_1[1],j6_rf[0],j6_rf[1],.38),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(routes)+'\n'+s[close:]
 
 # Mark LTE bay boundary on silkscreen only.
 close=s.rfind(')')
-mark='''  (gr_line (start 2 65.5) (end 98 65.5) (stroke (width 0.2) (type dash)) (layer "F.SilkS"))
-  (gr_text "LTE / SIM / RF" (at 50 93) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))'''
+mark='''  (gr_text "LTE / SIM / RF" (at 50 93) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))'''
 s=s[:close]+'\n'+mark+'\n'+s[close:]
 
 # Postconditions
