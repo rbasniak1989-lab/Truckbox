@@ -135,7 +135,7 @@ def fp0603(ref,val,x,y,rot,n1,n2):
   )'''
 
 # VCCB decoupling close to U10.
-c74=fp0603('C74','100nF TXU0202 VCCB',52.4,73.5,0,'3V3_LINK','GND')
+c74=fp0603('C74','100nF TXU0202 VCCB',62.5,84.0,0,'3V3_LINK','GND')
 close=s.rfind(')')
 s=s[:close]+'\n'+c74+'\n'+s[close:]
 
@@ -146,57 +146,60 @@ def via(n,x,y,size=.60,drill=.30):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
 r=[
-    # RX: pad 17 -> far-right edge -> B.Cu -> lower LTE bay -> pin 8.
-    # The x=99.1 / x=99.5 dogleg clears the USB shell and J4 through-hole pads.
-    seg('LTE_UART_RX_3V3',p_u2_rx[0],p_u2_rx[1],99.10,p_u2_rx[1],.20),
-    via('LTE_UART_RX_3V3',99.10,p_u2_rx[1],.60,.30),
-    seg('LTE_UART_RX_3V3',99.10,p_u2_rx[1],99.10,40.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',99.10,40.0,99.50,40.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',99.50,40.0,99.50,55.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',99.50,55.0,99.10,55.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',99.10,55.0,99.10,66.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',99.10,66.0,55.0,66.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_3V3',55.0,66.0,55.0,70.75,.20,'B.Cu'),
-    via('LTE_UART_RX_3V3',55.0,70.75,.60,.30),
-    seg('LTE_UART_RX_3V3',55.0,70.75,p_u10_rx[0],p_u10_rx[1],.20),
+    # U2 escapes: move away from R30/LINK_BOOT before heading to the perimeter.
+    seg('LTE_UART_RX_3V3',p_u2_rx[0],p_u2_rx[1],92.70,p_u2_rx[1],.20),
+    seg('LTE_UART_RX_3V3',92.70,p_u2_rx[1],92.70,17.00,.20),
+    seg('LTE_UART_RX_3V3',92.70,17.00,99.00,17.00,.20),
+    via('LTE_UART_RX_3V3',99.00,17.00,.60,.30),
 
-    # TX: same perimeter on In2, then a short B.Cu drop outside the power stage.
-    seg('LTE_UART_TX_3V3',p_u2_tx[0],p_u2_tx[1],99.10,p_u2_tx[1],.20),
-    via('LTE_UART_TX_3V3',99.10,p_u2_tx[1],.60,.30),
-    seg('LTE_UART_TX_3V3',99.10,p_u2_tx[1],99.10,40.0,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',99.10,40.0,99.50,40.0,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',99.50,40.0,99.50,55.0,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',99.50,55.0,99.10,55.0,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',99.10,55.0,99.10,67.0,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',99.10,67.0,70.0,67.0,.20,'In2.Cu'),
-    via('LTE_UART_TX_3V3',70.0,67.0,.60,.30),
-    seg('LTE_UART_TX_3V3',70.0,67.0,70.0,71.25,.20,'B.Cu'),
-    via('LTE_UART_TX_3V3',70.0,71.25,.60,.30),
-    seg('LTE_UART_TX_3V3',70.0,71.25,70.0,70.75,.20),
-    seg('LTE_UART_TX_3V3',70.0,70.75,p_u10_tx[0],p_u10_tx[1],.20),
+    seg('LTE_UART_TX_3V3',p_u2_tx[0],p_u2_tx[1],92.00,p_u2_tx[1],.20),
+    seg('LTE_UART_TX_3V3',92.00,p_u2_tx[1],92.00,18.20,.20),
+    seg('LTE_UART_TX_3V3',92.00,18.20,99.00,18.20,.20),
+    via('LTE_UART_TX_3V3',99.00,18.20,.60,.30),
 
-    # VCCB: tap the existing 3V3_LINK via at 93.5/22.8 on F.Cu, use the same
-    # safe perimeter, then enter In2 only after the old 100x65 board area.
-    seg('3V3_LINK',93.50,22.80,99.10,22.80,.25),
-    seg('3V3_LINK',99.10,22.80,99.10,40.0,.25),
-    seg('3V3_LINK',99.10,40.0,99.50,40.0,.25),
-    seg('3V3_LINK',99.50,40.0,99.50,55.0,.25),
-    seg('3V3_LINK',99.50,55.0,99.10,55.0,.25),
-    seg('3V3_LINK',99.10,55.0,99.10,68.0,.25),
-    via('3V3_LINK',99.10,68.0,.60,.30),
-    seg('3V3_LINK',99.10,68.0,51.60,68.0,.25,'In2.Cu'),
+    # Perimeter corridors. x=99 clears J3; x=96 runs between the two J4 columns.
+    # Return to x=99 before the H4 mounting hole.
+    seg('LTE_UART_RX_3V3',99.00,17.00,99.00,36.50,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.00,36.50,96.00,36.50,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',96.00,36.50,96.00,55.00,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',96.00,55.00,99.00,55.00,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.00,55.00,99.00,66.50,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',99.00,66.50,55.00,66.50,.20,'B.Cu'),
+    seg('LTE_UART_RX_3V3',55.00,66.50,55.00,70.75,.20,'B.Cu'),
+    via('LTE_UART_RX_3V3',55.00,70.75,.60,.30),
+    seg('LTE_UART_RX_3V3',55.00,70.75,p_u10_rx[0],p_u10_rx[1],.20),
 
-    # Pin 7 fan-out: one straight row into U10.
-    seg('3V3_LINK',57.20,68.0,57.20,70.25,.22,'In2.Cu'),
-    via('3V3_LINK',57.20,70.25,.60,.30),
-    seg('3V3_LINK',57.20,70.25,p_u10_vccb[0],p_u10_vccb[1],.20),
+    seg('LTE_UART_TX_3V3',99.00,18.20,99.00,36.50,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.00,36.50,96.00,36.50,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',96.00,36.50,96.00,55.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',96.00,55.00,99.00,55.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.00,55.00,99.00,67.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',99.00,67.00,66.50,67.00,.20,'In2.Cu'),
+    via('LTE_UART_TX_3V3',66.50,67.00,.60,.30),
+    seg('LTE_UART_TX_3V3',66.50,67.00,66.50,71.25,.20,'B.Cu'),
+    via('LTE_UART_TX_3V3',66.50,71.25,.60,.30),
+    seg('LTE_UART_TX_3V3',66.50,71.25,p_u10_tx[0],p_u10_tx[1],.20),
 
-    # C74 VCCB bypass branches from the same quiet In2 trunk.
-    seg('3V3_LINK',51.60,68.0,51.60,73.50,.22,'In2.Cu'),
-    via('3V3_LINK',51.60,73.50,.60,.30),
-    seg('3V3_LINK',51.60,73.50,51.60,73.50,.20),
-    seg('GND',53.20,73.50,54.20,73.50,.20),
-    via('GND',54.20,73.50,.70,.35),
+    # VCCB=3V3_LINK: tap the existing via and follow the same safe F.Cu perimeter.
+    seg('3V3_LINK',93.50,22.80,99.00,22.80,.20),
+    seg('3V3_LINK',99.00,22.80,99.00,36.50,.20),
+    seg('3V3_LINK',99.00,36.50,96.00,36.50,.20),
+    seg('3V3_LINK',96.00,36.50,96.00,55.00,.20),
+    seg('3V3_LINK',96.00,55.00,99.00,55.00,.20),
+    seg('3V3_LINK',99.00,55.00,99.00,71.00,.20),
+    via('3V3_LINK',99.00,71.00,.60,.30),
+
+    # Quiet In2 trunk below the original 65-mm board area.
+    seg('3V3_LINK',99.00,71.00,53.00,71.00,.20,'In2.Cu'),
+    seg('3V3_LINK',53.00,71.00,53.00,70.25,.20,'In2.Cu'),
+    via('3V3_LINK',53.00,70.25,.60,.30),
+    seg('3V3_LINK',53.00,70.25,p_u10_vccb[0],p_u10_vccb[1],.20),
+
+    # C74 decoupling branch, outside the A7683E outline.
+    seg('3V3_LINK',61.70,71.00,61.70,84.00,.20,'In2.Cu'),
+    via('3V3_LINK',61.70,84.00,.60,.30),
+    seg('GND',63.30,84.00,62.50,85.00,.20),
+    via('GND',62.50,85.00,.70,.35),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]

@@ -134,9 +134,11 @@ r=[
     seg('LTE_UART_TX_1V8',p_tx[0],p_tx[1],p_tx[0],89.0,.20),
     via('LTE_UART_TX_1V8',p_tx[0],89.0),
     seg('LTE_UART_TX_1V8',p_tx[0],89.0,58.0,89.0,.20,'B.Cu'),
-    seg('LTE_UART_TX_1V8',58.0,89.0,58.0,p5[1],.20,'B.Cu'),
-    via('LTE_UART_TX_1V8',58.0,p5[1]),
-    seg('LTE_UART_TX_1V8',58.0,p5[1],p5[0],p5[1],.20),
+    seg('LTE_UART_TX_1V8',58.0,89.0,58.0,68.50,.20,'B.Cu'),
+    via('LTE_UART_TX_1V8',58.0,68.50,.60,.30),
+    seg('LTE_UART_TX_1V8',58.0,68.50,60.50,68.50,.20),
+    seg('LTE_UART_TX_1V8',60.50,68.50,60.50,p5[1],.20),
+    seg('LTE_UART_TX_1V8',60.50,p5[1],p5[0],p5[1],.20),
 
     # Modem RXD uses a second B.Cu corridor at x=59.
     seg('LTE_UART_RX_1V8',p_rx[0],p_rx[1],p_rx[0],90.0,.20),
