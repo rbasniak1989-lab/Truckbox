@@ -37,15 +37,15 @@ def iter_blocks(text,token):
         i=j
 
 def ref_in_fp(block,ref):
-    return (re.search(r'\\(property\\s+"Reference"\\s+"'+re.escape(ref)+r'"',block) or
-            re.search(r'\\(fp_text\\s+reference\\s+"?'+re.escape(ref)+r'"?(?:\\s|\\))',block))
+    return (re.search(r'\(property\s+"Reference"\s+"'+re.escape(ref)+r'"',block) or
+            re.search(r'\(fp_text\s+reference\s+"?'+re.escape(ref)+r'"?(?:\s|\))',block))
 
 def find_fp(text,ref):
     for a,b,blk in iter_blocks(text,'footprint'):
         if ref_in_fp(blk,ref): return a,b,blk
     raise RuntimeError(f'footprint {ref} not found')
 
-net_pairs=[(int(i),n) for i,n in re.findall(r'\\(net\\s+(\\d+)\\s+"([^"]+)"\\)',s)]
+net_pairs=[(int(i),n) for i,n in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"\)',s)]
 if not net_pairs: raise RuntimeError('numeric net table missing')
 net_id={n:i for i,n in net_pairs}
 new_nets=['LTE_1V8','LTE_UART_TX_1V8','LTE_UART_RX_1V8']
@@ -55,34 +55,34 @@ for n in new_nets:
     if n not in net_id:
         net_id[n]=next_id; adds.append(f'  (net {next_id} "{n}")'); next_id+=1
 if adds:
-    m=list(re.finditer(r'^  \\(net \\d+ "[^"]+"\\)$',s,re.M))
+    m=list(re.finditer(r'^  \(net \d+ "[^"]+"\)$',s,re.M))
     if not m: raise RuntimeError('net insertion point missing')
-    pos=m[-1].end(); s=s[:pos]+'\\n'+'\\n'.join(adds)+s[pos:]
+    pos=m[-1].end(); s=s[:pos]+'\n'+'\n'.join(adds)+s[pos:]
 
 def ne(n,pad=False):
     return f'(net {net_id[n]} "{n}")' if pad else f'(net {net_id[n]})'
 
 def assign_pad(block,pn,net):
-    m=re.search(r'\\(pad\\s+"?'+re.escape(str(pn))+r'"?\\s+',block)
+    m=re.search(r'\(pad\s+"?'+re.escape(str(pn))+r'"?\s+',block)
     if not m: raise RuntimeError(f'pad {pn} missing')
     j=balanced_block(block,m.start()); pb=block[m.start():j]
-    if re.search(r'\\(net\\s+(?:\\d+\\s+)?"[^"]+"\\)',pb):
-        pb=re.sub(r'\\(net\\s+(?:\\d+\\s+)?"[^"]+"\\)',ne(net,True),pb,count=1)
+    if re.search(r'\(net\s+(?:\d+\s+)?"[^"]+"\)',pb):
+        pb=re.sub(r'\(net\s+(?:\d+\s+)?"[^"]+"\)',ne(net,True),pb,count=1)
     else:
         pb=pb[:-1]+' '+ne(net,True)+')'
     return block[:m.start()]+pb+block[j:]
 
 def fp_at(block):
-    m=re.search(r'\\(at\\s+([-+0-9.]+)\\s+([-+0-9.]+)(?:\\s+([-+0-9.]+))?\\)',block)
+    m=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)(?:\s+([-+0-9.]+))?\)',block)
     if not m: raise RuntimeError('footprint at missing')
     return float(m.group(1)),float(m.group(2)),float(m.group(3) or 0)
 
 def pad_xy(block,pn):
     x,y,rot=fp_at(block)
-    m=re.search(r'\\(pad\\s+"?'+re.escape(str(pn))+r'"?\\s+',block)
+    m=re.search(r'\(pad\s+"?'+re.escape(str(pn))+r'"?\s+',block)
     if not m: raise RuntimeError(f'pad {pn} missing for xy')
     j=balanced_block(block,m.start()); pb=block[m.start():j]
-    a=re.search(r'\\(at\\s+([-+0-9.]+)\\s+([-+0-9.]+)',pb)
+    a=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)',pb)
     if not a: raise RuntimeError(f'pad {pn} local at missing')
     lx,ly=map(float,a.groups()); ang=math.radians(rot)
     return (x+lx*math.cos(ang)+ly*math.sin(ang),
@@ -122,7 +122,7 @@ def fp0603(ref,val,x,y,rot,n1,n2):
 
 # VCCA decoupling close to U10.
 part=fp0603('C73','100nF LTE 1V8',59.5,73.5,0,'LTE_1V8','GND')
-close=s.rfind(')'); s=s[:close]+'\\n'+part+'\\n'+s[close:]
+close=s.rfind(')'); s=s[:close]+'\n'+part+'\n'+s[close:]
 
 def seg(n,x1,y1,x2,y2,w=.22,layer='F.Cu'):
     return f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) (width {w:.3f}) (layer "{layer}") {ne(n)})'
@@ -168,7 +168,7 @@ r=[
     seg('GND',p2[0],p2[1],66.2,70.25,.25),
     via('GND',66.2,70.25,.70,.35),
 ]
-close=s.rfind(')'); s=s[:close]+'\\n'+'\\n'.join(r)+'\\n'+s[close:]
+close=s.rfind(')'); s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
 
 # Postconditions.
 for n in ('LTE_1V8','LTE_UART_TX_1V8','LTE_UART_RX_1V8'):
