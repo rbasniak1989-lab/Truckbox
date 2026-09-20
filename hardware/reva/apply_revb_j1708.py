@@ -246,7 +246,7 @@ def via(name,x,y,size=.70,drill=.35):
 
 # Dedicated fail-safe DE pull-down. Keep the original R4/RX geometry untouched.
 r52=f'''  (footprint "RevB:0603_J1708_DE_PD" (layer "F.Cu")
-    (at 11.000 69.000)
+    (at 12.000 70.000)
     (attr smd)
     (fp_text reference "R52" (at 0 -1.5) (layer "F.SilkS") hide (effects (font (size 0.8 0.8) (thickness 0.1))))
     (fp_text value "10k J1708_DE PULLDOWN" (at 0 1.4) (layer "F.Fab") (effects (font (size 0.6 0.6) (thickness 0.1))))
@@ -262,37 +262,28 @@ items=[
     seg('3V3_MAIN',74.700,46.595,76.000,45.700,.30),
     via('3V3_MAIN',76.000,45.700),
 
-    # TX: GPIO11 (U1 pad12) -> In2.Cu -> empty LTE bay -> U4 DI.
-    seg('J1708_TX',9.250,21.910,7.000,21.910,.22),
-    via('J1708_TX',7.000,21.910,.60,.30),
-    seg('J1708_TX',7.000,21.910,7.600,25.000,.22,'In2.Cu'),
-    seg('J1708_TX',7.600,25.000,7.600,67.000,.22,'In2.Cu'),
-    seg('J1708_TX',7.600,67.000,70.500,67.000,.22,'In2.Cu'),
-    seg('J1708_TX',70.500,67.000,70.500,52.000,.22,'In2.Cu'),
-    via('J1708_TX',70.500,52.000,.60,.30),
-    seg('J1708_TX',70.500,52.000,70.000,51.300,.22),
-    seg('J1708_TX',70.000,51.300,69.300,50.405,.22),
+    # TX: GPIO11 (U1 pad12) -> In2.Cu down a verified clear corridor.
+    seg('J1708_TX',9.250,21.910,8.200,21.910,.22),
+    via('J1708_TX',8.200,21.910,.60,.30),
+    seg('J1708_TX',8.200,21.910,8.200,67.000,.22,'In2.Cu'),
+    seg('J1708_TX',8.200,67.000,68.500,67.000,.22,'In2.Cu'),
+    seg('J1708_TX',68.500,67.000,68.500,49.750,.22,'In2.Cu'),
+    via('J1708_TX',68.500,49.750,.60,.30),
+    seg('J1708_TX',68.500,49.750,69.300,50.405,.22),
 
-    # DE: GPIO12 (U1 pad13) -> left-side In2.Cu corridor.
-    # It changes layer briefly at the lower edge so it can pass the TX corridor
-    # without a same-layer crossing.
-    seg('J1708_DE',9.250,23.180,4.500,23.180,.22),
-    via('J1708_DE',4.500,23.180,.60,.30),
-    seg('J1708_DE',4.500,23.180,4.500,69.000,.22,'In2.Cu'),
-    seg('J1708_DE',4.500,69.000,66.000,69.000,.22,'In2.Cu'),
-    via('J1708_DE',66.000,69.000,.60,.30),
-    seg('J1708_DE',66.000,69.000,66.000,64.500,.22,'B.Cu'),
-    via('J1708_DE',66.000,64.500,.60,.30),
-    seg('J1708_DE',66.000,64.500,66.000,49.135,.22,'In2.Cu'),
-    seg('J1708_DE',66.000,49.135,68.000,49.135,.22,'In2.Cu'),
-    via('J1708_DE',68.000,49.135,.60,.30),
-    seg('J1708_DE',68.000,49.135,69.300,49.135,.22),
+    # DE: GPIO12 (U1 pad13) -> independent In2.Cu corridor.
+    seg('J1708_DE',9.250,23.180,8.800,23.180,.22),
+    via('J1708_DE',8.800,23.180,.60,.30),
+    seg('J1708_DE',8.800,23.180,10.800,25.000,.22,'In2.Cu'),
+    seg('J1708_DE',10.800,25.000,10.800,65.500,.22,'In2.Cu'),
+    seg('J1708_DE',10.800,65.500,67.000,65.500,.22,'In2.Cu'),
+    seg('J1708_DE',67.000,65.500,67.000,49.135,.22,'In2.Cu'),
+    via('J1708_DE',67.000,49.135,.60,.30),
+    seg('J1708_DE',67.000,49.135,69.300,49.135,.22),
 
-    # R52 hardware pull-down lives in the new LTE bay, clear of Rev.A routing.
-    seg('J1708_DE',12.500,69.000,11.500,69.000,.22),
-    via('J1708_DE',12.500,69.000,.60,.30),
-    seg('GND',10.500,69.000,9.500,69.000,.25),
-    via('GND',9.500,69.000,.60,.30),
+    # R52 fail-safe pull-down in LTE bay; pad1 returns through the F.Cu GND pour.
+    via('J1708_DE',12.500,65.500,.60,.30),
+    seg('J1708_DE',12.500,65.500,12.500,70.000,.22),
 ]
 close=s.rfind(')')
 if close<0:
