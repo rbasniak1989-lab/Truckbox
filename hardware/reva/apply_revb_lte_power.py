@@ -101,18 +101,13 @@ for pn,n in {1:'LTE_BOOT',2:'VIN_PROT',3:'LTE_EN',4:'LTE_RT',5:'LTE_FB',6:'LTE_C
     u11=assign_pad(u11,pn,n)
 s=s[:a]+u11+s[b:]
 
-# Use U2 GPIO15 (module pad 23) to control LTE regulator enable.
-a,b,u2=find_fp(s,'U2')
-u2=assign_pad(u2,23,'LTE_EN')
-s=s[:a]+u2+s[b:]
-
 # Refresh coordinates after net edits.
-_,_,u11=find_fp(s,'U11'); _,_,u9=find_fp(s,'U9'); _,_,d1=find_fp(s,'D1')
+_,_,u11=find_fp(s,'U11'); _,_,u9=find_fp(s,'U9'); _,_,d2=find_fp(s,'D2')
 p_boot=pad_xy(u11,1); p_vin=pad_xy(u11,2); p_en=pad_xy(u11,3); p_rt=pad_xy(u11,4)
 p_fb=pad_xy(u11,5); p_comp=pad_xy(u11,6); p_gnd=pad_xy(u11,7); p_sw=pad_xy(u11,8); p_ep=pad_xy(u11,9)
 p34=pad_xy(u9,34); p35=pad_xy(u9,35)
-# D1 VIN_PROT pad is pad 2 in Rev.A.
-p_vinsrc=pad_xy(d1,2)
+# D2 pad 2 is the protected VIN_PROT rail in Rev.A.
+p_vinsrc=pad_xy(d2,2)
 
 def fp2(ref,val,x,y,rot,n1,n2,kind='0603'):
     if kind=='0603': dx=.80; psx=.75; psy=.95
@@ -140,31 +135,37 @@ def ind(ref,val,x,y,n1,n2):
   )'''
 
 parts=[
-    # Power stage
-    ind('L50','22uH >=4A',71.0,68.3,'LTE_3V8','LTE_SW'),
-    fp2('D50','B560C 60V 5A',79.0,67.0,0,'LTE_SW','GND','SMB'),
-    fp2('C60','100nF BOOT',73.3,76.0,90,'LTE_BOOT','LTE_SW','0603'),
-    fp2('C61','2.2uF 50V VIN',84.0,80.5,0,'VIN_PROT','GND','1210'),
-    fp2('C62','2.2uF 50V VIN',88.0,80.5,0,'VIN_PROT','GND','1210'),
-    fp2('C63','47uF 10V OUT',70.0,83.5,0,'LTE_3V8','GND','1210'),
-    fp2('C64','47uF 10V OUT',75.0,83.5,0,'LTE_3V8','GND','1210'),
+    # Power stage. Keep the high-current loop compact around U11.
+    ind('L50','22uH >=4A',70.0,75.0,'LTE_3V8','LTE_SW'),
+    fp2('D50','B560C 60V 5A',72.0,68.5,180,'LTE_SW','GND','SMB'),
+    fp2('C60','100nF BOOT',73.5,78.8,180,'LTE_BOOT','LTE_SW','0603'),
+
+    # Input / output ceramic bulk, rotated so power and ground pads do not face each other.
+    fp2('C61','2.2uF 50V VIN',82.0,83.0,90,'VIN_PROT','GND','1210'),
+    fp2('C62','2.2uF 50V VIN',88.0,83.0,90,'VIN_PROT','GND','1210'),
+    fp2('C63','47uF 10V OUT',69.0,82.0,90,'LTE_3V8','GND','1210'),
+    fp2('C64','47uF 10V OUT',74.0,82.0,90,'LTE_3V8','GND','1210'),
 
     # 400-kHz programming, 3.8-V feedback and compensation.
-    fp2('R60','243k RT 400kHz',84.0,85.5,0,'LTE_RT','GND','0603'),
-    fp2('R61','38.3k FB HIGH',85.0,73.0,0,'LTE_3V8','LTE_FB','0603'),
-    fp2('R62','10.2k FB LOW',85.0,75.5,0,'LTE_FB','GND','0603'),
-    fp2('R63','6.34k COMP',85.0,68.5,0,'LTE_COMP','LTE_COMP_RC','0603'),
-    fp2('C65','56nF COMP',88.0,68.5,0,'LTE_COMP_RC','GND','0603'),
-    fp2('C66','100pF COMP POLE',85.0,70.5,0,'LTE_COMP','GND','0603'),
-    fp2('R64','100k LTE EN PD',82.0,86.5,0,'LTE_EN','GND','0603'),
+    fp2('R60','243k RT 400kHz',84.0,76.0,0,'LTE_RT','GND','0603'),
+    fp2('R61','38.3k FB HIGH',84.0,70.0,0,'LTE_3V8','LTE_FB','0603'),
+    fp2('R62','10.2k FB LOW',88.0,72.0,0,'LTE_FB','GND','0603'),
+    fp2('R63','6.34k COMP',84.0,65.8,0,'LTE_COMP','LTE_COMP_RC','0603'),
+    fp2('C65','56nF COMP',88.0,65.8,0,'LTE_COMP_RC','GND','0603'),
+    fp2('C66','100pF COMP POLE',84.0,67.8,0,'LTE_COMP','GND','0603'),
+
+    # Local UVLO / enable: ~9.2-V turn-on threshold from protected VIN.
+    fp2('R64','100k EN HIGH',84.0,79.0,0,'VIN_PROT','LTE_EN','0603'),
+    fp2('R65','15k EN LOW',88.0,79.0,0,'LTE_EN','GND','0603'),
 
     # A7683E local VBAT reservoir / RF decoupling.
-    fp2('C67','100uF 10V VBAT',36.0,82.0,90,'LTE_3V8','GND','7343'),
-    fp2('C68','100uF 10V VBAT',36.0,87.0,90,'LTE_3V8','GND','7343'),
-    fp2('C69','1uF VBAT',40.0,82.0,90,'LTE_3V8','GND','0603'),
-    fp2('C70','100nF VBAT',40.0,84.2,90,'LTE_3V8','GND','0603'),
-    fp2('C71','33pF VBAT',40.0,86.4,90,'LTE_3V8','GND','0603'),
-    fp2('C72','10pF VBAT',40.0,88.6,90,'LTE_3V8','GND','0603'),
+    # 180-deg rotation puts LTE_3V8 pads toward the modem/trunk and GND outward.
+    fp2('C67','100uF 10V VBAT',36.0,84.0,180,'LTE_3V8','GND','7343'),
+    fp2('C68','100uF 10V VBAT',36.0,90.0,180,'LTE_3V8','GND','7343'),
+    fp2('C69','1uF VBAT',38.0,74.2,180,'LTE_3V8','GND','0603'),
+    fp2('C70','100nF VBAT',38.0,76.4,180,'LTE_3V8','GND','0603'),
+    fp2('C71','33pF VBAT',38.0,78.6,180,'LTE_3V8','GND','0603'),
+    fp2('C72','10pF VBAT',38.0,80.8,180,'LTE_3V8','GND','0603'),
 ]
 close=s.rfind(')'); s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -176,64 +177,109 @@ def via(n,x,y,size=.75,drill=.35):
 # Component pad centers from the generic footprints above.
 # L50: out=(67.8,68.3), SW=(74.2,68.3)
 r=[
-    # Protected 24-V input down the empty right side of LTE bay.
-    seg('VIN_PROT',p_vinsrc[0],p_vinsrc[1],90.0,62.0,1.00,'F.Cu'),
-    seg('VIN_PROT',90.0,62.0,90.0,78.0,1.00,'F.Cu'),
-    seg('VIN_PROT',90.0,78.0,p_vin[0],p_vin[1],1.00,'F.Cu'),
-    seg('VIN_PROT',84.0-1.7,80.5,90.0,78.0,.60),
-    seg('VIN_PROT',88.0-1.7,80.5,90.0,78.0,.60),
+    # Protected 24-V input. Drop to B.Cu after D2 and run through the empty LTE bay.
+    seg('VIN_PROT',p_vinsrc[0],p_vinsrc[1],p_vinsrc[0],54.5,.80,'F.Cu'),
+    via('VIN_PROT',p_vinsrc[0],54.5,.90,.45),
+    seg('VIN_PROT',p_vinsrc[0],54.5,93.0,65.0,1.00,'B.Cu'),
+    seg('VIN_PROT',93.0,65.0,93.0,84.7,1.00,'B.Cu'),
+    seg('VIN_PROT',93.0,84.7,89.2,84.7,1.00,'B.Cu'),
+    via('VIN_PROT',89.2,84.7,.90,.45),
+    seg('VIN_PROT',89.2,84.7,88.0,84.7,.80),
+    seg('VIN_PROT',88.0,84.7,82.0,84.7,.80),
+    via('VIN_PROT',80.5,84.7,.90,.45),
+    seg('VIN_PROT',80.5,84.7,82.0,84.7,.80),
+    seg('VIN_PROT',p_vin[0],p_vin[1],p_vin[0],80.3,.70),
+    via('VIN_PROT',p_vin[0],80.3,.85,.40),
+    seg('VIN_PROT',p_vin[0],80.3,80.5,84.7,.70,'B.Cu'),
+    via('VIN_PROT',83.0,79.0,.70,.35),
+    seg('VIN_PROT',83.0,79.0,80.5,84.7,.30,'B.Cu'),
+    seg('VIN_PROT',83.0,79.0,83.2,79.0,.25),
 
-    # SW, catch diode, inductor and bootstrap.
-    seg('LTE_SW',p_sw[0],p_sw[1],74.2,68.3,.80),
-    seg('LTE_SW',74.2,68.3,76.8,67.0,.80),
-    seg('LTE_SW',74.1,75.2,p_sw[0],p_sw[1],.35),
-    seg('LTE_BOOT',p_boot[0],p_boot[1],72.5,76.0,.30),
+    # Compact switch node: U11 SW, catch diode, inductor and bootstrap.
+    seg('LTE_SW',p_sw[0],p_sw[1],74.2,70.5,.80),
+    seg('LTE_SW',74.2,70.5,74.2,68.5,.80),
+    seg('LTE_SW',74.2,70.5,73.2,75.0,.80),
+    seg('LTE_SW',73.2,75.0,72.7,78.8,.35),
+    seg('LTE_BOOT',p_boot[0],p_boot[1],74.3,78.8,.30),
 
-    # Regulator output and 2-mm modem feed around the bottom of the module.
-    seg('LTE_3V8',67.8,68.3,67.0,82.7,1.20),
-    seg('LTE_3V8',67.0,82.7,68.3,83.5,1.20),
-    seg('LTE_3V8',68.3,83.5,73.3,83.5,1.20),
-    seg('LTE_3V8',67.0,82.7,67.0,90.5,2.00),
-    seg('LTE_3V8',67.0,90.5,39.0,90.5,2.00),
-    seg('LTE_3V8',39.0,90.5,39.0,p34[1],2.00),
-    seg('LTE_3V8',39.0,p34[1],p34[0],p34[1],2.00),
-    seg('LTE_3V8',p34[0],p34[1],p35[0],p35[1],1.20),
+    # Catch-diode ground.
+    seg('GND',69.8,68.5,68.5,68.5,.60),
+    via('GND',68.5,68.5,.85,.40),
 
-    # Local A7683E bulk/decoupling connections to the 2-mm spine.
-    seg('LTE_3V8',39.0,82.0,36.0-2.7,82.0,.80),
-    seg('LTE_3V8',39.0,87.0,36.0-2.7,87.0,.80),
-    seg('LTE_3V8',39.0,82.0,40.0,82.0,.50),
-    seg('LTE_3V8',39.0,84.2,40.0,84.2,.50),
-    seg('LTE_3V8',39.0,86.4,40.0,86.4,.50),
-    seg('LTE_3V8',39.0,88.6,40.0,88.6,.50),
+    # 3.8-V output: short F.Cu neck, then a 2-mm B.Cu trunk around the modem.
+    seg('LTE_3V8',66.8,75.0,65.5,76.0,1.20),
+    via('LTE_3V8',65.5,76.0,1.00,.50),
+    seg('LTE_3V8',65.5,76.0,65.5,91.5,2.00,'B.Cu'),
+    seg('LTE_3V8',65.5,91.5,39.5,91.5,2.00,'B.Cu'),
+    seg('LTE_3V8',39.5,91.5,39.5,76.15,2.00,'B.Cu'),
+    via('LTE_3V8',39.5,76.15,1.00,.50),
+    seg('LTE_3V8',39.5,76.15,41.0,76.15,1.20),
+    seg('LTE_3V8',41.0,76.15,p34[0],p34[1],1.00),
+    seg('LTE_3V8',p34[0],p34[1],p35[0],p35[1],1.00),
 
-    # FB/RT/COMP/EN.
-    seg('LTE_FB',p_fb[0],p_fb[1],84.2,73.0,.25),
-    seg('LTE_FB',85.8,73.0,84.2,75.5,.25),
-    seg('LTE_RT',p_rt[0],p_rt[1],83.2,85.5,.25),
-    seg('LTE_COMP',p_comp[0],p_comp[1],84.2,68.5,.25),
-    seg('LTE_COMP',p_comp[0],p_comp[1],84.2,70.5,.25),
-    seg('LTE_COMP_RC',85.8,68.5,87.2,68.5,.25),
-    seg('LTE_EN',p_en[0],p_en[1],81.2,86.5,.25),
+    # Output caps join the B.Cu trunk individually.
+    seg('LTE_3V8',69.0,83.7,65.5,83.7,.90),
+    via('LTE_3V8',65.5,83.7,.85,.40),
+    seg('LTE_3V8',74.0,83.7,65.5,87.0,.90),
+    via('LTE_3V8',65.5,87.0,.85,.40),
+    seg('GND',69.0,80.3,67.5,80.3,.60), via('GND',67.5,80.3,.85,.40),
+    seg('GND',74.0,80.3,75.5,80.3,.60), via('GND',75.5,80.3,.85,.40),
 
-    # Ground U11 pin + exposed pad with nearby stitches.
-    seg('GND',p_gnd[0],p_gnd[1],77.4,70.2,.60),
-    via('GND',77.4,70.2,.80,.40),
-    seg('GND',p_ep[0],p_ep[1],80.0,75.0,.80),
-    via('GND',80.0,75.0,.90,.45),
+    # Modem bulk / HF decoupling: each power pad goes to the vertical B.Cu trunk.
+    seg('LTE_3V8',38.7,84.0,39.5,84.0,.80), via('LTE_3V8',39.5,84.0,.85,.40),
+    seg('LTE_3V8',38.7,90.0,39.5,90.0,.80), via('LTE_3V8',39.5,90.0,.85,.40),
+    seg('LTE_3V8',38.8,74.2,39.5,74.2,.45), via('LTE_3V8',39.5,74.2,.70,.35),
+    seg('LTE_3V8',38.8,76.4,39.5,76.4,.45),
+    seg('LTE_3V8',38.8,78.6,39.5,78.6,.45), via('LTE_3V8',39.5,78.6,.70,.35),
+    seg('LTE_3V8',38.8,80.8,39.5,80.8,.45), via('LTE_3V8',39.5,80.8,.70,.35),
+    seg('GND',33.3,84.0,32.3,84.0,.60), via('GND',32.3,84.0,.85,.40),
+    seg('GND',33.3,90.0,32.3,90.0,.60), via('GND',32.3,90.0,.85,.40),
+    seg('GND',37.2,74.2,36.5,74.2,.25), via('GND',36.5,74.2,.60,.30),
+    seg('GND',37.2,76.4,36.5,76.4,.25), via('GND',36.5,76.4,.60,.30),
+    seg('GND',37.2,78.6,36.5,78.6,.25), via('GND',36.5,78.6,.60,.30),
+    seg('GND',37.2,80.8,36.5,80.8,.25), via('GND',36.5,80.8,.60,.30),
 
-    # Ground returns for power stage/bulk parts, stitched locally.
-    seg('GND',81.2,67.0,82.3,67.0,.60), via('GND',82.3,67.0,.80,.40),
-    seg('GND',85.7,80.5,85.7,82.0,.60), via('GND',85.7,82.0,.80,.40),
-    seg('GND',89.7,80.5,89.7,82.0,.60), via('GND',89.7,82.0,.80,.40),
-    seg('GND',71.7,83.5,71.7,86.0,.80), via('GND',71.7,86.0,.90,.45),
-    seg('GND',76.7,83.5,76.7,86.0,.80), via('GND',76.7,86.0,.90,.45),
+    # FB sense from the quiet 3.8-V output, then divider to U11 FB.
+    via('LTE_3V8',83.2,70.0,.70,.35),
+    seg('LTE_3V8',83.2,70.0,65.5,76.0,.25,'B.Cu'),
+    seg('LTE_FB',p_fb[0],p_fb[1],82.0,72.0,.25),
+    seg('LTE_FB',82.0,72.0,84.8,70.0,.25),
+    seg('LTE_FB',84.8,70.0,87.2,72.0,.25),
+    seg('GND',88.8,72.0,89.5,72.0,.25), via('GND',89.5,72.0,.60,.30),
+
+    # Compensation stays above/right of U11, away from the SW copper.
+    seg('LTE_COMP',p_comp[0],p_comp[1],77.5,69.5,.25),
+    seg('LTE_COMP',77.5,69.5,77.5,66.8,.25),
+    seg('LTE_COMP',77.5,66.8,83.2,65.8,.25),
+    seg('LTE_COMP',83.2,65.8,83.2,67.8,.25),
+    seg('LTE_COMP_RC',84.8,65.8,87.2,65.8,.25),
+    seg('GND',88.8,65.8,89.5,65.8,.25), via('GND',89.5,65.8,.60,.30),
+    seg('GND',84.8,67.8,85.5,67.8,.25), via('GND',85.5,67.8,.60,.30),
+
+    # RT and local UVLO/enable divider.
+    seg('LTE_RT',p_rt[0],p_rt[1],82.0,78.0,.25),
+    seg('LTE_RT',82.0,78.0,83.2,76.0,.25),
+    seg('GND',84.8,76.0,85.5,76.0,.25), via('GND',85.5,76.0,.60,.30),
+    seg('LTE_EN',p_en[0],p_en[1],81.0,78.8,.25),
+    seg('LTE_EN',81.0,78.8,84.8,79.0,.25),
+    seg('LTE_EN',84.8,79.0,87.2,79.0,.25),
+    seg('GND',88.8,79.0,89.5,79.0,.25), via('GND',89.5,79.0,.60,.30),
+
+    # U11 ground pin + exposed pad.
+    seg('GND',p_gnd[0],p_gnd[1],78.5,69.5,.60),
+    via('GND',78.5,69.5,.85,.40),
+    seg('GND',p_ep[0],p_ep[1],80.8,75.0,.80),
+    via('GND',80.8,75.0,.90,.45),
+
+    # Input capacitor grounds.
+    seg('GND',82.0,81.3,82.0,80.5,.60), via('GND',82.0,80.5,.85,.40),
+    seg('GND',88.0,81.3,88.0,80.5,.60), via('GND',88.0,80.5,.85,.40),
 ]
 close=s.rfind(')'); s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
 
 # Rely on existing extended GND pours for the small-signal and modem-cap GND pads.
 # Postconditions.
-for ref in ('L50','D50','C60','C61','C62','C63','C64','R60','R61','R62','R63','C65','C66','R64','C67','C68','C69','C70','C71','C72'):
+for ref in ('L50','D50','C60','C61','C62','C63','C64','R60','R61','R62','R63','C65','C66','R64','R65','C67','C68','C69','C70','C71','C72'):
     if f'reference "{ref}"' not in s:
         raise RuntimeError(f'missing LTE power part {ref}')
 _,_,u11c=find_fp(s,'U11')
