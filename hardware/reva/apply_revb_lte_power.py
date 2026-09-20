@@ -155,7 +155,7 @@ parts=[
     fp2('C66','100pF COMP POLE',84.0,67.8,0,'LTE_COMP','GND','0603'),
 
     # Local UVLO / enable: ~9.2-V turn-on threshold from protected VIN.
-    fp2('R64','100k EN HIGH',85.0,88.0,0,'VIN_PROT','LTE_EN','0603'),
+    fp2('R64','100k EN HIGH',85.0,88.0,0,'LTE_EN','VIN_PROT','0603'),
     fp2('R65','15k EN LOW',89.0,88.0,0,'LTE_EN','GND','0603'),
 
     # A7683E local VBAT reservoir / RF decoupling.
@@ -165,7 +165,7 @@ parts=[
     fp2('C69','1uF VBAT',38.0,74.2,180,'LTE_3V8','GND','0603'),
     fp2('C70','100nF VBAT',38.0,76.4,180,'LTE_3V8','GND','0603'),
     fp2('C71','33pF VBAT',38.0,78.6,180,'LTE_3V8','GND','0603'),
-    fp2('C72','10pF VBAT',34.0,76.0,180,'LTE_3V8','GND','0603'),
+    fp2('C72','10pF VBAT',34.0,72.0,180,'LTE_3V8','GND','0603'),
 ]
 close=s.rfind(')'); s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -191,8 +191,9 @@ r=[
     seg('VIN_PROT',p_vin[0],p_vin[1],p_vin[0],80.3,.70),
     via('VIN_PROT',p_vin[0],80.3,.85,.40),
     seg('VIN_PROT',p_vin[0],80.3,80.5,84.7,.70,'B.Cu'),
-    via('VIN_PROT',84.2,88.0,.70,.35),
-    seg('VIN_PROT',84.2,88.0,80.5,84.7,.30,'B.Cu'),
+    seg('VIN_PROT',85.8,88.0,86.6,88.0,.25),
+    via('VIN_PROT',86.6,88.0,.70,.35),
+    seg('VIN_PROT',86.6,88.0,80.5,84.7,.30,'B.Cu'),
 
     # Compact switch node: U11 SW, catch diode, inductor and bootstrap.
     seg('LTE_SW',p_sw[0],p_sw[1],74.2,70.5,.80),
@@ -230,13 +231,14 @@ r=[
     seg('LTE_3V8',38.8,74.2,39.5,74.2,.45), via('LTE_3V8',39.5,74.2,.70,.35),
     seg('LTE_3V8',38.8,76.4,39.5,76.4,.45),
     seg('LTE_3V8',38.8,78.6,39.5,78.6,.45), via('LTE_3V8',39.5,78.6,.70,.35),
-    seg('LTE_3V8',34.8,76.0,39.5,76.0,.45),
+    seg('LTE_3V8',34.8,72.0,35.5,72.0,.45), via('LTE_3V8',35.5,72.0,.70,.35),
+    seg('LTE_3V8',35.5,72.0,39.5,74.2,.45,'B.Cu'),
     seg('GND',33.3,84.0,32.3,84.0,.60), via('GND',32.3,84.0,.85,.40),
     seg('GND',33.3,90.0,32.3,90.0,.60), via('GND',32.3,90.0,.85,.40),
     seg('GND',37.2,74.2,36.5,74.2,.25), via('GND',36.5,74.2,.60,.30),
     seg('GND',37.2,76.4,36.5,76.4,.25), via('GND',36.5,76.4,.60,.30),
     seg('GND',37.2,78.6,36.5,78.6,.25), via('GND',36.5,78.6,.60,.30),
-    seg('GND',33.2,76.0,32.5,76.0,.25), via('GND',32.5,76.0,.60,.30),
+    seg('GND',33.2,72.0,32.5,72.0,.25), via('GND',32.5,72.0,.60,.30),
 
     # U11 top row escapes vertically outward (toward decreasing Y).
     # GND pad 7.
@@ -255,23 +257,23 @@ r=[
     seg('LTE_FB',p_fb[0],p_fb[1],p_fb[0],69.5,.25),
     seg('LTE_FB',p_fb[0],69.5,83.2,69.5,.25),
     seg('LTE_FB',83.2,69.5,83.2,72.0,.25),
-    seg('LTE_3V8',84.8,69.5,85.5,69.5,.25),
-    via('LTE_3V8',85.5,69.5,.70,.35),
-    seg('LTE_3V8',85.5,69.5,85.5,73.5,.30,'B.Cu'),
-    seg('LTE_3V8',85.5,73.5,65.5,76.0,.30,'B.Cu'),
+    seg('LTE_3V8',84.8,69.5,86.0,69.5,.25),
+    via('LTE_3V8',86.0,69.5,.70,.35),
+    seg('LTE_3V8',86.0,69.5,86.0,73.5,.30,'B.Cu'),
+    seg('LTE_3V8',86.0,73.5,65.5,76.0,.30,'B.Cu'),
     seg('GND',84.8,72.0,85.5,72.0,.25), via('GND',85.5,72.0,.60,.30),
 
     # U11 bottom row escapes vertically outward (toward increasing Y).
     # RT goes to a clean right-side programming resistor.
-    seg('LTE_RT',p_rt[0],p_rt[1],p_rt[0],81.5,.25),
-    seg('LTE_RT',p_rt[0],81.5,91.2,81.5,.25),
-    seg('LTE_RT',91.2,81.5,91.2,82.0,.25),
-    seg('GND',92.8,82.0,93.5,82.0,.25), via('GND',93.5,82.0,.60,.30),
+    seg('LTE_RT',p_rt[0],p_rt[1],p_rt[0],79.5,.25),
+    seg('LTE_RT',p_rt[0],79.5,91.2,79.5,.25),
+    seg('LTE_RT',91.2,79.5,91.2,82.0,.25),
+    seg('GND',92.8,82.0,95.0,82.0,.25), via('GND',95.0,82.0,.60,.30),
 
     # EN goes straight down to the local UVLO divider.
     seg('LTE_EN',p_en[0],p_en[1],p_en[0],88.0,.25),
-    seg('LTE_EN',p_en[0],88.0,85.8,88.0,.25),
-    seg('LTE_EN',85.8,88.0,88.2,88.0,.25),
+    seg('LTE_EN',p_en[0],88.0,84.2,88.0,.25),
+    seg('LTE_EN',84.2,88.0,88.2,88.0,.25),
     seg('GND',89.8,88.0,90.5,88.0,.25), via('GND',90.5,88.0,.60,.30),
 
     # U11 exposed pad ground.
