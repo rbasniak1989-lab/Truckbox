@@ -224,10 +224,10 @@ r=[
     # D70/Q50 and C67/C68/LTE_3V8. Leave that corridor completely:
     # escape to the right of U9, travel on In1 below the LTE block, and
     # return to F.Cu left of C68 only for the short connection to R72.
-    seg('SIM_RST_MOD',p17[0],p17[1],59.20,p17[1]),
-    via('SIM_RST_MOD',59.20,p17[1],.60,.30),
-    seg('SIM_RST_MOD',59.20,p17[1],59.20,94.20,.20,'In1.Cu'),
-    seg('SIM_RST_MOD',59.20,94.20,31.80,94.20,.20,'In1.Cu'),
+    seg('SIM_RST_MOD',p17[0],p17[1],58.70,p17[1]),
+    via('SIM_RST_MOD',58.70,p17[1],.60,.30),
+    seg('SIM_RST_MOD',58.70,p17[1],58.70,94.20,.20,'In1.Cu'),
+    seg('SIM_RST_MOD',58.70,94.20,31.80,94.20,.20,'In1.Cu'),
     seg('SIM_RST_MOD',31.80,94.20,31.80,93.00,.20,'In1.Cu'),
     via('SIM_RST_MOD',31.80,93.00,.60,.30),
     seg('SIM_RST_MOD',31.80,93.00,35.50,93.00),
