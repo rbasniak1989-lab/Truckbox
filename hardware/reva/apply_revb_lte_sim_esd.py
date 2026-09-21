@@ -131,9 +131,9 @@ routes=[
     # x=30.8 and join the already-approved CLK via at (31.8,81).
     seg('SIM_CLK_CARD',p6[0],p6[1],p6[0],77.70),
     via('SIM_CLK_CARD',p6[0],77.70),
-    seg('SIM_CLK_CARD',p6[0],77.70,p6[0],75.50,.20,'B.Cu'),
-    seg('SIM_CLK_CARD',p6[0],75.50,30.80,75.50,.20,'B.Cu'),
-    seg('SIM_CLK_CARD',30.80,75.50,30.80,81.00,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',p6[0],77.70,p6[0],74.00,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',p6[0],74.00,30.80,74.00,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',30.80,74.00,30.80,81.00,.20,'B.Cu'),
     seg('SIM_CLK_CARD',30.80,81.00,31.80,81.00,.20,'B.Cu'),
 
     # VDD reference (pad 5): rise farther before entering In1 so the VDD
