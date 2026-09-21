@@ -92,6 +92,7 @@ jobs:
             python3 hardware/reva/apply_revb_lte_power.py
             python3 hardware/reva/apply_revb_lte_uart.py
             python3 hardware/reva/apply_revb_lte_uart_link.py
+            python3 hardware/reva/apply_revb_lte_pwrkey.py
             python3 hardware/reva/inspect_revb_lte_power.py
           fi
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
