@@ -12,30 +12,40 @@ def balanced_block(text,start):
     for j in range(start,len(text)):
         c=text[j]
         if in_q:
-            if esc: esc=False
-            elif c=='\\\\': esc=True
-            elif c=='"': in_q=False
+            if esc:
+                esc=False
+            elif c=='\\':
+                esc=True
+            elif c=='"':
+                in_q=False
             continue
-        if c=='"': in_q=True
-        elif c=='(': depth+=1
+        if c=='"':
+            in_q=True
+        elif c=='(':
+            depth+=1
         elif c==')':
             depth-=1
-            if depth==0:return j+1
+            if depth==0:
+                return j+1
     raise RuntimeError('unterminated s-expression')
 
 def hide_u9_reference(text):
     i=0
     while True:
         i=text.find('(footprint ',i)
-        if i<0: raise RuntimeError('U9 footprint not found')
+        if i<0:
+            raise RuntimeError('U9 footprint not found')
         j=balanced_block(text,i)
         blk=text[i:j]
-        if re.search(r'\\(fp_text\\s+reference\\s+"?U9"?',blk):
-            blk2=re.sub(r'(\\(fp_text\\s+reference\\s+"?U9"?[^\\n]*\\(layer\\s+"F\\.SilkS"\\))', r'\\1 hide', blk, count=1)
-            if blk2==blk:
-                # KiCad may place effects on following text; insert hide before effects.
-                blk2=re.sub(r'(\\(fp_text\\s+reference\\s+"?U9"?[\\s\\S]*?\\(layer\\s+"F\\.SilkS"\\))', r'\\1 hide', blk, count=1)
-            return text[:i]+blk2+text[j:]
+        m=re.search(r'\(fp_text\s+reference\s+"?U9"?',blk)
+        if m:
+            t0=m.start()
+            t1=balanced_block(blk,t0)
+            txt=blk[t0:t1]
+            if re.search(r'\(layer\s+"F\.SilkS"\)',txt) and not re.search(r'\(layer\s+"F\.SilkS"\)\s+hide',txt):
+                txt2=re.sub(r'(\(layer\s+"F\.SilkS"\))', r'\1 hide', txt, count=1)
+                blk=blk[:t0]+txt2+blk[t1:]
+            return text[:i]+blk+text[j:]
         i=j
 
 s=hide_u9_reference(s)
