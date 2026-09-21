@@ -131,42 +131,44 @@ r=[
     seg('LTE_UART_RX_3V3',p11[0],p11[1],72.00,p11[1]),
     via('LTE_UART_RX_3V3',72.00,p11[1]),
 
-    # Cross the upper internal band diagonally to a clean via left of USB.
+    # Upper crossing uses In2 only above the GNSS bands.
     seg('LTE_UART_RX_3V3',72.00,p11[1],67.50,24.10,.20,'In2.Cu'),
     via('LTE_UART_RX_3V3',67.50,24.10),
-
-    # B.Cu crosses the USB/GNSS band; return to In2 below CAN_MODE.
     seg('LTE_UART_RX_3V3',67.50,24.10,67.50,32.20,.20,'B.Cu'),
     via('LTE_UART_RX_3V3',67.50,32.20),
 
-    # Lower In2 corridor is empty in the Run 226 baseline.
-    seg('LTE_UART_RX_3V3',67.50,32.20,67.50,64.00,.20,'In2.Cu'),
-    seg('LTE_UART_RX_3V3',67.50,64.00,61.00,64.00,.20,'In2.Cu'),
+    # Shift left to x=64 before descending; this clears the J1708_DE and
+    # 3V3_MAIN through-vias around x=67..68.
+    seg('LTE_UART_RX_3V3',67.50,32.20,64.00,32.20,.20,'In2.Cu'),
+    seg('LTE_UART_RX_3V3',64.00,32.20,64.00,64.00,.20,'In2.Cu'),
+    seg('LTE_UART_RX_3V3',64.00,64.00,61.00,64.00,.20,'In2.Cu'),
     seg('LTE_UART_RX_3V3',61.00,64.00,61.00,70.75,.20,'In2.Cu'),
     via('LTE_UART_RX_3V3',61.00,70.75),
     seg('LTE_UART_RX_3V3',61.00,70.75,p8[0],p8[1]),
 
     # TX: U2 GPIO11 -> TXU0202 B2(pin 1).
-    seg('LTE_UART_TX_3V3',p12[0],p12[1],71.20,p12[1]),
-    via('LTE_UART_TX_3V3',71.20,p12[1]),
-
-    # Parallel diagonal lane, 1 mm to the right of the RX crossing point.
-    seg('LTE_UART_TX_3V3',71.20,p12[1],68.50,24.10,.20,'In2.Cu'),
+    # The initial via moves 0.2 mm right to clear the RX diagonal.
+    seg('LTE_UART_TX_3V3',p12[0],p12[1],71.40,p12[1]),
+    via('LTE_UART_TX_3V3',71.40,p12[1]),
+    seg('LTE_UART_TX_3V3',71.40,p12[1],68.50,24.10,.20,'In2.Cu'),
     via('LTE_UART_TX_3V3',68.50,24.10),
-
     seg('LTE_UART_TX_3V3',68.50,24.10,68.50,32.20,.20,'B.Cu'),
     via('LTE_UART_TX_3V3',68.50,32.20),
 
-    # RX turns left first at y=64; TX continues to y=66, so no crossing.
-    seg('LTE_UART_TX_3V3',68.50,32.20,68.50,66.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',68.50,66.00,67.00,66.00,.20,'In2.Cu'),
+    # Shift right to x=69 for the long lower descent.
+    seg('LTE_UART_TX_3V3',68.50,32.20,69.00,32.20,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',69.00,32.20,69.00,66.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',69.00,66.00,67.00,66.00,.20,'In2.Cu'),
     via('LTE_UART_TX_3V3',67.00,66.00),
-
-    # Clear B.Cu vertical lane into U10 pin 1.
     seg('LTE_UART_TX_3V3',67.00,66.00,67.00,71.30,.20,'B.Cu'),
     via('LTE_UART_TX_3V3',67.00,71.30),
     seg('LTE_UART_TX_3V3',67.00,71.30,67.00,70.75),
     seg('LTE_UART_TX_3V3',67.00,70.75,p1[0],p1[1]),
+
+    # The two narrow UART cuts in In2 can split the 3V3_MAIN pour.
+    # Bridge the two already-existing 3V3_MAIN vias on B.Cu; the corridor
+    # has >0.49 mm clearance to the nearest foreign B.Cu feature.
+    seg('3V3_MAIN',65.40,41.20,68.00,43.135,.28,'B.Cu'),
 ]
 
 close=s.rfind(')')
