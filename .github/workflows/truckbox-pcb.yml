@@ -181,6 +181,9 @@ jobs:
               --layers F.Cu,F.Silkscreen,Edge.Cuts \
               --output hardware/reva/build/top.svg \
               hardware/reva/TruckBox_RevA.kicad_pcb
+          if [ "$GITHUB_REF_NAME" = "hardware-revb-j1708-4g" ]; then
+            python3 hardware/reva/generate_revb_jlc_package.py
+          fi
 
       - name: Upload PCB CI artifact
         uses: actions/upload-artifact@v4
