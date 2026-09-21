@@ -13,6 +13,7 @@ s=P.read_text(encoding='utf-8')
 # Stage 6 adds C70=33pF in parallel for the high-frequency VDD bypass.
 # Stage 7 adds C71=22pF_NM on SIM_RST_CARD.
 # Stage 8 adds C72=22pF_NM on SIM_CLK_CARD.
+# Stage 9 adds C73=22pF_NM on SIM_DATA_CARD.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -167,6 +168,8 @@ parts=[
     fp0603('C71','22pF_NM SIM_RST',29.5,87.50,'SIM_RST_CARD','GND'),
     # Put CLK signal on pad 2 (right side) so it faces the approved x=26 B.Cu trunk.
     fp0603('C72','22pF_NM SIM_CLK',24.0,87.50,'GND','SIM_CLK_CARD'),
+    # DATA trunk is at x=18; signal pad 1 faces that trunk.
+    fp0603('C73','22pF_NM SIM_DATA',20.0,87.50,'SIM_DATA_CARD','GND'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -243,6 +246,12 @@ r=[
     seg('SIM_DATA_CARD',18.00,91.30,18.00,c7[1],.20,'B.Cu'),
     via('SIM_DATA_CARD',18.00,c7[1],.60,.30),
     seg('SIM_DATA_CARD',18.00,c7[1],c7[0],c7[1]),
+    # C73 optional SIM_DATA shunt: tap approved B.Cu trunk at x=18.
+    seg('SIM_DATA_CARD',18.00,87.50,18.50,87.50,.20,'B.Cu'),
+    via('SIM_DATA_CARD',18.50,87.50,.60,.30),
+    seg('SIM_DATA_CARD',18.50,87.50,19.20,87.50),
+    seg('GND',20.80,87.50,21.50,86.80,.25),
+    via('GND',21.50,86.80,.70,.35),
 
     # ---- Stage 4: SIM_RST module side ----
     # Runs 263-267 mapped the x=36..39 corridor as occupied by PWRKEY,
@@ -286,8 +295,8 @@ for n in ('SIM_VDD','SIM_RST_MOD','SIM_CLK_MOD','SIM_DATA_MOD'):
     if n not in u9c: raise RuntimeError(f'U9 missing {n}')
 for n in ('SIM_VDD','SIM_RST_CARD','SIM_CLK_CARD','SIM_DATA_CARD'):
     if n not in j5c: raise RuntimeError(f'J5 missing {n}')
-for ref in ('R72','R73','R74','C69','C70','C71','C72'):
+for ref in ('R72','R73','R74','C69','C70','C71','C72','C73'):
     if f'reference "{ref}"' not in s: raise RuntimeError(f'{ref} missing')
 
 P.write_text(s,encoding='utf-8')
-print(f'Applied Rev.B SIM1 staged pass 8: VDD bypass + C71 RST + C72 CLK 22pF_NM shunts; c1={c1}, c2={c2}, c3={c3}')
+print(f'Applied Rev.B SIM1 staged pass 9: VDD bypass + C71/C72/C73 RST/CLK/DATA 22pF_NM shunts; c1={c1}, c2={c2}, c3={c3}, c7={c7}')
