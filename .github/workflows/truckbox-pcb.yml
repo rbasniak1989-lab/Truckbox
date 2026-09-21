@@ -16,14 +16,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install KiCad 10 CLI
+      - name: Prepare KiCad 10 CLI
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends software-properties-common
-          sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends kicad
-          kicad-cli version
+          docker pull kicad/kicad:10.0.5
+          docker run --rm kicad/kicad:10.0.5 kicad-cli version
 
       - name: Fetch RevB JLC footprints
         if: github.ref_name == 'hardware-revb-j1708-4g'
@@ -102,11 +98,12 @@ jobs:
       - name: Run real PCB DRC with filled zones
         run: |
           mkdir -p hardware/reva/build
-          kicad-cli pcb drc \
-            --refill-zones --save-board \
-            --severity-all \
-            --output hardware/reva/build/drc.rpt \
-            hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work kicad/kicad:10.0.5 \
+            kicad-cli pcb drc \
+              --refill-zones --save-board \
+              --severity-all \
+              --output hardware/reva/build/drc.rpt \
+              hardware/reva/TruckBox_RevA.kicad_pcb
           python3 - <<'PY'
           from pathlib import Path
           import re, collections
@@ -140,13 +137,15 @@ jobs:
         run: |
           rm -rf hardware/reva/build/gerbers
           mkdir -p hardware/reva/build/gerbers
-          kicad-cli pcb export gerbers --check-zones \
-            --layers F.Cu,In1.Cu,In2.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,Edge.Cuts \
-            --output hardware/reva/build/gerbers/ \
-            hardware/reva/TruckBox_RevA.kicad_pcb
-          kicad-cli pcb export drill \
-            --output hardware/reva/build/gerbers/ \
-            hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work kicad/kicad:10.0.5 \
+            kicad-cli pcb export gerbers --check-zones \
+              --layers F.Cu,In1.Cu,In2.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,Edge.Cuts \
+              --output hardware/reva/build/gerbers/ \
+              hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work kicad/kicad:10.0.5 \
+            kicad-cli pcb export drill \
+              --output hardware/reva/build/gerbers/ \
+              hardware/reva/TruckBox_RevA.kicad_pcb
           test -s hardware/reva/build/gerbers/TruckBox_RevA-F_Cu.gtl
           test -s hardware/reva/build/gerbers/TruckBox_RevA-GND_PLANE.g1
           test -s hardware/reva/build/gerbers/TruckBox_RevA-POWER_SIGNALS.g2
@@ -170,15 +169,17 @@ jobs:
               TruckBox_RevA-Edge_Cuts.gm1 \
               TruckBox_RevA.drl
           )
-          kicad-cli pcb export pos \
-            --format csv --units mm --side both \
-            --output hardware/reva/build/positions.csv \
-            hardware/reva/TruckBox_RevA.kicad_pcb
-          kicad-cli pcb export svg --check-zones \
-            --fit-page-to-board --exclude-drawing-sheet \
-            --layers F.Cu,F.Silkscreen,Edge.Cuts \
-            --output hardware/reva/build/top.svg \
-            hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work kicad/kicad:10.0.5 \
+            kicad-cli pcb export pos \
+              --format csv --units mm --side both \
+              --output hardware/reva/build/positions.csv \
+              hardware/reva/TruckBox_RevA.kicad_pcb
+          docker run --rm -v "$PWD:/work" -w /work kicad/kicad:10.0.5 \
+            kicad-cli pcb export svg --check-zones \
+              --fit-page-to-board --exclude-drawing-sheet \
+              --layers F.Cu,F.Silkscreen,Edge.Cuts \
+              --output hardware/reva/build/top.svg \
+              hardware/reva/TruckBox_RevA.kicad_pcb
 
       - name: Upload PCB CI artifact
         uses: actions/upload-artifact@v4
