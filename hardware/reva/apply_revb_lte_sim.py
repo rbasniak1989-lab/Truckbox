@@ -105,6 +105,19 @@ def seg(n,x1,y1,x2,y2,w=.20,layer='F.Cu'):
 def via(n,x,y,size=.70,drill=.35):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
+# Run 253 left one collision only: the SIM_VDD escape via at x=58.9
+# intersected the long LTE_UART_RX_1V8 B.Cu vertical at x=59. Keep the
+# approved UART endpoints and make only a local B.Cu jog to x=60.2.
+uart_rx_old=seg('LTE_UART_RX_1V8',59.0,90.0,59.0,67.0,.20,'B.Cu')
+uart_rx_new='\n'.join([
+    seg('LTE_UART_RX_1V8',59.0,90.0,60.2,90.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_1V8',60.2,90.0,60.2,67.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_1V8',60.2,67.0,59.0,67.0,.20,'B.Cu'),
+])
+if uart_rx_old not in s:
+    raise RuntimeError('LTE_UART_RX_1V8 vertical baseline segment not found')
+s=s.replace(uart_rx_old,uart_rx_new,1)
+
 # Escape immediately from pin 18 to a small via beside the pad, instead of
 # running along the U9 pad row. Run 252 proved that the y=73 F.Cu corridor
 # crossed unassigned U9 pads 22/80. From there use In2 above the PWRKEY wall.
