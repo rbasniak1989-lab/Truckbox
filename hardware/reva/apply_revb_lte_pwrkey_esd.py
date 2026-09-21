@@ -42,9 +42,9 @@ def move_u9_reference_to_fab(text):
             t0=m.start()
             t1=balanced_block(blk,t0)
             txt=blk[t0:t1]
-            txt2=re.sub(r'\(layer\s+"F\.SilkS"\)', '(layer "F.Fab")', txt, count=1)
+            txt2=re.sub(r'\(layer\s+"?F\.SilkS"?\)', '(layer "F.Fab")', txt, count=1)
             if txt2==txt:
-                raise RuntimeError('U9 reference is not on F.SilkS')
+                raise RuntimeError('U9 reference layer not recognized as F.SilkS')
             blk=blk[:t0]+txt2+blk[t1:]
             return text[:i]+blk+text[j:]
         i=j
