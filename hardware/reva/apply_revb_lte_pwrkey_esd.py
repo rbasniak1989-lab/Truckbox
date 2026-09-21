@@ -23,12 +23,12 @@ def ne(n,pad=False):
 # Compact SOD-523 footprint, oriented vertically.
 # Body is ~1.2 x 0.8 mm; pads are kept outside the body.
 d70=f'''  (footprint "RevB:SOD523_PWRKEY_ESD" (layer "F.Cu")
-    (at 40.000 79.000 0)
+    (at 38.000 79.700 0)
     (attr smd)
     (fp_text reference "D70" (at -1.5 0 90) (layer "F.SilkS") hide (effects (font (size .7 .7) (thickness .1))))
     (fp_text value "PESD5Z5.0,115 C132368" (at 1.5 0 90) (layer "F.Fab") (effects (font (size .55 .55) (thickness .08))))
-    (pad "1" smd roundrect (at 0 0.700) (size .70 .80) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .15) {ne('LTE_PWRKEY',True)})
-    (pad "2" smd roundrect (at 0 -0.700) (size .70 .80) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .15) {ne('GND',True)} (zone_connect 2))
+    (pad "1" smd roundrect (at 0.700 0) (size .80 .70) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .15) {ne('LTE_PWRKEY',True)})
+    (pad "2" smd roundrect (at -0.700 0) (size .80 .70) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .15) {ne('GND',True)} (zone_connect 2))
   )'''
 
 close=s.rfind(')')
@@ -42,12 +42,13 @@ def via(n,x,y,size=.60,drill=.30):
 
 r=[
     # Cathode branches from the existing PWRKEY path between U9 pin 39 and R71.
-    seg('LTE_PWRKEY',40.300,81.100,40.300,80.200,.20),
-    seg('LTE_PWRKEY',40.300,80.200,40.000,79.700,.20),
+    # D70 sits left of the LTE_3V8 via/track cluster.
+    seg('LTE_PWRKEY',40.300,81.100,39.500,80.500,.20),
+    seg('LTE_PWRKEY',39.500,80.500,38.700,79.700,.20),
 
-    # Anode gets a dedicated short ground return.
-    seg('GND',40.000,78.300,40.000,77.300,.25),
-    via('GND',40.000,77.300,.65,.32),
+    # Anode gets a dedicated short ground return to the left.
+    seg('GND',37.300,79.700,36.400,79.700,.25),
+    via('GND',36.400,79.700,.65,.32),
 ]
 
 close=s.rfind(')')
