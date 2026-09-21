@@ -10,6 +10,7 @@ s=P.read_text(encoding='utf-8')
 # J5 contacts: C1 VCC, C2 RST, C3 CLK, C7 I/O.
 # R72/R73/R74 are 22R series resistors on RST/CLK/DATA.
 # Stage 5 adds C69=100nF from SIM_VDD to GND at the socket, per SIMCom.
+# Stage 6 adds C70=33pF in parallel for the high-frequency VDD bypass.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -156,9 +157,10 @@ parts=[
     fp0603('R72','22R SIM_RST',36.3,93.0,'SIM_RST_MOD','SIM_RST_CARD'),
     fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD'),
     fp0603('R74','22R SIM_DATA',21.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
-    # C1 is on the right edge of J5 at x=30.9/y=77.46. Put the bypass just
-    # outside that edge so the VDD loop is short and the capacitor is accessible.
+    # C1 is on the right edge of J5 at x=30.9/y=77.46. Put both VDD bypass
+    # capacitors just outside that edge and share the same local ground return.
     fp0603('C69','100nF SIM_VDD',33.5,77.46,'SIM_VDD','GND'),
+    fp0603('C70','33pF SIM_VDD',33.5,75.80,'SIM_VDD','GND'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -171,10 +173,12 @@ r=[
     seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
     via('SIM_VDD',32.00,76.60,.60,.30),
     seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
-    # C69 100nF local bypass beside J5 C1. Pad 1 is SIM_VDD at x=32.7;
-    # pad 2 returns to the ground planes through a short local via.
+    # C69/C70 local VDD bypass beside J5 C1. Pad 1 is SIM_VDD at x=32.7;
+    # both ground pads share the proven Run-274 local ground via.
     seg('SIM_VDD',c1[0],c1[1],32.70,77.46),
+    seg('SIM_VDD',32.70,77.46,32.70,75.80),
     seg('GND',34.30,77.46,34.30,76.20,.25),
+    seg('GND',34.30,75.80,34.30,76.20,.25),
     via('GND',34.30,76.20,.70,.35),
 
     # ---- Stage 2: SIM_CLK module side ----
@@ -262,8 +266,8 @@ for n in ('SIM_VDD','SIM_RST_MOD','SIM_CLK_MOD','SIM_DATA_MOD'):
     if n not in u9c: raise RuntimeError(f'U9 missing {n}')
 for n in ('SIM_VDD','SIM_RST_CARD','SIM_CLK_CARD','SIM_DATA_CARD'):
     if n not in j5c: raise RuntimeError(f'J5 missing {n}')
-for ref in ('R72','R73','R74','C69'):
+for ref in ('R72','R73','R74','C69','C70'):
     if f'reference "{ref}"' not in s: raise RuntimeError(f'{ref} missing')
 
 P.write_text(s,encoding='utf-8')
-print(f'Applied Rev.B SIM1 staged pass 5: complete SIM routing + C69 100nF VDD bypass; c1={c1}')
+print(f'Applied Rev.B SIM1 staged pass 6: complete SIM routing + C69 100nF + C70 33pF VDD bypass; c1={c1}')
