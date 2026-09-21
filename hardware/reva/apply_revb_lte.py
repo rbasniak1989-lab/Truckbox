@@ -9,7 +9,7 @@ s = P.read_text(encoding='utf-8')
 # Uses the exact EasyEDA/LCSC footprints fetched by CI for the JLCPCB parts.
 # Major component placement:
 #   U9  A7683E C20617360 at (50,80), 90 deg
-#   J5  nano-SIM C3033025 at (25,80), 90 deg
+#   J5  nano-SIM C3033025 at (20,80), 90 deg
 #   U10 TXU0202 C5186957 at (64,70)
 #   U11 TPS54360B-Q1 C2687968 at (78,75)
 #   J6  U.FL C88373 near ANT_MAIN at (37.5,69)
@@ -223,7 +223,7 @@ j6_pos=(37.50,69.00,0)
 
 fps=[
     embed_fp('COMM-SMD_L17.6-W15.7_A7683E.kicad_mod','U9','A7683E C20617360',50,80,90,modem_nets),
-    embed_fp('SIM-SMD_SIM8051-6-0-14-01-A.kicad_mod','J5','Nano-SIM C3033025',25,80,90,{},npth_unnumbered=True),
+    embed_fp('SIM-SMD_SIM8051-6-0-14-01-A.kicad_mod','J5','Nano-SIM C3033025',20,80,90,{},npth_unnumbered=True),
     embed_fp('VSSOP-8_L2.3-W2.0-P0.50-LS3.1-BR.kicad_mod','U10','TXU0202DCUR C5186957',64,70,0,{},True),
     embed_fp('SO-8_L4.9-W3.9-P1.27-LS6.0-BL-EP.kicad_mod','U11','TPS54360BQDDARQ1 C2687968',78,75,0,{}),
     embed_fp('ANT-SMD_UFL-R-SMT-1-10.kicad_mod','J6','U.FL-R-SMT-1(10) C88373',j6_pos[0],j6_pos[1],j6_pos[2],{'1':'GND','2':'LTE_ANT_CONN','3':'GND'}),

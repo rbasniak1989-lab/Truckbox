@@ -121,44 +121,46 @@ def fp0603(ref,val,x,y,n1,n2):
 
 # Below the socket: clear of the SIM body and existing LTE bulk capacitors.
 parts=[
-    fp0603('R72','22R SIM_RST',31.0,90.5,'SIM_RST_CARD','SIM_RST_MOD'),
-    fp0603('R73','22R SIM_CLK',27.8,90.5,'SIM_CLK_CARD','SIM_CLK_MOD'),
-    fp0603('R74','22R SIM_DATA',24.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
+    fp0603('R72','22R SIM_RST',28.0,90.5,'SIM_RST_CARD','SIM_RST_MOD'),
+    fp0603('R73','22R SIM_CLK',24.8,90.5,'SIM_CLK_CARD','SIM_CLK_MOD'),
+    fp0603('R74','22R SIM_DATA',21.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
 def seg(n,x1,y1,x2,y2,w=.20,layer='F.Cu'):
     return f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) (width {w:.3f}) (layer "{layer}") {ne(n)})'
-def via(n,x,y,size=.50,drill=.25):
+def via(n,x,y,size=.70,drill=.35):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
 r=[
     # ---- U9 top escape: SIM_VDD + SIM_RST ----
-    # Two F.Cu lanes stay left of the existing LTE_1V8 x=60 trunk.
-    seg('SIM_RST_MOD',p17[0],p17[1],58.90,p17[1]),
-    seg('SIM_RST_MOD',58.90,p17[1],58.90,71.60),
-    seg('SIM_RST_MOD',58.90,71.60,55.00,71.60),
-    via('SIM_RST_MOD',55.00,71.60),
+    # VDD is the upper pad, so it uses the inner x=58.9 lane; RST uses x=59.4.
+    # This prevents either vertical lane from crossing the other pad's fanout.
+    seg('SIM_VDD',p18[0],p18[1],58.90,p18[1]),
+    seg('SIM_VDD',58.90,p18[1],58.90,68.80),
+    seg('SIM_VDD',58.90,68.80,56.00,68.80),
+    via('SIM_VDD',56.00,68.80),
 
-    seg('SIM_VDD',p18[0],p18[1],59.40,p18[1]),
-    seg('SIM_VDD',59.40,p18[1],59.40,70.90),
-    seg('SIM_VDD',59.40,70.90,56.00,70.90),
-    via('SIM_VDD',56.00,70.90),
+    seg('SIM_RST_MOD',p17[0],p17[1],59.40,p17[1]),
+    seg('SIM_RST_MOD',59.40,p17[1],59.40,69.50),
+    seg('SIM_RST_MOD',59.40,69.50,55.00,69.50),
+    via('SIM_RST_MOD',55.00,69.50),
 
-    # In2 is free in the LTE bay. Both nets cross left of PWRKEY above y=78.8.
-    seg('SIM_RST_MOD',55.00,71.60,33.00,71.60,.20,'In2.Cu'),
-    seg('SIM_RST_MOD',33.00,71.60,33.00,89.60,.20,'In2.Cu'),
-    via('SIM_RST_MOD',33.00,89.60),
-    seg('SIM_RST_MOD',33.00,89.60,31.80,90.50),
+    # Top corridors are above the PWRKEY wall and well clear of the LTE_3V8
+    # via at (35.5,72.0).
+    seg('SIM_VDD',56.00,68.80,27.50,68.80,.20,'In2.Cu'),
+    seg('SIM_VDD',27.50,68.80,27.50,76.60,.20,'In2.Cu'),
+    via('SIM_VDD',27.50,76.60),
+    seg('SIM_VDD',27.50,76.60,c1[0],c1[1]),
 
-    seg('SIM_VDD',56.00,70.90,32.00,70.90,.20,'In2.Cu'),
-    seg('SIM_VDD',32.00,70.90,32.00,76.60,.20,'In2.Cu'),
-    via('SIM_VDD',32.00,76.60),
-    seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
+    seg('SIM_RST_MOD',55.00,69.50,30.00,69.50,.20,'In2.Cu'),
+    seg('SIM_RST_MOD',30.00,69.50,30.00,89.60,.20,'In2.Cu'),
+    via('SIM_RST_MOD',30.00,89.60),
+    seg('SIM_RST_MOD',30.00,89.60,28.80,90.50),
 
     # ---- U9 bottom escape: SIM_DATA + SIM_CLK ----
-    # DATA turns left first; CLK passes below it before turning left.
+    # Both vias are below the module but above the existing UART B.Cu tracks.
     seg('SIM_DATA_MOD',p15[0],p15[1],58.90,p15[1]),
     seg('SIM_DATA_MOD',58.90,p15[1],58.90,88.00),
     seg('SIM_DATA_MOD',58.90,88.00,55.00,88.00),
@@ -169,55 +171,51 @@ r=[
     seg('SIM_CLK_MOD',59.40,88.40,56.80,88.40),
     via('SIM_CLK_MOD',56.80,88.40),
 
-    # DATA stays In2 and goes around the top of the PWRKEY wall.
-    seg('SIM_DATA_MOD',55.00,88.00,35.50,88.00,.20,'In2.Cu'),
-    seg('SIM_DATA_MOD',35.50,88.00,35.50,76.00,.20,'In2.Cu'),
-    seg('SIM_DATA_MOD',35.50,76.00,25.40,76.00,.20,'In2.Cu'),
-    seg('SIM_DATA_MOD',25.40,76.00,25.40,89.60,.20,'In2.Cu'),
-    via('SIM_DATA_MOD',25.40,89.60),
-    seg('SIM_DATA_MOD',25.40,89.60,25.40,90.50),
+    # DATA turns upward at x=36.0. CLK stays to its right (x=37.5), so the
+    # two nets never cross. Both go over the PWRKEY wall at y<78.8 on In2.
+    seg('SIM_DATA_MOD',55.00,88.00,36.00,88.00,.20,'In2.Cu'),
+    seg('SIM_DATA_MOD',36.00,88.00,36.00,74.00,.20,'In2.Cu'),
+    seg('SIM_DATA_MOD',36.00,74.00,22.40,74.00,.20,'In2.Cu'),
+    seg('SIM_DATA_MOD',22.40,74.00,22.40,89.60,.20,'In2.Cu'),
+    via('SIM_DATA_MOD',22.40,89.60),
+    seg('SIM_DATA_MOD',22.40,89.60,22.40,90.50),
 
-    # CLK uses a short B.Cu vertical crossover so it does not cross DATA on In2.
-    seg('SIM_CLK_MOD',56.80,88.40,37.00,88.40,.20,'In2.Cu'),
-    via('SIM_CLK_MOD',37.00,88.40),
-    seg('SIM_CLK_MOD',37.00,88.40,37.00,76.80,.20,'B.Cu'),
-    via('SIM_CLK_MOD',37.00,76.80),
-    seg('SIM_CLK_MOD',37.00,76.80,28.60,76.80,.20,'In2.Cu'),
-    seg('SIM_CLK_MOD',28.60,76.80,28.60,89.60,.20,'In2.Cu'),
-    via('SIM_CLK_MOD',28.60,89.60),
-    seg('SIM_CLK_MOD',28.60,89.60,28.60,90.50),
+    seg('SIM_CLK_MOD',56.80,88.40,37.50,88.40,.20,'In2.Cu'),
+    seg('SIM_CLK_MOD',37.50,88.40,37.50,73.00,.20,'In2.Cu'),
+    seg('SIM_CLK_MOD',37.50,73.00,25.60,73.00,.20,'In2.Cu'),
+    seg('SIM_CLK_MOD',25.60,73.00,25.60,89.60,.20,'In2.Cu'),
+    via('SIM_CLK_MOD',25.60,89.60),
+    seg('SIM_CLK_MOD',25.60,89.60,25.60,90.50),
 
     # ---- Card side after the 22R resistors ----
-    # RST exits below J5, rises just outside its right edge, then enters C2.
-    seg('SIM_RST_CARD',30.20,90.50,33.00,90.50),
-    via('SIM_RST_CARD',33.00,90.50),
-    seg('SIM_RST_CARD',33.00,90.50,33.00,80.80,.20,'In2.Cu'),
-    via('SIM_RST_CARD',33.00,80.80),
-    seg('SIM_RST_CARD',33.00,80.80,c2[0],c2[1]),
+    # J5 has moved to x=20, opening a clean 5-mm routing channel on its right.
+    seg('SIM_RST_CARD',27.20,90.50,29.00,90.50),
+    via('SIM_RST_CARD',29.00,90.50),
+    seg('SIM_RST_CARD',29.00,90.50,29.00,80.80,.20,'In2.Cu'),
+    via('SIM_RST_CARD',29.00,80.80),
+    seg('SIM_RST_CARD',29.00,80.80,c2[0],c2[1]),
 
-    # CLK rises outside the right edge on a separate lane.
-    seg('SIM_CLK_CARD',27.00,90.50,27.00,91.40),
-    via('SIM_CLK_CARD',27.00,91.40),
-    seg('SIM_CLK_CARD',27.00,91.40,31.80,91.40,.20,'In2.Cu'),
-    seg('SIM_CLK_CARD',31.80,91.40,31.80,83.30,.20,'In2.Cu'),
-    via('SIM_CLK_CARD',31.80,83.30),
-    seg('SIM_CLK_CARD',31.80,83.30,c3[0],c3[1]),
+    seg('SIM_CLK_CARD',24.00,90.50,24.00,91.40),
+    via('SIM_CLK_CARD',24.00,91.40),
+    seg('SIM_CLK_CARD',24.00,91.40,27.50,91.40,.20,'In2.Cu'),
+    seg('SIM_CLK_CARD',27.50,91.40,27.50,83.30,.20,'In2.Cu'),
+    via('SIM_CLK_CARD',27.50,83.30),
+    seg('SIM_CLK_CARD',27.50,83.30,c3[0],c3[1]),
 
-    # DATA approaches C7 from the left, entirely below/under the socket.
-    seg('SIM_DATA_CARD',23.80,90.50,23.80,91.40),
-    via('SIM_DATA_CARD',23.80,91.40),
-    seg('SIM_DATA_CARD',23.80,91.40,18.00,91.40,.20,'In2.Cu'),
-    seg('SIM_DATA_CARD',18.00,91.40,18.00,83.20,.20,'In2.Cu'),
-    via('SIM_DATA_CARD',18.00,83.20),
-    seg('SIM_DATA_CARD',18.00,83.20,c7[0],c7[1]),
+    seg('SIM_DATA_CARD',20.80,90.50,20.80,91.40),
+    via('SIM_DATA_CARD',20.80,91.40),
+    seg('SIM_DATA_CARD',20.80,91.40,12.80,91.40,.20,'In2.Cu'),
+    seg('SIM_DATA_CARD',12.80,91.40,12.80,83.20,.20,'In2.Cu'),
+    via('SIM_DATA_CARD',12.80,83.20),
+    seg('SIM_DATA_CARD',12.80,83.20,c7[0],c7[1]),
 
-    # Socket ground contact and both metal shell tabs.
-    seg('GND',c5[0],c5[1],17.80,c5[1],.30),
-    via('GND',17.80,c5[1],.70,.35),
-    seg('GND',sh4[0],sh4[1],23.50,sh4[1],.30),
-    via('GND',23.50,sh4[1],.70,.35),
-    seg('GND',sh8[0],sh8[1],23.50,sh8[1],.30),
-    via('GND',23.50,sh8[1],.70,.35),
+    # Socket ground contact and both shell tabs, now comfortably left of LTE bulk.
+    seg('GND',c5[0],c5[1],12.80,c5[1],.30),
+    via('GND',12.80,c5[1],.70,.35),
+    seg('GND',sh4[0],sh4[1],18.50,sh4[1],.30),
+    via('GND',18.50,sh4[1],.70,.35),
+    seg('GND',sh8[0],sh8[1],18.50,sh8[1],.30),
+    via('GND',18.50,sh8[1],.70,.35),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
