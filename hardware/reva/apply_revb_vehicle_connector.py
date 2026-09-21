@@ -98,7 +98,7 @@ for a,b,_ in reversed(list(iter_blocks(fp,'model'))):
 # Convert old module syntax to embedded KiCad footprint.
 eol=fp.find('\n')
 if not fp.startswith('(module '): raise RuntimeError('unexpected Mini-Fit footprint format')
-fp='(footprint "RevB:CONN-TH_C4201WR-F-2X4P" (layer "F.Cu")\n\t(at 106.500 64.000 90.0)'+fp[eol:]
+fp='(footprint "RevB:CONN-TH_C4201WR-F-2X4P" (layer "F.Cu")\n\t(at 111.000 64.000 90.0)'+fp[eol:]
 fp=re.sub(r'\(fp_text\s+reference\s+REF\*\*', '(fp_text reference "J4"', fp, count=1)
 fp=re.sub(r'\(fp_text\s+value\s+[^\s\)]+', '(fp_text value "C4201WR-F-2x4P C239506"', fp, count=1)
 
@@ -126,7 +126,7 @@ close=s.rfind(')')
 s=s[:close]+'\n'+fp+'\n'+s[close:]
 
 # Exact coordinates for JLC footprint at (106.5,64), rotation 90 deg.
-def board_xy(lx,ly,x=106.5,y=64.0,rot=90.0):
+def board_xy(lx,ly,x=111.0,y=64.0,rot=90.0):
     a=math.radians(rot)
     return (x+lx*math.cos(a)+ly*math.sin(a),
             y-lx*math.sin(a)+ly*math.cos(a))
@@ -197,4 +197,4 @@ for n in ('BATT24_FUSED','GND','ACC_RAW','CAN1_H','CAN1_L','J1708_A','J1708_B'):
 if 'C4201WR-F-2x4P C239506' not in j4: raise RuntimeError('Mini-Fit JLC footprint/value missing')
 if 'Vehicle I/O 8-way' in j4: raise RuntimeError('generic J4 survived')
 P.write_text(s,encoding='utf-8')
-print(f'Applied low-cost Mini-Fit J4 C239506 at 106.5,64 rot90 on 118x95 board; pads={pad}')
+print(f'Applied low-cost Mini-Fit J4 C239506 at 111.0,64 rot90 on 118x95 board; pads={pad}')
