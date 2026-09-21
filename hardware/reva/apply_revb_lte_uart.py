@@ -134,11 +134,9 @@ r=[
     seg('LTE_UART_TX_1V8',p_tx[0],p_tx[1],p_tx[0],89.0,.20),
     via('LTE_UART_TX_1V8',p_tx[0],89.0),
     seg('LTE_UART_TX_1V8',p_tx[0],89.0,58.0,89.0,.20,'B.Cu'),
-    seg('LTE_UART_TX_1V8',58.0,89.0,58.0,68.50,.20,'B.Cu'),
-    via('LTE_UART_TX_1V8',58.0,68.50,.60,.30),
-    seg('LTE_UART_TX_1V8',58.0,68.50,60.50,68.50,.20),
-    seg('LTE_UART_TX_1V8',60.50,68.50,60.50,p5[1],.20),
-    seg('LTE_UART_TX_1V8',60.50,p5[1],p5[0],p5[1],.20),
+    seg('LTE_UART_TX_1V8',58.0,89.0,58.0,p5[1],.20,'B.Cu'),
+    via('LTE_UART_TX_1V8',58.0,p5[1]),
+    seg('LTE_UART_TX_1V8',58.0,p5[1],p5[0],p5[1],.20),
 
     # Modem RXD uses a second B.Cu corridor at x=59.
     seg('LTE_UART_RX_1V8',p_rx[0],p_rx[1],p_rx[0],90.0,.20),
@@ -159,11 +157,8 @@ r=[
 
     # OE (pin 6) and VCCA (pin 3) branch from the same 1.8-V rail,
     # approaching the fine-pitch package only from its outside edges.
-    via('LTE_1V8',60.0,72.0,.60,.30),
-    seg('LTE_1V8',60.0,72.0,45.0,72.0,.20,'In2.Cu'),
-    seg('LTE_1V8',45.0,72.0,45.0,p6[1],.20,'In2.Cu'),
-    via('LTE_1V8',45.0,p6[1],.60,.30),
-    seg('LTE_1V8',45.0,p6[1],p6[0],p6[1],.20),
+    seg('LTE_1V8',60.0,72.0,60.0,p6[1],.20),
+    seg('LTE_1V8',60.0,p6[1],p6[0],p6[1],.20),
     seg('LTE_1V8',60.0,72.0,64.0,72.0,.20),
     seg('LTE_1V8',64.0,72.0,64.0,p3[1],.20),
     seg('LTE_1V8',64.0,p3[1],p3[0],p3[1],.20),
@@ -174,8 +169,8 @@ r=[
     via('GND',62.6,74.5,.70,.35),
 
     # U10 ground exits to the right, below the signal row.
-    seg('GND',p2[0],p2[1],72.0,p2[1],.20),
-    via('GND',72.0,p2[1],.70,.35),
+    seg('GND',p2[0],p2[1],69.0,p2[1],.20),
+    via('GND',69.0,p2[1],.70,.35),
 ]
 close=s.rfind(')'); s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
 
