@@ -169,6 +169,14 @@ r=[
     # Bridge the two already-existing 3V3_MAIN vias on B.Cu; the corridor
     # has >0.49 mm clearance to the nearest foreign B.Cu feature.
     seg('3V3_MAIN',65.40,41.20,68.00,43.135,.28,'B.Cu'),
+
+    # Second bridge reconnects the 3V3_MAIN island left of the x=64 UART cut.
+    # Detour below the J1708_RX vertical/horizontal copper; minimum checked
+    # clearance to the J1708_RX via is ~0.21 mm.
+    seg('3V3_MAIN',63.20,39.00,63.20,43.20,.28,'B.Cu'),
+    seg('3V3_MAIN',63.20,43.20,66.50,43.20,.28,'B.Cu'),
+    seg('3V3_MAIN',66.50,43.20,66.50,41.20,.28,'B.Cu'),
+    seg('3V3_MAIN',66.50,41.20,65.40,41.20,.28,'B.Cu'),
 ]
 
 close=s.rfind(')')
