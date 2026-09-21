@@ -101,7 +101,7 @@ for pn,n in {
     3:'LTE_1V8',       # VCCA
     4:'LTE_UART_RX_1V8', # A2Y -> modem RXD
     5:'LTE_UART_TX_1V8', # A1 <- modem TXD
-    6:'LTE_1V8',       # OE high only when modem VDD_EXT is present
+    6:'3V3_LINK',      # OE referenced to VCCB; TXU isolates if either VCC is absent
 }.items():
     u10=assign_pad(u10,pn,n)
 s=s[:a]+u10+s[b:]
@@ -157,8 +157,6 @@ r=[
 
     # OE (pin 6) and VCCA (pin 3) branch from the same 1.8-V rail,
     # approaching the fine-pitch package only from its outside edges.
-    seg('LTE_1V8',60.0,72.0,60.0,p6[1],.20),
-    seg('LTE_1V8',60.0,p6[1],p6[0],p6[1],.20),
     seg('LTE_1V8',60.0,72.0,64.0,72.0,.20),
     seg('LTE_1V8',64.0,72.0,64.0,p3[1],.20),
     seg('LTE_1V8',64.0,p3[1],p3[0],p3[1],.20),
