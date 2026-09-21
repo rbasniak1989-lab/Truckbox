@@ -113,7 +113,8 @@ def fp2(ref,val,x,y,rot,n1,n2,kind='0603'):
     if kind=='0603': dx=.80; psx=.75; psy=.95
     elif kind=='1210': dx=1.70; psx=1.50; psy=2.60
     elif kind=='7343': dx=2.70; psx=2.50; psy=4.20
-    elif kind=='SMB': dx=2.20; psx=2.10; psy=2.80
+    # Exact JLC C14651 SS56B footprint SMB_L4.6-W3.6-LS5.3-RD.
+    elif kind=='SMB': dx=2.36; psx=2.047; psy=2.192
     else: raise RuntimeError(kind)
     return f'''  (footprint "RevB:{kind}_{ref}" (layer "F.Cu")
     (at {x:.3f} {y:.3f} {rot})
@@ -125,19 +126,21 @@ def fp2(ref,val,x,y,rot,n1,n2,kind='0603'):
   )'''
 
 def ind(ref,val,x,y,n1,n2):
-    return f'''  (footprint "RevB:L_7x7" (layer "F.Cu")
+    # Exact JLC C19947701 / Bourns SRP7050WA footprint:
+    # IND-SMD_L7.9-W7.3_SRP7050WA, pads +/-3.00 mm, 3.00 x 3.50 mm.
+    return f'''  (footprint "RevB:IND-SMD_L7.9-W7.3_SRP7050WA" (layer "F.Cu")
     (at {x:.3f} {y:.3f})
     (attr smd)
     (fp_text reference "{ref}" (at 0 -4.2) (layer "F.SilkS") hide (effects (font (size .8 .8) (thickness .1))))
     (fp_text value "{val}" (at 0 4.2) (layer "F.Fab") (effects (font (size .7 .7) (thickness .1))))
-    (pad "1" smd roundrect (at -3.2 0) (size 2.4 5.8) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .12) {ne(n1,True)})
-    (pad "2" smd roundrect (at 3.2 0) (size 2.4 5.8) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .12) {ne(n2,True)})
+    (pad "1" smd roundrect (at -3.0 0) (size 3.0 3.5) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .12) {ne(n1,True)})
+    (pad "2" smd roundrect (at 3.0 0) (size 3.0 3.5) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .12) {ne(n2,True)})
   )'''
 
 parts=[
     # Power stage. Keep the high-current loop compact around U11.
-    ind('L50','22uH >=4A',70.0,75.0,'LTE_3V8','LTE_SW'),
-    fp2('D50','B560C 60V 5A',72.0,68.5,180,'LTE_SW','GND','SMB'),
+    ind('L50','SRP7050WA-220M 22uH 5A C19947701',70.0,75.0,'LTE_3V8','LTE_SW'),
+    fp2('D50','SS56B 60V 5A C14651',72.0,68.5,180,'LTE_SW','GND','SMB'),
     fp2('C60','100nF BOOT',73.5,78.8,180,'LTE_BOOT','LTE_SW','0603'),
 
     # Input / output ceramic bulk, rotated so power and ground pads do not face each other.
@@ -197,17 +200,17 @@ r=[
 
     # Compact switch node: U11 SW, catch diode, inductor and bootstrap.
     seg('LTE_SW',p_sw[0],p_sw[1],74.2,70.5,.80),
-    seg('LTE_SW',74.2,70.5,74.2,68.5,.80),
-    seg('LTE_SW',74.2,70.5,73.2,75.0,.80),
-    seg('LTE_SW',73.2,75.0,72.7,78.8,.35),
+    seg('LTE_SW',74.2,70.5,74.36,68.5,.80),
+    seg('LTE_SW',74.2,70.5,73.0,75.0,.80),
+    seg('LTE_SW',73.0,75.0,72.7,78.8,.35),
     seg('LTE_BOOT',p_boot[0],p_boot[1],74.3,78.8,.30),
 
     # Catch-diode ground.
-    seg('GND',69.8,68.5,68.5,68.5,.60),
+    seg('GND',69.64,68.5,68.5,68.5,.60),
     via('GND',68.5,68.5,.85,.40),
 
     # 3.8-V output: short F.Cu neck, then a 2-mm B.Cu trunk around the modem.
-    seg('LTE_3V8',66.8,75.0,65.5,76.0,1.20),
+    seg('LTE_3V8',67.0,75.0,65.5,76.0,1.20),
     via('LTE_3V8',65.5,76.0,1.00,.50),
     seg('LTE_3V8',65.5,76.0,65.5,91.5,2.00,'B.Cu'),
     seg('LTE_3V8',65.5,91.5,39.5,91.5,2.00,'B.Cu'),
