@@ -128,22 +128,21 @@ def via(n,x,y,size=.55,drill=.30):
 
 r=[
     # RX: U2 GPIO10 -> TXU0202 B1Y(pin 8).
-    # First short F.Cu escape from the left side of U2.
     seg('LTE_UART_RX_3V3',p11[0],p11[1],72.00,p11[1]),
     via('LTE_UART_RX_3V3',72.00,p11[1]),
 
-    # In2 drops only to y=25.3, stopping before GNSS_PPS at y=25.8.
-    seg('LTE_UART_RX_3V3',72.00,p11[1],72.00,25.30,.20,'In2.Cu'),
-    via('LTE_UART_RX_3V3',72.00,25.30),
+    # Cross the upper internal band diagonally to a clean via left of USB.
+    seg('LTE_UART_RX_3V3',72.00,p11[1],67.50,24.10,.20,'In2.Cu'),
+    via('LTE_UART_RX_3V3',67.50,24.10),
 
-    # B.Cu passes the USB band, then returns to In2 below CAN_MODE.
-    seg('LTE_UART_RX_3V3',72.00,25.30,72.00,32.20,.20,'B.Cu'),
-    via('LTE_UART_RX_3V3',72.00,32.20),
+    # B.Cu crosses the USB/GNSS band; return to In2 below CAN_MODE.
+    seg('LTE_UART_RX_3V3',67.50,24.10,67.50,32.20,.20,'B.Cu'),
+    via('LTE_UART_RX_3V3',67.50,32.20),
 
-    # Free In2 lower corridor to the U10 left-side fanout.
-    seg('LTE_UART_RX_3V3',72.00,32.20,72.00,66.00,.20,'In2.Cu'),
-    seg('LTE_UART_RX_3V3',72.00,66.00,61.00,66.00,.20,'In2.Cu'),
-    seg('LTE_UART_RX_3V3',61.00,66.00,61.00,70.75,.20,'In2.Cu'),
+    # Lower In2 corridor is empty in the Run 226 baseline.
+    seg('LTE_UART_RX_3V3',67.50,32.20,67.50,64.00,.20,'In2.Cu'),
+    seg('LTE_UART_RX_3V3',67.50,64.00,61.00,64.00,.20,'In2.Cu'),
+    seg('LTE_UART_RX_3V3',61.00,64.00,61.00,70.75,.20,'In2.Cu'),
     via('LTE_UART_RX_3V3',61.00,70.75),
     seg('LTE_UART_RX_3V3',61.00,70.75,p8[0],p8[1]),
 
@@ -151,19 +150,20 @@ r=[
     seg('LTE_UART_TX_3V3',p12[0],p12[1],71.20,p12[1]),
     via('LTE_UART_TX_3V3',71.20,p12[1]),
 
-    seg('LTE_UART_TX_3V3',71.20,p12[1],71.20,25.30,.20,'In2.Cu'),
-    via('LTE_UART_TX_3V3',71.20,25.30),
+    # Parallel diagonal lane, 1 mm to the right of the RX crossing point.
+    seg('LTE_UART_TX_3V3',71.20,p12[1],68.50,24.10,.20,'In2.Cu'),
+    via('LTE_UART_TX_3V3',68.50,24.10),
 
-    seg('LTE_UART_TX_3V3',71.20,25.30,71.20,32.20,.20,'B.Cu'),
-    via('LTE_UART_TX_3V3',71.20,32.20),
+    seg('LTE_UART_TX_3V3',68.50,24.10,68.50,32.20,.20,'B.Cu'),
+    via('LTE_UART_TX_3V3',68.50,32.20),
 
-    # Leave In2 before RX turns left, so the two UART nets never cross.
-    seg('LTE_UART_TX_3V3',71.20,32.20,71.20,64.00,.20,'In2.Cu'),
-    seg('LTE_UART_TX_3V3',71.20,64.00,67.00,64.00,.20,'In2.Cu'),
-    via('LTE_UART_TX_3V3',67.00,64.00),
+    # RX turns left first at y=64; TX continues to y=66, so no crossing.
+    seg('LTE_UART_TX_3V3',68.50,32.20,68.50,66.00,.20,'In2.Cu'),
+    seg('LTE_UART_TX_3V3',68.50,66.00,67.00,66.00,.20,'In2.Cu'),
+    via('LTE_UART_TX_3V3',67.00,66.00),
 
-    # B.Cu vertical is clear here; return to F.Cu below U10 GND fanout.
-    seg('LTE_UART_TX_3V3',67.00,64.00,67.00,71.30,.20,'B.Cu'),
+    # Clear B.Cu vertical lane into U10 pin 1.
+    seg('LTE_UART_TX_3V3',67.00,66.00,67.00,71.30,.20,'B.Cu'),
     via('LTE_UART_TX_3V3',67.00,71.30),
     seg('LTE_UART_TX_3V3',67.00,71.30,67.00,70.75),
     seg('LTE_UART_TX_3V3',67.00,70.75,p1[0],p1[1]),
