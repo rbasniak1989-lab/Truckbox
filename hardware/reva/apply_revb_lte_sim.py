@@ -105,18 +105,17 @@ def seg(n,x1,y1,x2,y2,w=.20,layer='F.Cu'):
 def via(n,x,y,size=.70,drill=.35):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
-# Keep the module-side escape below the LTE_UART_TX_1V8 via at (58, 69.25).
-# The previous VDD lane reached y=68.8 and collided there. This stage turns
-# onto In2 at y=73.0, then reuses the previously clean J5 landing at (32, 76.6).
+# Escape immediately from pin 18 to a small via beside the pad, instead of
+# running along the U9 pad row. Run 252 proved that the y=73 F.Cu corridor
+# crossed unassigned U9 pads 22/80. From there use In2 above the PWRKEY wall.
 r=[
     seg('SIM_VDD',p18[0],p18[1],58.90,p18[1]),
-    seg('SIM_VDD',58.90,p18[1],58.90,73.00),
-    seg('SIM_VDD',58.90,73.00,56.00,73.00),
-    via('SIM_VDD',56.00,73.00),
+    via('SIM_VDD',58.90,p18[1],.60,.30),
 
-    seg('SIM_VDD',56.00,73.00,32.00,73.00,.20,'In2.Cu'),
-    seg('SIM_VDD',32.00,73.00,32.00,76.60,.20,'In2.Cu'),
-    via('SIM_VDD',32.00,76.60),
+    seg('SIM_VDD',58.90,p18[1],58.90,77.20,.20,'In2.Cu'),
+    seg('SIM_VDD',58.90,77.20,32.00,77.20,.20,'In2.Cu'),
+    seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
+    via('SIM_VDD',32.00,76.60,.60,.30),
     seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
 ]
 close=s.rfind(')')
