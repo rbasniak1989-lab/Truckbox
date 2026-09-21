@@ -4,10 +4,11 @@ import re, math
 P=Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 s=P.read_text(encoding='utf-8')
 
-# Rev.B A7683E SIM1 staged routing — stage 1: SIM_VDD only.
-# Baseline is Run 249 (0 geometry/electrical, 0 unconnected).
-# Official A7683E pin 18 = SIM1_VDD; J5 C1 = SIM VCC.
-# RST/CLK/DATA and their 22R resistors are deliberately NOT introduced yet.
+# Rev.B A7683E SIM1 staged routing — stage 2: SIM_VDD + SIM_CLK.
+# Run 254 froze SIM_VDD at 0 geometry/electrical and 0 unconnected.
+# Official A7683E: pin 18 SIM1_VDD, pin 16 SIM1_CLK.
+# J5: C1=VCC, C3=CLK. R73 is the 22R series resistor for CLK.
+# RST/DATA remain deliberately absent until CLK passes DRC.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -46,12 +47,148 @@ def find_fp(text,ref):
 net_pairs=[(int(i),n) for i,n in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"\)',s)]
 if not net_pairs: raise RuntimeError('numeric net table missing')
 net_id={n:i for i,n in net_pairs}
-if 'SIM_VDD' not in net_id:
-    net_id['SIM_VDD']=max(net_id.values())+1
-    m=list(re.finditer(r'^  \(net \d+ "[^"]+"\)$',s,re.M))
+needed=('SIM_VDD','SIM_CLK_MOD','SIM_CLK_CARD')
+adds=[]
+next_id=max(net_id.values())+1
+for name in needed:
+    if name not in net_id:
+        net_id[name]=next_id
+        adds.append(f'  (net {next_id} "{name}")')
+        next_id+=1
+if adds:
+    m=list(re.finditer(r'^  \(net \d+ "[^"]+"\)
+
+def ne(n,pad=False):
+    return f'(net {net_id[n]} "{n}")' if pad else f'(net {net_id[n]})'
+
+def assign_pad(block,pn,net):
+    m=re.search(r'\(pad\s+"?'+re.escape(str(pn))+r'"?\s+',block)
+    if not m: raise RuntimeError(f'pad {pn} missing')
+    j=balanced_block(block,m.start()); pb=block[m.start():j]
+    if re.search(r'\(net\s+(?:\d+\s+)?"[^"]*"\)',pb):
+        pb=re.sub(r'\(net\s+(?:\d+\s+)?"[^"]*"\)',ne(net,True),pb,count=1)
+    elif re.search(r'\(net\s+\d+\)',pb):
+        pb=re.sub(r'\(net\s+\d+\)',ne(net,True),pb,count=1)
+    else:
+        pb=pb[:-1]+' '+ne(net,True)+')'
+    return block[:m.start()]+pb+block[j:]
+
+def fp_at(block):
+    m=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)(?:\s+([-+0-9.]+))?\)',block)
+    if not m: raise RuntimeError('footprint at missing')
+    return float(m.group(1)),float(m.group(2)),float(m.group(3) or 0)
+
+def pad_xy(block,pn):
+    x,y,rot=fp_at(block)
+    m=re.search(r'\(pad\s+"?'+re.escape(str(pn))+r'"?\s+',block)
+    if not m: raise RuntimeError(f'pad {pn} missing for xy')
+    j=balanced_block(block,m.start()); pb=block[m.start():j]
+    a=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)',pb)
+    if not a: raise RuntimeError(f'pad {pn} at() missing')
+    lx,ly=map(float,a.groups())
+    ang=math.radians(rot)
+    return (x+lx*math.cos(ang)+ly*math.sin(ang),
+            y-lx*math.sin(ang)+ly*math.cos(ang))
+
+# Assign only the endpoints enabled in this stage.
+a,b,u9=find_fp(s,'U9')
+u9=assign_pad(u9,18,'SIM_VDD')
+u9=assign_pad(u9,16,'SIM_CLK_MOD')
+s=s[:a]+u9+s[b:]
+
+a,b,j5=find_fp(s,'J5')
+j5=assign_pad(j5,'C1','SIM_VDD')
+j5=assign_pad(j5,'C3','SIM_CLK_CARD')
+s=s[:a]+j5+s[b:]
+
+_,_,u9=find_fp(s,'U9')
+_,_,j5=find_fp(s,'J5')
+p18=pad_xy(u9,18)
+p16=pad_xy(u9,16)
+c1=pad_xy(j5,'C1')
+c3=pad_xy(j5,'C3')
+
+def seg(n,x1,y1,x2,y2,w=.20,layer='F.Cu'):
+    return f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) (width {w:.3f}) (layer "{layer}") {ne(n)})'
+
+def via(n,x,y,size=.70,drill=.35):
+    return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
+
+def fp0603(ref,val,x,y,n1,n2):
+    return f'''  (footprint "RevB:0603_SIM" (layer "F.Cu")
+    (at {x:.3f} {y:.3f} 0)
+    (attr smd)
+    (fp_text reference "{ref}" (at 0 -1.35) (layer "F.SilkS") hide (effects (font (size .7 .7) (thickness .1))))
+    (fp_text value "{val}" (at 0 1.25) (layer "F.Fab") (effects (font (size .55 .55) (thickness .08))))
+    (pad "1" smd roundrect (at -0.8 0) (size .75 .95) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .18) {ne(n1,True)})
+    (pad "2" smd roundrect (at 0.8 0) (size .75 .95) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .18) {ne(n2,True)})
+  )'''
+
+# R73 stays below the socket. R72/R74 are intentionally not present yet.
+close=s.rfind(')')
+s=s[:close]+'\n'+fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD')+'\n'+s[close:]
+
+# Run 253 left one collision only: the SIM_VDD escape via at x=58.9
+# intersected the long LTE_UART_RX_1V8 B.Cu vertical at x=59. Keep the
+# approved UART endpoints and make only a local B.Cu jog to x=60.2.
+uart_rx_old=seg('LTE_UART_RX_1V8',59.0,90.0,59.0,67.0,.20,'B.Cu')
+uart_rx_new='\n'.join([
+    seg('LTE_UART_RX_1V8',59.0,90.0,60.2,90.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_1V8',60.2,90.0,60.2,67.0,.20,'B.Cu'),
+    seg('LTE_UART_RX_1V8',60.2,67.0,59.0,67.0,.20,'B.Cu'),
+])
+if uart_rx_old not in s:
+    raise RuntimeError('LTE_UART_RX_1V8 vertical baseline segment not found')
+s=s.replace(uart_rx_old,uart_rx_new,1)
+
+# SIM_VDD is frozen from Run 254.
+r=[
+    seg('SIM_VDD',p18[0],p18[1],58.90,p18[1]),
+    via('SIM_VDD',58.90,p18[1],.60,.30),
+
+    seg('SIM_VDD',58.90,p18[1],58.90,77.20,.20,'In2.Cu'),
+    seg('SIM_VDD',58.90,77.20,32.00,77.20,.20,'In2.Cu'),
+    seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
+    via('SIM_VDD',32.00,76.60,.60,.30),
+    seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
+
+    # ---- Stage 2: SIM_CLK only ----
+    # Immediate via avoids running down the U9 pad row. On In2, y=77.7 is
+    # 0.5 mm below the frozen VDD lane and clears the LTE vias around y=78.6.
+    seg('SIM_CLK_MOD',p16[0],p16[1],58.90,p16[1]),
+    via('SIM_CLK_MOD',58.90,p16[1],.60,.30),
+    seg('SIM_CLK_MOD',58.90,p16[1],58.90,77.70,.20,'In2.Cu'),
+    seg('SIM_CLK_MOD',58.90,77.70,29.50,77.70,.20,'In2.Cu'),
+    seg('SIM_CLK_MOD',29.50,77.70,29.50,89.20,.20,'In2.Cu'),
+    via('SIM_CLK_MOD',29.50,89.20,.60,.30),
+    seg('SIM_CLK_MOD',29.50,89.20,28.80,90.50),
+
+    # Card side uses B.Cu around the outside of J5, then a short F.Cu landing
+    # into C3. This keeps the two CLK nets separated by R73 as intended.
+    seg('SIM_CLK_CARD',27.20,90.50,26.00,90.50),
+    via('SIM_CLK_CARD',26.00,90.50,.60,.30),
+    seg('SIM_CLK_CARD',26.00,90.50,31.50,90.50,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',31.50,90.50,31.50,c3[1],.20,'B.Cu'),
+    via('SIM_CLK_CARD',31.50,c3[1],.60,.30),
+    seg('SIM_CLK_CARD',31.50,c3[1],c3[0],c3[1]),
+]
+close=s.rfind(')')
+s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
+
+_,_,u9c=find_fp(s,'U9')
+_,_,j5c=find_fp(s,'J5')
+for n in ('SIM_VDD','SIM_CLK_MOD'):
+    if n not in u9c: raise RuntimeError(f'U9 missing {n}')
+for n in ('SIM_VDD','SIM_CLK_CARD'):
+    if n not in j5c: raise RuntimeError(f'J5 missing {n}')
+if 'reference "R73"' not in s: raise RuntimeError('R73 missing')
+
+P.write_text(s,encoding='utf-8')
+print('Applied Rev.B SIM1 staged pass 2: frozen VDD + CLK/R73')
+,s,re.M))
     if not m: raise RuntimeError('net insertion point not found')
     pos=m[-1].end()
-    s=s[:pos]+f'\n  (net {net_id["SIM_VDD"]} "SIM_VDD")'+s[pos:]
+    s=s[:pos]+'\n'+'\n'.join(adds)+s[pos:]
 
 def ne(n,pad=False):
     return f'(net {net_id[n]} "{n}")' if pad else f'(net {net_id[n]})'
