@@ -162,7 +162,8 @@ parts=[
     # capacitors just outside that edge and share the same local ground return.
     fp0603('C69','100nF SIM_VDD',33.5,77.46,'SIM_VDD','GND'),
     fp0603('C70','33pF SIM_VDD',33.5,75.80,'SIM_VDD','GND'),
-    fp0603('C71','22pF_NM SIM_RST',32.9,80.00,'SIM_RST_CARD','GND'),
+    # Move RST shunt below J5, away from the PWRKEY cluster at x=34/y=80.
+    fp0603('C71','22pF_NM SIM_RST',29.5,87.50,'SIM_RST_CARD','GND'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -258,10 +259,14 @@ r=[
     seg('SIM_RST_CARD',27.50,83.40,27.50,c2[1],.20,'In2.Cu'),
     via('SIM_RST_CARD',27.50,c2[1],.60,.30),
     seg('SIM_RST_CARD',27.50,c2[1],c2[0],c2[1]),
-    # C71 optional SIM_RST shunt, card side and immediately outside J5.
-    seg('SIM_RST_CARD',c2[0],c2[1],32.10,80.00),
-    seg('GND',33.70,80.00,33.70,81.00,.25),
-    via('GND',33.70,81.00,.70,.35),
+    # C71 optional SIM_RST shunt. Tap the already-approved RST_CARD B.Cu
+    # vertical at x=27.5, then surface only beside the capacitor.
+    seg('SIM_RST_CARD',27.50,87.50,28.00,87.50,.20,'B.Cu'),
+    via('SIM_RST_CARD',28.00,87.50,.60,.30),
+    seg('SIM_RST_CARD',28.00,87.50,28.70,87.50),
+    # Ground via stays above the DATA B.Cu corridor at y=88.2.
+    seg('GND',30.30,87.50,30.30,86.50,.25),
+    via('GND',30.30,86.50,.70,.35),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
