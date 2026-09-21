@@ -103,7 +103,7 @@ for a,b in reversed(legacy):
 # Convert old module syntax to embedded KiCad footprint.
 eol=fp.find('\n')
 if not fp.startswith('(module '): raise RuntimeError('unexpected vertical Mini-Fit footprint format')
-fp='(footprint "RevB:CONN-TH_C4201WR-F-2X4P" (layer "F.Cu")\n\t(at 102.000 64.000 270.0)'+fp[eol:]
+fp='(footprint "RevB:CONN-TH_8P-P4.20_DLL-5566-8A" (layer "F.Cu")\n\t(at 106.500 64.000 90.0)'+fp[eol:]
 fp=re.sub(r'\(fp_text\s+reference\s+REF\*\*', '(fp_text reference "J4"', fp, count=1)
 fp=re.sub(r'\(fp_text\s+value\s+[^\s\)]+', '(fp_text value "DLL-5566-8A C22365702"', fp, count=1)
 
