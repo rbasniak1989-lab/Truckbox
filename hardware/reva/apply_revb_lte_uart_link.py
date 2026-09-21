@@ -184,19 +184,22 @@ r=[
 
     # VCCB + OE supply. Start on In2 from the existing 3V3_LINK via so the
     # first hop does not cross the B.Cu J1708_DE corridor.
-    seg('3V3_LINK',93.50,22.80,99.20,22.80,.20,'In2.Cu'),
-    via('3V3_LINK',99.20,22.80),
+    # Detour above LINK_BOOT: its In2 vertical is at x=95.2 from y=20.5..26.6.
+    seg('3V3_LINK',93.50,22.80,93.50,19.50,.20,'In2.Cu'),
+    seg('3V3_LINK',93.50,19.50,99.20,19.50,.20,'In2.Cu'),
+    via('3V3_LINK',99.20,19.50),
 
     # Outer B.Cu corridor clears USB-C and the J4 through-hole column.
-    seg('3V3_LINK',99.20,22.80,99.25,22.80,.20,'B.Cu'),
-    seg('3V3_LINK',99.25,22.80,99.25,64.00,.20,'B.Cu'),
+    seg('3V3_LINK',99.20,19.50,99.25,19.50,.20,'B.Cu'),
+    seg('3V3_LINK',99.25,19.50,99.25,64.00,.20,'B.Cu'),
     seg('3V3_LINK',99.25,64.00,99.20,64.00,.20,'B.Cu'),
     via('3V3_LINK',99.20,64.00),
 
-    # Below the original board area, use a quiet In2 lane at y=72.
-    seg('3V3_LINK',99.20,64.00,99.20,72.00,.20,'In2.Cu'),
-    seg('3V3_LINK',99.20,72.00,61.80,72.00,.20,'In2.Cu'),
-    seg('3V3_LINK',61.80,72.00,61.80,70.00,.20,'In2.Cu'),
+    # Below the original board area, use y=73.2 to clear the GND via at
+    # (85.5,72.0) and keep margin from the U10 1.8-V local fanout.
+    seg('3V3_LINK',99.20,64.00,99.20,73.20,.20,'In2.Cu'),
+    seg('3V3_LINK',99.20,73.20,61.80,73.20,.20,'In2.Cu'),
+    seg('3V3_LINK',61.80,73.20,61.80,70.00,.20,'In2.Cu'),
     via('3V3_LINK',61.80,70.00),
 
     # Pins 6 (OE) and 7 (VCCB) are adjacent and share 3V3_LINK. Join them
