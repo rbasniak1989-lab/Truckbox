@@ -100,7 +100,7 @@ def via(n,x,y,size=.60,drill=.30):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
 fn='SOT-23-6_L2.9-W1.6-P0.95-LS2.8-BL.kicad_mod'
-x,y,rot=15.5,80.0,0.0
+x,y,rot=12.5,80.0,0.0
 pads={pn:footprint_pad_xy(fn,pn,x,y,rot) for pn in ('1','2','3','4','5','6')}
 
 fp=embed_fp(fn,'D71','SRV05-4 C558418',x,y,rot,{
@@ -114,35 +114,33 @@ fp=embed_fp(fn,'D71','SRV05-4 C558418',x,y,rot,{
 close=s.rfind(')')
 s=s[:close]+'\n'+fp+'\n'+s[close:]
 
-# Short F.Cu escapes to vias just outside the SOT-23-6 body.
-# Data/CLK/RST then join the already-approved card-side B.Cu networks.
+# Fanout D71 radially so no two protected nets share an escape corridor.
+# Existing through-vias from the Run-279 baseline are used as the far endpoints.
 p1,p2,p4,p5,p6=(pads[k] for k in ('1','2','4','5','6'))
 routes=[
-    # DATA: left/bottom I/O -> existing x=18 B.Cu trunk.
-    seg('SIM_DATA_CARD',p1[0],p1[1],13.30,p1[1]),
-    via('SIM_DATA_CARD',13.30,p1[1]),
-    seg('SIM_DATA_CARD',13.30,p1[1],18.00,82.54,.20,'B.Cu'),
+    # DATA (pad 1): down, then B.Cu to the approved DATA_CARD via at (18,82.54).
+    seg('SIM_DATA_CARD',p1[0],p1[1],p1[0],82.30),
+    via('SIM_DATA_CARD',p1[0],82.30),
+    seg('SIM_DATA_CARD',p1[0],82.30,18.00,82.54,.20,'B.Cu'),
 
-    # GND: extremely short dump into ground planes.
-    seg('GND',p2[0],p2[1],13.30,p2[1],.25),
-    via('GND',13.30,p2[1],.70,.35),
+    # GND (pad 2): independent short return straight down into the planes.
+    seg('GND',p2[0],p2[1],p2[0],82.40,.25),
+    via('GND',p2[0],82.40,.70,.35),
 
-    # RST: right/top I/O -> existing card via at (27.5,80).
-    seg('SIM_RST_CARD',p4[0],p4[1],17.70,p4[1]),
-    via('SIM_RST_CARD',17.70,p4[1]),
-    seg('SIM_RST_CARD',17.70,p4[1],27.50,80.00,.20,'B.Cu'),
+    # CLK (pad 6): up, then B.Cu above the socket to the approved CLK via.
+    seg('SIM_CLK_CARD',p6[0],p6[1],p6[0],77.70),
+    via('SIM_CLK_CARD',p6[0],77.70),
+    seg('SIM_CLK_CARD',p6[0],77.70,31.80,81.00,.20,'B.Cu'),
 
-    # VCC reference: connect SRV05-4 pin 5 to SIM_VDD through In1,
-    # terminating at the already-approved SIM_VDD via (32.0,76.6).
-    seg('SIM_VDD',p5[0],p5[1],17.70,p5[1]),
-    via('SIM_VDD',17.70,p5[1]),
-    seg('SIM_VDD',17.70,p5[1],17.70,76.60,.20,'In1.Cu'),
-    seg('SIM_VDD',17.70,76.60,32.00,76.60,.20,'In1.Cu'),
+    # VDD reference (pad 5): up on its own via, then In1 to the proven VDD via.
+    seg('SIM_VDD',p5[0],p5[1],p5[0],77.45),
+    via('SIM_VDD',p5[0],77.45),
+    seg('SIM_VDD',p5[0],77.45,32.00,76.60,.20,'In1.Cu'),
 
-    # CLK: right/bottom I/O -> existing x=26 B.Cu trunk.
-    seg('SIM_CLK_CARD',p6[0],p6[1],17.70,p6[1]),
-    via('SIM_CLK_CARD',17.70,p6[1]),
-    seg('SIM_CLK_CARD',17.70,p6[1],26.00,82.54,.20,'B.Cu'),
+    # RST (pad 4): up, then In2 to the approved RST_CARD via at (27.5,80).
+    seg('SIM_RST_CARD',p4[0],p4[1],p4[0],77.70),
+    via('SIM_RST_CARD',p4[0],77.70),
+    seg('SIM_RST_CARD',p4[0],77.70,27.50,80.00,.20,'In2.Cu'),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(routes)+'\n'+s[close:]
