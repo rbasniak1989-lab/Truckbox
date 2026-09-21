@@ -156,8 +156,9 @@ parts=[
     fp0603('R72','22R SIM_RST',36.3,93.0,'SIM_RST_MOD','SIM_RST_CARD'),
     fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD'),
     fp0603('R74','22R SIM_DATA',21.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
-    # Keep SIM_VDD bypass outside the left edge of J5, as close to C1 as possible.
-    fp0603('C69','100nF SIM_VDD',17.5,80.0,'GND','SIM_VDD'),
+    # C1 is on the right edge of J5 at x=30.9/y=77.46. Put the bypass just
+    # outside that edge so the VDD loop is short and the capacitor is accessible.
+    fp0603('C69','100nF SIM_VDD',33.5,77.46,'SIM_VDD','GND'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -170,11 +171,11 @@ r=[
     seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
     via('SIM_VDD',32.00,76.60,.60,.30),
     seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
-    # C69 100nF local bypass at the SIM socket. SIM_VDD pad is x=18.3;
-    # ground returns immediately through a local via into the ground planes.
-    seg('SIM_VDD',c1[0],c1[1],18.30,80.00),
-    seg('GND',16.70,80.00,15.80,80.00,.25),
-    via('GND',15.80,80.00,.70,.35),
+    # C69 100nF local bypass beside J5 C1. Pad 1 is SIM_VDD at x=32.7;
+    # pad 2 returns to the ground planes through a short local via.
+    seg('SIM_VDD',c1[0],c1[1],32.70,77.46),
+    seg('GND',34.30,77.46,34.30,78.30,.25),
+    via('GND',34.30,78.30,.70,.35),
 
     # ---- Stage 2: SIM_CLK module side ----
     # Run 257 mapped the remaining obstacles. Keep the pad-side via at x=59.4,
