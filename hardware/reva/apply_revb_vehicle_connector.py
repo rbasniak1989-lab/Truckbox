@@ -147,15 +147,18 @@ def via(n,x,y,size=.70,drill=.35):
 
 p1,p2,p3,p4,p5,p6,p7=[pad[str(i)] for i in range(1,8)]
 r=[
-    # +24 V: wide F.Cu route, shifted right of H4 for proper hole clearance.
-    seg('BATT24_FUSED',97.80,53.00,101.50,53.00,1.20),
-    seg('BATT24_FUSED',101.50,53.00,101.50,p1[1],1.20),
-    seg('BATT24_FUSED',101.50,p1[1],p1[0],p1[1],1.20),
+    # +24 V: F.Cu corridor clear of 3V3_LINK via and J4 pads 2/3/4.
+    seg('BATT24_FUSED',97.80,53.00,100.40,53.00,1.20),
+    seg('BATT24_FUSED',100.40,53.00,100.40,p1[1],1.20),
+    seg('BATT24_FUSED',100.40,p1[1],p1[0],p1[1],1.20),
 
-    # ACC stays on F.Cu and enters pin 3 from the left.
-    seg('ACC_RAW',97.80,45.50,100.50,45.50,.30),
-    seg('ACC_RAW',100.50,45.50,100.50,p3[1],.30),
-    seg('ACC_RAW',100.50,p3[1],p3[0],p3[1],.30),
+    # ACC: In2, then enter pin 3 from the left above the CAN fanout.
+    via('ACC_RAW',97.80,45.50),
+    seg('ACC_RAW',97.80,45.50,99.00,45.50,.30,'In2.Cu'),
+    seg('ACC_RAW',99.00,45.50,99.00,62.50,.30,'In2.Cu'),
+    seg('ACC_RAW',99.00,62.50,100.50,62.50,.30,'In2.Cu'),
+    seg('ACC_RAW',100.50,62.50,100.50,p3[1],.30,'In2.Cu'),
+    seg('ACC_RAW',100.50,p3[1],p3[0],p3[1],.30,'In2.Cu'),
 
     # J1939 H/L use In2 on independent non-crossing lanes.
     via('CAN1_H',94.20,43.00),
@@ -173,20 +176,19 @@ r=[
     seg('CAN1_L',112.00,53.80,112.00,p5[1],.35,'In2.Cu'),
     seg('CAN1_L',112.00,p5[1],p5[0],p5[1],.35,'In2.Cu'),
 
-    # J1708 A moves to In2 above the two CAN lanes, avoiding VIN_PROT B.Cu.
-    via('J1708_A',94.20,50.50),
-    seg('J1708_A',94.20,50.50,95.50,50.50,.35,'In2.Cu'),
-    seg('J1708_A',95.50,50.50,95.50,58.50,.35,'In2.Cu'),
-    seg('J1708_A',95.50,58.50,108.00,58.50,.35,'In2.Cu'),
-    seg('J1708_A',108.00,58.50,108.00,p6[1],.35,'In2.Cu'),
-    seg('J1708_A',108.00,p6[1],p6[0],p6[1],.35,'In2.Cu'),
+    # J1708 A/B on F.Cu. Both cross into the new wing below J4's lower
+    # mechanical hole, then rise on the outside where no legacy copper exists.
+    seg('J1708_A',94.20,50.50,95.50,50.50,.35),
+    seg('J1708_A',95.50,50.50,95.50,48.00,.35),
+    seg('J1708_A',95.50,48.00,112.00,48.00,.35),
+    seg('J1708_A',112.00,48.00,112.00,p6[1],.35),
+    seg('J1708_A',112.00,p6[1],p6[0],p6[1],.35),
 
-    via('J1708_B',94.20,48.00),
-    seg('J1708_B',94.20,48.00,92.80,48.00,.35,'B.Cu'),
-    seg('J1708_B',92.80,48.00,92.80,69.50,.35,'B.Cu'),
-    seg('J1708_B',92.80,69.50,114.00,69.50,.35,'B.Cu'),
-    seg('J1708_B',114.00,69.50,114.00,p7[1],.35,'B.Cu'),
-    seg('J1708_B',114.00,p7[1],p7[0],p7[1],.35,'B.Cu'),
+    seg('J1708_B',94.20,48.00,92.50,48.00,.35),
+    seg('J1708_B',92.50,48.00,92.50,46.50,.35),
+    seg('J1708_B',92.50,46.50,113.50,46.50,.35),
+    seg('J1708_B',113.50,46.50,113.50,p7[1],.35),
+    seg('J1708_B',113.50,p7[1],p7[0],p7[1],.35),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
