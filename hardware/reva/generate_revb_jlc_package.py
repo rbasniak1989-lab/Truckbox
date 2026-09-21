@@ -253,5 +253,5 @@ with zipfile.ZipFile(prod,'w',zipfile.ZIP_DEFLATED) as z:
     for path in members:
         z.write(path,arcname=path.name)
 
-print(f'Rev.B production package OK: PCB refs={len(board_refs)}, SMT={len(mapped)}, BOM lines={len(PARTS)}, CPL={len(mapped)}')
+print(f'Rev.B production package OK: PCB refs={len(board_refs)}, ASSEMBLY={len(mapped)}, BOM lines={len(PARTS)}, CPL={len(mapped)}')
 print(f'Wrote {prod}')
