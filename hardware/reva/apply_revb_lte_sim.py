@@ -220,17 +220,17 @@ r=[
     seg('SIM_DATA_CARD',18.00,c7[1],c7[0],c7[1]),
 
     # ---- Stage 4: SIM_RST module side ----
-    # Run 263 mapped the PWRKEY GND via and the frozen DATA lane. Stop In2 at
-    # x=38, drop to B.Cu, then use x=36.5 so we stay right of DATA's B.Cu hop.
-    seg('SIM_RST_MOD',p17[0],p17[1],58.90,80.30),
-    via('SIM_RST_MOD',58.90,80.30,.50,.30),
-    seg('SIM_RST_MOD',58.90,80.30,38.00,80.30,.20,'In2.Cu'),
-    seg('SIM_RST_MOD',38.00,80.30,38.00,82.40,.20,'In2.Cu'),
-    seg('SIM_RST_MOD',38.00,82.40,37.20,82.40,.20,'In2.Cu'),
-    via('SIM_RST_MOD',37.20,82.40,.60,.30),
-    seg('SIM_RST_MOD',37.20,82.40,37.20,91.80,.20,'B.Cu'),
-    via('SIM_RST_MOD',37.20,91.80,.60,.30),
-    seg('SIM_RST_MOD',37.20,91.80,35.50,93.00),
+    # Runs 263-267 mapped the x=36..39 corridor as occupied by PWRKEY,
+    # D70/Q50 and C67/C68/LTE_3V8. Leave that corridor completely:
+    # escape to the right of U9, travel on In1 below the LTE block, and
+    # return to F.Cu left of C68 only for the short connection to R72.
+    seg('SIM_RST_MOD',p17[0],p17[1],61.00,p17[1]),
+    via('SIM_RST_MOD',61.00,p17[1],.60,.30),
+    seg('SIM_RST_MOD',61.00,p17[1],61.00,94.20,.20,'In1.Cu'),
+    seg('SIM_RST_MOD',61.00,94.20,34.30,94.20,.20,'In1.Cu'),
+    seg('SIM_RST_MOD',34.30,94.20,34.30,91.80,.20,'In1.Cu'),
+    via('SIM_RST_MOD',34.30,91.80,.60,.30),
+    seg('SIM_RST_MOD',34.30,91.80,35.50,93.00),
 
     # ---- Stage 4: SIM_RST card side ----
     # R72 moved to y=93, clear of C68. Use the bottom B.Cu corridor at y=92.8,
