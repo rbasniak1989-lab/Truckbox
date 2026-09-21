@@ -11,6 +11,7 @@ s=P.read_text(encoding='utf-8')
 # R72/R73/R74 are 22R series resistors on RST/CLK/DATA.
 # Stage 5 adds C69=100nF from SIM_VDD to GND at the socket, per SIMCom.
 # Stage 6 adds C70=33pF in parallel for the high-frequency VDD bypass.
+# Stage 7 adds the first optional 22pF_NM shunt: C71 on SIM_RST_CARD.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -161,6 +162,7 @@ parts=[
     # capacitors just outside that edge and share the same local ground return.
     fp0603('C69','100nF SIM_VDD',33.5,77.46,'SIM_VDD','GND'),
     fp0603('C70','33pF SIM_VDD',33.5,75.80,'SIM_VDD','GND'),
+    fp0603('C71','22pF_NM SIM_RST',32.9,80.00,'SIM_RST_CARD','GND'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -256,6 +258,10 @@ r=[
     seg('SIM_RST_CARD',27.50,83.40,27.50,c2[1],.20,'In2.Cu'),
     via('SIM_RST_CARD',27.50,c2[1],.60,.30),
     seg('SIM_RST_CARD',27.50,c2[1],c2[0],c2[1]),
+    # C71 optional SIM_RST shunt, card side and immediately outside J5.
+    seg('SIM_RST_CARD',c2[0],c2[1],32.10,80.00),
+    seg('GND',33.70,80.00,33.70,81.00,.25),
+    via('GND',33.70,81.00,.70,.35),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
@@ -266,8 +272,8 @@ for n in ('SIM_VDD','SIM_RST_MOD','SIM_CLK_MOD','SIM_DATA_MOD'):
     if n not in u9c: raise RuntimeError(f'U9 missing {n}')
 for n in ('SIM_VDD','SIM_RST_CARD','SIM_CLK_CARD','SIM_DATA_CARD'):
     if n not in j5c: raise RuntimeError(f'J5 missing {n}')
-for ref in ('R72','R73','R74','C69','C70'):
+for ref in ('R72','R73','R74','C69','C70','C71'):
     if f'reference "{ref}"' not in s: raise RuntimeError(f'{ref} missing')
 
 P.write_text(s,encoding='utf-8')
-print(f'Applied Rev.B SIM1 staged pass 6: complete SIM routing + C69 100nF + C70 33pF VDD bypass; c1={c1}')
+print(f'Applied Rev.B SIM1 staged pass 7: VDD bypass + C71 22pF_NM RST shunt; c1={c1}, c2={c2}')
