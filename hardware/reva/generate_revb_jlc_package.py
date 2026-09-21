@@ -171,7 +171,8 @@ with audit_path.open('w',newline='',encoding='utf-8-sig') as f:
     for g in PARTS:
         vals=sorted({board_values[r] for r in g['refs']})
         status='VALIDATED_CURRENT_REUSE' if all(not re.match(r'(U9|U10|U11|D50|D70|D71|J5|J6|L50|Q50|R5[03456]|R6[0135]|R7[0-4]|C5[23]|C6[0-9]|C7[0-5])$',r) for r in g['refs']) else 'REV_B_SELECTED'
-        wr.writerow([','.join(g['refs']),len(g['refs']),' | '.join(vals),g['mpn'],g['manufacturer'],g['lcsc'],g['footprint'],'JLC SMT',status,f'https://www.lcsc.com/search?q={g["lcsc"]}',g['note']])
+        assembly='JLC THT / wave solder' if 'J4' in g['refs'] else 'JLC SMT'
+        wr.writerow([','.join(g['refs']),len(g['refs']),' | '.join(vals),g['mpn'],g['manufacturer'],g['lcsc'],g['footprint'],assembly,status,f'https://www.lcsc.com/search?q={g["lcsc"]}',g['note']])
     for ref,note in sorted(DNP.items(),key=lambda kv:nat(kv[0])):
         wr.writerow([ref,1,board_values.get(ref,''),'','','',pos_by_ref.get(ref,{}).get('Package',''),'DNP','DNP', '',note])
     for ref,note in sorted(MANUAL.items(),key=lambda kv:nat(kv[0])):
@@ -207,7 +208,8 @@ PCBA TYPE
 DNP / MANUAL
 - DNP: C50, C51 (LTE RF tuning shunts).
 - DNP: C76, C77, C78 (optional SIM 22 pF shunts).
-- J4: Mini-Fit 8-way 9A / C22365702, JLC THT/wave-solder assembly; mates with common 8-way 2x4 Mini-Fit-compatible harness housing.\n- DNP/manual: SW1 until the physical switch is matched.
+- J4: Mini-Fit 8-way 9A / C22365702, JLC THT/wave-solder assembly; mates with common 8-way 2x4 Mini-Fit-compatible harness housing.
+- J4 pinout: 1=J1939/CAN1_H, 2=J1939/CAN1_L, 3=ACC, 4=J1708_A, 5=GND, 6=J1708_B, 7=+24V BATT24_FUSED, 8=reserved/NC.\n- DNP/manual: SW1 until the physical switch is matched.
 - H1-H6 and TP1-TP6 are PCB features, not BOM/CPL components.
 
 CRITICAL REV.B PARTS

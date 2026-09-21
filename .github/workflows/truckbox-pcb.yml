@@ -26,10 +26,8 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check easyeda2kicad
           rm -rf hardware/reva/revb_jlc.pretty
-          easyeda2kicad --footprint --lcsc_id C20617360 C5186957 C2687968 C3033025 C88373 C558418 C14651 C19947701 C6423579 C239506 C22365702 --output hardware/reva/revb_jlc
+          easyeda2kicad --footprint --lcsc_id C20617360 C5186957 C2687968 C3033025 C88373 C558418 C14651 C19947701 C22365702 --output hardware/reva/revb_jlc
           find hardware/reva/revb_jlc.pretty -maxdepth 1 -type f -print
-          echo '--- C22365702 FOOTPRINT ---'
-          cat hardware/reva/revb_jlc.pretty/CONN-TH_8P-P4.20_DLL-5566-8A.kicad_mod
 
       - name: Generate board
         run: |
