@@ -153,23 +153,32 @@ r=[
     seg('LTE_PWRKEY_GPIO',65.50,p8[1],65.50,23.00,.20,'In2.Cu'),
     via('LTE_PWRKEY_GPIO',65.50,23.00),
 
-    # B.Cu lane centered between the existing x=64.5 and x=66.5 trunks.
-    # Change back to In2 before the UART RX horizontal at y=32.2.
-    seg('LTE_PWRKEY_GPIO',65.50,23.00,65.50,31.20,.20,'B.Cu'),
-    via('LTE_PWRKEY_GPIO',65.50,31.20),
+    # Stay on B.Cu past both POWER_SIGNALS horizontals at y=31 and y=32.2.
+    seg('LTE_PWRKEY_GPIO',65.50,23.00,65.50,33.50,.20,'B.Cu'),
+    via('LTE_PWRKEY_GPIO',65.50,33.50),
 
-    # Long In2 leg sits 1.5 mm left of the approved LTE RX lane and clears
-    # the 3V3_MAIN vias at x=63.2.
-    seg('LTE_PWRKEY_GPIO',65.50,31.20,62.50,31.20,.20,'In2.Cu'),
-    seg('LTE_PWRKEY_GPIO',62.50,31.20,62.50,63.00,.20,'In2.Cu'),
+    # Very short F.Cu crossover avoids the existing B.Cu x=64.5 trunk.
+    seg('LTE_PWRKEY_GPIO',65.50,33.50,62.50,33.50,.20,'F.Cu'),
+    via('LTE_PWRKEY_GPIO',62.50,33.50),
 
-    # Turn left one millimetre above the approved RX horizontal (y=64).
-    # The LTE bay is outside the 3V3_MAIN plane, so remain on In2 all the
-    # way to Q50: this avoids the 1.8-V UART and 3.8-V B.Cu trunks entirely.
+    # In2 vertical, with a local S-bend around the 3V3_MAIN via at (62.8,52.0).
+    seg('LTE_PWRKEY_GPIO',62.50,33.50,62.50,49.50,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',62.50,49.50,60.80,49.50,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',60.80,49.50,60.80,54.50,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',60.80,54.50,62.50,54.50,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',62.50,54.50,62.50,63.00,.20,'In2.Cu'),
+
+    # LTE bay is outside the 3V3_MAIN pour: stay on In2 to the gate.
     seg('LTE_PWRKEY_GPIO',62.50,63.00,60.30,63.00,.20,'In2.Cu'),
     seg('LTE_PWRKEY_GPIO',60.30,63.00,60.30,92.50,.20,'In2.Cu'),
     seg('LTE_PWRKEY_GPIO',60.30,92.50,34.50,92.50,.20,'In2.Cu'),
     seg('LTE_PWRKEY_GPIO',34.50,92.50,34.50,78.80,.20,'In2.Cu'),
+
+    # PWRKEY cut changes zone topology; bridge the right 3V3_MAIN island
+    # between already-existing 3V3 vias using a clear B.Cu path above CAN.
+    seg('3V3_MAIN',68.00,43.135,68.00,36.00,.28,'B.Cu'),
+    seg('3V3_MAIN',68.00,36.00,76.00,36.00,.28,'B.Cu'),
+    seg('3V3_MAIN',76.00,36.00,76.00,45.70,.28,'B.Cu'),
 ]
 
 close=s.rfind(')')
