@@ -29,7 +29,7 @@ def balanced_block(text,start):
                 return j+1
     raise RuntimeError('unterminated s-expression')
 
-def hide_u9_reference(text):
+def move_u9_reference_to_fab(text):
     i=0
     while True:
         i=text.find('(footprint ',i)
@@ -42,13 +42,14 @@ def hide_u9_reference(text):
             t0=m.start()
             t1=balanced_block(blk,t0)
             txt=blk[t0:t1]
-            if re.search(r'\(layer\s+"F\.SilkS"\)',txt) and not re.search(r'\(layer\s+"F\.SilkS"\)\s+hide',txt):
-                txt2=re.sub(r'(\(layer\s+"F\.SilkS"\))', r'\1 hide', txt, count=1)
-                blk=blk[:t0]+txt2+blk[t1:]
+            txt2=re.sub(r'\(layer\s+"F\.SilkS"\)', '(layer "F.Fab")', txt, count=1)
+            if txt2==txt:
+                raise RuntimeError('U9 reference is not on F.SilkS')
+            blk=blk[:t0]+txt2+blk[t1:]
             return text[:i]+blk+text[j:]
         i=j
 
-s=hide_u9_reference(s)
+s=move_u9_reference_to_fab(s)
 
 # Rev.B A7683E PWRKEY ESD protection.
 # D70 = Nexperia PESD5Z5.0,115 / LCSC C132368 / SOD-523.
