@@ -123,19 +123,24 @@ routes=[
     via('SIM_DATA_CARD',p1[0],82.30),
     seg('SIM_DATA_CARD',p1[0],82.30,18.00,82.54,.20,'B.Cu'),
 
-    # GND (pad 2): independent short return straight down into the planes.
-    seg('GND',p2[0],p2[1],p2[0],82.40,.25),
-    via('GND',p2[0],82.40,.70,.35),
+    # GND (pad 2): drop farther below DATA before entering the planes.
+    seg('GND',p2[0],p2[1],p2[0],83.30,.25),
+    via('GND',p2[0],83.30,.70,.35),
 
-    # CLK (pad 6): up, then B.Cu above the socket to the approved CLK via.
+    # CLK (pad 6): go above the other SIM fanout on B.Cu, then descend at
+    # x=30.8 and join the already-approved CLK via at (31.8,81).
     seg('SIM_CLK_CARD',p6[0],p6[1],p6[0],77.70),
     via('SIM_CLK_CARD',p6[0],77.70),
-    seg('SIM_CLK_CARD',p6[0],77.70,31.80,81.00,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',p6[0],77.70,p6[0],75.50,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',p6[0],75.50,30.80,75.50,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',30.80,75.50,30.80,81.00,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',30.80,81.00,31.80,81.00,.20,'B.Cu'),
 
-    # VDD reference (pad 5): up on its own via, then In1 to the proven VDD via.
-    seg('SIM_VDD',p5[0],p5[1],p5[0],77.45),
-    via('SIM_VDD',p5[0],77.45),
-    seg('SIM_VDD',p5[0],77.45,32.00,76.60,.20,'In1.Cu'),
+    # VDD reference (pad 5): rise farther before entering In1 so the VDD
+    # via/track clears both CLK and the adjacent RST escape.
+    seg('SIM_VDD',p5[0],p5[1],p5[0],76.60),
+    via('SIM_VDD',p5[0],76.60),
+    seg('SIM_VDD',p5[0],76.60,32.00,76.60,.20,'In1.Cu'),
 
     # RST (pad 4): up, then In2 to the approved RST_CARD via at (27.5,80).
     seg('SIM_RST_CARD',p4[0],p4[1],p4[0],77.70),
