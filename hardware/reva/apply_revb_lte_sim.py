@@ -56,7 +56,10 @@ for name in needed:
         adds.append(f'  (net {next_id} "{name}")')
         next_id+=1
 if adds:
-    m=list(re.finditer(r'^  \(net \d+ "[^"]+"\)
+    m=list(re.finditer(r'^  \(net \d+ "[^"]+"\)$',s,re.M))
+    if not m: raise RuntimeError('net insertion point not found')
+    pos=m[-1].end()
+    s=s[:pos]+'\n'+'\n'.join(adds)+s[pos:]
 
 def ne(n,pad=False):
     return f'(net {net_id[n]} "{n}")' if pad else f'(net {net_id[n]})'
@@ -124,13 +127,9 @@ def fp0603(ref,val,x,y,n1,n2):
     (pad "2" smd roundrect (at 0.8 0) (size .75 .95) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio .18) {ne(n2,True)})
   )'''
 
-# R73 stays below the socket. R72/R74 are intentionally not present yet.
-close=s.rfind(')')
-s=s[:close]+'\n'+fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD')+'\n'+s[close:]
-
 # Run 253 left one collision only: the SIM_VDD escape via at x=58.9
-# intersected the long LTE_UART_RX_1V8 B.Cu vertical at x=59. Keep the
-# approved UART endpoints and make only a local B.Cu jog to x=60.2.
+# intersected the long LTE_UART_RX_1V8 B.Cu vertical at x=59. Run 254
+# approved this local B.Cu jog with 0 geometry/electrical violations.
 uart_rx_old=seg('LTE_UART_RX_1V8',59.0,90.0,59.0,67.0,.20,'B.Cu')
 uart_rx_new='\n'.join([
     seg('LTE_UART_RX_1V8',59.0,90.0,60.2,90.0,.20,'B.Cu'),
@@ -141,20 +140,23 @@ if uart_rx_old not in s:
     raise RuntimeError('LTE_UART_RX_1V8 vertical baseline segment not found')
 s=s.replace(uart_rx_old,uart_rx_new,1)
 
-# SIM_VDD is frozen from Run 254.
+# R73 stays below the socket. R72/R74 are intentionally not present yet.
+close=s.rfind(')')
+s=s[:close]+'\n'+fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD')+'\n'+s[close:]
+
 r=[
+    # ---- Frozen SIM_VDD from Run 254 ----
     seg('SIM_VDD',p18[0],p18[1],58.90,p18[1]),
     via('SIM_VDD',58.90,p18[1],.60,.30),
-
     seg('SIM_VDD',58.90,p18[1],58.90,77.20,.20,'In2.Cu'),
     seg('SIM_VDD',58.90,77.20,32.00,77.20,.20,'In2.Cu'),
     seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
     via('SIM_VDD',32.00,76.60,.60,.30),
     seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
 
-    # ---- Stage 2: SIM_CLK only ----
-    # Immediate via avoids running down the U9 pad row. On In2, y=77.7 is
-    # 0.5 mm below the frozen VDD lane and clears the LTE vias around y=78.6.
+    # ---- Stage 2: SIM_CLK module side ----
+    # Immediate via avoids running down the U9 pad row. The In2 lane at y=77.7
+    # remains separated from frozen VDD and from the LTE vias around y=78.6.
     seg('SIM_CLK_MOD',p16[0],p16[1],58.90,p16[1]),
     via('SIM_CLK_MOD',58.90,p16[1],.60,.30),
     seg('SIM_CLK_MOD',58.90,p16[1],58.90,77.70,.20,'In2.Cu'),
@@ -163,8 +165,8 @@ r=[
     via('SIM_CLK_MOD',29.50,89.20,.60,.30),
     seg('SIM_CLK_MOD',29.50,89.20,28.80,90.50),
 
-    # Card side uses B.Cu around the outside of J5, then a short F.Cu landing
-    # into C3. This keeps the two CLK nets separated by R73 as intended.
+    # ---- Stage 2: SIM_CLK card side ----
+    # B.Cu loops around the outside of J5; only the final landing into C3 is F.Cu.
     seg('SIM_CLK_CARD',27.20,90.50,26.00,90.50),
     via('SIM_CLK_CARD',26.00,90.50,.60,.30),
     seg('SIM_CLK_CARD',26.00,90.50,31.50,90.50,.20,'B.Cu'),
@@ -184,97 +186,4 @@ for n in ('SIM_VDD','SIM_CLK_CARD'):
 if 'reference "R73"' not in s: raise RuntimeError('R73 missing')
 
 P.write_text(s,encoding='utf-8')
-print('Applied Rev.B SIM1 staged pass 2: frozen VDD + CLK/R73')
-,s,re.M))
-    if not m: raise RuntimeError('net insertion point not found')
-    pos=m[-1].end()
-    s=s[:pos]+'\n'+'\n'.join(adds)+s[pos:]
-
-def ne(n,pad=False):
-    return f'(net {net_id[n]} "{n}")' if pad else f'(net {net_id[n]})'
-
-def assign_pad(block,pn,net):
-    m=re.search(r'\(pad\s+"?'+re.escape(str(pn))+r'"?\s+',block)
-    if not m: raise RuntimeError(f'pad {pn} missing')
-    j=balanced_block(block,m.start()); pb=block[m.start():j]
-    if re.search(r'\(net\s+(?:\d+\s+)?"[^"]*"\)',pb):
-        pb=re.sub(r'\(net\s+(?:\d+\s+)?"[^"]*"\)',ne(net,True),pb,count=1)
-    elif re.search(r'\(net\s+\d+\)',pb):
-        pb=re.sub(r'\(net\s+\d+\)',ne(net,True),pb,count=1)
-    else:
-        pb=pb[:-1]+' '+ne(net,True)+')'
-    return block[:m.start()]+pb+block[j:]
-
-def fp_at(block):
-    m=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)(?:\s+([-+0-9.]+))?\)',block)
-    if not m: raise RuntimeError('footprint at missing')
-    return float(m.group(1)),float(m.group(2)),float(m.group(3) or 0)
-
-def pad_xy(block,pn):
-    x,y,rot=fp_at(block)
-    m=re.search(r'\(pad\s+"?'+re.escape(str(pn))+r'"?\s+',block)
-    if not m: raise RuntimeError(f'pad {pn} missing for xy')
-    j=balanced_block(block,m.start()); pb=block[m.start():j]
-    a=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)',pb)
-    if not a: raise RuntimeError(f'pad {pn} at() missing')
-    lx,ly=map(float,a.groups())
-    ang=math.radians(rot)
-    return (x+lx*math.cos(ang)+ly*math.sin(ang),
-            y-lx*math.sin(ang)+ly*math.cos(ang))
-
-# Assign only the supply endpoints.
-a,b,u9=find_fp(s,'U9')
-u9=assign_pad(u9,18,'SIM_VDD')
-s=s[:a]+u9+s[b:]
-
-a,b,j5=find_fp(s,'J5')
-j5=assign_pad(j5,'C1','SIM_VDD')
-s=s[:a]+j5+s[b:]
-
-_,_,u9=find_fp(s,'U9')
-_,_,j5=find_fp(s,'J5')
-p18=pad_xy(u9,18)
-c1=pad_xy(j5,'C1')
-
-def seg(n,x1,y1,x2,y2,w=.20,layer='F.Cu'):
-    return f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) (width {w:.3f}) (layer "{layer}") {ne(n)})'
-
-def via(n,x,y,size=.70,drill=.35):
-    return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
-
-# Run 253 left one collision only: the SIM_VDD escape via at x=58.9
-# intersected the long LTE_UART_RX_1V8 B.Cu vertical at x=59. Keep the
-# approved UART endpoints and make only a local B.Cu jog to x=60.2.
-uart_rx_old=seg('LTE_UART_RX_1V8',59.0,90.0,59.0,67.0,.20,'B.Cu')
-uart_rx_new='\n'.join([
-    seg('LTE_UART_RX_1V8',59.0,90.0,60.2,90.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_1V8',60.2,90.0,60.2,67.0,.20,'B.Cu'),
-    seg('LTE_UART_RX_1V8',60.2,67.0,59.0,67.0,.20,'B.Cu'),
-])
-if uart_rx_old not in s:
-    raise RuntimeError('LTE_UART_RX_1V8 vertical baseline segment not found')
-s=s.replace(uart_rx_old,uart_rx_new,1)
-
-# Escape immediately from pin 18 to a small via beside the pad, instead of
-# running along the U9 pad row. Run 252 proved that the y=73 F.Cu corridor
-# crossed unassigned U9 pads 22/80. From there use In2 above the PWRKEY wall.
-r=[
-    seg('SIM_VDD',p18[0],p18[1],58.90,p18[1]),
-    via('SIM_VDD',58.90,p18[1],.60,.30),
-
-    seg('SIM_VDD',58.90,p18[1],58.90,77.20,.20,'In2.Cu'),
-    seg('SIM_VDD',58.90,77.20,32.00,77.20,.20,'In2.Cu'),
-    seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
-    via('SIM_VDD',32.00,76.60,.60,.30),
-    seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
-]
-close=s.rfind(')')
-s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
-
-_,_,u9c=find_fp(s,'U9')
-_,_,j5c=find_fp(s,'J5')
-if 'SIM_VDD' not in u9c: raise RuntimeError('U9 missing SIM_VDD')
-if 'SIM_VDD' not in j5c: raise RuntimeError('J5 missing SIM_VDD')
-
-P.write_text(s,encoding='utf-8')
-print('Applied Rev.B SIM1 staged pass 1: SIM_VDD only')
+print(f'Applied Rev.B SIM1 staged pass 2: VDD + CLK/R73; p16={p16}, c3={c3}')
