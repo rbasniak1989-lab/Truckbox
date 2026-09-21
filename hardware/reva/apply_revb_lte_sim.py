@@ -11,7 +11,8 @@ s=P.read_text(encoding='utf-8')
 # R72/R73/R74 are 22R series resistors on RST/CLK/DATA.
 # Stage 5 adds C69=100nF from SIM_VDD to GND at the socket, per SIMCom.
 # Stage 6 adds C70=33pF in parallel for the high-frequency VDD bypass.
-# Stage 7 adds the first optional 22pF_NM shunt: C71 on SIM_RST_CARD.
+# Stage 7 adds C71=22pF_NM on SIM_RST_CARD.
+# Stage 8 adds C72=22pF_NM on SIM_CLK_CARD.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -162,8 +163,10 @@ parts=[
     # capacitors just outside that edge and share the same local ground return.
     fp0603('C69','100nF SIM_VDD',33.5,77.46,'SIM_VDD','GND'),
     fp0603('C70','33pF SIM_VDD',33.5,75.80,'SIM_VDD','GND'),
-    # Move RST shunt below J5, away from the PWRKEY cluster at x=34/y=80.
+    # Optional shunts sit below J5, away from the PWRKEY cluster.
     fp0603('C71','22pF_NM SIM_RST',29.5,87.50,'SIM_RST_CARD','GND'),
+    # Put CLK signal on pad 2 (right side) so it faces the approved x=26 B.Cu trunk.
+    fp0603('C72','22pF_NM SIM_CLK',24.0,87.50,'GND','SIM_CLK_CARD'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -207,6 +210,12 @@ r=[
     seg('SIM_CLK_CARD',31.80,c3[1],31.80,81.00,.20,'B.Cu'),
     via('SIM_CLK_CARD',31.80,81.00,.60,.30),
     seg('SIM_CLK_CARD',31.80,81.00,c3[0],c3[1]),
+    # C72 optional SIM_CLK shunt: tap approved B.Cu trunk at x=26.
+    seg('SIM_CLK_CARD',26.00,87.50,25.50,87.50,.20,'B.Cu'),
+    via('SIM_CLK_CARD',25.50,87.50,.60,.30),
+    seg('SIM_CLK_CARD',25.50,87.50,24.80,87.50),
+    seg('GND',23.20,87.50,22.50,86.80,.25),
+    via('GND',22.50,86.80,.70,.35),
 
     # ---- Stage 3: SIM_DATA module side ----
     # Reuse the old clean U9 bottom escape, but keep DATA on In2 below the
@@ -277,8 +286,8 @@ for n in ('SIM_VDD','SIM_RST_MOD','SIM_CLK_MOD','SIM_DATA_MOD'):
     if n not in u9c: raise RuntimeError(f'U9 missing {n}')
 for n in ('SIM_VDD','SIM_RST_CARD','SIM_CLK_CARD','SIM_DATA_CARD'):
     if n not in j5c: raise RuntimeError(f'J5 missing {n}')
-for ref in ('R72','R73','R74','C69','C70','C71'):
+for ref in ('R72','R73','R74','C69','C70','C71','C72'):
     if f'reference "{ref}"' not in s: raise RuntimeError(f'{ref} missing')
 
 P.write_text(s,encoding='utf-8')
-print(f'Applied Rev.B SIM1 staged pass 7: VDD bypass + C71 22pF_NM RST shunt; c1={c1}, c2={c2}')
+print(f'Applied Rev.B SIM1 staged pass 8: VDD bypass + C71 RST + C72 CLK 22pF_NM shunts; c1={c1}, c2={c2}, c3={c3}')
