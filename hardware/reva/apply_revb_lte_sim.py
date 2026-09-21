@@ -174,8 +174,8 @@ r=[
     # C69 100nF local bypass beside J5 C1. Pad 1 is SIM_VDD at x=32.7;
     # pad 2 returns to the ground planes through a short local via.
     seg('SIM_VDD',c1[0],c1[1],32.70,77.46),
-    seg('GND',34.30,77.46,34.30,78.30,.25),
-    via('GND',34.30,78.30,.70,.35),
+    seg('GND',34.30,77.46,34.30,76.20,.25),
+    via('GND',34.30,76.20,.70,.35),
 
     # ---- Stage 2: SIM_CLK module side ----
     # Run 257 mapped the remaining obstacles. Keep the pad-side via at x=59.4,
