@@ -174,11 +174,10 @@ r=[
     seg('LTE_PWRKEY_GPIO',60.30,92.50,34.50,92.50,.20,'In2.Cu'),
     seg('LTE_PWRKEY_GPIO',34.50,92.50,34.50,78.80,.20,'In2.Cu'),
 
-    # PWRKEY cut changes zone topology; bridge the right 3V3_MAIN island
-    # between already-existing 3V3 vias using a clear B.Cu path above CAN.
-    seg('3V3_MAIN',68.00,43.135,68.00,36.00,.28,'B.Cu'),
-    seg('3V3_MAIN',68.00,36.00,76.00,36.00,.28,'B.Cu'),
-    seg('3V3_MAIN',76.00,36.00,76.00,45.70,.28,'B.Cu'),
+    # Bridge the 3V3_MAIN pour directly across the new PWRKEY In2 cut.
+    # (63.2,39) is an existing 3V3_MAIN via; add one on the opposite side.
+    via('3V3_MAIN',61.50,39.00,.70,.35),
+    seg('3V3_MAIN',61.50,39.00,63.20,39.00,.28,'B.Cu'),
 ]
 
 close=s.rfind(')')
