@@ -225,12 +225,12 @@ r=[
     seg('SIM_RST_MOD',p17[0],p17[1],58.90,80.30),
     via('SIM_RST_MOD',58.90,80.30,.50,.30),
     seg('SIM_RST_MOD',58.90,80.30,38.00,80.30,.20,'In2.Cu'),
-    seg('SIM_RST_MOD',38.00,80.30,38.00,82.00,.20,'In2.Cu'),
-    seg('SIM_RST_MOD',38.00,82.00,36.40,82.00,.20,'In2.Cu'),
-    via('SIM_RST_MOD',36.40,82.00,.60,.30),
-    seg('SIM_RST_MOD',36.40,82.00,36.40,91.80,.20,'B.Cu'),
-    via('SIM_RST_MOD',36.40,91.80,.60,.30),
-    seg('SIM_RST_MOD',36.40,91.80,35.50,93.00),
+    seg('SIM_RST_MOD',38.00,80.30,38.00,82.40,.20,'In2.Cu'),
+    seg('SIM_RST_MOD',38.00,82.40,37.20,82.40,.20,'In2.Cu'),
+    via('SIM_RST_MOD',37.20,82.40,.60,.30),
+    seg('SIM_RST_MOD',37.20,82.40,37.20,91.80,.20,'B.Cu'),
+    via('SIM_RST_MOD',37.20,91.80,.60,.30),
+    seg('SIM_RST_MOD',37.20,91.80,35.50,93.00),
 
     # ---- Stage 4: SIM_RST card side ----
     # R72 moved to y=93, clear of C68. Use the bottom B.Cu corridor at y=92.8,
