@@ -4,11 +4,11 @@ import re, math
 P=Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 s=P.read_text(encoding='utf-8')
 
-# Rev.B A7683E SIM1 staged routing — stage 2: SIM_VDD + SIM_CLK.
-# Run 254 froze SIM_VDD at 0 geometry/electrical and 0 unconnected.
-# Official A7683E: pin 18 SIM1_VDD, pin 16 SIM1_CLK.
-# J5: C1=VCC, C3=CLK. R73 is the 22R series resistor for CLK.
-# RST/DATA remain deliberately absent until CLK passes DRC.
+# Rev.B A7683E SIM1 staged routing — stage 3: VDD + CLK + DATA.
+# Run 259 froze VDD + CLK/R73 at 0 geometry/electrical and 0 unconnected.
+# Official A7683E: pin 18 SIM1_VDD, pin 16 SIM1_CLK, pin 15 SIM1_DATA.
+# J5: C1=VCC, C3=CLK, C7=I/O. R73/R74 are 22R series resistors.
+# RST/R72 remains deliberately absent until DATA passes DRC.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -47,7 +47,7 @@ def find_fp(text,ref):
 net_pairs=[(int(i),n) for i,n in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"\)',s)]
 if not net_pairs: raise RuntimeError('numeric net table missing')
 net_id={n:i for i,n in net_pairs}
-needed=('SIM_VDD','SIM_CLK_MOD','SIM_CLK_CARD')
+needed=('SIM_VDD','SIM_CLK_MOD','SIM_CLK_CARD','SIM_DATA_MOD','SIM_DATA_CARD')
 adds=[]
 next_id=max(net_id.values())+1
 for name in needed:
@@ -97,19 +97,23 @@ def pad_xy(block,pn):
 a,b,u9=find_fp(s,'U9')
 u9=assign_pad(u9,18,'SIM_VDD')
 u9=assign_pad(u9,16,'SIM_CLK_MOD')
+u9=assign_pad(u9,15,'SIM_DATA_MOD')
 s=s[:a]+u9+s[b:]
 
 a,b,j5=find_fp(s,'J5')
 j5=assign_pad(j5,'C1','SIM_VDD')
 j5=assign_pad(j5,'C3','SIM_CLK_CARD')
+j5=assign_pad(j5,'C7','SIM_DATA_CARD')
 s=s[:a]+j5+s[b:]
 
 _,_,u9=find_fp(s,'U9')
 _,_,j5=find_fp(s,'J5')
 p18=pad_xy(u9,18)
 p16=pad_xy(u9,16)
+p15=pad_xy(u9,15)
 c1=pad_xy(j5,'C1')
 c3=pad_xy(j5,'C3')
+c7=pad_xy(j5,'C7')
 
 def seg(n,x1,y1,x2,y2,w=.20,layer='F.Cu'):
     return f'  (segment (start {x1:.3f} {y1:.3f}) (end {x2:.3f} {y2:.3f}) (width {w:.3f}) (layer "{layer}") {ne(n)})'
@@ -140,9 +144,13 @@ if uart_rx_old not in s:
     raise RuntimeError('LTE_UART_RX_1V8 vertical baseline segment not found')
 s=s.replace(uart_rx_old,uart_rx_new,1)
 
-# R73 stays below the socket. R72/R74 are intentionally not present yet.
+# R73/R74 stay below the socket. R72 is intentionally not present yet.
 close=s.rfind(')')
-s=s[:close]+'\n'+fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD')+'\n'+s[close:]
+parts=[
+    fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD'),
+    fp0603('R74','22R SIM_DATA',21.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
+]
+s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
 r=[
     # ---- Frozen SIM_VDD from Run 254 ----
@@ -177,17 +185,40 @@ r=[
     seg('SIM_CLK_CARD',31.80,c3[1],31.80,81.00,.20,'B.Cu'),
     via('SIM_CLK_CARD',31.80,81.00,.60,.30),
     seg('SIM_CLK_CARD',31.80,81.00,c3[0],c3[1]),
+
+    # ---- Stage 3: SIM_DATA module side ----
+    # Reuse the old clean U9 bottom escape, but keep DATA on In2 below the
+    # frozen CLK/VDD corridors. y=91.3 clears the CLK card via at (26,90.5).
+    seg('SIM_DATA_MOD',p15[0],p15[1],58.90,p15[1]),
+    seg('SIM_DATA_MOD',58.90,p15[1],58.90,88.00),
+    seg('SIM_DATA_MOD',58.90,88.00,55.00,88.00),
+    via('SIM_DATA_MOD',55.00,88.00,.60,.30),
+    seg('SIM_DATA_MOD',55.00,88.00,33.50,88.00,.20,'In2.Cu'),
+    seg('SIM_DATA_MOD',33.50,88.00,33.50,91.30,.20,'In2.Cu'),
+    seg('SIM_DATA_MOD',33.50,91.30,23.20,91.30,.20,'In2.Cu'),
+    via('SIM_DATA_MOD',23.20,91.30,.60,.30),
+    seg('SIM_DATA_MOD',23.20,91.30,22.40,90.50),
+
+    # ---- Stage 3: SIM_DATA card side ----
+    # The historical C7 approach at x=18 did not produce DATA-card DRC errors.
+    seg('SIM_DATA_CARD',20.80,90.50,20.00,91.30),
+    via('SIM_DATA_CARD',20.00,91.30,.60,.30),
+    seg('SIM_DATA_CARD',20.00,91.30,18.00,91.30,.20,'B.Cu'),
+    seg('SIM_DATA_CARD',18.00,91.30,18.00,c7[1],.20,'B.Cu'),
+    via('SIM_DATA_CARD',18.00,c7[1],.60,.30),
+    seg('SIM_DATA_CARD',18.00,c7[1],c7[0],c7[1]),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
 
 _,_,u9c=find_fp(s,'U9')
 _,_,j5c=find_fp(s,'J5')
-for n in ('SIM_VDD','SIM_CLK_MOD'):
+for n in ('SIM_VDD','SIM_CLK_MOD','SIM_DATA_MOD'):
     if n not in u9c: raise RuntimeError(f'U9 missing {n}')
-for n in ('SIM_VDD','SIM_CLK_CARD'):
+for n in ('SIM_VDD','SIM_CLK_CARD','SIM_DATA_CARD'):
     if n not in j5c: raise RuntimeError(f'J5 missing {n}')
-if 'reference "R73"' not in s: raise RuntimeError('R73 missing')
+for ref in ('R73','R74'):
+    if f'reference "{ref}"' not in s: raise RuntimeError(f'{ref} missing')
 
 P.write_text(s,encoding='utf-8')
-print(f'Applied Rev.B SIM1 staged pass 2: VDD + CLK/R73; p16={p16}, c3={c3}')
+print(f'Applied Rev.B SIM1 staged pass 3: VDD + CLK/R73 + DATA/R74; p15={p15}, c7={c7}')
