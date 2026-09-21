@@ -4,6 +4,42 @@ import re
 P=Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 s=P.read_text(encoding='utf-8')
 
+# D70's electrically clean location overlaps only the printed U9 reference.
+# Hide that reference on F.SilkS; this does not affect the PCB reference,
+# assembly BOM/CPL, pick-and-place, or footprint identity.
+def balanced_block(text,start):
+    depth=0; in_q=False; esc=False
+    for j in range(start,len(text)):
+        c=text[j]
+        if in_q:
+            if esc: esc=False
+            elif c=='\\\\': esc=True
+            elif c=='"': in_q=False
+            continue
+        if c=='"': in_q=True
+        elif c=='(': depth+=1
+        elif c==')':
+            depth-=1
+            if depth==0:return j+1
+    raise RuntimeError('unterminated s-expression')
+
+def hide_u9_reference(text):
+    i=0
+    while True:
+        i=text.find('(footprint ',i)
+        if i<0: raise RuntimeError('U9 footprint not found')
+        j=balanced_block(text,i)
+        blk=text[i:j]
+        if re.search(r'\\(fp_text\\s+reference\\s+"?U9"?',blk):
+            blk2=re.sub(r'(\\(fp_text\\s+reference\\s+"?U9"?[^\\n]*\\(layer\\s+"F\\.SilkS"\\))', r'\\1 hide', blk, count=1)
+            if blk2==blk:
+                # KiCad may place effects on following text; insert hide before effects.
+                blk2=re.sub(r'(\\(fp_text\\s+reference\\s+"?U9"?[\\s\\S]*?\\(layer\\s+"F\\.SilkS"\\))', r'\\1 hide', blk, count=1)
+            return text[:i]+blk2+text[j:]
+        i=j
+
+s=hide_u9_reference(s)
+
 # Rev.B A7683E PWRKEY ESD protection.
 # D70 = Nexperia PESD5Z5.0,115 / LCSC C132368 / SOD-523.
 # Official pinning: pin 1 = K (cathode) -> LTE_PWRKEY, pin 2 = A -> GND.
@@ -23,7 +59,7 @@ def ne(n,pad=False):
 # Compact SOD-523 footprint, oriented vertically.
 # Body is ~1.2 x 0.8 mm; pads are kept outside the body.
 d70=f'''  (footprint "RevB:SOD523_PWRKEY_ESD" (layer "F.Cu")
-    (at 38.000 83.000 0)
+    (at 38.000 79.700 0)
     (attr smd)
     (fp_text reference "D70" (at -1.5 0 90) (layer "F.SilkS") hide (effects (font (size .7 .7) (thickness .1))))
     (fp_text value "PESD5Z5.0,115 C132368" (at 1.5 0 90) (layer "F.Fab") (effects (font (size .55 .55) (thickness .08))))
@@ -42,13 +78,13 @@ def via(n,x,y,size=.60,drill=.30):
 
 r=[
     # Cathode branches from the existing PWRKEY path between U9 pin 39 and R71.
-    # D70 is below the U9 reference text and above the LTE_3V8 bulk branch.
-    seg('LTE_PWRKEY',40.300,81.100,39.600,81.800,.20),
-    seg('LTE_PWRKEY',39.600,81.800,38.700,83.000,.20),
+    # D70 sits left of the LTE_3V8 via/track cluster.
+    seg('LTE_PWRKEY',40.300,81.100,39.500,80.500,.20),
+    seg('LTE_PWRKEY',39.500,80.500,38.700,79.700,.20),
 
     # Anode gets a dedicated short ground return to the left.
-    seg('GND',37.300,83.000,36.400,83.000,.25),
-    via('GND',36.400,83.000,.65,.32),
+    seg('GND',37.300,79.700,36.400,79.700,.25),
+    via('GND',36.400,79.700,.65,.32),
 ]
 
 close=s.rfind(')')
