@@ -9,11 +9,11 @@ s=P.read_text(encoding='utf-8')
 # Official A7683E pins: 18 VDD, 17 RST, 16 CLK, 15 DATA.
 # J5 contacts: C1 VCC, C2 RST, C3 CLK, C7 I/O.
 # R72/R73/R74 are 22R series resistors on RST/CLK/DATA.
-# Stage 5 adds C69=100nF from SIM_VDD to GND at the socket, per SIMCom.
-# Stage 6 adds C70=33pF in parallel for the high-frequency VDD bypass.
-# Stage 7 adds C71=22pF_NM on SIM_RST_CARD.
-# Stage 8 adds C72=22pF_NM on SIM_CLK_CARD.
-# Stage 9 adds C73=22pF_NM on SIM_DATA_CARD.
+# Stage 5 adds C74=100nF from SIM_VDD to GND at the socket, per SIMCom.
+# Stage 6 adds C75=33pF in parallel for the high-frequency VDD bypass.
+# Stage 7 adds C76=22pF_NM on SIM_RST_CARD.
+# Stage 8 adds C77=22pF_NM on SIM_CLK_CARD.
+# Stage 9 adds C78=22pF_NM on SIM_DATA_CARD.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -162,14 +162,14 @@ parts=[
     fp0603('R74','22R SIM_DATA',21.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
     # C1 is on the right edge of J5 at x=30.9/y=77.46. Put both VDD bypass
     # capacitors just outside that edge and share the same local ground return.
-    fp0603('C69','100nF SIM_VDD',33.5,77.46,'SIM_VDD','GND'),
-    fp0603('C70','33pF SIM_VDD',33.5,75.80,'SIM_VDD','GND'),
+    fp0603('C74','100nF SIM_VDD',33.5,77.46,'SIM_VDD','GND'),
+    fp0603('C75','33pF SIM_VDD',33.5,75.80,'SIM_VDD','GND'),
     # Optional shunts sit below J5, away from the PWRKEY cluster.
-    fp0603('C71','22pF_NM SIM_RST',29.5,87.50,'SIM_RST_CARD','GND'),
+    fp0603('C76','22pF_NM SIM_RST',29.5,87.50,'SIM_RST_CARD','GND'),
     # Put CLK signal on pad 2 (right side) so it faces the approved x=26 B.Cu trunk.
-    fp0603('C72','22pF_NM SIM_CLK',24.0,87.50,'GND','SIM_CLK_CARD'),
+    fp0603('C77','22pF_NM SIM_CLK',24.0,87.50,'GND','SIM_CLK_CARD'),
     # DATA trunk is at x=18; signal pad 1 faces that trunk.
-    fp0603('C73','22pF_NM SIM_DATA',20.0,87.50,'SIM_DATA_CARD','GND'),
+    fp0603('C78','22pF_NM SIM_DATA',20.0,87.50,'SIM_DATA_CARD','GND'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -182,7 +182,7 @@ r=[
     seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
     via('SIM_VDD',32.00,76.60,.60,.30),
     seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
-    # C69/C70 local VDD bypass beside J5 C1. Pad 1 is SIM_VDD at x=32.7;
+    # C74/C75 local VDD bypass beside J5 C1. Pad 1 is SIM_VDD at x=32.7;
     # both ground pads share the proven Run-274 local ground via.
     seg('SIM_VDD',c1[0],c1[1],32.70,77.46),
     seg('SIM_VDD',32.70,77.46,32.70,75.80),
@@ -213,7 +213,7 @@ r=[
     seg('SIM_CLK_CARD',31.80,c3[1],31.80,81.00,.20,'B.Cu'),
     via('SIM_CLK_CARD',31.80,81.00,.60,.30),
     seg('SIM_CLK_CARD',31.80,81.00,c3[0],c3[1]),
-    # C72 optional SIM_CLK shunt: tap approved B.Cu trunk at x=26.
+    # C77 optional SIM_CLK shunt: tap approved B.Cu trunk at x=26.
     seg('SIM_CLK_CARD',26.00,87.50,25.50,87.50,.20,'B.Cu'),
     via('SIM_CLK_CARD',25.50,87.50,.60,.30),
     seg('SIM_CLK_CARD',25.50,87.50,24.80,87.50),
@@ -246,7 +246,7 @@ r=[
     seg('SIM_DATA_CARD',18.00,91.30,18.00,c7[1],.20,'B.Cu'),
     via('SIM_DATA_CARD',18.00,c7[1],.60,.30),
     seg('SIM_DATA_CARD',18.00,c7[1],c7[0],c7[1]),
-    # C73 optional SIM_DATA shunt: tap approved B.Cu trunk at x=18.
+    # C78 optional SIM_DATA shunt: tap approved B.Cu trunk at x=18.
     seg('SIM_DATA_CARD',18.00,87.50,18.50,87.50,.20,'B.Cu'),
     via('SIM_DATA_CARD',18.50,87.50,.60,.30),
     seg('SIM_DATA_CARD',18.50,87.50,19.20,87.50),
@@ -277,7 +277,7 @@ r=[
     seg('SIM_RST_CARD',27.50,83.40,27.50,c2[1],.20,'In2.Cu'),
     via('SIM_RST_CARD',27.50,c2[1],.60,.30),
     seg('SIM_RST_CARD',27.50,c2[1],c2[0],c2[1]),
-    # C71 optional SIM_RST shunt. Tap the already-approved RST_CARD B.Cu
+    # C76 optional SIM_RST shunt. Tap the already-approved RST_CARD B.Cu
     # vertical at x=27.5, then surface only beside the capacitor.
     seg('SIM_RST_CARD',27.50,87.50,28.00,87.50,.20,'B.Cu'),
     via('SIM_RST_CARD',28.00,87.50,.60,.30),
@@ -295,8 +295,8 @@ for n in ('SIM_VDD','SIM_RST_MOD','SIM_CLK_MOD','SIM_DATA_MOD'):
     if n not in u9c: raise RuntimeError(f'U9 missing {n}')
 for n in ('SIM_VDD','SIM_RST_CARD','SIM_CLK_CARD','SIM_DATA_CARD'):
     if n not in j5c: raise RuntimeError(f'J5 missing {n}')
-for ref in ('R72','R73','R74','C69','C70','C71','C72','C73'):
+for ref in ('R72','R73','R74','C74','C75','C76','C77','C78'):
     if f'reference "{ref}"' not in s: raise RuntimeError(f'{ref} missing')
 
 P.write_text(s,encoding='utf-8')
-print(f'Applied Rev.B SIM1 staged pass 9: VDD bypass + C71/C72/C73 RST/CLK/DATA 22pF_NM shunts; c1={c1}, c2={c2}, c3={c3}, c7={c7}')
+print(f'Applied Rev.B SIM1 staged pass 9: VDD bypass + C76/C77/C78 RST/CLK/DATA 22pF_NM shunts; c1={c1}, c2={c2}, c3={c3}, c7={c7}')
