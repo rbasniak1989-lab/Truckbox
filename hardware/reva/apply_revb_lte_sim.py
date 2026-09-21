@@ -152,7 +152,7 @@ s=s.replace(uart_rx_old,uart_rx_new,1)
 # Its pad 1 is MOD (left), pad 2 is CARD (right) to avoid the Run-251 short.
 close=s.rfind(')')
 parts=[
-    fp0603('R72','22R SIM_RST',36.3,90.5,'SIM_RST_MOD','SIM_RST_CARD'),
+    fp0603('R72','22R SIM_RST',36.3,93.0,'SIM_RST_MOD','SIM_RST_CARD'),
     fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD'),
     fp0603('R74','22R SIM_DATA',21.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
 ]
@@ -220,26 +220,29 @@ r=[
     seg('SIM_DATA_CARD',18.00,c7[1],c7[0],c7[1]),
 
     # ---- Stage 4: SIM_RST module side ----
-    # Escape between the frozen VDD and CLK vias, then stay on the right side
-    # of the PWRKEY In2 wall. R72 pad 1 is at x=35.5.
+    # Run 263 mapped the PWRKEY GND via and the frozen DATA lane. Stop In2 at
+    # x=38, drop to B.Cu, then use x=36.5 so we stay right of DATA's B.Cu hop.
     seg('SIM_RST_MOD',p17[0],p17[1],58.90,80.30),
     via('SIM_RST_MOD',58.90,80.30,.50,.30),
-    seg('SIM_RST_MOD',58.90,80.30,36.00,80.30,.20,'In2.Cu'),
-    seg('SIM_RST_MOD',36.00,80.30,36.00,89.50,.20,'In2.Cu'),
-    via('SIM_RST_MOD',36.00,89.50,.60,.30),
-    seg('SIM_RST_MOD',36.00,89.50,35.50,90.50),
+    seg('SIM_RST_MOD',58.90,80.30,38.00,80.30,.20,'In2.Cu'),
+    via('SIM_RST_MOD',38.00,80.30,.60,.30),
+    seg('SIM_RST_MOD',38.00,80.30,38.00,81.00,.20,'B.Cu'),
+    seg('SIM_RST_MOD',38.00,81.00,36.50,81.00,.20,'B.Cu'),
+    seg('SIM_RST_MOD',36.50,81.00,36.50,91.80,.20,'B.Cu'),
+    via('SIM_RST_MOD',36.50,91.80,.60,.30),
+    seg('SIM_RST_MOD',36.50,91.80,35.50,93.00),
 
     # ---- Stage 4: SIM_RST card side ----
-    # Go down from R72 pad 2, travel under the C67/C68/PWRKEY region on B.Cu,
-    # then return to In2 at x=30 and enter C2 from the left.
-    seg('SIM_RST_CARD',37.10,90.50,37.80,91.20),
-    via('SIM_RST_CARD',37.80,91.20,.60,.30),
-    seg('SIM_RST_CARD',37.80,91.20,37.80,83.40,.20,'B.Cu'),
-    seg('SIM_RST_CARD',37.80,83.40,30.00,83.40,.20,'B.Cu'),
-    via('SIM_RST_CARD',30.00,83.40,.60,.30),
-    seg('SIM_RST_CARD',30.00,83.40,30.00,c2[1],.20,'In2.Cu'),
-    via('SIM_RST_CARD',30.00,c2[1],.60,.30),
-    seg('SIM_RST_CARD',30.00,c2[1],c2[0],c2[1]),
+    # R72 moved to y=93, clear of C68. Use the bottom B.Cu corridor at y=92.8,
+    # then rise at x=27.5 and enter C2 on In2/F.Cu.
+    seg('SIM_RST_CARD',37.10,93.00,38.00,92.80),
+    via('SIM_RST_CARD',38.00,92.80,.60,.30),
+    seg('SIM_RST_CARD',38.00,92.80,27.50,92.80,.20,'B.Cu'),
+    seg('SIM_RST_CARD',27.50,92.80,27.50,83.40,.20,'B.Cu'),
+    via('SIM_RST_CARD',27.50,83.40,.60,.30),
+    seg('SIM_RST_CARD',27.50,83.40,27.50,c2[1],.20,'In2.Cu'),
+    via('SIM_RST_CARD',27.50,c2[1],.60,.30),
+    seg('SIM_RST_CARD',27.50,c2[1],c2[0],c2[1]),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
