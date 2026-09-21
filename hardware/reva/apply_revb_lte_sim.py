@@ -174,8 +174,9 @@ r=[
     via('SIM_CLK_CARD',26.00,90.50,.60,.30),
     seg('SIM_CLK_CARD',26.00,90.50,26.00,c3[1],.20,'B.Cu'),
     seg('SIM_CLK_CARD',26.00,c3[1],31.80,c3[1],.20,'B.Cu'),
-    via('SIM_CLK_CARD',31.80,c3[1],.60,.30),
-    seg('SIM_CLK_CARD',31.80,c3[1],c3[0],c3[1]),
+    seg('SIM_CLK_CARD',31.80,c3[1],31.80,81.00,.20,'B.Cu'),
+    via('SIM_CLK_CARD',31.80,81.00,.60,.30),
+    seg('SIM_CLK_CARD',31.80,81.00,c3[0],c3[1]),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
