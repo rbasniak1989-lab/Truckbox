@@ -106,6 +106,7 @@ def pad_xy(block,pn):
 a,b,u10=find_fp(s,'U10')
 u10=assign_pad(u10,8,'LTE_UART_RX_3V3')
 u10=assign_pad(u10,1,'LTE_UART_TX_3V3')
+u10=assign_pad(u10,7,'3V3_LINK')
 s=s[:a]+u10+s[b:]
 
 a,b,u2=find_fp(s,'U2')
@@ -117,6 +118,7 @@ _,_,u10=find_fp(s,'U10')
 _,_,u2=find_fp(s,'U2')
 p8=pad_xy(u10,8)
 p1=pad_xy(u10,1)
+p7=pad_xy(u10,7)
 p11=pad_xy(u2,11)
 p12=pad_xy(u2,12)
 
@@ -177,19 +179,37 @@ r=[
     seg('3V3_MAIN',63.20,43.20,66.50,43.20,.28,'B.Cu'),
     seg('3V3_MAIN',66.50,43.20,66.50,41.20,.28,'B.Cu'),
     seg('3V3_MAIN',66.50,41.20,65.40,41.20,.28,'B.Cu'),
+
+    # VCCB supply for TXU0202 pin 7.
+    # Start from the existing 3V3_LINK via at 93.5/22.8 and follow the outer
+    # B.Cu edge corridor. x=99.25 keeps >0.5 mm copper-to-edge clearance and
+    # clears the right-hand J4 through-hole column.
+    seg('3V3_LINK',93.50,22.80,99.25,22.80,.20,'B.Cu'),
+    seg('3V3_LINK',99.25,22.80,99.25,64.00,.20,'B.Cu'),
+    seg('3V3_LINK',99.25,64.00,99.20,64.00,.20,'B.Cu'),
+    via('3V3_LINK',99.20,64.00),
+
+    # Below the original 65-mm board area, In2 is free of the 3V3_MAIN pour.
+    seg('3V3_LINK',99.20,64.00,99.20,71.40,.20,'In2.Cu'),
+    seg('3V3_LINK',99.20,71.40,60.60,71.40,.20,'In2.Cu'),
+    via('3V3_LINK',60.60,71.40),
+
+    # Local pin-7 fanout: remain above RX(pin 8) until x=60.6, then descend.
+    seg('3V3_LINK',p7[0],p7[1],60.60,p7[1],.20),
+    seg('3V3_LINK',60.60,p7[1],60.60,71.40,.20),
 ]
 
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
 
-# Strong postconditions: both endpoint pads assigned, no supply changes.
+# Strong postconditions: both UART endpoints plus VCCB assigned.
 _,_,u10c=find_fp(s,'U10')
 _,_,u2c=find_fp(s,'U2')
 for n in ('LTE_UART_RX_3V3','LTE_UART_TX_3V3'):
     if n not in u10c or n not in u2c:
         raise RuntimeError(f'missing endpoint assignment for {n}')
-if '3V3_LINK' in re.sub(r'\(net\s+\d+\s+"3V3_LINK"\)','',u10c):
-    raise RuntimeError('signal-only pass unexpectedly touched U10 3V3_LINK')
+if '3V3_LINK' not in u10c:
+    raise RuntimeError('U10 VCCB missing 3V3_LINK')
 
 P.write_text(s,encoding='utf-8')
-print('Applied Rev.B LTE UART LINK signal-only pass: GPIO10/GPIO11')
+print('Applied Rev.B LTE UART LINK pass: GPIO10/GPIO11 + VCCB')
