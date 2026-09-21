@@ -102,6 +102,13 @@ fp='(footprint "RevB:CONN-TH_DT13-08PA" (layer "F.Cu")\n\t(at 106.500 64.000 90.
 fp=re.sub(r'\(fp_text\s+reference\s+REF\*\*', '(fp_text reference "J4"', fp, count=1)
 fp=re.sub(r'\(fp_text\s+value\s+[^\s\)]+', '(fp_text value "DT13-08PA C6423579"', fp, count=1)
 
+# The connector body intentionally overhangs the PCB edge; keep its full
+# outline on F.Fab instead of clipping production silkscreen at the edge.
+fp=fp.replace('(layer F.SilkS)','(layer F.Fab)').replace('(layer "F.SilkS")','(layer "F.Fab")')
+# JLC source models the three screw holes as zero-annulus PTH. They are
+# mechanical fixing holes, so make them NPTH before embedding.
+fp=re.sub(r'\(pad "" thru_hole circle', '(pad "" np_thru_hole circle', fp)
+
 padnets={'1':'BATT24_FUSED','2':'GND','3':'ACC_RAW','4':'CAN1_H',
          '5':'CAN1_L','6':'J1708_A','7':'J1708_B'}
 repl=[]
@@ -140,47 +147,47 @@ def via(n,x,y,size=.70,drill=.35):
 
 p1,p2,p3,p4,p5,p6,p7=[pad[str(i)] for i in range(1,8)]
 r=[
-    # +24 V: continue the existing J4 feed on F.Cu with a wide trace.
-    seg('BATT24_FUSED',97.80,53.00,98.00,53.00,1.20),
-    seg('BATT24_FUSED',98.00,53.00,98.00,p1[1],1.20),
-    seg('BATT24_FUSED',98.00,p1[1],p1[0],p1[1],1.20),
+    # +24 V: wide F.Cu route, shifted right of H4 for proper hole clearance.
+    seg('BATT24_FUSED',97.80,53.00,99.00,53.00,1.20),
+    seg('BATT24_FUSED',99.00,53.00,99.00,p1[1],1.20),
+    seg('BATT24_FUSED',99.00,p1[1],p1[0],p1[1],1.20),
 
-    # ACC: leave the old endpoint through a via and use In2 into pin 3.
-    via('ACC_RAW',97.80,45.50),
-    seg('ACC_RAW',97.80,45.50,99.00,45.50,.30,'In2.Cu'),
-    seg('ACC_RAW',99.00,45.50,99.00,p3[1],.30,'In2.Cu'),
-    seg('ACC_RAW',99.00,p3[1],p3[0],p3[1],.30,'In2.Cu'),
+    # ACC stays on F.Cu and enters pin 3 from the left.
+    seg('ACC_RAW',97.80,45.50,100.50,45.50,.30),
+    seg('ACC_RAW',100.50,45.50,100.50,p3[1],.30),
+    seg('ACC_RAW',100.50,p3[1],p3[0],p3[1],.30),
 
-    # J1939 H: B.Cu, approach pin 4 from the left.
+    # J1939 H/L use In2 on independent non-crossing lanes.
     via('CAN1_H',94.20,43.00),
-    seg('CAN1_H',94.20,43.00,98.00,43.00,.35,'B.Cu'),
-    seg('CAN1_H',98.00,43.00,98.00,p4[1],.35,'B.Cu'),
-    seg('CAN1_H',98.00,p4[1],p4[0],p4[1],.35,'B.Cu'),
+    seg('CAN1_H',94.20,43.00,94.20,41.50,.35,'In2.Cu'),
+    seg('CAN1_H',94.20,41.50,102.00,41.50,.35,'In2.Cu'),
+    seg('CAN1_H',102.00,41.50,102.00,p4[1],.35,'In2.Cu'),
+    seg('CAN1_H',102.00,p4[1],p4[0],p4[1],.35,'In2.Cu'),
 
-    # J1939 L: In2, then approach pin 5 from the right to avoid pin 4.
     via('CAN1_L',94.20,45.50),
-    seg('CAN1_L',94.20,45.50,94.20,44.00,.35,'In2.Cu'),
-    seg('CAN1_L',94.20,44.00,101.00,44.00,.35,'In2.Cu'),
-    seg('CAN1_L',101.00,44.00,101.00,54.80,.35,'In2.Cu'),
-    seg('CAN1_L',101.00,54.80,112.00,54.80,.35,'In2.Cu'),
-    seg('CAN1_L',112.00,54.80,112.00,p5[1],.35,'In2.Cu'),
+    seg('CAN1_L',94.20,45.50,93.20,45.50,.35,'In2.Cu'),
+    seg('CAN1_L',93.20,45.50,93.20,40.50,.35,'In2.Cu'),
+    seg('CAN1_L',93.20,40.50,104.50,40.50,.35,'In2.Cu'),
+    seg('CAN1_L',104.50,40.50,104.50,53.80,.35,'In2.Cu'),
+    seg('CAN1_L',104.50,53.80,112.00,53.80,.35,'In2.Cu'),
+    seg('CAN1_L',112.00,53.80,112.00,p5[1],.35,'In2.Cu'),
     seg('CAN1_L',112.00,p5[1],p5[0],p5[1],.35,'In2.Cu'),
 
-    # J1708 A: B.Cu lane above the old CAN region, enter pin 6 from right.
+    # J1708 A/B stay left of H4, cross the x=99.25 3V3_LINK B.Cu wall only
+    # above its y=64 endpoint, then approach pins 6/7 from the right.
     via('J1708_A',94.20,50.50),
-    seg('J1708_A',94.20,50.50,96.50,50.50,.35,'B.Cu'),
-    seg('J1708_A',96.50,50.50,96.50,59.50,.35,'B.Cu'),
-    seg('J1708_A',96.50,59.50,113.00,59.50,.35,'B.Cu'),
-    seg('J1708_A',113.00,59.50,113.00,p6[1],.35,'B.Cu'),
+    seg('J1708_A',94.20,50.50,93.50,50.50,.35,'B.Cu'),
+    seg('J1708_A',93.50,50.50,93.50,64.80,.35,'B.Cu'),
+    seg('J1708_A',93.50,64.80,113.00,64.80,.35,'B.Cu'),
+    seg('J1708_A',113.00,64.80,113.00,p6[1],.35,'B.Cu'),
     seg('J1708_A',113.00,p6[1],p6[0],p6[1],.35,'B.Cu'),
 
-    # J1708 B: parallel B.Cu lane, enter pin 7 from right.
     via('J1708_B',94.20,48.00),
-    seg('J1708_B',94.20,48.00,95.80,48.00,.35,'B.Cu'),
-    seg('J1708_B',95.80,48.00,95.80,63.50,.35,'B.Cu'),
-    seg('J1708_B',95.80,63.50,113.00,63.50,.35,'B.Cu'),
-    seg('J1708_B',113.00,63.50,113.00,p7[1],.35,'B.Cu'),
-    seg('J1708_B',113.00,p7[1],p7[0],p7[1],.35,'B.Cu'),
+    seg('J1708_B',94.20,48.00,92.80,48.00,.35,'B.Cu'),
+    seg('J1708_B',92.80,48.00,92.80,67.50,.35,'B.Cu'),
+    seg('J1708_B',92.80,67.50,114.00,67.50,.35,'B.Cu'),
+    seg('J1708_B',114.00,67.50,114.00,p7[1],.35,'B.Cu'),
+    seg('J1708_B',114.00,p7[1],p7[0],p7[1],.35,'B.Cu'),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
