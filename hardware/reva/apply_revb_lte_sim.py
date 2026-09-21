@@ -190,16 +190,17 @@ r=[
     # Reuse the old clean U9 bottom escape, but keep DATA on In2 below the
     # frozen CLK/VDD corridors. y=91.3 clears the CLK card via at (26,90.5).
     seg('SIM_DATA_MOD',p15[0],p15[1],58.90,p15[1]),
-    seg('SIM_DATA_MOD',58.90,p15[1],58.90,87.80),
-    seg('SIM_DATA_MOD',58.90,87.80,56.50,87.80),
-    via('SIM_DATA_MOD',56.50,87.80,.60,.30),
-    seg('SIM_DATA_MOD',56.50,87.80,35.50,87.80,.20,'In2.Cu'),
-    # Cross only the PWRKEY In2 vertical wall (x=34.5) on B.Cu.
-    via('SIM_DATA_MOD',35.50,87.80,.60,.30),
-    seg('SIM_DATA_MOD',35.50,87.80,33.50,87.80,.20,'B.Cu'),
-    via('SIM_DATA_MOD',33.50,87.80,.60,.30),
-    seg('SIM_DATA_MOD',33.50,87.80,33.50,91.30,.20,'In2.Cu'),
-    seg('SIM_DATA_MOD',33.50,91.30,23.20,91.30,.20,'In2.Cu'),
+    seg('SIM_DATA_MOD',58.90,p15[1],58.90,88.20),
+    seg('SIM_DATA_MOD',58.90,88.20,57.00,88.20),
+    via('SIM_DATA_MOD',57.00,88.20,.60,.30),
+    seg('SIM_DATA_MOD',57.00,88.20,35.50,88.20,.20,'In2.Cu'),
+    # Cross the PWRKEY wall and the C68 footprint region on B.Cu. Return to
+    # In2 only at x=30, left of C68/GND and clear of the x=32.3 GND via.
+    via('SIM_DATA_MOD',35.50,88.20,.60,.30),
+    seg('SIM_DATA_MOD',35.50,88.20,30.00,88.20,.20,'B.Cu'),
+    seg('SIM_DATA_MOD',30.00,88.20,30.00,91.30,.20,'B.Cu'),
+    via('SIM_DATA_MOD',30.00,91.30,.60,.30),
+    seg('SIM_DATA_MOD',30.00,91.30,23.20,91.30,.20,'In2.Cu'),
     via('SIM_DATA_MOD',23.20,91.30,.60,.30),
     seg('SIM_DATA_MOD',23.20,91.30,22.40,90.50),
 
