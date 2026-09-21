@@ -155,24 +155,25 @@ r=[
     seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
 
     # ---- Stage 2: SIM_CLK module side ----
-    # Immediate via avoids running down the U9 pad row. The In2 lane at y=77.7
-    # remains separated from frozen VDD and from the LTE vias around y=78.6.
-    seg('SIM_CLK_MOD',p16[0],p16[1],58.90,p16[1]),
-    via('SIM_CLK_MOD',58.90,p16[1],.60,.30),
-    seg('SIM_CLK_MOD',58.90,p16[1],58.90,77.70,.20,'In2.Cu'),
-    seg('SIM_CLK_MOD',58.90,77.70,29.50,77.70,.20,'In2.Cu'),
-    seg('SIM_CLK_MOD',29.50,77.70,29.50,89.20,.20,'In2.Cu'),
-    via('SIM_CLK_MOD',29.50,89.20,.60,.30),
-    seg('SIM_CLK_MOD',29.50,89.20,28.80,90.50),
+    # Run 256 showed that x=58.9/y=77.7 crossed frozen VDD. Move the CLK
+    # escape 0.5 mm right and cross the LTE bay at y=75.6, above the VDD lane.
+    # x=31 also clears J5's NPTH guide hole at (29.15,84.4).
+    seg('SIM_CLK_MOD',p16[0],p16[1],59.40,p16[1]),
+    via('SIM_CLK_MOD',59.40,p16[1],.50,.25),
+    seg('SIM_CLK_MOD',59.40,p16[1],59.40,75.60,.20,'In2.Cu'),
+    seg('SIM_CLK_MOD',59.40,75.60,31.00,75.60,.20,'In2.Cu'),
+    seg('SIM_CLK_MOD',31.00,75.60,31.00,89.20,.20,'In2.Cu'),
+    via('SIM_CLK_MOD',31.00,89.20,.60,.30),
+    seg('SIM_CLK_MOD',31.00,89.20,28.80,90.50),
 
     # ---- Stage 2: SIM_CLK card side ----
-    # B.Cu loops around the outside of J5; only the final landing into C3 is F.Cu.
+    # Keep the B.Cu return outside J5 and away from the new x=31 In2 descent.
     seg('SIM_CLK_CARD',27.20,90.50,26.00,90.50),
     via('SIM_CLK_CARD',26.00,90.50,.60,.30),
-    seg('SIM_CLK_CARD',26.00,90.50,31.50,90.50,.20,'B.Cu'),
-    seg('SIM_CLK_CARD',31.50,90.50,31.50,c3[1],.20,'B.Cu'),
-    via('SIM_CLK_CARD',31.50,c3[1],.60,.30),
-    seg('SIM_CLK_CARD',31.50,c3[1],c3[0],c3[1]),
+    seg('SIM_CLK_CARD',26.00,90.50,33.20,90.50,.20,'B.Cu'),
+    seg('SIM_CLK_CARD',33.20,90.50,33.20,c3[1],.20,'B.Cu'),
+    via('SIM_CLK_CARD',33.20,c3[1],.60,.30),
+    seg('SIM_CLK_CARD',33.20,c3[1],c3[0],c3[1]),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
