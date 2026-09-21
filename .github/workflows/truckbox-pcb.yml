@@ -26,7 +26,7 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check easyeda2kicad
           rm -rf hardware/reva/revb_jlc.pretty
-          easyeda2kicad --footprint --lcsc_id C20617360 C5186957 C2687968 C3033025 C88373 C558418 C14651 C19947701 C6423579 C239506 --output hardware/reva/revb_jlc
+          easyeda2kicad --footprint --lcsc_id C20617360 C5186957 C2687968 C3033025 C88373 C558418 C14651 C19947701 C6423579 C239506 C22365702 --output hardware/reva/revb_jlc
           find hardware/reva/revb_jlc.pretty -maxdepth 1 -type f -print
 
       - name: Generate board
