@@ -37,6 +37,7 @@ p('D71','SRV05-4 four-channel low-capacitance SIM ESD array','SOT-23-6','C558418
 p('J1','1040310811 microSD card socket','microSD_Molex_1040310811','C585350','1040310811','Molex'),
 p('J2','U.FL-R-SMT-1(01) GNSS RF connector','UFL_Hirose','C598199','U.FL-R-SMT-1(01)','Hirose','Recheck stock at order preview.'),
 p('J3','USB4105-GF-A-060 USB-C receptacle','USB_C_Receptacle_GCT_USB4105_16P','C3025063','USB4105-GF-A-060','GCT'),
+p('J4','TE/DEUTSCH DT13-08PA sealed 8-way right-angle PCB header','CONN-TH_DT13-08PA','C9900176781','DT13-08PA','TE Connectivity / DEUTSCH','JLC wave-solder/THT assembly. Mating harness plug: DT06-08SA.'),
 p('J5','SIM8051-6-0-14-01-A nano-SIM socket','SIM-SMD_SIM8051-6-0-14-01-A','C3033025','SIM8051-6-0-14-01-A','GCT'),
 p('J6','U.FL-R-SMT-1(10) LTE RF connector','ANT-SMD_UFL-R-SMT-1-10','C88373','U.FL-R-SMT-1(10)','Hirose'),
 
@@ -85,8 +86,7 @@ p('C72','10pF 50V C0G 0603','0603','C376764','TCC0603COG100J500CT','CCTC'),
 
 DNP={'C50':'RF shunt tuning DNP','C51':'RF shunt tuning DNP',
      'C76':'SIM RST 22pF optional DNP','C77':'SIM CLK 22pF optional DNP','C78':'SIM DATA 22pF optional DNP'}
-MANUAL={'J4':'Vehicle I/O pigtail — solder manually after PCBA',
-        'SW1':'BOOT/service switch — DNP/manual until stocked part is physically matched'}
+MANUAL={'SW1':'BOOT/service switch — DNP/manual until stocked part is physically matched'}
 PCB_FEATURES={f'H{i}':'Mounting hole' for i in range(1,7)}
 PCB_FEATURES.update({f'TP{i}':'Copper test point' for i in range(1,7)})
 EXCLUDED=set(DNP)|set(MANUAL)|set(PCB_FEATURES)
@@ -187,13 +187,13 @@ SOURCE / FREEZE
 - Repository branch: hardware-revb-j1708-4g
 - Source commit: {sha}
 - CI Run: {run}
-- Board: 100 x 95 mm, 4 layers
+- Board: 118 x 95 mm, 4 layers
 - DRC:
 {chr(10).join("  "+x for x in drc.splitlines()[:4])}
 
 ASSEMBLY CROSS-CHECK
 - PCB references: {len(board_refs)}
-- Automatic JLC SMT designators: {len(mapped)}
+- Automatic JLC assembly designators: {len(mapped)}
 - BOM grouped lines: {len(PARTS)}
 - CPL designators: {len(mapped)}
 - BOM expanded designators == CPL designators == mapped PCB designators: YES
@@ -208,7 +208,7 @@ DNP / MANUAL
 - DNP: C50, C51 (LTE RF tuning shunts).
 - DNP: C76, C77, C78 (optional SIM 22 pF shunts).
 - Manual after PCBA: J4 vehicle harness/pigtail.
-- DNP/manual: SW1 until the physical switch is matched.
+- J4: DT13-08PA / C9900176781, JLC THT/wave-solder assembly; mates with DT06-08SA harness plug.\n- DNP/manual: SW1 until the physical switch is matched.
 - H1-H6 and TP1-TP6 are PCB features, not BOM/CPL components.
 
 CRITICAL REV.B PARTS
@@ -232,12 +232,12 @@ FILES
 - top.svg
 
 ORDER CHECK
-1. Upload Gerber ZIP and confirm 100 x 95 mm / 4 layers.
+1. Upload Gerber ZIP and confirm 118 x 95 mm / 4 layers.
 2. Select Standard PCBA.
 3. Upload BOM and CPL; expect {len(mapped)} matched designators.
 4. Confirm U9 is C20617360 and X-ray-required.
 5. Confirm DNP refs remain unpopulated.
-6. Visually inspect polarized/oriented D1/D2/D5/D50/C3/C67/C68 and U9/J5 orientation in JLC preview.
+6. Visually inspect polarized/oriented D1/D2/D5/D50/C3/C67/C68, U9/J5, and J4 DT13-08PA orientation in JLC preview.
 7. Do not approve substitutions for critical ICs, RF parts, J1708 transceiver, LTE power stage, or protection parts without engineering review.
 '''
 readme_path=BUILD/'TruckBox_RevB_Assembly_README.txt'
