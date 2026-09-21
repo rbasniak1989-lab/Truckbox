@@ -94,6 +94,11 @@ fp=(LIB/fn).read_text(encoding='utf-8')
 # Drop external 3D model reference; manufacturing footprint remains exact.
 for a,b,_ in reversed(list(iter_blocks(fp,'model'))):
     fp=fp[:a]+fp[b:]
+# EasyEDA sometimes exports legacy fp_arc(angle ...) syntax that KiCad 10
+# no longer accepts. It is silkscreen-only; remove it without touching pads.
+legacy=[(a,b) for a,b,blk in iter_blocks(fp,'fp_arc') if '(angle ' in blk and '(mid ' not in blk]
+for a,b in reversed(legacy):
+    fp=fp[:a]+fp[b:]
 
 # Convert old module syntax to embedded KiCad footprint.
 eol=fp.find('\n')
