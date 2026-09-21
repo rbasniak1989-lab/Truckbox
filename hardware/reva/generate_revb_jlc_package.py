@@ -37,7 +37,7 @@ p('D71','SRV05-4 four-channel low-capacitance SIM ESD array','SOT-23-6','C558418
 p('J1','1040310811 microSD card socket','microSD_Molex_1040310811','C585350','1040310811','Molex'),
 p('J2','U.FL-R-SMT-1(01) GNSS RF connector','UFL_Hirose','C598199','U.FL-R-SMT-1(01)','Hirose','Recheck stock at order preview.'),
 p('J3','USB4105-GF-A-060 USB-C receptacle','USB_C_Receptacle_GCT_USB4105_16P','C3025063','USB4105-GF-A-060','GCT'),
-p('J4','TE/DEUTSCH DT13-08PA sealed 8-way right-angle PCB header','CONN-TH_DT13-08PA','C6423579','DT13-08PA','TE Connectivity / DEUTSCH','JLC wave-solder/THT assembly. Mating harness plug: DT06-08SA.'),
+p('J4','Mini-Fit/MX 4.2mm 8-way right-angle PCB header','CONN-TH_C4201WR-F-2X4P','C239506','C4201WR-F-2x4P','CJT (Changjiang Connectors)','JLC wave-solder/THT assembly. Mating harness: common 8-way 2x4 Mini-Fit-compatible housing with female contacts.'),
 p('J5','SIM8051-6-0-14-01-A nano-SIM socket','SIM-SMD_SIM8051-6-0-14-01-A','C3033025','SIM8051-6-0-14-01-A','GCT'),
 p('J6','U.FL-R-SMT-1(10) LTE RF connector','ANT-SMD_UFL-R-SMT-1-10','C88373','U.FL-R-SMT-1(10)','Hirose'),
 
@@ -207,7 +207,7 @@ PCBA TYPE
 DNP / MANUAL
 - DNP: C50, C51 (LTE RF tuning shunts).
 - DNP: C76, C77, C78 (optional SIM 22 pF shunts).
-- J4: DT13-08PA / C6423579, JLC THT/wave-solder assembly; mates with DT06-08SA harness plug.\n- DNP/manual: SW1 until the physical switch is matched.
+- J4: Mini-Fit 8-way / C239506, JLC THT/wave-solder assembly; mates with common 8-way 2x4 Mini-Fit-compatible harness housing.\n- DNP/manual: SW1 until the physical switch is matched.
 - H1-H6 and TP1-TP6 are PCB features, not BOM/CPL components.
 
 CRITICAL REV.B PARTS
@@ -236,7 +236,7 @@ ORDER CHECK
 3. Upload BOM and CPL; expect {len(mapped)} matched designators.
 4. Confirm U9 is C20617360 and X-ray-required.
 5. Confirm DNP refs remain unpopulated.
-6. Visually inspect polarized/oriented D1/D2/D5/D50/C3/C67/C68, U9/J5, and J4 DT13-08PA orientation in JLC preview.
+6. Visually inspect polarized/oriented D1/D2/D5/D50/C3/C67/C68, U9/J5, and J4 Mini-Fit orientation in JLC preview.
 7. Do not approve substitutions for critical ICs, RF parts, J1708 transceiver, LTE power stage, or protection parts without engineering review.
 '''
 readme_path=BUILD/'TruckBox_RevB_Assembly_README.txt'

@@ -5,13 +5,13 @@ P=Path(__file__).with_name('TruckBox_RevA.kicad_pcb')
 LIB=Path(__file__).with_name('revb_jlc.pretty')
 s=P.read_text(encoding='utf-8')
 
-# Rev.B final vehicle connector:
-# J4 = TE/DEUTSCH DT13-08PA, JLC C6423579 footprint, PCB right-angle header.
-# Mating harness plug = DT06-08SA (size-16 socket contacts).
-# Board expands only to the right: 100x95 -> 118x95 mm.
-# Pinout:
-# 1 BATT24_FUSED, 2 GND, 3 ACC_RAW, 4 CAN1_H, 5 CAN1_L,
-# 6 J1708_A, 7 J1708_B, 8 RESERVED/NC.
+# Rev.B low-cost vehicle connector:
+# J4 = Mini-Fit/MX 4.2mm 8-way right-angle header, JLC C239506.
+# Mating harness side: common 8-way 2x4 Mini-Fit-compatible housing + female contacts.
+# Board remains 118x95 for this validation pass.
+# Pinout chosen to preserve the proven DT13 routing corridors:
+# 1 BATT24_FUSED, 2 GND, 3 ACC_RAW, 4 CAN1_H,
+# 5 RESERVED/NC, 6 J1708_B, 7 J1708_A, 8 CAN1_L.
 
 def balanced_end(text,start):
     depth=0; q=False; esc=False
@@ -88,7 +88,7 @@ for a,b,nb in reversed(zones):
 # Keep descriptive board text truthful if present.
 s=s.replace('100x95','118x95')
 
-fn='CONN-TH_DT13-08PA.kicad_mod'
+fn='CONN-TH_C4201WR-F-2X4P.kicad_mod'
 fp=(LIB/fn).read_text(encoding='utf-8')
 
 # Drop external 3D model reference; manufacturing footprint remains exact.
@@ -97,20 +97,17 @@ for a,b,_ in reversed(list(iter_blocks(fp,'model'))):
 
 # Convert old module syntax to embedded KiCad footprint.
 eol=fp.find('\n')
-if not fp.startswith('(module '): raise RuntimeError('unexpected DT13 footprint format')
-fp='(footprint "RevB:CONN-TH_DT13-08PA" (layer "F.Cu")\n\t(at 106.500 64.000 90.0)'+fp[eol:]
+if not fp.startswith('(module '): raise RuntimeError('unexpected Mini-Fit footprint format')
+fp='(footprint "RevB:CONN-TH_C4201WR-F-2X4P" (layer "F.Cu")\n\t(at 106.500 64.000 90.0)'+fp[eol:]
 fp=re.sub(r'\(fp_text\s+reference\s+REF\*\*', '(fp_text reference "J4"', fp, count=1)
-fp=re.sub(r'\(fp_text\s+value\s+[^\s\)]+', '(fp_text value "DT13-08PA C6423579"', fp, count=1)
+fp=re.sub(r'\(fp_text\s+value\s+[^\s\)]+', '(fp_text value "C4201WR-F-2x4P C239506"', fp, count=1)
 
-# The connector body intentionally overhangs the PCB edge; keep its full
-# outline on F.Fab instead of clipping production silkscreen at the edge.
-fp=fp.replace('(layer F.SilkS)','(layer F.Fab)').replace('(layer "F.SilkS")','(layer "F.Fab")')
-# JLC source models the three screw holes as zero-annulus PTH. They are
-# mechanical fixing holes, so make them NPTH before embedding.
+# JLC source models the two fixing holes as zero-annulus PTH.
+# They are mechanical only, so convert them to NPTH.
 fp=re.sub(r'\(pad "" thru_hole circle', '(pad "" np_thru_hole circle', fp)
 
 padnets={'1':'BATT24_FUSED','2':'GND','3':'ACC_RAW','4':'CAN1_H',
-         '5':'CAN1_L','6':'J1708_A','7':'J1708_B'}
+         '6':'J1708_B','7':'J1708_A','8':'CAN1_L'}
 repl=[]
 for a,b,blk in iter_blocks(fp,'pad'):
     m=re.match(r'\(pad\s+"?([^"\s]+)"?',blk)
@@ -135,8 +132,8 @@ def board_xy(lx,ly,x=106.5,y=64.0,rot=90.0):
             y-lx*math.sin(a)+ly*math.cos(a))
 
 local={
- '1':(-7.17,-3.17),'2':(-2.73,-3.17),'3':(2.73,-3.17),'4':(7.17,-3.17),
- '5':(7.17,3.18),'6':(2.73,3.18),'7':(-2.73,3.18),'8':(-7.17,3.18)
+ '1':(-6.30,-2.75),'2':(-2.10,-2.75),'3':(2.10,-2.75),'4':(6.30,-2.75),
+ '5':(-6.30,2.75),'6':(-2.10,2.75),'7':(2.10,2.75),'8':(6.30,2.75)
 }
 pad={k:board_xy(*v) for k,v in local.items()}
 
@@ -145,7 +142,7 @@ def seg(n,x1,y1,x2,y2,w=.30,layer='F.Cu'):
 def via(n,x,y,size=.70,drill=.35):
     return f'  (via (at {x:.3f} {y:.3f}) (size {size:.3f}) (drill {drill:.3f}) (layers "F.Cu" "B.Cu") {ne(n)})'
 
-p1,p2,p3,p4,p5,p6,p7=[pad[str(i)] for i in range(1,8)]
+p1,p2,p3,p4,p5,p6,p7,p8=[pad[str(i)] for i in range(1,9)]
 r=[
     # +24 V: F.Cu corridor clear of 3V3_LINK via and J4 pads 2/3/4.
     seg('BATT24_FUSED',97.80,53.00,100.40,53.00,1.20),
@@ -173,22 +170,22 @@ r=[
     seg('CAN1_L',93.20,40.50,107.00,40.50,.35,'In2.Cu'),
     seg('CAN1_L',107.00,40.50,107.00,53.80,.35,'In2.Cu'),
     seg('CAN1_L',107.00,53.80,112.00,53.80,.35,'In2.Cu'),
-    seg('CAN1_L',112.00,53.80,112.00,p5[1],.35,'In2.Cu'),
-    seg('CAN1_L',112.00,p5[1],p5[0],p5[1],.35,'In2.Cu'),
+    seg('CAN1_L',112.00,53.80,112.00,p8[1],.35,'In2.Cu'),
+    seg('CAN1_L',112.00,p8[1],p8[0],p8[1],.35,'In2.Cu'),
 
     # J1708 A/B on F.Cu. Both cross into the new wing below J4's lower
-    # mechanical hole, then rise on the outside where no legacy copper exists.
+    # mechanical hole, then rise on the outside where no legacy copper exists; physical pins are 7=A and 6=B.
     seg('J1708_A',94.20,50.50,95.50,50.50,.35),
     seg('J1708_A',95.50,50.50,95.50,48.00,.35),
     seg('J1708_A',95.50,48.00,112.00,48.00,.35),
-    seg('J1708_A',112.00,48.00,112.00,p6[1],.35),
-    seg('J1708_A',112.00,p6[1],p6[0],p6[1],.35),
+    seg('J1708_A',112.00,48.00,112.00,p7[1],.35),
+    seg('J1708_A',112.00,p7[1],p7[0],p7[1],.35),
 
     seg('J1708_B',94.20,48.00,92.50,48.00,.35),
     seg('J1708_B',92.50,48.00,92.50,46.50,.35),
     seg('J1708_B',92.50,46.50,113.50,46.50,.35),
-    seg('J1708_B',113.50,46.50,113.50,p7[1],.35),
-    seg('J1708_B',113.50,p7[1],p7[0],p7[1],.35),
+    seg('J1708_B',113.50,46.50,113.50,p6[1],.35),
+    seg('J1708_B',113.50,p6[1],p6[0],p6[1],.35),
 ]
 close=s.rfind(')')
 s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
@@ -197,7 +194,7 @@ s=s[:close]+'\n'+'\n'.join(r)+'\n'+s[close:]
 _,_,j4=find_fp(s,'J4')
 for n in ('BATT24_FUSED','GND','ACC_RAW','CAN1_H','CAN1_L','J1708_A','J1708_B'):
     if n not in j4: raise RuntimeError(f'J4 missing {n}')
-if 'DT13-08PA C6423579' not in j4: raise RuntimeError('DT13 JLC footprint/value missing')
+if 'C4201WR-F-2x4P C239506' not in j4: raise RuntimeError('Mini-Fit JLC footprint/value missing')
 if 'Vehicle I/O 8-way' in j4: raise RuntimeError('generic J4 survived')
 P.write_text(s,encoding='utf-8')
-print(f'Applied DT13-08PA J4 at 106.5,64 rot90 on 118x95 board; pads={pad}')
+print(f'Applied low-cost Mini-Fit J4 C239506 at 106.5,64 rot90 on 118x95 board; pads={pad}')
