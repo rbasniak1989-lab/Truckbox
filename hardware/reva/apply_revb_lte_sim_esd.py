@@ -16,7 +16,7 @@ def balanced_block(text,start):
         c=text[j]
         if in_q:
             if esc: esc=False
-            elif c=='\\\\': esc=True
+            elif c=='\\': esc=True
             elif c=='"': in_q=False
             continue
         if c=='"': in_q=True
@@ -35,7 +35,7 @@ def iter_blocks(text,token):
         yield i,j,text[i:j]
         i=j
 
-net_pairs=[(int(i),n) for i,n in re.findall(r'\\(net\\s+(\\d+)\\s+"([^"]+)"\\)',s)]
+net_pairs=[(int(i),n) for i,n in re.findall(r'\(net\s+(\d+)\s+"([^"]+)"\)',s)]
 if not net_pairs: raise RuntimeError('numeric net table missing')
 net_id={n:i for i,n in net_pairs}
 for n in ('GND','SIM_VDD','SIM_RST_CARD','SIM_CLK_CARD','SIM_DATA_CARD'):
@@ -57,9 +57,9 @@ def board_xy(lx,ly,x,y,rot):
 def footprint_pad_xy(filename,padnum,x,y,rot):
     fp=read_fp(filename)
     for _,_,blk in iter_blocks(fp,'pad'):
-        pm=re.match(r'\\(pad\\s+"?([^"\\s]+)"?',blk)
+        pm=re.match(r'\(pad\s+"?([^"\s]+)"?',blk)
         if not pm or pm.group(1)!=str(padnum): continue
-        ma=re.search(r'\\(at\\s+([-+0-9.]+)\\s+([-+0-9.]+)(?:\\s+[-+0-9.]+)?\\)',blk)
+        ma=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)(?:\s+[-+0-9.]+)?\)',blk)
         if not ma: raise RuntimeError(f'pad {padnum} has no at()')
         return board_xy(*map(float,ma.groups()),x,y,rot)
     raise RuntimeError(f'pad {padnum} missing')
@@ -72,17 +72,17 @@ def embed_fp(filename,ref,value,x,y,rot,pad_nets):
     legacy=[(a,b) for a,b,blk in iter_blocks(fp,'fp_arc') if '(angle ' in blk and '(mid ' not in blk]
     for a,b in reversed(legacy): fp=fp[:a]+fp[b:]
     if not fp.startswith('(module '): raise RuntimeError('unexpected external footprint format')
-    eol=fp.find('\\n')
+    eol=fp.find('\n')
     header=fp[:eol]
-    m=re.match(r'\\(module\\s+([^\\s]+)\\s+\\(layer\\s+([^\\)]+)\\).*',header)
+    m=re.match(r'\(module\s+([^\s]+)\s+\(layer\s+([^\)]+)\).*',header)
     if not m: raise RuntimeError('cannot parse footprint header')
     name=m.group(1).split(':')[-1]
-    fp=f'(footprint "RevB:{name}" (layer "F.Cu")\\n\\t(at {x:.3f} {y:.3f} {rot:.1f})'+fp[eol:]
-    fp=re.sub(r'\\(fp_text\\s+reference\\s+REF\\*\\*',f'(fp_text reference "{ref}"',fp,count=1)
-    fp=re.sub(r'\\(fp_text\\s+value\\s+[^\\s\\)]+',f'(fp_text value "{value}"',fp,count=1)
+    fp=f'(footprint "RevB:{name}" (layer "F.Cu")\n\t(at {x:.3f} {y:.3f} {rot:.1f})'+fp[eol:]
+    fp=re.sub(r'\(fp_text\s+reference\s+REF\*\*',f'(fp_text reference "{ref}"',fp,count=1)
+    fp=re.sub(r'\(fp_text\s+value\s+[^\s\)]+',f'(fp_text value "{value}"',fp,count=1)
     repl=[]
     for a,b,blk in iter_blocks(fp,'pad'):
-        pm=re.match(r'\\(pad\\s+"?([^"\\s]+)"?',blk)
+        pm=re.match(r'\(pad\s+"?([^"\s]+)"?',blk)
         if not pm: continue
         pn=pm.group(1)
         if pn not in pad_nets: continue
@@ -112,7 +112,7 @@ fp=embed_fp(fn,'D71','SRV05-4 C558418',x,y,rot,{
 })
 
 close=s.rfind(')')
-s=s[:close]+'\\n'+fp+'\\n'+s[close:]
+s=s[:close]+'\n'+fp+'\n'+s[close:]
 
 # Short F.Cu escapes to vias just outside the SOT-23-6 body.
 # Data/CLK/RST then join the already-approved card-side B.Cu networks.
@@ -145,7 +145,7 @@ routes=[
     seg('SIM_CLK_CARD',17.70,p6[1],26.00,82.54,.20,'B.Cu'),
 ]
 close=s.rfind(')')
-s=s[:close]+'\\n'+'\\n'.join(routes)+'\\n'+s[close:]
+s=s[:close]+'\n'+'\n'.join(routes)+'\n'+s[close:]
 
 P.write_text(s,encoding='utf-8')
 print(f'Applied Rev.B SIM ESD pass 1: D71 SRV05-4 C558418 at {(x,y,rot)} pads={pads}')
