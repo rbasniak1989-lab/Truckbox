@@ -118,7 +118,7 @@ def fpsot23(ref,val,x,y):
 
 # Compact local block just left of modem.
 parts=[
-    fpsot23('Q50','2N7002 C8545',36.0,81.10),
+    fpsot23('Q50','2N7002 C8545',35.2,81.10),
     fp0603('R70','100k PWRKEY GATE PD',34.0,80.95,90,'GND','LTE_PWRKEY_GPIO'),
     fp0603('R71','1k PWRKEY SERIES',39.5,81.10,0,'LTE_PWRKEY_SW','LTE_PWRKEY'),
 ]
@@ -133,17 +133,18 @@ def via(n,x,y,size=.55,drill=.30):
 r=[
     # Local PWRKEY drain path: U9 pin39 -> R71 -> Q50 drain.
     seg('LTE_PWRKEY',p39[0],p39[1],40.30,81.10),
-    seg('LTE_PWRKEY_SW',38.70,81.10,36.95,81.10),
+    seg('LTE_PWRKEY_SW',38.70,81.10,36.15,81.10),
 
     # Q50 source + R70 pulldown share a nearby GND via.
-    seg('GND',35.05,82.05,34.00,81.75),
+    seg('GND',34.25,82.05,34.00,81.75),
     seg('GND',34.00,81.75,33.40,82.40),
     via('GND',33.40,82.40,.65,.32),
 
-    # Gate local endpoint.
-    seg('LTE_PWRKEY_GPIO',34.00,80.15,35.05,80.15),
-    seg('LTE_PWRKEY_GPIO',33.00,80.15,34.00,80.15),
-    via('LTE_PWRKEY_GPIO',33.00,80.15),
+    # Gate local endpoint. Layer transition is above R70, clear of SIM GND vias.
+    seg('LTE_PWRKEY_GPIO',34.00,80.15,34.25,80.15),
+    seg('LTE_PWRKEY_GPIO',34.50,78.80,34.50,80.15),
+    seg('LTE_PWRKEY_GPIO',34.50,80.15,34.00,80.15),
+    via('LTE_PWRKEY_GPIO',34.50,78.80),
 
     # U2 GPIO0 escape. Keep this above the two existing LTE UART lanes.
     seg('LTE_PWRKEY_GPIO',p8[0],p8[1],72.00,p8[1]),
@@ -153,21 +154,22 @@ r=[
     via('LTE_PWRKEY_GPIO',65.50,23.00),
 
     # B.Cu lane centered between the existing x=64.5 and x=66.5 trunks.
-    seg('LTE_PWRKEY_GPIO',65.50,23.00,65.50,32.20,.20,'B.Cu'),
-    via('LTE_PWRKEY_GPIO',65.50,32.20),
+    # Change back to In2 before the UART RX horizontal at y=32.2.
+    seg('LTE_PWRKEY_GPIO',65.50,23.00,65.50,31.20,.20,'B.Cu'),
+    via('LTE_PWRKEY_GPIO',65.50,31.20),
 
-    # Lower In2 leg hugs the existing RX cut so it does not create a new
-    # independent 3V3_MAIN island.
-    seg('LTE_PWRKEY_GPIO',65.50,32.20,63.50,32.20,.20,'In2.Cu'),
-    seg('LTE_PWRKEY_GPIO',63.50,32.20,63.50,63.50,.20,'In2.Cu'),
-    via('LTE_PWRKEY_GPIO',63.50,63.50),
+    # Long In2 leg sits 1.5 mm left of the approved LTE RX lane and clears
+    # the 3V3_MAIN vias at x=63.2.
+    seg('LTE_PWRKEY_GPIO',65.50,31.20,62.50,31.20,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',62.50,31.20,62.50,63.00,.20,'In2.Cu'),
 
-    # B.Cu drops through the LTE bay, below the 3.8-V trunk at y=91.5,
-    # then runs left and rises beside the SIM socket.
-    seg('LTE_PWRKEY_GPIO',63.50,63.50,60.30,63.50,.20,'B.Cu'),
-    seg('LTE_PWRKEY_GPIO',60.30,63.50,60.30,92.50,.20,'B.Cu'),
-    seg('LTE_PWRKEY_GPIO',60.30,92.50,33.00,92.50,.20,'B.Cu'),
-    seg('LTE_PWRKEY_GPIO',33.00,92.50,33.00,80.15,.20,'B.Cu'),
+    # Turn left one millimetre above the approved RX horizontal (y=64).
+    # The LTE bay is outside the 3V3_MAIN plane, so remain on In2 all the
+    # way to Q50: this avoids the 1.8-V UART and 3.8-V B.Cu trunks entirely.
+    seg('LTE_PWRKEY_GPIO',62.50,63.00,60.30,63.00,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',60.30,63.00,60.30,92.50,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',60.30,92.50,34.50,92.50,.20,'In2.Cu'),
+    seg('LTE_PWRKEY_GPIO',34.50,92.50,34.50,78.80,.20,'In2.Cu'),
 ]
 
 close=s.rfind(')')
