@@ -23,7 +23,7 @@ def ne(n,pad=False):
 # Compact SOD-523 footprint, oriented vertically.
 # Body is ~1.2 x 0.8 mm; pads are kept outside the body.
 d70=f'''  (footprint "RevB:SOD523_PWRKEY_ESD" (layer "F.Cu")
-    (at 38.000 79.700 0)
+    (at 38.000 83.000 0)
     (attr smd)
     (fp_text reference "D70" (at -1.5 0 90) (layer "F.SilkS") hide (effects (font (size .7 .7) (thickness .1))))
     (fp_text value "PESD5Z5.0,115 C132368" (at 1.5 0 90) (layer "F.Fab") (effects (font (size .55 .55) (thickness .08))))
@@ -42,13 +42,13 @@ def via(n,x,y,size=.60,drill=.30):
 
 r=[
     # Cathode branches from the existing PWRKEY path between U9 pin 39 and R71.
-    # D70 sits left of the LTE_3V8 via/track cluster.
-    seg('LTE_PWRKEY',40.300,81.100,39.500,80.500,.20),
-    seg('LTE_PWRKEY',39.500,80.500,38.700,79.700,.20),
+    # D70 is below the U9 reference text and above the LTE_3V8 bulk branch.
+    seg('LTE_PWRKEY',40.300,81.100,39.600,81.800,.20),
+    seg('LTE_PWRKEY',39.600,81.800,38.700,83.000,.20),
 
     # Anode gets a dedicated short ground return to the left.
-    seg('GND',37.300,79.700,36.400,79.700,.25),
-    via('GND',36.400,79.700,.65,.32),
+    seg('GND',37.300,83.000,36.400,83.000,.25),
+    via('GND',36.400,83.000,.65,.32),
 ]
 
 close=s.rfind(')')
