@@ -9,6 +9,7 @@ s=P.read_text(encoding='utf-8')
 # Official A7683E pins: 18 VDD, 17 RST, 16 CLK, 15 DATA.
 # J5 contacts: C1 VCC, C2 RST, C3 CLK, C7 I/O.
 # R72/R73/R74 are 22R series resistors on RST/CLK/DATA.
+# Stage 5 adds C69=100nF from SIM_VDD to GND at the socket, per SIMCom.
 
 def balanced_block(text,start):
     depth=0; in_q=False; esc=False
@@ -155,6 +156,8 @@ parts=[
     fp0603('R72','22R SIM_RST',36.3,93.0,'SIM_RST_MOD','SIM_RST_CARD'),
     fp0603('R73','22R SIM_CLK',28.0,90.5,'SIM_CLK_CARD','SIM_CLK_MOD'),
     fp0603('R74','22R SIM_DATA',21.6,90.5,'SIM_DATA_CARD','SIM_DATA_MOD'),
+    # Keep SIM_VDD bypass outside the left edge of J5, as close to C1 as possible.
+    fp0603('C69','100nF SIM_VDD',17.5,80.0,'GND','SIM_VDD'),
 ]
 s=s[:close]+'\n'+'\n'.join(parts)+'\n'+s[close:]
 
@@ -167,6 +170,11 @@ r=[
     seg('SIM_VDD',32.00,77.20,32.00,76.60,.20,'In2.Cu'),
     via('SIM_VDD',32.00,76.60,.60,.30),
     seg('SIM_VDD',32.00,76.60,c1[0],c1[1]),
+    # C69 100nF local bypass at the SIM socket. SIM_VDD pad is x=18.3;
+    # ground returns immediately through a local via into the ground planes.
+    seg('SIM_VDD',c1[0],c1[1],18.30,80.00),
+    seg('GND',16.70,80.00,15.80,80.00,.25),
+    via('GND',15.80,80.00,.70,.35),
 
     # ---- Stage 2: SIM_CLK module side ----
     # Run 257 mapped the remaining obstacles. Keep the pad-side via at x=59.4,
@@ -253,8 +261,8 @@ for n in ('SIM_VDD','SIM_RST_MOD','SIM_CLK_MOD','SIM_DATA_MOD'):
     if n not in u9c: raise RuntimeError(f'U9 missing {n}')
 for n in ('SIM_VDD','SIM_RST_CARD','SIM_CLK_CARD','SIM_DATA_CARD'):
     if n not in j5c: raise RuntimeError(f'J5 missing {n}')
-for ref in ('R72','R73','R74'):
+for ref in ('R72','R73','R74','C69'):
     if f'reference "{ref}"' not in s: raise RuntimeError(f'{ref} missing')
 
 P.write_text(s,encoding='utf-8')
-print(f'Applied Rev.B SIM1 staged pass 4 complete: p17={p17}, c2={c2}; p16={p16}, c3={c3}; p15={p15}, c7={c7}')
+print(f'Applied Rev.B SIM1 staged pass 5: complete SIM routing + C69 100nF VDD bypass; c1={c1}')
