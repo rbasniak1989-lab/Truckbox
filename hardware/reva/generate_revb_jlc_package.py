@@ -36,7 +36,7 @@ p('D71','SRV05-4 four-channel low-capacitance SIM ESD array','SOT-23-6','C558418
 
 p('J1','1040310811 microSD card socket','microSD_Molex_1040310811','C585350','1040310811','Molex'),
 p('J2','U.FL-R-SMT-1(01) GNSS RF connector','UFL_Hirose','C598199','U.FL-R-SMT-1(01)','Hirose','Recheck stock at order preview.'),
-p('J3','USB4105-GF-A-120 USB-C receptacle','USB_C_Receptacle_GCT_USB4105_16P','C5184243','USB4105-GF-A-120','GCT','Same USB4105 family; longer stake variant used in first JLC order.'),
+p('J3','USB4105-GF-A-060 USB-C receptacle','USB_C_Receptacle_GCT_USB4105_16P','C3025063','USB4105-GF-A-060','GCT','Same USB4105 family/contact geometry; 0.60 mm shell-stake variant selected due JLC stock availability.'),
 p('J4','Mini-Fit/MX 4.2mm 8-way vertical 9A PCB header','CONN-TH_8P-P4.20_DLL-5566-8A','C22365702','DLL-5566-8A','DLL','JLC wave-solder/THT assembly. 9A, -35C to +105C. Mating harness: common 8-way 2x4 Mini-Fit-compatible housing with female contacts.'),
 p('J5','SIM8051-6-0-14-00-A nano-SIM socket','SIM-SMD_SIM8051-6-0-14-01-A','C7363812','SIM8051-6-0-14-00-A','GCT','Same SIM8051 contact geometry; no locating peg.'),
 p('J6','U.FL-R-SMT-1(10) LTE RF connector','ANT-SMD_UFL-R-SMT-1-10','C88373','U.FL-R-SMT-1(10)','Hirose'),
