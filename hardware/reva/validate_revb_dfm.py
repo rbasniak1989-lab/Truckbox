@@ -64,3 +64,4 @@ print(f'Q50_R70_center_dx_mm={dx:.3f}')
 print('C1_C2=1206/C7393990')
 print('D3_D4=SC70-3/C7469913')
 print('C67_C68=C313070/CPL_0deg')
+# Rev.B.1 validation gate
