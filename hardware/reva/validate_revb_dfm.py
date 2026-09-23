@@ -33,6 +33,14 @@ def at(block):
     m=re.search(r'\(at\s+([-+0-9.]+)\s+([-+0-9.]+)(?:\s+([-+0-9.]+))?\)',block)
     return float(m.group(1)),float(m.group(2)),float(m.group(3) or 0)
 
+def value(block):
+    m=re.search(r'\(property\s+"Value"\s+"([^"]*)"',block)
+    if not m:
+        m=re.search(r'\(fp_text\s+value\s+"([^"]*)"',block)
+    if not m:
+        raise RuntimeError('Value metadata missing')
+    return m.group(1)
+
 for ref in ('C1','C2'):
     b=fp(ref)
     assert 'TruckBox:1206_DFM' in b, f'{ref}: 1206 DFM footprint missing'
@@ -63,6 +71,24 @@ for ref,lcsc in expected.items():
     got=bom[ref]['JLCPCB Part #']
     assert got==lcsc, f'{ref}: expected {lcsc}, got {got}'
 
+expected_board_values={
+    'D1':'SM8S33A C2940165',
+    'D3':'ESD2CAN24DCKRQ1 C7469913',
+    'D4':'ESD2CAN24DCKRQ1 C7469913',
+    'J3':'USB4105-GF-A-120 C5184243',
+    'J5':'SIM8051-6-0-14-00-A C7363812',
+    'L2':'AHWC1608J47ND 47nH C54534612',
+    'C1':'TCC1206X7R225K101HT 2.2uF 100V C7393990',
+    'C2':'TCC1206X7R225K101HT 2.2uF 100V C7393990',
+    'C52':'0603B222K500CT 2.2nF 50V C93190',
+    'C53':'0603B222K500CT 2.2nF 50V C93190',
+    'C67':'TPSD107K010R0050 100uF 10V C313070',
+    'C68':'TPSD107K010R0050 100uF 10V C313070',
+}
+for ref,expected_value in expected_board_values.items():
+    got=value(fp(ref))
+    assert got==expected_value, f'{ref}: stale PCB Value metadata: {got!r} != {expected_value!r}'
+
 cpl={}
 with (BUILD/'TruckBox_RevB_JLC_CPL.csv').open(encoding='utf-8-sig',newline='') as f:
     for r in csv.DictReader(f):
@@ -77,3 +103,4 @@ print(f'Q50_R70_center_dx_mm={dx:.3f}')
 print('C1_C2=1206/C7393990')
 print('D3_D4=SC70-3/C7469913')
 print('C67_C68=C313070/CPL_0deg')
+print('pcb_metadata_gate=PASS')
