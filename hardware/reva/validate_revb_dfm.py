@@ -35,7 +35,7 @@ def at(block):
 for ref in ('C1','C2'):
     b=fp(ref)
     assert 'TruckBox:1206_DFM' in b, f'{ref}: 1206 DFM footprint missing'
-    assert b.count('(size 1.150 1.900)')==2, f'{ref}: 1206 pad geometry mismatch'
+    sizes=[tuple(map(float,m)) for m in re.findall(r'\\(size\\s+([-+0-9.]+)\\s+([-+0-9.]+)\\)',b)]\n    n=sum(abs(x-1.15)<1e-3 and abs(y-1.90)<1e-3 for x,y in sizes)\n    assert n==2, f'{ref}: 1206 pad geometry mismatch sizes={sizes}'
 
 qx,qy,_=at(fp('Q50')); rx,ry,_=at(fp('R70'))
 dx=abs(qx-rx)
