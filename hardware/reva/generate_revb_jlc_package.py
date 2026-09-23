@@ -186,7 +186,7 @@ with audit_path.open('w',newline='',encoding='utf-8-sig') as f:
 drc=(BUILD/'drc_summary.txt').read_text(errors='ignore').strip() if (BUILD/'drc_summary.txt').exists() else 'DRC summary unavailable'
 sha=os.environ.get('GITHUB_SHA','local')
 run=os.environ.get('GITHUB_RUN_NUMBER','local')
-readme=f'''TruckBox Rev.B — JLCPCB Production Package
+readme=f'''TruckBox Rev.B.1 — JLCPCB Production Package
 ============================================
 
 SOURCE / FREEZE
@@ -224,9 +224,9 @@ CRITICAL REV.B PARTS
 - U11: TPS54360BQDDARQ1 / C2687968 — LTE 3.8V power.
 - L50: SRP7050WA-220M / C19947701 — exact JLC footprint matched.
 - D50: SS56B / C14651 — exact JLC SMB footprint matched.
-- J5: SIM8051-6-0-14-01-A / C3033025.
-- D71: SRV05-4 / C558418 — SIM ESD array.
-- C67/C68: C9900014040 — JLC Assembly CASE-D_7343 100uF/10V; verify polarity and availability in BOM preview.
+- J5: SIM8051-6-0-14-00-A / C7363812 — order-proven no-locating-peg variant.
+- D71: SRV05-4 / C558418 — SIM ESD array.\n- D3/D4: ESD2CAN24DCKRQ1 / C7469913 — exact SC70-3/DCK package.\n- C1/C2: TCC1206X7R225K101HT / C7393990 — 2.2uF/100V X7R 1206 DFM correction.
+- C67/C68: TPSD107K010R0050 / C313070 — 100uF/10V low-ESR; CPL forced to 0deg so positive faces LTE_3V8/right.
 
 FILES
 - TruckBox_RevB_Gerbers_JLC.zip
