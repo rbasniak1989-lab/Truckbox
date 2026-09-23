@@ -119,7 +119,7 @@ def fpsot23(ref,val,x,y):
 # Compact local block just left of modem.
 parts=[
     fpsot23('Q50','2N7002 C8545',35.2,81.10),
-    fp0603('R70','100k PWRKEY GATE PD',34.0,80.95,90,'GND','LTE_PWRKEY_GPIO'),
+    fp0603('R70','100k PWRKEY GATE PD',32.5,80.95,90,'GND','LTE_PWRKEY_GPIO'),
     fp0603('R71','1k PWRKEY SERIES',39.5,81.10,0,'LTE_PWRKEY_SW','LTE_PWRKEY'),
 ]
 close=s.rfind(')')
@@ -135,15 +135,17 @@ r=[
     seg('LTE_PWRKEY',p39[0],p39[1],40.30,81.10),
     seg('LTE_PWRKEY_SW',38.70,81.10,36.15,81.10),
 
-    # Q50 source + R70 pulldown share a nearby GND via.
-    seg('GND',34.25,82.05,34.00,81.75),
-    seg('GND',34.00,81.75,33.40,82.40),
+    # Q50 source + R70 pulldown share a nearby GND via, but R70 is shifted
+    # left so its body/paste no longer overlaps the SOT-23 package.
+    seg('GND',34.25,82.05,33.40,82.40),
+    seg('GND',32.50,81.75,33.40,82.40),
     via('GND',33.40,82.40,.65,.32),
 
-    # Gate local endpoint. Layer transition is above R70, clear of SIM GND vias.
-    seg('LTE_PWRKEY_GPIO',34.00,80.15,34.25,80.15),
-    seg('LTE_PWRKEY_GPIO',34.50,78.80,34.50,80.15),
-    seg('LTE_PWRKEY_GPIO',34.50,80.15,34.00,80.15),
+    # Gate local endpoint. Keep the existing long-route via at x=34.5 and
+    # branch left to the relocated R70 before returning to Q50 gate.
+    seg('LTE_PWRKEY_GPIO',34.25,80.15,32.50,80.15),
+    seg('LTE_PWRKEY_GPIO',34.50,78.80,32.50,78.80),
+    seg('LTE_PWRKEY_GPIO',32.50,78.80,32.50,80.15),
     via('LTE_PWRKEY_GPIO',34.50,78.80),
 
     # U2 GPIO0 escape. Keep this above the two existing LTE UART lanes.

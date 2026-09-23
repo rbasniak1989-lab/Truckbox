@@ -93,6 +93,7 @@ jobs:
             python3 hardware/reva/apply_revb_lte_sim.py
             python3 hardware/reva/apply_revb_lte_sim_esd.py
             python3 hardware/reva/apply_revb_vehicle_connector.py
+            python3 hardware/reva/apply_revb_dfm_fix.py
             python3 hardware/reva/inspect_revb_lte_power.py
           fi
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
@@ -184,6 +185,7 @@ jobs:
               hardware/reva/TruckBox_RevA.kicad_pcb
           if [ "$GITHUB_REF_NAME" = "hardware-revb-j1708-4g" ]; then
             python3 hardware/reva/generate_revb_jlc_package.py
+            python3 hardware/reva/validate_revb_dfm.py
           fi
 
       - name: Upload PCB CI artifact

@@ -24,9 +24,9 @@ p('U9','A7683E LTE Cat.1 module','COMM-SMD_L17.6-W15.7_A7683E','C20617360','A768
 p('U10','TXU0202DCUR dual-supply 1.8V/3.3V level translator','VSSOP-8_L2.3-W2.0-P0.50-LS3.1-BR','C5186957','TXU0202DCUR','Texas Instruments'),
 p('U11','TPS54360BQDDARQ1 60V LTE 3.8V buck regulator','SO-8_L4.9-W3.9-P1.27-LS6.0-BL-EP','C2687968','TPS54360BQDDARQ1','Texas Instruments'),
 
-p('D1','SM8S33A 33V high-power TVS','DO218AB_Yangjie_SM8S','C698915','SM8S33A','Yangzhou Yangjie'),
+p('D1','SM8S33A 33V high-power TVS','DO218AB_Yangjie_SM8S','C2940165','SM8S33A','LGE','Order-proven JLC substitute; DO-218AB / 33V.'),
 p('D2','STPST2H100AFY 100V 2A automotive Schottky','SOD128','C20033887','STPST2H100AFY','STMicroelectronics','Recheck stock at order preview.'),
-p('D3,D4','AQ24CANFD-02HTG automotive data-line TVS','SC70-3_DCK','C1975190','AQ24CANFD-02HTG','Littelfuse'),
+p('D3,D4','ESD2CAN24DCKRQ1 automotive CAN/J1708 ESD','SC70-3_DCK','C7469913','ESD2CAN24DCKRQ1','Texas Instruments','SC70-3/DCK exact package; replaces oversized SOT-23 part rejected by JLC DFM.'),
 p('D5','SS310AQ 100V 3A AEC-Q101 Schottky','SMA','C5339831','SS310AQ','Yangjie'),
 p('D6','TPD2E2U06QDCKRQ1 dual USB ESD protector','SC70-3_DCK','C915089','TPD2E2U06QDCKRQ1','Texas Instruments'),
 p('D7','1N4148WS switching diode','SOD323','C181133','1N4148WS','Guangdong Hottech'),
@@ -36,13 +36,13 @@ p('D71','SRV05-4 four-channel low-capacitance SIM ESD array','SOT-23-6','C558418
 
 p('J1','1040310811 microSD card socket','microSD_Molex_1040310811','C585350','1040310811','Molex'),
 p('J2','U.FL-R-SMT-1(01) GNSS RF connector','UFL_Hirose','C598199','U.FL-R-SMT-1(01)','Hirose','Recheck stock at order preview.'),
-p('J3','USB4105-GF-A-060 USB-C receptacle','USB_C_Receptacle_GCT_USB4105_16P','C3025063','USB4105-GF-A-060','GCT'),
+p('J3','USB4105-GF-A-120 USB-C receptacle','USB_C_Receptacle_GCT_USB4105_16P','C5184243','USB4105-GF-A-120','GCT','Same USB4105 family; longer stake variant used in first JLC order.'),
 p('J4','Mini-Fit/MX 4.2mm 8-way vertical 9A PCB header','CONN-TH_8P-P4.20_DLL-5566-8A','C22365702','DLL-5566-8A','DLL','JLC wave-solder/THT assembly. 9A, -35C to +105C. Mating harness: common 8-way 2x4 Mini-Fit-compatible housing with female contacts.'),
-p('J5','SIM8051-6-0-14-01-A nano-SIM socket','SIM-SMD_SIM8051-6-0-14-01-A','C3033025','SIM8051-6-0-14-01-A','GCT'),
+p('J5','SIM8051-6-0-14-00-A nano-SIM socket','SIM-SMD_SIM8051-6-0-14-01-A','C7363812','SIM8051-6-0-14-00-A','GCT','Same SIM8051 contact geometry; no locating peg.'),
 p('J6','U.FL-R-SMT-1(10) LTE RF connector','ANT-SMD_UFL-R-SMT-1-10','C88373','U.FL-R-SMT-1(10)','Hirose'),
 
 p('L1','15uH ±20% 3.5A Isat 6A AEC-Q200 power inductor','IND_7x7','C2045384','SRP7050TA-150M','Bourns','Approved Rev.A substitution for board value 18uH.'),
-p('L2','47nH RF inductor','0603','C2903684','HP0603-47NH-N','Chilisin'),
+p('L2','47nH RF inductor','0603','C54534612','AHWC1608J47ND','Shenzhen Sunlord / compatible','Order-proven 0603 47nH replacement.'),
 p('L50','22uH 5A Isat 6.3A LTE power inductor','IND-SMD_L7.9-W7.3_SRP7050WA','C19947701','SRP7050WA-220M','Bourns','Exact JLC footprint matched in Rev.B.'),
 
 p('Q1,Q2,Q4','AO3401A P-channel MOSFET','SOT-23-3','C15127','AO3401A','Alpha & Omega Semiconductor'),
@@ -68,7 +68,8 @@ p('R63','6.34kΩ ±1% COMP 0603','0603','C321969','RS-03K6341FT','FH'),
 p('R65','15kΩ ±1% 0603','0603','C114661','RC0603FR-0715KL','Yageo'),
 p('R71','1kΩ ±1% PWRKEY series 0603','0603','C22548','RC0603FR-071KL','Yageo'),
 
-p('C1,C2,C61,C62','2.2uF 100V X7R 1210 MLCC','1210','C338133','1210B225K101CT','Walsin','100V part intentionally reused for LTE 50V input positions.'),
+p('C1,C2','2.2uF 100V X7R 1206 MLCC','1206','C7393990','TCC1206X7R225K101HT','CCTC','1206 body removes first-order JLC DFM component-spacing warning while retaining 2.2uF/100V/X7R.')
+p('C61,C62','2.2uF 100V X7R 1210 MLCC','1210','C338133','1210B225K101CT','Walsin','100V part intentionally retained for LTE 50V input positions.'),
 p('C3','47uF 63V SMD aluminum electrolytic','CP_Elec_D8x10.2','C401887','EEETG1J470UP','Panasonic','Recheck stock at order preview.'),
 p('C4,C9,C10,C11,C12,C13,C14,C21,C24,C60,C70,C73,C74','100nF 50V X7R 0603 MLCC','0603','C14663','CC0603KRX7R9BB104','Yageo'),
 p('C5','10nF 50V X7R 0603 MLCC','0603','C57112','0603B103K500NT','FH'),
@@ -76,10 +77,10 @@ p('C6','4.7nF 50V X7R 0603 MLCC','0603','C106218','CC0603KRX7R9BB472','Yageo'),
 p('C7,C8,C63,C64','47uF 10V X5R 1210 MLCC','1210','C397312','GRM32ER61A476KE20L','Murata'),
 p('C15,C16,C17,C18','10uF 25V X5R 0805 MLCC','0805','C15850','CL21A106KAYNNNE','Samsung Electro-Mechanics'),
 p('C19,C20,C69','1uF 50V X5R 0603 MLCC','0603','C92848','UMK107BJ105KA-T','Taiyo Yuden'),
-p('C52,C53','2.2nF 50V X7R 0603 J1708 EMI','0603','C2835545','C0603X7R222J500NT','SANYEAR'),
+p('C52,C53','2.2nF 50V X7R 0603 J1708 EMI','0603','C93190','0603B222K500CT','Walsin','±10% is acceptable for the J1708 EMI shunts.'),
 p('C65','56nF 50V X7R 0603 COMP','0603','C309032','TCC0603X7R563K500CT','CCTC'),
 p('C66','100pF 50V C0G 0603 COMP pole','0603','C344186','TCC0603COG101J500CT','CCTC'),
-p('C67,C68','100uF 10V CASE-D_7343 LTE VBAT reservoir','CASE-D_7343','C9900014040','100uF±10%10V','JLCPCB Assembly','Generic JLC Assembly item; verify polarity/availability in BOM preview.'),
+p('C67,C68','100uF 10V CASE-D_7343 LTE VBAT reservoir','CASE-D_7343','C313070','TPSD107K010R0050','Kyocera AVX','Low-ESR order-proven substitute; CPL rotation overridden +180deg so + faces LTE_3V8/right.'),
 p('C71,C75','33pF 50V C0G 0603','0603','C5375800','TCC0603COG330G500CT','CCTC'),
 p('C72','10pF 50V C0G 0603','0603','C376764','TCC0603COG100J500CT','CCTC'),
 ]
@@ -161,7 +162,11 @@ with cpl_path.open('w',newline='',encoding='utf-8-sig') as f:
     wr.writerow(['Designator','Mid X','Mid Y','Rotation','Layer'])
     for ref in sorted(mapped,key=nat):
         r=pos_by_ref[ref]
-        wr.writerow([ref,r['PosX'],r['PosY'],r['Rot'],r['Side']])
+        rot=float(r['Rot'])
+        if ref in {'C67','C68'}:
+            rot=(rot+180.0)%360.0
+        rot_out=str(int(rot)) if rot.is_integer() else str(rot)
+        wr.writerow([ref,r['PosX'],r['PosY'],rot_out,r['Side']])
 
 # Sourcing / traceability audit.
 audit_path=BUILD/'TruckBox_RevB_LCSC_Audit.csv'
