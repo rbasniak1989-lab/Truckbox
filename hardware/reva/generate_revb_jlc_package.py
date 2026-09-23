@@ -214,7 +214,7 @@ DNP / MANUAL
 - DNP: C50, C51 (LTE RF tuning shunts).
 - DNP: C76, C77, C78 (optional SIM 22 pF shunts).
 - J4: Mini-Fit 8-way 9A / C22365702, JLC THT/wave-solder assembly; mates with common 8-way 2x4 Mini-Fit-compatible harness housing.
-- J4 pinout: 1=J1939/CAN1_H, 2=J1939/CAN1_L, 3=ACC, 4=J1708_A, 5=GND, 6=J1708_B, 7=+24V BATT24_FUSED, 8=reserved/NC.\n- DNP/manual: SW1 until the physical switch is matched.
+- J4 pinout: 1=J1939/CAN1_H, 2=J1939/CAN1_L, 3=ACC_RAW, 4=J1708_A, 5=GND, 6=J1708_B, 7=+24V BATT24_FUSED, 8=reserved/NC.\n- DNP/manual: SW1 until the physical switch is matched.
 - H1-H6 and TP1-TP6 are PCB features, not BOM/CPL components.
 
 CRITICAL REV.B PARTS
