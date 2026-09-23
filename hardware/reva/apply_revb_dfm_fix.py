@@ -39,13 +39,13 @@ def convert(block,ref):
     if '(footprint "TruckBox:1210"' not in block:
         raise RuntimeError(f'{ref}: expected TruckBox:1210 footprint')
     block=block.replace('(footprint "TruckBox:1210"','(footprint "TruckBox:1206_DFM"',1)
-    if block.count('(size 1.430 2.700)')!=2:
+    if block.count('(size 1.150 2.700)')!=2:
         raise RuntimeError(f'{ref}: unexpected 1210 pad geometry')
-    block=block.replace('(size 1.430 2.700)','(size 1.430 1.900)')
-    old='(fp_rect (start -1.850 -1.500) (end 1.850 1.500)'
+    block=block.replace('(size 1.150 2.700)','(size 1.150 1.900)')
+    old='(fp_rect (start -2.300 -1.600) (end 2.300 1.600)'
     if old not in block:
         raise RuntimeError(f'{ref}: 1210 courtyard missing')
-    block=block.replace(old,'(fp_rect (start -1.850 -1.050) (end 1.850 1.050)',1)
+    block=block.replace(old,'(fp_rect (start -2.100 -1.150) (end 2.100 1.150)',1)
     return block
 
 for ref in ('C1','C2'):

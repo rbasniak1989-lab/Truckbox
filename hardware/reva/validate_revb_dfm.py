@@ -35,7 +35,7 @@ def at(block):
 for ref in ('C1','C2'):
     b=fp(ref)
     assert 'TruckBox:1206_DFM' in b, f'{ref}: 1206 DFM footprint missing'
-    assert b.count('(size 1.430 1.900)')==2, f'{ref}: 1206 pad geometry mismatch'
+    assert b.count('(size 1.150 1.900)')==2, f'{ref}: 1206 pad geometry mismatch'
 
 qx,qy,_=at(fp('Q50')); rx,ry,_=at(fp('R70'))
 dx=abs(qx-rx)

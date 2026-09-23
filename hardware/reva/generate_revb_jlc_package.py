@@ -68,7 +68,7 @@ p('R63','6.34kΩ ±1% COMP 0603','0603','C321969','RS-03K6341FT','FH'),
 p('R65','15kΩ ±1% 0603','0603','C114661','RC0603FR-0715KL','Yageo'),
 p('R71','1kΩ ±1% PWRKEY series 0603','0603','C22548','RC0603FR-071KL','Yageo'),
 
-p('C1,C2','2.2uF 100V X7R 1206 MLCC','1206','C7393990','TCC1206X7R225K101HT','CCTC','1206 body removes first-order JLC DFM component-spacing warning while retaining 2.2uF/100V/X7R.')
+p('C1,C2','2.2uF 100V X7R 1206 MLCC','1206','C7393990','TCC1206X7R225K101HT','CCTC','1206 body removes first-order JLC DFM component-spacing warning while retaining 2.2uF/100V/X7R.'),
 p('C61,C62','2.2uF 100V X7R 1210 MLCC','1210','C338133','1210B225K101CT','Walsin','100V part intentionally retained for LTE 50V input positions.'),
 p('C3','47uF 63V SMD aluminum electrolytic','CP_Elec_D8x10.2','C401887','EEETG1J470UP','Panasonic','Recheck stock at order preview.'),
 p('C4,C9,C10,C11,C12,C13,C14,C21,C24,C60,C70,C73,C74','100nF 50V X7R 0603 MLCC','0603','C14663','CC0603KRX7R9BB104','Yageo'),
