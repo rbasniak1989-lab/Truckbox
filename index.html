@@ -97,7 +97,7 @@ h2{font-size:12px;color:#b9c9da;text-transform:uppercase;letter-spacing:.08em;ma
 </div></div>
 
 <div class="modal" id="a50Modal"><div class="shell">
- <div class="mhead"><b>Análise de consumo — blocos de 50 km</b><button onclick="load50()">↻</button><button onclick="closeModal('a50Modal')">✕</button></div>
+ <div class="mhead"><b>Análise de consumo — blocos de 50 km</b><select id="a50TripSelect" onchange="load50(this.value)"></select><button onclick="load50(document.getElementById('a50TripSelect').value)">↻</button><button onclick="closeModal('a50Modal')">✕</button></div>
  <div class="mbody" id="a50body">Carregando…</div>
 </div></div>
 
@@ -156,11 +156,23 @@ async function loadMap(tripId=''){
   if(bounds.length>1)map.fitBounds(bounds,{padding:[25,25]});else if(bounds.length===1)map.setView(bounds[0],14);else map.setView([-23.5,-51.5],6);
  }catch(e){console.error(e);E('mpos').textContent='Mapa indisponível'}
 }
-async function open50(){E('a50Modal').classList.add('show');await load50()}
-async function load50(){
+async function open50(){
+ E('a50Modal').classList.add('show');
+ try{
+  const r=await fetch(MAP+'?mode=latest',{cache:'no-store'}),j=await r.json();
+  if(r.ok&&j.ok){
+   const sel=E('a50TripSelect');
+   const trips=j.trips||[];
+   sel.innerHTML=trips.map(t=>'<option value="'+t.id+'" '+(t.id===currentTripId?'selected':'')+'>'+String(t.origin||'—')+' → '+String(t.destination||'—')+(t.status==='ACTIVE'?' • em andamento':'')+'</option>').join('');
+   if(!sel.value&&trips[0])sel.value=trips[0].id;
+  }
+ }catch(e){console.error('trip list',e)}
+ await load50(E('a50TripSelect').value||currentTripId);
+}
+async function load50(tripId=''){
  const body=E('a50body');body.textContent='Carregando…';
  try{
-  let u=A50+'?block_km=50';if(currentTripId)u+='&trip_id='+encodeURIComponent(currentTripId);const r=await fetch(u,{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'50');
+  let u=A50+'?block_km=50';const chosen=tripId||currentTripId;if(chosen)u+='&trip_id='+encodeURIComponent(chosen);const r=await fetch(u,{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'50');
   const b=j.blocks||[];const f=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
   body.innerHTML='<div class="blocks">'+b.map(x=>'<div class="block"><h3>'+f(x.km_from,0)+'–'+f(x.km_to,0)+' km</h3><div class="bgrid"><div><small>Distância</small><strong>'+f(x.distance_km)+' km</strong></div><div><small>Diesel</small><strong>'+f(x.fuel_liters)+' L</strong></div><div><small>Média</small><strong>'+f(x.average_kml,2)+' km/L</strong></div><div><small>Velocidade</small><strong>'+f(x.avg_speed_kmh)+' km/h</strong></div></div><div class="bgrid"><div><small>RPM</small><strong>'+f(x.avg_rpm,0)+'</strong></div><div><small>Torque</small><strong>'+f(x.avg_torque_pct)+'%</strong></div><div><small>I-Roll</small><strong>'+f(x.iroll_pct)+'%</strong></div><div><small>VEB</small><strong>'+f(x.veb_pct)+'%</strong></div></div><div class="bgrid"><div><small>Turbo</small><strong>'+f(x.avg_boost_bar,2)+' bar</strong></div><div><small>Combustível</small><strong>'+f(x.avg_fuel_pressure_bar,2)+' bar</strong></div><div><small>Óleo máx.</small><strong>'+f(x.max_oil_temp_c,0)+' °C</strong></div><div><small>Água máx.</small><strong>'+f(x.max_coolant_temp_c,0)+' °C</strong></div></div><div class="bgrid"><div><small>Memória estrada</small><strong>'+f(x.location_coverage_pct,0)+'%</strong></div><div><small>Esperado local</small><strong>'+f(x.expected_kml_location,2)+' km/L</strong></div><div><small>Desempenho local</small><strong>'+(Number.isFinite(Number(x.efficiency_delta_pct_location))?((Number(x.efficiency_delta_pct_location)>=0?'+':'')+f(x.efficiency_delta_pct_location,1)+'%'):'—')+'</strong></div><div><small>Memória</small><strong>'+(x.location_memory_cells||0)+' células • '+(x.location_max_passes||0)+' pass.</strong></div></div></div>').join('')+'</div>';
  }catch(e){body.textContent='Não foi possível carregar a análise de 50 km.';console.error(e)}
