@@ -112,7 +112,7 @@ const fmtDur=s=>{s=Number(s);if(!Number.isFinite(s)||s<0)return'—';const h=Mat
 const fmtMoney=v=>{v=Number(v);return Number.isFinite(v)?v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'—'};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtClock=ts=>{if(!ts)return'—';try{return new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(ts))}catch{return'—'}};
-let currentTripId='', map=null, layer=null, a50Map=null, a50BaseLayer=null, a50HiLayer=null, a50RoutePoints=[], a50Blocks=[], a50TripSummary=null, a50Panorama=null, a50RestAnalysis=null, a50Financial=null;
+let currentTripId='', map=null, layer=null, a50Map=null, a50BaseLayer=null, a50HiLayer=null, a50RoutePoints=[], a50Blocks=[], a50TripSummary=null, a50Panorama=null, a50RestAnalysis=null, a50Financial=null, a50FuelForecast=null;
 
 function statusClass(s){s=String(s||'');if(s.includes('anomaly'))return'bad';if(s.includes('attention'))return'warn';if(s==='normal'||s==='above_expected')return'good';return''}
 async function tick(){
@@ -209,6 +209,19 @@ function buildRestHtml(){
  const initial=(r.status==='ACTIVE'&&r.rolling_24h)?'rolling':('day:'+(fixed[0]?.day_index??0));
  return '<div class="rest-card"><div class="rest-head"><h3>Jornada e descanso</h3><select id="restPeriodSelect" class="rest-select" onchange="renderRestPeriod(this.value)">'+opts.join('')+'</select></div><div id="restPeriodBody"></div><div class="trip-note">Indicador operacional por telemetria. Não substitui tacógrafo, diário de bordo ou avaliação jurídica do cumprimento da Lei do Descanso.</div></div><span id="restInitialKey" data-key="'+initial+'" style="display:none"></span>';
 }
+function buildFuelForecastHtml(){
+ const x=a50FuelForecast||{};
+ if(!x.available)return'';
+ const diff=Number(x.difference_l),pct=Number(x.difference_pct);
+ const diffText=Number.isFinite(diff)?((diff>=0?'+':'')+N(diff,1)+' L'+(Number.isFinite(pct)?' • '+(pct>=0?'+':'')+N(pct,1)+'%':'')):'—';
+ const diffClass=Number.isFinite(diff)?(diff>0?'bad':diff<0?'good':''):'';
+ return '<div class="rest-card"><div class="rest-head"><h3>Previsão da viagem</h3></div>'+
+  '<div class="bgrid"><div><small>Previsto no início</small><strong>'+N(x.planned_fuel_liters,1)+' L</strong></div>'+
+  '<div><small>Consumido até agora</small><strong>'+N(x.consumed_so_far_l,1)+' L</strong></div>'+
+  '<div><small>Projeção atual</small><strong>'+N(x.projected_total_l,1)+' L</strong></div>'+
+  '<div><small>Diferença</small><strong class="'+diffClass+'">'+diffText+'</strong></div></div>'+
+  '<div class="trip-note">Previsão inicial: '+N(x.planned_expected_kml,2)+' km/L em '+N(x.planned_distance_km,1)+' km. A projeção vai sendo ajustada pelo rendimento real conforme a viagem avança.</div></div>';
+}
 function buildGeoHtml(){
  const g=a50Panorama?.geography||null;
  if(!g)return'';
@@ -265,6 +278,7 @@ function select50Block(blockIndex){
     '<div class="bgrid"><div><small>Velocidade rodando</small><strong>'+f(p.avg_speed_kmh_moving,1)+' km/h</strong></div><div><small>RPM rodando</small><strong>'+f(p.avg_rpm_moving,0)+'</strong></div><div><small>Subida acumulada</small><strong>'+f(totalAscent,0)+' m</strong></div><div><small>Descida acumulada</small><strong>'+f(totalDescent,0)+' m</strong></div></div>'+
     routeMem+
     '<div class="trip-note">* “Parado / sem rodar” é o tempo total da viagem menos o tempo identificado em movimento; inclui pernoites, filas e períodos sem telemetria contínua. “Marcha lenta” é medido separadamente com motor ligado e veículo parado.</div></div>'+
+    buildFuelForecastHtml()+
     buildGeoHtml()+
     buildFinanceHtml()+
     buildRestHtml();
@@ -298,7 +312,7 @@ async function load50(tripId=''){
   const [r,mr]=await Promise.all([fetch(u,{cache:'no-store'}),fetch(mapUrl,{cache:'no-store'})]);
   const j=await r.json(),mj=await mr.json();
   if(!r.ok||!j.ok)throw Error(j.error||'50');
-  const b=j.blocks||[];a50Blocks=b;a50TripSummary=j.trip||null;a50Panorama=j.panorama||null;a50RestAnalysis=j.rest_analysis||null;a50Financial=j.financial||null;
+  const b=j.blocks||[];a50Blocks=b;a50TripSummary=j.trip||null;a50Panorama=j.panorama||null;a50RestAnalysis=j.rest_analysis||null;a50Financial=j.financial||null;a50FuelForecast=j.fuel_forecast||null;
   ensureA50Map();a50BaseLayer.clearLayers();a50HiLayer.clearLayers();
   a50RoutePoints=(mj.segments||[]).flat().filter(p=>p&&p.lat!=null&&p.lon!=null);
   const all=a50RoutePoints.map(p=>[Number(p.lat),Number(p.lon)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));
