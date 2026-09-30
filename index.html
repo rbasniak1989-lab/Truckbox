@@ -21,7 +21,7 @@ h2{font-size:12px;color:#b9c9da;text-transform:uppercase;letter-spacing:.08em;ma
 .ai-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.ai-box{background:#091827;border:1px solid #1b3855;border-radius:11px;padding:9px}.ai-box strong{display:block;margin-top:4px;font-size:17px}.good{color:var(--green)}.warn{color:var(--yellow)}.bad{color:var(--red)}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}.btn{border:1px solid #31597b;background:#0d2032;color:#fff;border-radius:13px;padding:13px;font-weight:900;cursor:pointer;text-align:left}.btn small{display:block;color:var(--mut);font-weight:500;margin-top:3px}.btn.blue{border-color:#1d78b6}.btn.green{border-color:#1b7c50}
 .modal{display:none;position:fixed;inset:0;background:#02080ff2;z-index:1000;padding:12px;overflow:auto}.modal.show{display:block}.shell{max-width:1250px;margin:auto;background:#081522;border:1px solid #24415f;border-radius:17px;overflow:hidden;min-height:70vh}.mhead{display:flex;gap:8px;align-items:center;padding:12px 14px;background:#0d1b2b;position:sticky;top:0;z-index:3}.mhead b{flex:1}.mhead button,.mhead select{background:#102238;color:#fff;border:1px solid #294b6e;border-radius:8px;padding:8px}.mbody{padding:11px}
-#map{height:65vh;min-height:420px}#a50Map{height:340px;border:1px solid #24415f;border-radius:12px;overflow:hidden;margin-bottom:10px}.a50-mapbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 0 8px}.a50-mapbar b{font-size:13px}.a50-mapbar span{font-size:11px;color:var(--mut)}.a50-picker{display:flex;gap:7px;overflow-x:auto;padding:2px 1px 10px;scrollbar-width:thin}.a50-chip{flex:0 0 auto;border:1px solid #294b6e;background:#0d2032;color:#dce8f4;border-radius:999px;padding:9px 12px;font-size:12px;font-weight:800;cursor:pointer}.a50-chip.active{background:#ffc247;color:#071421;border-color:#ffc247}.a50-detail{background:#0d1b2b;border:1px solid #1b3855;border-radius:12px;padding:11px}.a50-detail h3{margin:0 0 8px;font-size:16px}.mapinfo{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:8px}.box{background:#0d1b2b;border:1px solid #1b3855;border-radius:10px;padding:9px}.box small{color:var(--mut)}.box strong{display:block;margin-top:3px}
+#map{height:65vh;min-height:420px}#a50Map{height:340px;border:1px solid #24415f;border-radius:12px;overflow:hidden;margin-bottom:10px}.a50-mapbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 0 8px}.a50-mapbar b{font-size:13px}.a50-mapbar span{font-size:11px;color:var(--mut)}.a50-picker-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}.a50-picker-wrap label{font-size:11px;color:var(--mut);font-weight:800;text-transform:uppercase}.a50-picker-select{flex:1;min-width:0;background:#102238;color:#fff;border:1px solid #294b6e;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:800}.a50-detail{background:#0d1b2b;border:1px solid #1b3855;border-radius:12px;padding:11px}.a50-detail h3{margin:0 0 8px;font-size:16px}.mapinfo{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:8px}.box{background:#0d1b2b;border:1px solid #1b3855;border-radius:10px;padding:9px}.box small{color:var(--mut)}.box strong{display:block;margin-top:3px}
 .blocks{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.block{background:#0d1b2b;border:1px solid #1b3855;border-radius:11px;padding:10px}.block h3{margin:0 0 8px}.bgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;border-top:1px solid #18324b;padding-top:7px;margin-top:7px}.bgrid small{color:var(--mut)}.bgrid strong{display:block;margin-top:2px}
 .foot{text-align:center;color:#607c97;font-size:10px;padding:18px}
 @media(max-width:900px){.hero{grid-template-columns:repeat(2,1fr)}.grid,.grid2{grid-template-columns:1fr}.sensors{grid-template-columns:repeat(2,1fr)}.blocks{grid-template-columns:1fr}.mapinfo{grid-template-columns:repeat(2,1fr)}}
@@ -98,7 +98,7 @@ h2{font-size:12px;color:#b9c9da;text-transform:uppercase;letter-spacing:.08em;ma
 
 <div class="modal" id="a50Modal"><div class="shell">
  <div class="mhead"><b>Análise de consumo — blocos de 50 km</b><select id="a50TripSelect" onchange="load50(this.value)"></select><button onclick="load50(document.getElementById('a50TripSelect').value)">↻</button><button onclick="closeModal('a50Modal')">✕</button></div>
- <div class="mbody"><div id="a50BlockPicker" class="a50-picker"></div><div class="a50-mapbar"><b id="a50MapTitle">Mapa do trecho</b><span id="a50MapMeta">Selecione um trecho</span></div><div id="a50Map"></div><div id="a50body">Carregando…</div></div>
+ <div class="mbody"><div class="a50-picker-wrap"><label for="a50BlockSelect">Trecho</label><select id="a50BlockSelect" class="a50-picker-select" onchange="select50Block(this.value)"></select></div><div class="a50-mapbar"><b id="a50MapTitle">Mapa do trecho</b><span id="a50MapMeta">Selecione um trecho</span></div><div id="a50Map"></div><div id="a50body">Carregando…</div></div>
 </div></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -180,7 +180,7 @@ function ensureA50Map(){
 function select50Block(blockIndex){
  const x=a50Blocks.find(z=>Number(z.block_index)===Number(blockIndex));
  if(!x||!a50Map)return;
- document.querySelectorAll('#a50BlockPicker .a50-chip').forEach(el=>el.classList.toggle('active',Number(el.dataset.block)===Number(blockIndex)));
+ const blockSel=E('a50BlockSelect');if(blockSel&&String(blockSel.value)!==String(blockIndex))blockSel.value=String(blockIndex);
  a50HiLayer.clearLayers();
  const o1=Number(x.odometer_from),o2=Number(x.odometer_to);
  const pts=a50RoutePoints
@@ -217,10 +217,10 @@ async function load50(tripId=''){
   }
   setTimeout(()=>a50Map.invalidateSize(),80);
   const f=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
-  const picker=E('a50BlockPicker');
-  picker.innerHTML=b.map(x=>'<button class="a50-chip" data-block="'+x.block_index+'" onclick="select50Block('+x.block_index+')">'+f(x.km_from,0)+'–'+f(x.km_to,0)+'</button>').join('');
+  const picker=E('a50BlockSelect');
+  picker.innerHTML=b.map(x=>'<option value="'+x.block_index+'">'+f(x.km_from,0)+'–'+f(x.km_to,0)+' km</option>').join('');
   body.innerHTML=b.length?'Selecione um trecho acima.':'Nenhum bloco disponível.';
-  if(b.length)select50Block(b[0].block_index);
+  if(b.length){picker.value=String(b[0].block_index);select50Block(b[0].block_index);}
  }catch(e){body.textContent='Não foi possível carregar a análise de 50 km.';console.error(e)}
 }
 tick();loadAI();setInterval(tick,5000);setInterval(loadAI,30000);
