@@ -10,6 +10,30 @@ import org.json.JSONObject
 import java.util.UUID
 
 
+data class RoutePlanSnapshot(
+    val simulationId: String,
+    val clientUid: String,
+    val sourceUrl: String,
+    val origin: String,
+    val destination: String,
+    val cargoWeightT: Double,
+    val tareWeightT: Double,
+    val grossWeightT: Double,
+    val ratePerT: Double? = null,
+    val freightTotal: Double? = null,
+    val routeDistanceKm: Double? = null,
+    val ascentM: Double? = null,
+    val descentM: Double? = null,
+    val expectedKml: Double? = null,
+    val predictedFuelLiters: Double? = null,
+    val predictedFuelLowL: Double? = null,
+    val predictedFuelHighL: Double? = null,
+    val confidence: String = "low",
+    val routeMemoryCoveragePct: Double? = null,
+    val geographyModelCoveragePct: Double? = null,
+    val predictionBasisJson: String? = null,
+)
+
 data class TripRecord(
     val clientUid: String = UUID.randomUUID().toString(),
     val origin: String,
@@ -27,6 +51,17 @@ data class TripRecord(
     val fuelLiters: Double? = null,
     val averageKml: Double? = null,
     val status: String = "ACTIVE",
+    val routeSimulationId: String? = null,
+    val plannedRouteUrl: String? = null,
+    val plannedDistanceKm: Double? = null,
+    val plannedAscentM: Double? = null,
+    val plannedDescentM: Double? = null,
+    val plannedExpectedKml: Double? = null,
+    val plannedFuelLiters: Double? = null,
+    val plannedFuelLowL: Double? = null,
+    val plannedFuelHighL: Double? = null,
+    val plannedForecastConfidence: String? = null,
+    val plannedForecastBasisJson: String? = null,
 )
 
 data class FuelingRecord(
@@ -89,6 +124,7 @@ class OperationsStore(context: Context) {
         ratePerT: Double?,
         currentOdometerKm: Double?,
         currentFuelCounterL: Double,
+        plan: RoutePlanSnapshot? = null,
     ) {
         if (origin.isBlank() || destination.isBlank()) return
         val freightTotal = if (weightT != null && ratePerT != null) weightT * ratePerT else null
@@ -101,6 +137,17 @@ class OperationsStore(context: Context) {
             weightT = weightT,
             ratePerT = ratePerT,
             freightTotal = freightTotal,
+            routeSimulationId = plan?.simulationId,
+            plannedRouteUrl = plan?.sourceUrl,
+            plannedDistanceKm = plan?.routeDistanceKm,
+            plannedAscentM = plan?.ascentM,
+            plannedDescentM = plan?.descentM,
+            plannedExpectedKml = plan?.expectedKml,
+            plannedFuelLiters = plan?.predictedFuelLiters,
+            plannedFuelLowL = plan?.predictedFuelLowL,
+            plannedFuelHighL = plan?.predictedFuelHighL,
+            plannedForecastConfidence = plan?.confidence,
+            plannedForecastBasisJson = plan?.predictionBasisJson,
         )
         update(_state.value.copy(
             mode = OperationMode.LOADED_TRIP,
@@ -292,6 +339,10 @@ private fun TripRecord.toJson() = JSONObject().apply {
     put("startFuelCounterL", startFuelCounterL); put("endFuelCounterL", endFuelCounterL)
     put("weightT", weightT); put("ratePerT", ratePerT); put("freightTotal", freightTotal)
     put("distanceKm", distanceKm); put("fuelLiters", fuelLiters); put("averageKml", averageKml); put("status", status)
+    put("routeSimulationId", routeSimulationId); put("plannedRouteUrl", plannedRouteUrl); put("plannedDistanceKm", plannedDistanceKm)
+    put("plannedAscentM", plannedAscentM); put("plannedDescentM", plannedDescentM); put("plannedExpectedKml", plannedExpectedKml)
+    put("plannedFuelLiters", plannedFuelLiters); put("plannedFuelLowL", plannedFuelLowL); put("plannedFuelHighL", plannedFuelHighL)
+    put("plannedForecastConfidence", plannedForecastConfidence); put("plannedForecastBasisJson", plannedForecastBasisJson)
 }
 private fun FuelingRecord.toJson() = JSONObject().apply {
     put("clientUid", clientUid); put("tsMs", tsMs); put("liters", liters); put("pricePerL", pricePerL); put("total", total)
@@ -311,7 +362,13 @@ private fun tripFromJson(o: JSONObject): TripRecord = TripRecord(
     endOdometerKm = o.optNullableDouble("endOdometerKm"), startFuelCounterL = o.optDouble("startFuelCounterL", 0.0),
     endFuelCounterL = o.optNullableDouble("endFuelCounterL"), weightT = o.optNullableDouble("weightT"), ratePerT = o.optNullableDouble("ratePerT"),
     freightTotal = o.optNullableDouble("freightTotal"), distanceKm = o.optNullableDouble("distanceKm"), fuelLiters = o.optNullableDouble("fuelLiters"),
-    averageKml = o.optNullableDouble("averageKml"), status = o.optString("status", "ACTIVE")
+    averageKml = o.optNullableDouble("averageKml"), status = o.optString("status", "ACTIVE"),
+    routeSimulationId = o.optNullableString("routeSimulationId"), plannedRouteUrl = o.optNullableString("plannedRouteUrl"),
+    plannedDistanceKm = o.optNullableDouble("plannedDistanceKm"), plannedAscentM = o.optNullableDouble("plannedAscentM"),
+    plannedDescentM = o.optNullableDouble("plannedDescentM"), plannedExpectedKml = o.optNullableDouble("plannedExpectedKml"),
+    plannedFuelLiters = o.optNullableDouble("plannedFuelLiters"), plannedFuelLowL = o.optNullableDouble("plannedFuelLowL"),
+    plannedFuelHighL = o.optNullableDouble("plannedFuelHighL"), plannedForecastConfidence = o.optNullableString("plannedForecastConfidence"),
+    plannedForecastBasisJson = o.optNullableString("plannedForecastBasisJson")
 )
 private fun fuelingFromJson(o: JSONObject): FuelingRecord = FuelingRecord(
     clientUid=o.optString("clientUid"), tsMs=o.optLong("tsMs"), liters=o.optDouble("liters"), pricePerL=o.optDouble("pricePerL"), total=o.optDouble("total"),
@@ -343,6 +400,17 @@ private fun tripFromCloudJson(o: JSONObject): TripRecord = TripRecord(
     fuelLiters = o.optNullableDouble("fuel_liters"),
     averageKml = o.optNullableDouble("average_kml"),
     status = o.optString("status", "ACTIVE"),
+    routeSimulationId = o.optNullableString("route_simulation_id"),
+    plannedRouteUrl = o.optNullableString("planned_route_url"),
+    plannedDistanceKm = o.optNullableDouble("planned_distance_km"),
+    plannedAscentM = o.optNullableDouble("planned_ascent_m"),
+    plannedDescentM = o.optNullableDouble("planned_descent_m"),
+    plannedExpectedKml = o.optNullableDouble("planned_expected_kml"),
+    plannedFuelLiters = o.optNullableDouble("planned_fuel_liters"),
+    plannedFuelLowL = o.optNullableDouble("planned_fuel_low_l"),
+    plannedFuelHighL = o.optNullableDouble("planned_fuel_high_l"),
+    plannedForecastConfidence = o.optNullableString("planned_forecast_confidence"),
+    plannedForecastBasisJson = if (o.isNull("planned_forecast_basis") || !o.has("planned_forecast_basis")) null else o.opt("planned_forecast_basis")?.toString(),
 )
 
 private fun fuelingFromCloudJson(o: JSONObject): FuelingRecord = FuelingRecord(
