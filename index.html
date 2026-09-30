@@ -109,9 +109,10 @@ const A50='https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-trip-5
 const E=id=>document.getElementById(id), N=(v,d=1)=>v==null||!Number.isFinite(Number(v))?'—':Number(v).toFixed(d);
 const CV=1.3596216173;
 const fmtDur=s=>{s=Number(s);if(!Number.isFinite(s)||s<0)return'—';const h=Math.floor(s/3600),m=Math.round((s%3600)/60);return h? h+'h '+m+'min':m+' min'};
+const fmtMoney=v=>{v=Number(v);return Number.isFinite(v)?v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'—'};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtClock=ts=>{if(!ts)return'—';try{return new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(ts))}catch{return'—'}};
-let currentTripId='', map=null, layer=null, a50Map=null, a50BaseLayer=null, a50HiLayer=null, a50RoutePoints=[], a50Blocks=[], a50TripSummary=null, a50Panorama=null, a50RestAnalysis=null;
+let currentTripId='', map=null, layer=null, a50Map=null, a50BaseLayer=null, a50HiLayer=null, a50RoutePoints=[], a50Blocks=[], a50TripSummary=null, a50Panorama=null, a50RestAnalysis=null, a50Financial=null;
 
 function statusClass(s){s=String(s||'');if(s.includes('anomaly'))return'bad';if(s.includes('attention'))return'warn';if(s==='normal'||s==='above_expected')return'good';return''}
 async function tick(){
@@ -208,6 +209,17 @@ function buildRestHtml(){
  const initial=(r.status==='ACTIVE'&&r.rolling_24h)?'rolling':('day:'+(fixed[0]?.day_index??0));
  return '<div class="rest-card"><div class="rest-head"><h3>Jornada e descanso</h3><select id="restPeriodSelect" class="rest-select" onchange="renderRestPeriod(this.value)">'+opts.join('')+'</select></div><div id="restPeriodBody"></div><div class="trip-note">Indicador operacional por telemetria. Não substitui tacógrafo, diário de bordo ou avaliação jurídica do cumprimento da Lei do Descanso.</div></div><span id="restInitialKey" data-key="'+initial+'" style="display:none"></span>';
 }
+function buildFinanceHtml(){
+ const f=a50Financial||{};
+ if(f.freight_total==null&&f.weight_t==null&&f.fuel_cost_total==null)return'';
+ const fuelingRows=(f.fuelings_during_trip||[]).map(x=>'<div class="stop-item"><div class="stop-num">⛽</div><div class="stop-main"><strong>'+N(x.liters,1)+' L • '+fmtMoney(x.price_per_l)+'/L</strong><small>'+esc(x.station||'Posto')+(x.location?' • '+esc(x.location):'')+(x.full_tank?' • tanque cheio':'')+'</small></div><div class="stop-dur">'+fmtMoney(x.total)+'</div></div>').join('');
+ return '<div class="rest-card"><div class="rest-head"><h3>Financeiro da viagem</h3></div>'+
+  '<div class="bgrid"><div><small>Toneladas</small><strong>'+N(f.weight_t,2)+' t</strong></div><div><small>Valor por tonelada</small><strong>'+fmtMoney(f.rate_per_t)+'/t</strong></div><div><small>Frete total</small><strong>'+fmtMoney(f.freight_total)+'</strong></div><div><small>Diesel consumido</small><strong>'+N(f.fuel_liters,1)+' L</strong></div></div>'+
+  '<div class="bgrid"><div><small>Custo médio do diesel</small><strong>'+fmtMoney(f.fuel_unit_cost_weighted)+'/L</strong></div><div><small>Custo do diesel</small><strong>'+fmtMoney(f.fuel_cost_total)+'</strong></div><div><small>Diesel por km</small><strong>'+fmtMoney(f.fuel_cost_per_km)+'/km</strong></div><div><small>Diesel / frete</small><strong>'+N(f.fuel_cost_pct_revenue,1)+'%</strong></div></div>'+
+  '<div class="bgrid"><div><small>Após diesel</small><strong>'+fmtMoney(f.after_fuel)+'</strong></div><div><small>Outros gastos lançados</small><strong>'+fmtMoney(f.other_expenses)+'</strong></div><div><small>Saldo após gastos</small><strong>'+fmtMoney(f.after_fuel_and_expenses)+'</strong></div><div><small>Custo tanque no início</small><strong>'+fmtMoney(f.tank_cost_at_trip_start)+'/L</strong></div></div>'+
+  (fuelingRows?'<div class="trip-note" style="margin-top:10px"><b>Abastecimentos durante a viagem</b></div><div class="stop-list">'+fuelingRows+'</div>':'')+
+  '<div class="trip-note">O custo do diesel usa média móvel ponderada do combustível existente no tanque. Saldo remanescente mantém o custo anterior; cada novo abastecimento entra pelo preço pago; abastecimentos com tanque cheio usam a capacidade cadastrada de '+N(f.tank_capacity_l,0)+' L como âncora.</div></div>';
+}
 function select50Block(blockIndex){
  if(!a50Map)return;
  const blockSel=E('a50BlockSelect');if(blockSel&&String(blockSel.value)!==String(blockIndex))blockSel.value=String(blockIndex);
@@ -234,6 +246,7 @@ function select50Block(blockIndex){
     '<div class="bgrid"><div><small>Velocidade rodando</small><strong>'+f(p.avg_speed_kmh_moving,1)+' km/h</strong></div><div><small>RPM rodando</small><strong>'+f(p.avg_rpm_moving,0)+'</strong></div><div><small>Subida acumulada</small><strong>'+f(totalAscent,0)+' m</strong></div><div><small>Descida acumulada</small><strong>'+f(totalDescent,0)+' m</strong></div></div>'+
     routeMem+
     '<div class="trip-note">* “Parado / sem rodar” é o tempo total da viagem menos o tempo identificado em movimento; inclui pernoites, filas e períodos sem telemetria contínua. “Marcha lenta” é medido separadamente com motor ligado e veículo parado.</div></div>'+
+    buildFinanceHtml()+
     buildRestHtml();
    requestAnimationFrame(()=>{const k=E('restInitialKey')?.dataset?.key;if(k){const s=E('restPeriodSelect');if(s)s.value=k;renderRestPeriod(k)}});
    return;
@@ -265,7 +278,7 @@ async function load50(tripId=''){
   const [r,mr]=await Promise.all([fetch(u,{cache:'no-store'}),fetch(mapUrl,{cache:'no-store'})]);
   const j=await r.json(),mj=await mr.json();
   if(!r.ok||!j.ok)throw Error(j.error||'50');
-  const b=j.blocks||[];a50Blocks=b;a50TripSummary=j.trip||null;a50Panorama=j.panorama||null;a50RestAnalysis=j.rest_analysis||null;
+  const b=j.blocks||[];a50Blocks=b;a50TripSummary=j.trip||null;a50Panorama=j.panorama||null;a50RestAnalysis=j.rest_analysis||null;a50Financial=j.financial||null;
   ensureA50Map();a50BaseLayer.clearLayers();a50HiLayer.clearLayers();
   a50RoutePoints=(mj.segments||[]).flat().filter(p=>p&&p.lat!=null&&p.lon!=null);
   const all=a50RoutePoints.map(p=>[Number(p.lat),Number(p.lon)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));
