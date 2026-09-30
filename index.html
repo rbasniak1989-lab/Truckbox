@@ -40,7 +40,7 @@ h2{font-size:12px;color:#b9c9da;text-transform:uppercase;letter-spacing:.08em;ma
   <div class="card"><div class="lab">RPM</div><div class="val"><span id="rpm">—</span> <span class="unit">rpm</span></div></div>
   <div class="card"><div class="lab">Marcha</div><div class="val" id="gear">—</div><div class="sub" id="selected">Selected —</div></div>
   <div class="card"><div class="lab">Média sessão</div><div class="val"><span id="avg">—</span> <span class="unit">km/L</span></div></div>
-  <div class="card"><div class="lab">Peso conjunto</div><div class="val"><span id="weight">—</span> <span class="unit">t</span></div></div>
+  <div class="card"><div class="lab">Peso CAN (sensor)</div><div class="val"><span id="weight">—</span> <span class="unit">t</span></div></div>
  </div>
 
  <div class="sec grid">
@@ -245,7 +245,7 @@ function select50Block(blockIndex){
    E('a50body').innerHTML=
     '<div class="trip-ai"><h3>TruckBox Intelligence — resumo da viagem</h3><p>'+esc(p.summary_text||'Analisando a telemetria desta viagem.')+'</p>'+(factorHtml?'<div class="trip-factors">'+factorHtml+'</div>':'')+'</div>'+
     '<div class="a50-detail"><h3>Panorama geral</h3>'+
-    '<div class="bgrid"><div><small>Distância</small><strong>'+f(p.distance_km??trip.distance_km??totalDist,1)+' km</strong></div><div><small>Diesel</small><strong>'+f(p.fuel_liters??trip.fuel_liters??totalFuel,1)+' L</strong></div><div><small>Média</small><strong>'+f(p.average_kml??trip.average_kml,2)+' km/L</strong></div><div><small>Peso conjunto CAN</small><strong>'+f(p.avg_gross_weight_t,1)+' t</strong></div></div>'+
+    '<div class="bgrid"><div><small>Distância</small><strong>'+f(p.distance_km??trip.distance_km??totalDist,1)+' km</strong></div><div><small>Diesel</small><strong>'+f(p.fuel_liters??trip.fuel_liters??totalFuel,1)+' L</strong></div><div><small>Média</small><strong>'+f(p.average_kml??trip.average_kml,2)+' km/L</strong></div><div><small>Peso declarado total</small><strong>'+f(p.declared_gross_weight_t,1)+' t</strong></div></div>'+
     '<div class="bgrid"><div><small>Duração total</small><strong>'+fmtDur(p.elapsed_seconds)+'</strong></div><div><small>Rodando</small><strong>'+fmtDur(p.moving_seconds)+'</strong></div><div><small>Parado / sem rodar*</small><strong>'+fmtDur(p.stopped_estimated_seconds)+'</strong></div><div><small>Marcha lenta</small><strong>'+fmtDur(p.idle_seconds)+'</strong></div></div>'+
     '<div class="bgrid"><div><small>Motor ligado medido</small><strong>'+fmtDur(p.engine_on_seconds_measured)+'</strong></div><div><small>Diesel em lenta</small><strong>'+f(p.idle_fuel_liters_estimated,1)+' L</strong></div><div><small>I-Roll rodando</small><strong>'+f(p.iroll_pct_moving,1)+'%</strong></div><div><small>Torque ≥80%</small><strong>'+f(p.high_torque_pct_moving,1)+'%</strong></div></div>'+
     '<div class="bgrid"><div><small>Velocidade rodando</small><strong>'+f(p.avg_speed_kmh_moving,1)+' km/h</strong></div><div><small>RPM rodando</small><strong>'+f(p.avg_rpm_moving,0)+'</strong></div><div><small>Subida acumulada</small><strong>'+f(totalAscent,0)+' m</strong></div><div><small>Descida acumulada</small><strong>'+f(totalDescent,0)+' m</strong></div></div>'+
