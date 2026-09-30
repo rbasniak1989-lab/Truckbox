@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
         if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return null
         val raw = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
         if (raw.isBlank()) return null
-        return Regex("""https?://\\S+""").find(raw)?.value?.trimEnd('.', ',', ')', ']') ?: raw
+        return Regex("""https?://\S+""").find(raw)?.value?.trimEnd('.', ',', ')', ']') ?: raw
     }
 
     private fun requestGatewayPermissions() {
