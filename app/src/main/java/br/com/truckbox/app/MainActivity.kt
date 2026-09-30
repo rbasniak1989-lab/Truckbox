@@ -21,10 +21,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.truckbox.app.cloud.RoutePlannerClient
 import br.com.truckbox.app.cloud.TruckBoxCloudClient
 import br.com.truckbox.app.gateway.GatewayStatus
 import br.com.truckbox.app.gateway.TruckBoxGatewayService
 import br.com.truckbox.app.operations.OperationsStore
+import br.com.truckbox.app.operations.RoutePlanSnapshot
 import br.com.truckbox.app.preferences.TruckBoxPreferences
 import br.com.truckbox.app.ui.theme.TruckBoxTheme
 import kotlinx.coroutines.Dispatchers
@@ -35,14 +37,34 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private val sharedRouteText = mutableStateOf<String?>(null)
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         startGatewayServiceIfPossible()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        sharedRouteText.value = extractSharedRoute(intent)
         requestGatewayPermissions()
-        setContent { DriverApp() }
+        setContent {
+            DriverApp(
+                sharedRouteText = sharedRouteText.value,
+                onSharedRouteConsumed = { sharedRouteText.value = null },
+            )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractSharedRoute(intent)?.let { sharedRouteText.value = it }
+    }
+
+    private fun extractSharedRoute(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return null
+        val raw = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (raw.isBlank()) return null
+        return Regex("""https?://\\S+""").find(raw)?.value?.trimEnd('.', ',', ')', ']') ?: raw
     }
 
     private fun requestGatewayPermissions() {
@@ -67,15 +89,26 @@ private enum class DriverPage(val title: String) { STATUS("Status"), TRIP("Viage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DriverApp() {
+private fun DriverApp(
+    sharedRouteText: String?,
+    onSharedRouteConsumed: () -> Unit,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { TruckBoxPreferences(context) }
     val store = remember { OperationsStore(context) }
     val cloud = remember { TruckBoxCloudClient(prefs) }
+    val routePlanner = remember { RoutePlannerClient(prefs) }
     val scope = rememberCoroutineScope()
     val gateway by GatewayStatus.state.collectAsState()
     val operations by store.state.collectAsState()
     var page by remember { mutableStateOf(DriverPage.STATUS) }
+    var routePlan by remember { mutableStateOf<RoutePlanSnapshot?>(null) }
+    var routePlanning by remember { mutableStateOf(false) }
+    var routePlanError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(sharedRouteText) {
+        if (!sharedRouteText.isNullOrBlank()) page = DriverPage.TRIP
+    }
 
     // Snapshot Cloud enquanto a tela estiver aberta. Os cadastros locais continuam válidos offline.
     LaunchedEffect(Unit) {
@@ -94,7 +127,7 @@ private fun DriverApp() {
                     title = {
                         Column {
                             Text("TruckBox Motorista", fontWeight = FontWeight.Bold)
-                            Text("Gateway Android • v0.6.1", fontSize = 11.sp)
+                            Text("Gateway Android • v0.6.3", fontSize = 11.sp)
                         }
                     },
                     actions = {
@@ -130,6 +163,39 @@ private fun DriverApp() {
                         active = operations.activeTrip,
                         odometerKm = gateway.odometerKm,
                         coreFuelLiters = gateway.coreFuelLiters,
+                        routePlan = routePlan,
+                        routePlanning = routePlanning,
+                        routePlanError = routePlanError,
+                        sharedRouteText = sharedRouteText,
+                        onSharedRouteConsumed = onSharedRouteConsumed,
+                        onCalculateRoute = { link, origin, destination, weight, rate ->
+                            routePlanning = true
+                            routePlanError = null
+                            scope.launch {
+                                val response = withContext(Dispatchers.IO) {
+                                    routePlanner.calculate(link, origin, destination, weight, rate)
+                                }
+                                routePlanning = false
+                                routePlan = response.plan
+                                routePlanError = response.error
+                            }
+                        },
+                        onStartPlan = { plan ->
+                            store.startTrip(
+                                plan.origin, plan.destination, plan.cargoWeightT, plan.ratePerT,
+                                gateway.odometerKm, gateway.coreFuelLiters ?: 0.0, plan
+                            )
+                            val started = store.state.value.activeTrip
+                            routePlan = null
+                            routePlanError = null
+                            started?.let { trip ->
+                                scope.launch(Dispatchers.IO) {
+                                    cloud.syncTrip(trip)
+                                    routePlanner.attachToTrip(plan.simulationId, trip.clientUid)
+                                }
+                            }
+                        },
+                        onDiscardPlan = { routePlan = null; routePlanError = null },
                         onStart = { origin, destination, weight, rate ->
                             store.startTrip(origin, destination, weight, rate, gateway.odometerKm, gateway.coreFuelLiters ?: 0.0)
                             store.state.value.activeTrip?.let { scope.launch(Dispatchers.IO) { cloud.syncTrip(it) } }
@@ -211,15 +277,67 @@ private fun TripPage(
     active: br.com.truckbox.app.operations.TripRecord?,
     odometerKm: Double?,
     coreFuelLiters: Double?,
+    routePlan: RoutePlanSnapshot?,
+    routePlanning: Boolean,
+    routePlanError: String?,
+    sharedRouteText: String?,
+    onSharedRouteConsumed: () -> Unit,
+    onCalculateRoute: (String, String, String, Double, Double?) -> Unit,
+    onStartPlan: (RoutePlanSnapshot) -> Unit,
+    onDiscardPlan: () -> Unit,
     onStart: (String, String, Double?, Double?) -> Unit,
     onEnd: () -> Unit,
 ) {
     var showStart by remember { mutableStateOf(false) }
+    var showCalculate by remember { mutableStateOf(false) }
+    var sharedLink by remember { mutableStateOf("") }
+
+    LaunchedEffect(sharedRouteText) {
+        if (!sharedRouteText.isNullOrBlank()) {
+            sharedLink = sharedRouteText
+            showCalculate = true
+            onSharedRouteConsumed()
+        }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Viagem", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (active == null) {
             Text("Nenhuma viagem carregada ativa.")
-            Button(onClick = { showStart = true }, modifier = Modifier.fillMaxWidth()) { Text("INICIAR NOVA VIAGEM") }
+            Button(onClick = { sharedLink = ""; showCalculate = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Route, null); Spacer(Modifier.width(8.dp)); Text("CALCULAR ROTA")
+            }
+            OutlinedButton(onClick = { showStart = true }, modifier = Modifier.fillMaxWidth()) { Text("INICIAR NOVA VIAGEM") }
+
+            if (routePlanning) {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(24.dp)); Spacer(Modifier.width(12.dp))
+                        Text("Calculando rota, relevo e previsão de diesel…", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            if (!routePlanError.isNullOrBlank()) {
+                Text(routePlanError, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+            }
+            routePlan?.let { plan ->
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("SIMULAÇÃO DE ROTA", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Text("${plan.origin} → ${plan.destination}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("Carga: ${String.format(Locale.US, "%.1f t", plan.cargoWeightT)} • Peso operacional: ${String.format(Locale.US, "%.1f t", plan.grossWeightT)}")
+                        Text("Distância: ${plan.routeDistanceKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
+                        Text("Subida: ${plan.ascentM?.let { String.format(Locale.US, "%.0f m", it) } ?: "—"} • Descida: ${plan.descentM?.let { String.format(Locale.US, "%.0f m", it) } ?: "—"}")
+                        Text("Consumo previsto: ${plan.expectedKml?.let { String.format(Locale.US, "%.2f km/L", it) } ?: "—"}", fontWeight = FontWeight.Bold)
+                        Text("Diesel previsto: ${plan.predictedFuelLiters?.let { String.format(Locale.US, "%.1f L", it) } ?: "—"}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                        if (plan.predictedFuelLowL != null && plan.predictedFuelHighL != null) {
+                            Text("Faixa: ${String.format(Locale.US, "%.0f–%.0f L", plan.predictedFuelLowL, plan.predictedFuelHighL)} • Confiança: ${plan.confidence.uppercase()}")
+                        }
+                        Text("Memória da estrada: ${plan.routeMemoryCoveragePct?.let { String.format(Locale.US, "%.0f%%", it) } ?: "0%"} • Modelo de relevo: ${plan.geographyModelCoveragePct?.let { String.format(Locale.US, "%.0f%%", it) } ?: "0%"}", fontSize = 12.sp)
+                        Button(onClick = { onStartPlan(plan) }, modifier = Modifier.fillMaxWidth()) { Text("INICIAR ESTA VIAGEM") }
+                        OutlinedButton(onClick = onDiscardPlan, modifier = Modifier.fillMaxWidth()) { Text("DESCARTAR SIMULAÇÃO") }
+                    }
+                }
+            }
         } else {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -240,12 +358,69 @@ private fun TripPage(
                     Text("Distância da viagem: ${distanceKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
                     Text("Consumido na viagem: ${tripFuelLiters?.let { String.format(Locale.US, "%.1f L", it) } ?: "—"}")
                     Text("Média geral: ${averageKml?.let { String.format(Locale.US, "%.2f km/L", it) } ?: "—"}")
+                    if (active.plannedFuelLiters != null) {
+                        HorizontalDivider()
+                        Text("Previsto no início: ${String.format(Locale.US, "%.1f L", active.plannedFuelLiters)}", fontWeight = FontWeight.Bold)
+                        active.plannedDistanceKm?.let { Text("Rota planejada: ${String.format(Locale.US, "%.1f km", it)}") }
+                    }
                 }
             }
             Button(onClick = onEnd, modifier = Modifier.fillMaxWidth()) { Text("ENCERRAR VIAGEM") }
         }
     }
     if (showStart) StartTripDialog(onDismiss = { showStart = false }) { o, d, w, r -> onStart(o, d, w, r); showStart = false }
+    if (showCalculate) CalculateRouteDialog(
+        initialLink = sharedLink,
+        onDismiss = { showCalculate = false },
+        onCalculate = { link, o, d, w, r ->
+            onCalculateRoute(link, o, d, w, r)
+            showCalculate = false
+        },
+    )
+}
+
+@Composable
+private fun CalculateRouteDialog(
+    initialLink: String,
+    onDismiss: () -> Unit,
+    onCalculate: (String, String, String, Double, Double?) -> Unit,
+) {
+    var link by remember(initialLink) { mutableStateOf(initialLink) }
+    var origin by remember { mutableStateOf("") }
+    var destination by remember { mutableStateOf("") }
+    var weight by remember { mutableStateOf("") }
+    var rate by remember { mutableStateOf("") }
+    val weightValue = weight.num()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Calcular rota") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    link, { link = it },
+                    label = { Text("Rota do Google Maps") },
+                    supportingText = { Text("Cole o link ou use Compartilhar → TruckBox no Google Maps.") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(origin, { origin = it }, label = { Text("Origem") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(destination, { destination = it }, label = { Text("Destino") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(weight, { weight = it }, label = { Text("Carga (t)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(rate, { rate = it }, label = { Text("Valor por tonelada (opcional)") }, modifier = Modifier.fillMaxWidth())
+                Text("A simulação não cria uma viagem. Ela só vira viagem real quando você tocar em Iniciar esta viagem.", fontSize = 12.sp)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCalculate(link, origin, destination, weightValue ?: 0.0, rate.num()) },
+                enabled = link.isNotBlank() && origin.isNotBlank() && destination.isNotBlank() && weightValue != null && weightValue >= 0,
+            ) { Text("CALCULAR") }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("CANCELAR") } },
+    )
 }
 
 @Composable
