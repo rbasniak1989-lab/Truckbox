@@ -108,7 +108,7 @@ const MAP='https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-map-da
 const A50='https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-trip-50km';
 const E=id=>document.getElementById(id), N=(v,d=1)=>v==null||!Number.isFinite(Number(v))?'—':Number(v).toFixed(d);
 const CV=1.3596216173;
-let currentTripId='', map=null, layer=null, a50Map=null, a50BaseLayer=null, a50HiLayer=null, a50RoutePoints=[], a50Blocks=[];
+let currentTripId='', map=null, layer=null, a50Map=null, a50BaseLayer=null, a50HiLayer=null, a50RoutePoints=[], a50Blocks=[], a50TripSummary=null;
 
 function statusClass(s){s=String(s||'');if(s.includes('anomaly'))return'bad';if(s.includes('attention'))return'warn';if(s==='normal'||s==='above_expected')return'good';return''}
 async function tick(){
@@ -178,10 +178,26 @@ function ensureA50Map(){
  setTimeout(()=>a50Map.invalidateSize(),80);
 }
 function select50Block(blockIndex){
- const x=a50Blocks.find(z=>Number(z.block_index)===Number(blockIndex));
- if(!x||!a50Map)return;
+ if(!a50Map)return;
  const blockSel=E('a50BlockSelect');if(blockSel&&String(blockSel.value)!==String(blockIndex))blockSel.value=String(blockIndex);
  a50HiLayer.clearLayers();
+ if(String(blockIndex)==='general'){
+   const f=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
+   const all=a50RoutePoints.map(p=>[Number(p.lat),Number(p.lon)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));
+   if(all.length>=2)a50Map.fitBounds(all,{padding:[20,20]});
+   const trip=a50TripSummary||{};
+   const totalAscent=a50Blocks.reduce((s,x)=>s+(Number(x.ascent_m)||0),0);
+   const totalDescent=a50Blocks.reduce((s,x)=>s+(Number(x.descent_m)||0),0);
+   const totalFuel=a50Blocks.reduce((s,x)=>s+(Number(x.fuel_liters)||0),0);
+   const totalDist=a50Blocks.reduce((s,x)=>s+(Number(x.distance_km)||0),0);
+   const weightedSpeed=totalDist>0?a50Blocks.reduce((s,x)=>s+(Number(x.avg_speed_kmh)||0)*(Number(x.distance_km)||0),0)/totalDist:null;
+   E('a50MapTitle').textContent='Viagem geral';
+   E('a50MapMeta').textContent=(trip.origin||'—')+' → '+(trip.destination||'—');
+   E('a50body').innerHTML='<div class="a50-detail"><h3>Resumo da viagem</h3><div class="bgrid"><div><small>Distância</small><strong>'+f(trip.distance_km??totalDist,1)+' km</strong></div><div><small>Diesel</small><strong>'+f(trip.fuel_liters??totalFuel,1)+' L</strong></div><div><small>Média</small><strong>'+f(trip.average_kml??((totalFuel>0)?totalDist/totalFuel:null),2)+' km/L</strong></div><div><small>Velocidade média</small><strong>'+f(weightedSpeed,1)+' km/h</strong></div></div><div class="bgrid"><div><small>Subida acumulada</small><strong>'+f(totalAscent,0)+' m</strong></div><div><small>Descida acumulada</small><strong>'+f(totalDescent,0)+' m</strong></div><div><small>Blocos analisados</small><strong>'+a50Blocks.length+'</strong></div><div><small>Status</small><strong>'+(trip.status==='ACTIVE'?'Em andamento':'Concluída')+'</strong></div></div></div>';
+   return;
+ }
+ const x=a50Blocks.find(z=>Number(z.block_index)===Number(blockIndex));
+ if(!x)return;
  const o1=Number(x.odometer_from),o2=Number(x.odometer_to);
  const pts=a50RoutePoints
    .filter(p=>Number.isFinite(Number(p.odometer_km))&&Number(p.odometer_km)>=o1&&Number(p.odometer_km)<=o2)
@@ -207,7 +223,7 @@ async function load50(tripId=''){
   const [r,mr]=await Promise.all([fetch(u,{cache:'no-store'}),fetch(mapUrl,{cache:'no-store'})]);
   const j=await r.json(),mj=await mr.json();
   if(!r.ok||!j.ok)throw Error(j.error||'50');
-  const b=j.blocks||[];a50Blocks=b;
+  const b=j.blocks||[];a50Blocks=b;a50TripSummary=j.trip||null;
   ensureA50Map();a50BaseLayer.clearLayers();a50HiLayer.clearLayers();
   a50RoutePoints=(mj.segments||[]).flat().filter(p=>p&&p.lat!=null&&p.lon!=null);
   const all=a50RoutePoints.map(p=>[Number(p.lat),Number(p.lon)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));
@@ -218,9 +234,9 @@ async function load50(tripId=''){
   setTimeout(()=>a50Map.invalidateSize(),80);
   const f=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
   const picker=E('a50BlockSelect');
-  picker.innerHTML=b.map(x=>'<option value="'+x.block_index+'">'+f(x.km_from,0)+'–'+f(x.km_to,0)+' km</option>').join('');
-  body.innerHTML=b.length?'Selecione um trecho acima.':'Nenhum bloco disponível.';
-  if(b.length){picker.value=String(b[0].block_index);select50Block(b[0].block_index);}
+  picker.innerHTML='<option value="general">Viagem geral</option>'+b.map(x=>'<option value="'+x.block_index+'">'+f(x.km_from,0)+'–'+f(x.km_to,0)+' km</option>').join('');
+  body.innerHTML=b.length?'Carregando resumo da viagem…':'Nenhum bloco disponível.';
+  picker.value='general';select50Block('general');
  }catch(e){body.textContent='Não foi possível carregar a análise de 50 km.';console.error(e)}
 }
 tick();loadAI();setInterval(tick,5000);setInterval(loadAI,30000);
