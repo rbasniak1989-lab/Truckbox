@@ -25,6 +25,14 @@ class TruckBoxCloudClient(private val prefs: TruckBoxPreferences) {
         put("start_core_fuel_liters", t.startFuelCounterL); putNullable("end_core_fuel_liters", t.endFuelCounterL)
         putNullable("weight_t", t.weightT); putNullable("rate_per_t", t.ratePerT); putNullable("freight_total", t.freightTotal)
         putNullable("distance_km", t.distanceKm); putNullable("fuel_liters", t.fuelLiters); putNullable("average_kml", t.averageKml)
+        putNullable("route_simulation_id", t.routeSimulationId); putNullable("planned_route_url", t.plannedRouteUrl)
+        putNullable("planned_distance_km", t.plannedDistanceKm); putNullable("planned_ascent_m", t.plannedAscentM); putNullable("planned_descent_m", t.plannedDescentM)
+        putNullable("planned_expected_kml", t.plannedExpectedKml); putNullable("planned_fuel_liters", t.plannedFuelLiters)
+        putNullable("planned_fuel_low_l", t.plannedFuelLowL); putNullable("planned_fuel_high_l", t.plannedFuelHighL)
+        putNullable("planned_forecast_confidence", t.plannedForecastConfidence)
+        if (!t.plannedForecastBasisJson.isNullOrBlank()) {
+            put("planned_forecast_basis", runCatching { JSONObject(t.plannedForecastBasisJson) }.getOrElse { t.plannedForecastBasisJson })
+        }
     })
 
     fun endTrip(t: TripRecord) = post("end_trip", JSONObject().apply {
