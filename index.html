@@ -209,6 +209,20 @@ function buildRestHtml(){
  const initial=(r.status==='ACTIVE'&&r.rolling_24h)?'rolling':('day:'+(fixed[0]?.day_index??0));
  return '<div class="rest-card"><div class="rest-head"><h3>Jornada e descanso</h3><select id="restPeriodSelect" class="rest-select" onchange="renderRestPeriod(this.value)">'+opts.join('')+'</select></div><div id="restPeriodBody"></div><div class="trip-note">Indicador operacional por telemetria. Não substitui tacógrafo, diário de bordo ou avaliação jurídica do cumprimento da Lei do Descanso.</div></div><span id="restInitialKey" data-key="'+initial+'" style="display:none"></span>';
 }
+function buildGeoHtml(){
+ const g=a50Panorama?.geography||null;
+ if(!g)return'';
+ const bias=g.direction_bias==='current_direction_heavier'
+   ?'Este sentido é geograficamente mais pesado'
+   :g.direction_bias==='reverse_direction_heavier'
+     ?'Este sentido é geograficamente mais favorável'
+     :'Os dois sentidos são geograficamente semelhantes';
+ return '<div class="rest-card"><div class="rest-head"><h3>Geografia da rota</h3></div>'+
+  '<div class="bgrid"><div><small>Altitude início</small><strong>'+N(g.start_altitude_m,0)+' m</strong></div><div><small>Altitude atual/final</small><strong>'+N(g.end_altitude_m,0)+' m</strong></div><div><small>Ganho líquido</small><strong>'+((Number(g.net_elevation_m)>=0?'+':'')+N(g.net_elevation_m,0))+' m</strong></div><div><small>Subida / 100 km</small><strong>'+N(g.ascent_m_per_100km,0)+' m</strong></div></div>'+
+  '<div class="bgrid"><div><small>Subida acumulada</small><strong>'+N(g.ascent_m,0)+' m</strong></div><div><small>Descida acumulada</small><strong>'+N(g.descent_m,0)+' m</strong></div><div><small>Aclive >2%</small><strong>'+N(g.uphill_2pct_km,1)+' km</strong></div><div><small>Aclive >4%</small><strong>'+N(g.uphill_4pct_km,1)+' km</strong></div></div>'+
+  '<div class="rest-alert '+(g.direction_bias==='reverse_direction_heavier'?'rest-ok':'')+'"><b>'+esc(bias)+'.</b> '+esc(g.explanation||'')+'</div>'+
+  '<div class="trip-note">Cálculo baseado somente no perfil GPS de altitude e no peso declarado da viagem. Não usa o histórico de consumo para decidir qual sentido é mais pesado.</div></div>';
+}
 function buildFinanceHtml(){
  const f=a50Financial||{};
  if(f.freight_total==null&&f.weight_t==null&&f.fuel_cost_total==null)return'';
@@ -251,6 +265,7 @@ function select50Block(blockIndex){
     '<div class="bgrid"><div><small>Velocidade rodando</small><strong>'+f(p.avg_speed_kmh_moving,1)+' km/h</strong></div><div><small>RPM rodando</small><strong>'+f(p.avg_rpm_moving,0)+'</strong></div><div><small>Subida acumulada</small><strong>'+f(totalAscent,0)+' m</strong></div><div><small>Descida acumulada</small><strong>'+f(totalDescent,0)+' m</strong></div></div>'+
     routeMem+
     '<div class="trip-note">* “Parado / sem rodar” é o tempo total da viagem menos o tempo identificado em movimento; inclui pernoites, filas e períodos sem telemetria contínua. “Marcha lenta” é medido separadamente com motor ligado e veículo parado.</div></div>'+
+    buildGeoHtml()+
     buildFinanceHtml()+
     buildRestHtml();
    requestAnimationFrame(()=>{const k=E('restInitialKey')?.dataset?.key;if(k){const s=E('restPeriodSelect');if(s)s.value=k;renderRestPeriod(k)}});
