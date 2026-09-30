@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>TruckBox Cloud</title>
+<link rel="preconnect" href="https://unpkg.com">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#06111e;--p:#0d1b2b;--p2:#102238;--line:#203d5d;--txt:#f5f8fc;--mut:#8ea4bd;--blue:#25a7ff;--green:#2ad66f;--yellow:#ffc247;--red:#ff4e5b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#0b2338 0,#06111e 36%,#04101a 100%);color:var(--txt);font-family:Arial,system-ui,sans-serif}
+.w{max-width:1500px;margin:auto;padding:14px}.head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;position:sticky;top:0;z-index:50;background:#06111eee;backdrop-filter:blur(10px);padding:9px 0}
+.brand{font-size:25px;font-weight:900;letter-spacing:.02em}.brand .box{color:#ff8a27}.brand .cloud{color:var(--blue);font-size:14px}.sub{font-size:11px;color:var(--mut);margin-top:2px}
+.statuses{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.pill{padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:#0a1726;font-size:11px;font-weight:800}.on{color:var(--green)}.off{color:var(--red)}
+.hero{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.card{background:linear-gradient(180deg,#11253b,#0b1928);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:0 7px 22px #0003}
+.lab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}.val{font-size:27px;font-weight:900;margin-top:5px}.unit{font-size:12px;color:var(--mut)}
+.sec{margin-top:10px}.grid{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:9px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}.sensors{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.mini{background:#091827;border:1px solid #1b3855;border-radius:11px;padding:9px}.mini b{display:block;font-size:18px;margin-top:4px}.row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #17314c}.row:last-child{border-bottom:0}.mut{color:var(--mut)}
+h2{font-size:12px;color:#b9c9da;text-transform:uppercase;letter-spacing:.08em;margin:0 0 9px}
+.ai{border-color:#31597b}.ai-top{display:flex;align-items:center;gap:8px;margin-bottom:9px}.dot{width:9px;height:9px;border-radius:50%;background:var(--mut)}.dot.good{background:var(--green)}.dot.warn{background:var(--yellow)}.dot.bad{background:var(--red)}
+.ai-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.ai-box{background:#091827;border:1px solid #1b3855;border-radius:11px;padding:9px}.ai-box strong{display:block;margin-top:4px;font-size:17px}.good{color:var(--green)}.warn{color:var(--yellow)}.bad{color:var(--red)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}.btn{border:1px solid #31597b;background:#0d2032;color:#fff;border-radius:13px;padding:13px;font-weight:900;cursor:pointer;text-align:left}.btn small{display:block;color:var(--mut);font-weight:500;margin-top:3px}.btn.blue{border-color:#1d78b6}.btn.green{border-color:#1b7c50}
+.modal{display:none;position:fixed;inset:0;background:#02080ff2;z-index:1000;padding:12px;overflow:auto}.modal.show{display:block}.shell{max-width:1250px;margin:auto;background:#081522;border:1px solid #24415f;border-radius:17px;overflow:hidden;min-height:70vh}.mhead{display:flex;gap:8px;align-items:center;padding:12px 14px;background:#0d1b2b;position:sticky;top:0;z-index:3}.mhead b{flex:1}.mhead button,.mhead select{background:#102238;color:#fff;border:1px solid #294b6e;border-radius:8px;padding:8px}.mbody{padding:11px}
+#map{height:65vh;min-height:420px}.mapinfo{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:8px}.box{background:#0d1b2b;border:1px solid #1b3855;border-radius:10px;padding:9px}.box small{color:var(--mut)}.box strong{display:block;margin-top:3px}
+.blocks{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.block{background:#0d1b2b;border:1px solid #1b3855;border-radius:11px;padding:10px}.block h3{margin:0 0 8px}.bgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;border-top:1px solid #18324b;padding-top:7px;margin-top:7px}.bgrid small{color:var(--mut)}.bgrid strong{display:block;margin-top:2px}
+.foot{text-align:center;color:#607c97;font-size:10px;padding:18px}
+@media(max-width:900px){.hero{grid-template-columns:repeat(2,1fr)}.grid,.grid2{grid-template-columns:1fr}.sensors{grid-template-columns:repeat(2,1fr)}.blocks{grid-template-columns:1fr}.mapinfo{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.w{padding:9px}.hero{grid-template-columns:repeat(2,1fr)}.val{font-size:23px}.ai-grid{grid-template-columns:1fr 1fr 1fr}.actions{grid-template-columns:1fr}.modal{padding:0}.shell{border:0;border-radius:0;min-height:100vh}.bgrid{grid-template-columns:repeat(2,1fr)}#map{height:68vh}}
+</style>
+</head>
+<body>
+<div class="w">
+ <div class="head">
+  <div><div class="brand">TRUCK<span class="box">BOX</span> <span class="cloud">CLOUD</span></div><div class="sub" id="truck">Volvo FH 540 • carregando</div></div>
+  <div class="statuses"><span class="pill" id="status">CARREGANDO</span><span class="pill" id="age">—</span></div>
+ </div>
+
+ <div class="hero">
+  <div class="card"><div class="lab">Velocidade</div><div class="val"><span id="speed">—</span> <span class="unit">km/h</span></div></div>
+  <div class="card"><div class="lab">RPM</div><div class="val"><span id="rpm">—</span> <span class="unit">rpm</span></div></div>
+  <div class="card"><div class="lab">Marcha</div><div class="val" id="gear">—</div><div class="sub" id="selected">Selected —</div></div>
+  <div class="card"><div class="lab">Média sessão</div><div class="val"><span id="avg">—</span> <span class="unit">km/L</span></div></div>
+  <div class="card"><div class="lab">Peso conjunto</div><div class="val"><span id="weight">—</span> <span class="unit">t</span></div></div>
+ </div>
+
+ <div class="sec grid">
+  <div class="card"><h2>Motor</h2><div class="sensors">
+   <div class="mini"><div class="lab">Temp. óleo</div><b id="ot">—</b></div>
+   <div class="mini"><div class="lab">Temp. água</div><b id="ct">—</b></div>
+   <div class="mini"><div class="lab">Pressão óleo</div><b id="op">—</b></div>
+   <div class="mini"><div class="lab">Pressão combustível</div><b id="fp">—</b></div>
+   <div class="mini"><div class="lab">Turbo</div><b id="boost">—</b></div>
+   <div class="mini"><div class="lab">Potência</div><b id="power">—</b></div>
+  </div></div>
+  <div class="card"><h2>Transmissão</h2>
+   <div class="row"><span class="mut">Óleo caixa</span><b id="tt">—</b></div>
+   <div class="row"><span class="mut">Pedal</span><b id="pedal">—</b></div>
+   <div class="row"><span class="mut">Torque</span><b id="torque">—</b></div>
+   <div class="row"><span class="mut">I-Roll</span><b id="iroll">—</b></div>
+   <div class="row"><span class="mut">VEB</span><b id="veb">—</b></div>
+  </div>
+  <div class="card"><h2>Operação</h2>
+   <div class="row"><span class="mut">Distância sessão</span><b id="dist">—</b></div>
+   <div class="row"><span class="mut">Diesel sessão</span><b id="liters">—</b></div>
+   <div class="row"><span class="mut">Odômetro</span><b id="odo">—</b></div>
+   <div class="row"><span class="mut">Tanque estimado</span><b id="tank">—</b></div>
+   <div class="row"><span class="mut">Viagem</span><b id="route">—</b></div>
+  </div>
+ </div>
+
+ <div class="sec grid2">
+  <div class="card ai">
+   <div class="ai-top"><span id="aidot" class="dot"></span><div><h2 style="margin:0">TruckBox Intelligence • IA v1</h2><div class="sub" id="aistate">Comparando com o histórico do próprio caminhão</div></div></div>
+   <div class="ai-grid">
+    <div class="ai-box" id="aioilbox"><div class="lab">Pressão óleo</div><strong id="aioil">—</strong><div class="sub" id="aioilsub">—</div></div>
+    <div class="ai-box" id="aieffbox"><div class="lab">Eficiência</div><strong id="aieff">—</strong><div class="sub" id="aieffsub">—</div></div>
+    <div class="ai-box" id="aianbox"><div class="lab">Anomalias</div><strong id="aian">—</strong><div class="sub" id="aiansub">—</div></div>
+   </div>
+  </div>
+  <div class="card"><h2>Ferramentas</h2><div class="actions">
+   <button class="btn blue" onclick="openMap()">🗺️ Mapa GPS<small>Trajeto, posição, paradas e eventos</small></button>
+   <button class="btn green" onclick="open50()">⛽ Análise 50 km<small>Consumo e desempenho por blocos</small></button>
+  </div></div>
+ </div>
+
+ <div class="foot">TruckBox Cloud • dados ao vivo a cada 5 s • Intelligence a cada 30 s</div>
+</div>
+
+<div class="modal" id="mapModal"><div class="shell">
+ <div class="mhead"><b>Mapa GPS</b><select id="tripSelect" onchange="loadMap(this.value)"></select><button onclick="loadMap(document.getElementById('tripSelect').value)">↻</button><button onclick="closeModal('mapModal')">✕</button></div>
+ <div class="mbody"><div id="map"></div><div class="mapinfo">
+  <div class="box"><small>Posição</small><strong id="mpos">—</strong></div>
+  <div class="box"><small>Odômetro</small><strong id="modo">—</strong></div>
+  <div class="box"><small>Viagem</small><strong id="mdist">—</strong></div>
+  <div class="box"><small>Eventos</small><strong id="mevents">—</strong></div>
+ </div></div>
+</div></div>
+
+<div class="modal" id="a50Modal"><div class="shell">
+ <div class="mhead"><b>Análise de consumo — blocos de 50 km</b><button onclick="load50()">↻</button><button onclick="closeModal('a50Modal')">✕</button></div>
+ <div class="mbody" id="a50body">Carregando…</div>
+</div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API='https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-dashboard-data';
+const MAP='https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-map-data';
+const A50='https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-trip-50km';
+const E=id=>document.getElementById(id), N=(v,d=1)=>v==null||!Number.isFinite(Number(v))?'—':Number(v).toFixed(d);
+const CV=1.3596216173;
+let currentTripId='', map=null, layer=null;
+
+function statusClass(s){s=String(s||'');if(s.includes('anomaly'))return'bad';if(s.includes('attention'))return'warn';if(s==='normal'||s==='above_expected')return'good';return''}
+async function tick(){
+ try{
+  const r=await fetch(API,{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'api');
+  const d=j.latest?.data||{},raw=d.raw||{};
+  E('status').textContent=j.online?'● ONLINE':'● OFFLINE';E('status').className='pill '+(j.online?'on':'off');E('age').textContent='há '+Math.round((j.age_ms||0)/1000)+' s';
+  E('truck').textContent=(j.truck?.name||j.truck?.code||'Volvo FH 540')+' • seq '+(j.latest?.seq??'—');
+  E('speed').textContent=N(d.speed_kmh,1);E('rpm').textContent=N(d.rpm,0);
+  E('gear').textContent=d.gear==null?'—':Number(d.gear)===0?'N':d.gear;E('selected').textContent='Selected '+(d.selected_gear==null?'—':Number(d.selected_gear)===0?'N':d.selected_gear);
+  E('avg').textContent=N(d.trip_average_kml,2);
+  const wt=Number(d.total_weight_can_kg??raw.total_weight_can_kg);E('weight').textContent=Number.isFinite(wt)?(wt/1000).toFixed(1):'—';
+  E('ot').textContent=N(d.oil_temp_c,1)+' °C';E('ct').textContent=N(d.coolant_temp_c,1)+' °C';E('op').textContent=N(d.oil_pressure_bar,2)+' bar';E('fp').textContent=N(d.fuel_pressure_bar,2)+' bar';E('boost').textContent=N(d.boost_bar,2)+' bar';
+  const kw=Number(d.power_kw??raw.power_kw);E('power').textContent=Number.isFinite(kw)?Math.round(kw*CV)+' cv':'—';
+  E('tt').textContent=N(d.gearbox_temp_c,1)+' °C';E('pedal').textContent=N(d.pedal_pct,0)+' %';E('torque').textContent=N(d.torque_pct,0)+' %';
+  E('iroll').textContent=(d.iroll_active??raw.iroll_active)?'Ativo':'—';E('veb').textContent=(d.veb_active??raw.veb_active)?('Nível '+(d.veb_stage??raw.veb_stage??'—')):'—';
+  E('dist').textContent=N(d.trip_distance_km,1)+' km';E('liters').textContent=N(d.trip_fuel_l,1)+' L';E('odo').textContent=N(d.odometer_km,1)+' km';E('tank').textContent=j.operation?.tank_estimated_l==null?'—':N(j.operation.tank_estimated_l,1)+' L';
+  currentTripId=j.trip?.id||'';E('route').textContent=j.trip?(j.trip.origin+' → '+j.trip.destination):'—';
+ }catch(e){E('status').textContent='ERRO';E('status').className='pill off';console.error(e)}
+}
+async function loadAI(){
+ try{
+  const r=await fetch(API+'?view=intelligence',{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'ai');const a=j.intelligence||{};
+  const oc=statusClass(a.oil_status),ac=statusClass(a.anomaly_status);let overall=(oc==='bad'||ac==='bad')?'bad':(oc==='warn'||ac==='warn')?'warn':'good';
+  E('aidot').className='dot '+overall;E('aistate').textContent=overall==='good'?'Motor dentro do padrão histórico':overall==='warn'?'Há sinal que merece atenção':'Anomalia persistente detectada';
+  E('aioil').textContent=N(a.oil_pressure_bar,2)+' bar';E('aioil').className=oc;E('aioilsub').textContent='Esperado '+N(a.oil_expected_bar,2)+' bar';
+  const ef=Number(a.efficiency_delta_pct);E('aieff').textContent=Number.isFinite(ef)?(ef>=0?'+':'')+ef.toFixed(1)+'%':'—';E('aieff').className=Number.isFinite(ef)?(ef<-25?'bad':ef<-15?'warn':'good'):'';
+  E('aieffsub').textContent='Obs. '+N(a.observed_kml,2)+' • esp. '+N(a.expected_kml,2)+' km/L';
+  E('aian').textContent=a.anomaly_status==='normal'?'Nenhuma':(a.anomaly_status==='attention'?'Atenção':'Anomalia');E('aian').className=ac;E('aiansub').textContent=a.top_signal?('Maior desvio: '+a.top_signal):'Sinais estáveis';
+ }catch(e){E('aistate').textContent='Intelligence indisponível';console.error(e)}
+}
+function closeModal(id){E(id).classList.remove('show')}
+async function openMap(){E('mapModal').classList.add('show');await loadMap(currentTripId)}
+async function loadMap(tripId=''){
+ try{
+  const r=await fetch(MAP+(tripId?'?trip_id='+encodeURIComponent(tripId):''),{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'map');
+  const sel=E('tripSelect'),cid=j.trip?.id||'';sel.innerHTML=(j.trips||[]).map(t=>'<option value="'+t.id+'" '+(t.id===cid?'selected':'')+'>'+String(t.origin||'—')+' → '+String(t.destination||'—')+(t.status==='ACTIVE'?' • em andamento':'')+'</option>').join('');
+  if(!map){map=L.map('map');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);layer=L.layerGroup().addTo(map)}else layer.clearLayers();
+  setTimeout(()=>map.invalidateSize(),80);const bounds=[];
+  (j.segments||[]).forEach(seg=>{const pts=(seg||[]).map(p=>[+p.lat,+p.lon]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));if(pts.length){L.polyline(pts,{color:'#25a7ff',weight:4,opacity:.85}).addTo(layer);pts.forEach(p=>bounds.push(p))}});
+  (j.stops||[]).forEach(s=>L.circleMarker([s.lat,s.lon],{radius:5,color:'#ffc247',fillOpacity:.9}).addTo(layer).bindPopup('Parada • '+Math.round((s.duration_seconds||0)/60)+' min'));
+  (j.events||[]).forEach(ev=>{if(ev.lat!=null&&ev.lon!=null)L.circleMarker([ev.lat,ev.lon],{radius:5,color:'#ff6b45',fillOpacity:.9}).addTo(layer).bindPopup(ev.label||ev.type)});
+  const la=Number(j.latest?.lat),lo=Number(j.latest?.lon);if(Number.isFinite(la)&&Number.isFinite(lo)){L.circleMarker([la,lo],{radius:9,color:'#fff',fillColor:'#25a7ff',fillOpacity:1,weight:3}).addTo(layer);bounds.push([la,lo]);E('mpos').textContent=la.toFixed(5)+', '+lo.toFixed(5)}
+  E('modo').textContent=N(j.latest?.odometer_km,1)+' km';E('mdist').textContent=N(j.trip?.distance_km,1)+' km • '+N(j.trip?.average_kml,2)+' km/L';E('mevents').textContent=(j.stops||[]).length+' paradas • '+(j.events||[]).length+' eventos';
+  if(bounds.length>1)map.fitBounds(bounds,{padding:[25,25]});else if(bounds.length===1)map.setView(bounds[0],14);else map.setView([-23.5,-51.5],6);
+ }catch(e){console.error(e);E('mpos').textContent='Mapa indisponível'}
+}
+async function open50(){E('a50Modal').classList.add('show');await load50()}
+async function load50(){
+ const body=E('a50body');body.textContent='Carregando…';
+ try{
+  let u=A50+'?block_km=50';if(currentTripId)u+='&trip_id='+encodeURIComponent(currentTripId);const r=await fetch(u,{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'50');
+  const b=j.blocks||[];const f=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
+  body.innerHTML='<div class="blocks">'+b.map(x=>'<div class="block"><h3>'+f(x.km_from,0)+'–'+f(x.km_to,0)+' km</h3><div class="bgrid"><div><small>Distância</small><strong>'+f(x.distance_km)+' km</strong></div><div><small>Diesel</small><strong>'+f(x.fuel_liters)+' L</strong></div><div><small>Média</small><strong>'+f(x.average_kml,2)+' km/L</strong></div><div><small>Velocidade</small><strong>'+f(x.avg_speed_kmh)+' km/h</strong></div></div><div class="bgrid"><div><small>RPM</small><strong>'+f(x.avg_rpm,0)+'</strong></div><div><small>Torque</small><strong>'+f(x.avg_torque_pct)+'%</strong></div><div><small>I-Roll</small><strong>'+f(x.iroll_pct)+'%</strong></div><div><small>VEB</small><strong>'+f(x.veb_pct)+'%</strong></div></div><div class="bgrid"><div><small>Turbo</small><strong>'+f(x.avg_boost_bar,2)+' bar</strong></div><div><small>Combustível</small><strong>'+f(x.avg_fuel_pressure_bar,2)+' bar</strong></div><div><small>Óleo máx.</small><strong>'+f(x.max_oil_temp_c,0)+' °C</strong></div><div><small>Água máx.</small><strong>'+f(x.max_coolant_temp_c,0)+' °C</strong></div></div></div>').join('')+'</div>';
+ }catch(e){body.textContent='Não foi possível carregar a análise de 50 km.';console.error(e)}
+}
+tick();loadAI();setInterval(tick,5000);setInterval(loadAI,30000);
+</script>
+</body></html>
