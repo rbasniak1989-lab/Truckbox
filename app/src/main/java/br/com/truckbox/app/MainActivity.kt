@@ -339,6 +339,29 @@ private fun TripPage(
                 }
             }
         } else {
+            Button(onClick = { sharedLink = ""; showCalculate = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Route, null); Spacer(Modifier.width(8.dp)); Text("CALCULAR PRÓXIMA ROTA")
+            }
+            if (routePlanning) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(24.dp)); Spacer(Modifier.width(12.dp))
+                    Text("Calculando rota, relevo e previsão de diesel…", fontWeight = FontWeight.Bold)
+                }
+            }
+            if (!routePlanError.isNullOrBlank()) {
+                Text(routePlanError, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+            }
+            routePlan?.let { plan ->
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("SIMULAÇÃO DA PRÓXIMA ROTA", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Text("${plan.origin} → ${plan.destination}", fontWeight = FontWeight.Bold)
+                        Text("Diesel previsto: ${plan.predictedFuelLiters?.let { String.format(Locale.US, "%.1f L", it) } ?: "—"}", fontWeight = FontWeight.Black)
+                        Text("Encerre a viagem atual para habilitar “Iniciar esta viagem”.", fontSize = 12.sp)
+                        OutlinedButton(onClick = onDiscardPlan, modifier = Modifier.fillMaxWidth()) { Text("DESCARTAR SIMULAÇÃO") }
+                    }
+                }
+            }
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("${active.origin} → ${active.destination}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
