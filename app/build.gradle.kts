@@ -11,8 +11,8 @@ android {
         applicationId = "br.com.truckbox.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 61
-        versionName = "0.6.1-driver-gateway"
+        versionCode = 63
+        versionName = "0.6.3-route-planner"
     }
 
     buildFeatures {
