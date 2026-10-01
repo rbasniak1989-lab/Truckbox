@@ -307,25 +307,68 @@ async function load50(tripId=''){
  const body=E('a50body');body.textContent='Carregando…';
  try{
   const chosen=tripId||currentTripId;
-  let u=A50+'?block_km=50';if(chosen)u+='&trip_id='+encodeURIComponent(chosen);
+  let coreUrl=A50+'?mode=core&block_km=50';if(chosen)coreUrl+='&trip_id='+encodeURIComponent(chosen);
   const mapUrl=MAP+(chosen?'?trip_id='+encodeURIComponent(chosen):'');
-  const [r,mr]=await Promise.all([fetch(u,{cache:'no-store'}),fetch(mapUrl,{cache:'no-store'})]);
-  const j=await r.json(),mj=await mr.json();
+
+  const corePromise=fetch(coreUrl,{cache:'no-store'});
+  const mapPromise=fetch(mapUrl,{cache:'no-store'}).then(async r=>r.ok?await r.json():null).catch(()=>null);
+  const [r,mj]=await Promise.all([corePromise,mapPromise]);
+  const j=await r.json();
   if(!r.ok||!j.ok)throw Error(j.error||'50');
-  const b=j.blocks||[];a50Blocks=b;a50TripSummary=j.trip||null;a50Panorama=j.panorama||null;a50RestAnalysis=j.rest_analysis||null;a50Financial=j.financial||null;a50FuelForecast=j.fuel_forecast||null;
+
+  const b=j.blocks||[];
+  a50Blocks=b;
+  a50TripSummary=j.trip||null;
+  a50Panorama=null;
+  a50RestAnalysis=null;
+  a50Financial=null;
+  a50FuelForecast=null;
+
   ensureA50Map();a50BaseLayer.clearLayers();a50HiLayer.clearLayers();
-  a50RoutePoints=(mj.segments||[]).flat().filter(p=>p&&p.lat!=null&&p.lon!=null);
+  a50RoutePoints=((mj?.segments)||[]).flat().filter(p=>p&&p.lat!=null&&p.lon!=null);
   const all=a50RoutePoints.map(p=>[Number(p.lat),Number(p.lon)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));
   if(all.length>=2){
     L.polyline(all,{color:'#31597b',weight:4,opacity:.65}).addTo(a50BaseLayer);
     a50Map.fitBounds(all,{padding:[20,20]});
   }
   setTimeout(()=>a50Map.invalidateSize(),80);
+
   const f=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
   const picker=E('a50BlockSelect');
   picker.innerHTML='<option value="general">Viagem geral</option>'+b.map(x=>'<option value="'+x.block_index+'">'+f(x.km_from,0)+'–'+f(x.km_to,0)+' km</option>').join('');
-  body.innerHTML=b.length?'Carregando resumo da viagem…':'Nenhum bloco disponível.';
+  body.innerHTML=b.length?'Carregando detalhes adicionais…':'Nenhum bloco disponível.';
   picker.value='general';select50Block('general');
+
+  let extrasUrl=A50+'?mode=extras&block_km=50';if(chosen)extrasUrl+='&trip_id='+encodeURIComponent(chosen);
+  fetch(extrasUrl,{cache:'no-store'})
+    .then(async er=>{
+      const ej=await er.json();
+      if(!er.ok||!ej.ok)throw Error(ej.error||'extras');
+
+      const locMap=new Map((ej.location_blocks||[]).map(x=>[Number(x.block_index),x]));
+      a50Blocks=a50Blocks.map(b=>{
+        const l=locMap.get(Number(b.block_index))||{};
+        return {...b,
+          location_coverage_pct:l.location_coverage_pct??0,
+          expected_kml_location:l.expected_kml_location??null,
+          observed_kml_location_covered:l.observed_kml_covered??null,
+          efficiency_delta_pct_location:l.efficiency_delta_pct_location??null,
+          location_memory_cells:l.memory_cells??0,
+          location_weighted_cells:l.weighted_memory_cells??0,
+          location_min_passes:l.min_memory_passes??null,
+          location_max_passes:l.max_memory_passes??null
+        };
+      });
+      a50Panorama=ej.panorama??null;
+      a50RestAnalysis=ej.rest_analysis??null;
+      a50Financial=ej.financial??null;
+      a50FuelForecast=ej.fuel_forecast??null;
+
+      const selected=picker?.value||'general';
+      select50Block(selected);
+      if(ej.partial)console.warn('Detalhes parciais da viagem',ej.errors||{});
+    })
+    .catch(e=>console.warn('Detalhes adicionais indisponíveis; análise principal mantida.',e));
  }catch(e){body.textContent='Não foi possível carregar a análise de 50 km.';console.error(e)}
 }
 tick();loadAI();setInterval(tick,5000);setInterval(loadAI,30000);
