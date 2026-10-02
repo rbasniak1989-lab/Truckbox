@@ -116,7 +116,7 @@ private fun DriverApp(
             if (cloud.configured()) {
                 withContext(Dispatchers.IO) { cloud.snapshot() }?.let(store::applyCloudSnapshot)
             }
-            delay(15_000L)
+            delay(60_000L)
         }
     }
 
