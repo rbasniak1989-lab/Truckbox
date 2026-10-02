@@ -48,6 +48,7 @@ class CoreGatewayClient(context: Context, private val prefs: TruckBoxPreferences
         setRequestProperty("Connection", "close")
     }
 
+    @Synchronized
     fun fetchBatch(limit: Int = 8): GatewayBatch? {
         for (base in bases()) {
             try {
@@ -73,24 +74,41 @@ class CoreGatewayClient(context: Context, private val prefs: TruckBoxPreferences
         return null
     }
 
+    @Synchronized
     fun ack(seq: Long): Boolean {
         if (seq <= 0L) return false
         val form = "ack_seq=" + URLEncoder.encode(seq.toString(), Charsets.UTF_8.name())
+
+        // ACK pode ficar mais lento quando o LittleFS está cheio/compactando.
+        // Não reenvia o lote à Cloud imediatamente: insiste localmente primeiro.
         for (base in bases()) {
-            try {
-                val c = open(URL("$base/api/gateway/ack"))
-                c.requestMethod = "POST"
-                c.doOutput = true
-                c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-                c.outputStream.use { it.write(form.toByteArray(Charsets.UTF_8)) }
-                val ok = c.responseCode in 200..299
-                c.disconnect()
-                if (ok) { lastWorkingBase = base; return true }
-            } catch (_: Throwable) { }
+            repeat(3) { attempt ->
+                try {
+                    val c = binder.openWifiHttp(URL("$base/api/gateway/ack")).apply {
+                        connectTimeout = 2_500
+                        readTimeout = 15_000
+                        useCaches = false
+                        setRequestProperty("Connection", "close")
+                    }
+                    c.requestMethod = "POST"
+                    c.doOutput = true
+                    c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                    c.outputStream.use { it.write(form.toByteArray(Charsets.UTF_8)) }
+                    val ok = c.responseCode in 200..299
+                    c.disconnect()
+                    if (ok) {
+                        lastWorkingBase = base
+                        return true
+                    }
+                } catch (_: Throwable) {
+                    if (attempt < 2) Thread.sleep(300L)
+                }
+            }
         }
         return false
     }
 
+    @Synchronized
     fun fetchLive(): CoreLiveSnapshot? {
         for (base in bases()) {
             try {
@@ -113,6 +131,7 @@ class CoreGatewayClient(context: Context, private val prefs: TruckBoxPreferences
         return null
     }
 
+    @Synchronized
     fun pushGps(location: Location): Boolean {
         val args = linkedMapOf(
             "lat" to location.latitude.toString(),
