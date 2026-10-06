@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "api/recover.js": {
-      "maxDuration": 30
-    }
-  }
-}
