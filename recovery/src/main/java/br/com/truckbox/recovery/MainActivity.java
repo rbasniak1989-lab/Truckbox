@@ -283,7 +283,9 @@ public class MainActivity extends Activity {
         if (spoolFile.getParentFile() != null && !spoolFile.getParentFile().exists()) {
             if (!spoolFile.getParentFile().mkdirs()) throw new IllegalStateException("Falha ao criar pasta local");
         }
-        if (spoolFile.getUsableSpace() < line.length + 10L * 1024L * 1024L) {
+        File storageDir = getFilesDir();
+        long freeBytes = storageDir.getUsableSpace();
+        if (freeBytes > 0 && freeBytes < line.length + 10L * 1024L * 1024L) {
             throw new IllegalStateException("Pouco espaço livre no celular");
         }
 
