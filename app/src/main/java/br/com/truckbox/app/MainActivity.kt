@@ -127,7 +127,7 @@ private fun DriverApp(
                     title = {
                         Column {
                             Text("TruckBox Motorista", fontWeight = FontWeight.Bold)
-                            Text("Gateway Android • v0.6.3", fontSize = 11.sp)
+                            Text("Gateway Android • v0.6.4", fontSize = 11.sp)
                         }
                     },
                     actions = {

@@ -44,7 +44,7 @@ class TruckBoxGatewayService : Service(), LocationListener {
         super.onCreate()
         prefs = TruckBoxPreferences(this)
         core = CoreGatewayClient(this, prefs)
-        cloud = GatewayCloudClient(prefs)
+        cloud = GatewayCloudClient(this, prefs)
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         createChannel()
         startForeground(NOTIFICATION_ID, notification("Iniciando gateway…"))
@@ -143,7 +143,13 @@ class TruckBoxGatewayService : Service(), LocationListener {
 
             val result = cloud.upload(batch.samples, batch.deviceUid)
             if (result == null || result.ackSeq <= 0L) {
-                GatewayStatus.update { it.copy(cloudOnline = false, lastError = "Falha ao enviar lote para a Cloud") }
+                val detail = cloud.lastError?.take(220)
+                GatewayStatus.update {
+                    it.copy(
+                        cloudOnline = false,
+                        lastError = detail?.let { msg -> "Cloud: $msg" } ?: "Falha ao enviar lote para a Cloud",
+                    )
+                }
                 updateNotification()
                 delay(2_000L)
                 continue
