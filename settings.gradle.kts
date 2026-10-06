@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "TruckBox"
 include(":app")
 include(":multimedia")
+\ninclude(":recovery")\n
