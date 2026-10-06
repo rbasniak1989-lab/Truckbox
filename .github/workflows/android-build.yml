@@ -53,7 +53,7 @@ jobs:
           sed -i 's/item.findValue(keys, depth + 1)/item.findValue(wantedKeys, depth + 1)/g' "$FILE"
 
       - name: Build debug APKs
-        run: gradle --no-daemon --stacktrace :app:assembleDebug :multimedia:assembleDebug
+        run: gradle --no-daemon --stacktrace :app:assembleDebug :multimedia:assembleDebug :recovery:assembleDebug
 
       - name: Upload Motorista APK
         uses: actions/upload-artifact@v4
@@ -68,5 +68,13 @@ jobs:
         with:
           name: TruckBox-Multimedia-v0.3.0-FanExperimental-debug
           path: multimedia/build/outputs/apk/debug/multimedia-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Recovery APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-Recovery-v1.0.0-debug
+          path: recovery/build/outputs/apk/debug/recovery-debug.apk
           if-no-files-found: error
           retention-days: 30
