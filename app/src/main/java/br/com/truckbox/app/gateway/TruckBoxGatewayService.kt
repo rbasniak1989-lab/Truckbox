@@ -35,6 +35,7 @@ class TruckBoxGatewayService : Service(), LocationListener {
     private lateinit var prefs: TruckBoxPreferences
     private lateinit var core: CoreGatewayClient
     private lateinit var cloud: GatewayCloudClient
+    private lateinit var spool: TelemetrySpool
     private lateinit var locationManager: LocationManager
     private val lastFix = AtomicReference<Location?>(null)
     @Volatile private var coreOnline = false
@@ -45,12 +46,14 @@ class TruckBoxGatewayService : Service(), LocationListener {
         prefs = TruckBoxPreferences(this)
         core = CoreGatewayClient(this, prefs)
         cloud = GatewayCloudClient(this, prefs)
+        spool = TelemetrySpool(this)
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         createChannel()
         startForeground(NOTIFICATION_ID, notification("Iniciando gateway…"))
         GatewayStatus.update { it.copy(running = true, lastError = null) }
         requestLocation()
         scope.launch { gatewayLoop() }
+        scope.launch { cloudDrainLoop() }
         scope.launch { liveLoop() }
         scope.launch { gpsCloudLoop() }
         scope.launch { operationalSyncLoop() }
@@ -97,9 +100,8 @@ class TruckBoxGatewayService : Service(), LocationListener {
     }
 
     /**
-     * Caminho crítico novo:
-     * ESP/LittleFS -> GET batch -> Android HTTPS -> Cloud ACK -> POST ack -> ESP.
-     * Se qualquer passo falhar, o ESP NÃO libera o lote.
+     * ESP32 -> SQLite Android (COMMIT duravel) -> ACK ESP32.
+     * Sem espaco/erro SQLite, o lote fica no Core.
      */
     private suspend fun gatewayLoop() {
         while (currentCoroutineContext().isActive) {
@@ -107,16 +109,16 @@ class TruckBoxGatewayService : Service(), LocationListener {
                 delay(2_000L)
                 continue
             }
-
             val batch = core.fetchBatch(8)
             if (batch == null) {
                 coreOnline = false
-                GatewayStatus.update { it.copy(coreOnline = false, cloudOnline = false, lastError = "Core não encontrado na Starlink") }
+                GatewayStatus.update {
+                    it.copy(coreOnline = false, lastError = "Core nao encontrado na Starlink")
+                }
                 updateNotification()
                 delay(2_000L)
                 continue
             }
-
             coreOnline = true
             GatewayStatus.update {
                 it.copy(
@@ -124,64 +126,118 @@ class TruckBoxGatewayService : Service(), LocationListener {
                     pendingBytes = batch.pendingBytes,
                     lastAckSeq = batch.lastAckSeq,
                     lastBatchCount = batch.count,
-                    lastError = null,
                 )
             }
-
             if (batch.count <= 0) {
-                updateNotification()
                 delay(1_000L)
                 continue
             }
-
-            if (prefs.cloudDeviceToken.isBlank()) {
-                GatewayStatus.update { it.copy(cloudOnline = false, lastError = "Token Cloud do Core não configurado") }
+            try {
+                val saved = spool.persist(batch, prefs.cloudDeviceUid)
+                GatewayStatus.update {
+                    it.copy(
+                        androidPendingBytes = saved.bytes,
+                        androidPendingCount = saved.count,
+                        phoneNearLimit = saved.nearLimit,
+                        lastError = if (saved.nearLimit) "Fila Android proxima de 512 MB" else null,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                GatewayStatus.update {
+                    it.copy(lastError = "Dados no ESP32: ${e.message?.take(150)}")
+                }
                 updateNotification()
                 delay(5_000L)
                 continue
             }
-
-            val result = cloud.upload(batch.samples, batch.deviceUid)
-            if (result == null || result.ackSeq <= 0L) {
-                val detail = cloud.lastError?.take(220)
+            // NUNCA confirmar ao Core antes da transacao no SQLite.
+            if (!core.ack(batch.maxSeq)) {
                 GatewayStatus.update {
-                    it.copy(
-                        cloudOnline = false,
-                        lastError = detail?.let { msg -> "Cloud: $msg" } ?: "Falha ao enviar lote para a Cloud",
-                    )
+                    it.copy(lastError = "Salvo no Android; ACK ESP32 falhou, tentando novamente")
                 }
                 updateNotification()
-                delay(2_000L)
-                continue
-            }
-
-            // Segurança: só libera o lote se a Cloud confirmou pelo menos o maior seq oferecido.
-            if (result.ackSeq < batch.maxSeq) {
-                GatewayStatus.update { it.copy(cloudOnline = true, lastError = "ACK Cloud incompleto: ${result.ackSeq}/${batch.maxSeq}") }
-                delay(2_000L)
-                continue
-            }
-
-            if (!core.ack(batch.maxSeq)) {
-                // Sem problema de integridade: no próximo ciclo o mesmo lote volta e o upsert da Cloud é idempotente.
-                GatewayStatus.update { it.copy(cloudOnline = true, lastError = "Cloud recebeu, mas ACK local falhou; lote será repetido") }
                 delay(1_000L)
                 continue
             }
-
-            GatewayStatus.update {
-                it.copy(
-                    coreOnline = true,
-                    cloudOnline = true,
-                    lastAckSeq = batch.maxSeq,
-                    lastUploadMs = System.currentTimeMillis(),
-                    lastError = null,
-                )
-            }
+            GatewayStatus.update { it.copy(lastAckSeq = batch.maxSeq) }
             updateNotification()
-
-            // Backlog é drenado rápido, mas com pequena folga para não monopolizar CPU/rede.
             delay(if (batch.pendingBytes > 12_000L) 250L else 800L)
+        }
+    }
+
+    /**
+     * Fila independente: nao depende do ESP32 estar online.
+     * Retomada automatica apos fechar/reiniciar o app.
+     */
+    private suspend fun cloudDrainLoop() {
+        var retryMs = 5_000L
+        while (currentCoroutineContext().isActive) {
+            if (!prefs.gatewayEnabled) {
+                delay(2_000L)
+                continue
+            }
+            try {
+                val saved = spool.stats()
+                GatewayStatus.update {
+                    it.copy(
+                        androidPendingBytes = saved.bytes,
+                        androidPendingCount = saved.count,
+                        phoneNearLimit = saved.nearLimit,
+                    )
+                }
+                val upload = spool.nextBatch()
+                if (upload == null) {
+                    delay(2_000L)
+                    continue
+                }
+                if (prefs.cloudDeviceToken.isBlank() || prefs.cloudDeviceUid.isBlank()) {
+                    GatewayStatus.update {
+                        it.copy(cloudOnline = false, lastError = "Fila segura no Android; configure UID/Token Cloud")
+                    }
+                    updateNotification()
+                    delay(5_000L)
+                    continue
+                }
+
+                val result = cloud.upload(upload.samples, upload.deviceUid)
+                if (result == null || result.ackSeq < upload.maxSeq) {
+                    val detail = cloud.lastError?.take(160)
+                        ?: "ACK parcial da Cloud"
+                    GatewayStatus.update {
+                        it.copy(cloudOnline = false, lastError = "Fila Android pendente: $detail")
+                    }
+                    updateNotification()
+                    delay(retryMs)
+                    retryMs = (retryMs * 2).coerceAtMost(60_000L)
+                    continue
+                }
+                // Apenas os IDs enviados e confirmados, nunca os futuros.
+                val remaining = spool.confirmUploaded(upload, result.ackSeq)
+                GatewayStatus.update {
+                    it.copy(
+                        cloudOnline = true,
+                        androidPendingBytes = remaining.bytes,
+                        androidPendingCount = remaining.count,
+                        phoneNearLimit = remaining.nearLimit,
+                        lastUploadMs = System.currentTimeMillis(),
+                        lastError = null,
+                    )
+                }
+                updateNotification()
+                retryMs = 5_000L
+                delay(200L)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                GatewayStatus.update {
+                    it.copy(cloudOnline = false, lastError = "Fila Android: ${e.message?.take(160)}")
+                }
+                updateNotification()
+                delay(retryMs)
+                retryMs = (retryMs * 2).coerceAtMost(60_000L)
+            }
         }
     }
 
@@ -299,11 +355,14 @@ class TruckBoxGatewayService : Service(), LocationListener {
     private fun updateNotification() {
         val s = GatewayStatus.state.value
         val text = when {
+            s.phoneNearLimit -> "ATENCAO: fila Android proxima de 512 MB"
+            s.androidPendingCount > 0 && !s.cloudOnline ->
+                "Salvos no Android: ${s.androidPendingBytes / 1024} KB, aguardando Cloud"
+            s.androidPendingCount > 0 -> "Enviando ${s.androidPendingCount} amostras do Android"
             !s.coreOnline -> "Core offline • aguardando Starlink"
             prefs.cloudDeviceToken.isBlank() -> "Core online • configure a Cloud"
-            !s.cloudOnline && s.pendingBytes > 0 -> "Core online • ${s.pendingBytes / 1024} KB aguardando Cloud"
-            s.pendingBytes > 0 -> "Sincronizando • ${s.pendingBytes / 1024} KB pendentes"
-            else -> "Core + Cloud online • sincronizado"
+            s.pendingBytes > 0 -> "Salvando dados do ESP32 no Android"
+            else -> "ESP32 + Cloud • fila local vazia"
         }
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
     }
