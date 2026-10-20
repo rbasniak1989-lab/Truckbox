@@ -15,6 +15,19 @@ A melhoria ainda exige validacao em caminhão real antes de uso como fonte unica
 9. **Rota:** simular rota durante viagem ativa e conferir que essa funcionalidade segue funcionando.
 10. **Recuperacao antiga:** arquivos salvos pelo aplicativo TruckBox Recovery (separado) nao sao importados automaticamente pelo Motorista v0.6.5.
 
+## Pacote BETA separado (seguro para testar)
+
+O GitHub Actions gera tambem `br.com.truckbox.driver.beta`, exibido como **TruckBox Motorista BETA**.
+Ele pode ser instalado sem desinstalar o aplicativo normal e usa dados privados separados.
+
+**Nao deixe os dois gateways ativos ao mesmo tempo.** Antes do teste, desligar `Gateway habilitado`
+em Configuracoes do Motorista antigo e abrir o BETA. Se o antigo permanecer executando
+em segundo plano, ambos podem competir pela fila/ACK do mesmo ESP32. No fim do teste,
+desligar o gateway do BETA antes de voltar ao aplicativo principal.
+
+O APK debug principal v0.6.5 tem assinatura gerada pela CI diferente da build v0.6.4.
+**Nao desinstalar o antigo para instalar o novo** enquanto existirem dados pendentes.
+
 ## Checklist para instalar
 
 - Instalar como atualizacao da v0.6.4 apenas se a assinatura Android for compativel; nunca desinstalar o app anterior com dados pendentes.
