@@ -11,8 +11,8 @@ android {
         applicationId = "br.com.truckbox.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 65
-        versionName = "0.6.5-offline-spool"
+        versionCode = 66
+        versionName = "0.6.6-offline-spool-recovery"
     }
 
     buildFeatures {
