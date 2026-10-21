@@ -91,4 +91,25 @@ class TelemetrySpoolRecoveryTest {
             assertEquals(before.count, spool.stats().count)
         }
     }
+
+    @Test
+    fun inconsistentDeclaredCountIsBackedUpBeforeAcknowledgement() {
+        val spool = TelemetrySpool(context)
+        val before = spool.stats()
+        val deviceUid = uid()
+        val seq = System.currentTimeMillis() * 1000L + 123
+        val batch = GatewayBatch(
+            deviceUid = deviceUid,
+            samples = JSONArray().put(JSONObject().put("seq", seq).put("rpm", 940)),
+            count = 8,
+            maxSeq = seq,
+            pendingBytes = 200L,
+            lastAckSeq = seq - 1,
+        )
+        val after = spool.persist(batch, deviceUid)
+        assertEquals(before.quarantinedBatches + 1, after.quarantinedBatches)
+        assertEquals(before.quarantinedSamples + 1, after.quarantinedSamples)
+        assertTrue(after.quarantinedBytes > before.quarantinedBytes)
+        assertEquals(before.count + 1, after.count)
+    }
 }
