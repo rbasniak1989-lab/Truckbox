@@ -28,7 +28,7 @@ class TelemetrySpool(context: Context) {
         val quarantinedSamples: Long = 0L,
         val quarantinedBytes: Long = 0L,
     ) {
-        val nearLimit: Boolean get() = bytes >= MAX_PENDING_BYTES * 4 / 5
+        val nearLimit: Boolean get() = bytes + quarantinedBytes >= MAX_PENDING_BYTES * 4 / 5
     }
 
     data class UploadBatch(
@@ -122,8 +122,9 @@ class TelemetrySpool(context: Context) {
             batch.deviceUid != configuredDeviceUid
         ) throw QueuePaused("UID Core/Cloud diferente: configure o dispositivo correto")
 
-        if (batch.count <= 0 || batch.samples.length() != batch.count || batch.maxSeq <= 0) {
-            throw QueuePaused("Lote ESP32 invalido; fila mantida no Core")
+        if (batch.samples.length() == 0 || batch.maxSeq <= 0) {
+            // Sem identificador de sequencia confiavel nao ha como ACK seguro.
+            throw QueuePaused("Lote ESP32 vazio/sem seq valido; fila mantida no Core")
         }
 
         // Algumas versoes do Core podem devolver o objeto como string JSON.
@@ -132,7 +133,9 @@ class TelemetrySpool(context: Context) {
         // raw_batches, com commit antes do ACK Core, para posterior recuperacao.
         val rows = ArrayList<Pair<Long, String>>(batch.samples.length())
         val seen = HashSet<Long>()
-        var malformedReason: String? = null
+        var malformedReason: String? = if (batch.count != batch.samples.length()) {
+            "Contagem declarada (${batch.count}) diverge das amostras (${batch.samples.length()})"
+        } else null
         for (i in 0 until batch.samples.length()) {
             val raw = batch.samples.opt(i)
             val item = when (raw) {
@@ -182,7 +185,7 @@ class TelemetrySpool(context: Context) {
                 }
                 if (previous == null) {
                     val size = rawBackup.toByteArray(Charsets.UTF_8).size
-                    if (before.bytes + addedBytes + size > MAX_PENDING_BYTES) {
+                    if (before.bytes + before.quarantinedBytes + addedBytes + size > MAX_PENDING_BYTES) {
                         throw QueuePaused("Fila Android atingiu 512 MB; ESP32 nao sera liberado")
                     }
                     if (appContext.filesDir.usableSpace < MIN_FREE_BYTES + size) {
@@ -192,7 +195,7 @@ class TelemetrySpool(context: Context) {
                         put("device_uid", batch.deviceUid)
                         put("max_seq", batch.maxSeq)
                         put("raw_json", rawBackup)
-                        put("sample_count", batch.count)
+                        put("sample_count", batch.samples.length())
                         put("bytes", size)
                         put("reason", malformedReason ?: "Lote suspeito")
                         put("created_at_ms", System.currentTimeMillis())
@@ -217,7 +220,7 @@ class TelemetrySpool(context: Context) {
                 }
 
                 val size = json.toByteArray(Charsets.UTF_8).size
-                if (before.bytes + addedBytes + size > MAX_PENDING_BYTES) {
+                if (before.bytes + before.quarantinedBytes + addedBytes + size > MAX_PENDING_BYTES) {
                     throw QueuePaused("Fila Android atingiu 512 MB; ESP32 nao sera liberado")
                 }
                 if (appContext.filesDir.usableSpace < MIN_FREE_BYTES + size) {
