@@ -175,6 +175,7 @@ class TelemetrySpool(context: Context) {
             val before = statsIn(db)
             var addedCount = 0L
             var addedBytes = 0L
+            var addedRawBytes = 0L
             if (rawBackup != null) {
                 val previous = db.rawQuery(
                     "SELECT raw_json FROM raw_batches WHERE device_uid=? AND max_seq=?",
@@ -201,8 +202,9 @@ class TelemetrySpool(context: Context) {
                         put("created_at_ms", System.currentTimeMillis())
                     }
                     db.insertOrThrow("raw_batches", null, values)
-                    addedCount++
-                    addedBytes += size
+                    // Quarentena possui contadores proprios calculados na tabela
+                    // raw_batches; NUNCA incrementar queue_stats para lote bruto.
+                    addedRawBytes += size
                 }
             }
             // As amostras validas do mesmo lote seguem para Cloud; o backup
@@ -220,7 +222,7 @@ class TelemetrySpool(context: Context) {
                 }
 
                 val size = json.toByteArray(Charsets.UTF_8).size
-                if (before.bytes + before.quarantinedBytes + addedBytes + size > MAX_PENDING_BYTES) {
+                if (before.bytes + before.quarantinedBytes + addedRawBytes + addedBytes + size > MAX_PENDING_BYTES) {
                     throw QueuePaused("Fila Android atingiu 512 MB; ESP32 nao sera liberado")
                 }
                 if (appContext.filesDir.usableSpace < MIN_FREE_BYTES + size) {
