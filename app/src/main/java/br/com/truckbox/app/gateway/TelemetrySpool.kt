@@ -21,8 +21,14 @@ class TelemetrySpool(context: Context) {
         private const val DATABASE_NAME = "truckbox_telemetry_queue.db"
     }
 
-    data class Stats(val count: Long, val bytes: Long) {
-        val nearLimit: Boolean get() = bytes >= MAX_PENDING_BYTES * 4 / 5
+    data class Stats(
+        val count: Long,
+        val bytes: Long,
+        val quarantinedBatches: Long = 0L,
+        val quarantinedSamples: Long = 0L,
+        val quarantinedBytes: Long = 0L,
+    ) {
+        val nearLimit: Boolean get() = bytes + quarantinedBytes >= MAX_PENDING_BYTES * 4 / 5
     }
 
     data class UploadBatch(
@@ -37,7 +43,7 @@ class TelemetrySpool(context: Context) {
     class QueuePaused(message: String) : IllegalStateException(message)
 
     private val appContext = context.applicationContext
-    private val helper = object : SQLiteOpenHelper(appContext, DATABASE_NAME, null, 1) {
+    private val helper = object : SQLiteOpenHelper(appContext, DATABASE_NAME, null, 2) {
         override fun onConfigure(db: SQLiteDatabase) {
             super.onConfigure(db)
             // Preferir durabilidade a throughput: ACK ao Core depende deste commit.
@@ -62,18 +68,44 @@ class TelemetrySpool(context: Context) {
                 )"""
             )
             db.execSQL("INSERT INTO queue_stats (id,count_items,pending_bytes) VALUES(1,0,0)")
+            ensureQuarantineTable(db)
+        }
+
+        private fun ensureQuarantineTable(db: SQLiteDatabase) {
+            // Preserva lotes que ainda nao conseguimos interpretar. Nunca apagar
+            // esta tabela automaticamente ou durante uma atualizacao do aplicativo.
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS raw_batches (
+                    device_uid TEXT NOT NULL,
+                    max_seq INTEGER NOT NULL,
+                    raw_json TEXT NOT NULL,
+                    sample_count INTEGER NOT NULL,
+                    bytes INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY(device_uid, max_seq)
+                )"""
+            )
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            // Sem migracao destrutiva: os dados pendentes nunca podem ser descartados.
-            throw IllegalStateException("Migracao da fila de telemetria nao implementada")
+            if (oldVersion < 2) {
+                ensureQuarantineTable(db)
+            }
         }
     }
 
     private fun statsIn(db: SQLiteDatabase): Stats {
         db.rawQuery("SELECT count_items, pending_bytes FROM queue_stats WHERE id=1", null).use { c ->
             if (!c.moveToFirst()) throw QueuePaused("Estado da fila Android ausente")
-            return Stats(c.getLong(0), c.getLong(1))
+            val quarantined = db.rawQuery(
+                "SELECT COUNT(*), COALESCE(SUM(sample_count),0), COALESCE(SUM(bytes),0) FROM raw_batches",
+                null
+            ).use { q ->
+                if (q.moveToFirst()) Triple(q.getLong(0), q.getLong(1), q.getLong(2))
+                else Triple(0L, 0L, 0L)
+            }
+            return Stats(c.getLong(0), c.getLong(1), quarantined.first, quarantined.second, quarantined.third)
         }
     }
 
@@ -90,24 +122,52 @@ class TelemetrySpool(context: Context) {
             batch.deviceUid != configuredDeviceUid
         ) throw QueuePaused("UID Core/Cloud diferente: configure o dispositivo correto")
 
-        if (batch.count <= 0 || batch.samples.length() != batch.count || batch.maxSeq <= 0) {
-            throw QueuePaused("Lote ESP32 invalido; fila mantida no Core")
+        if (batch.samples.length() == 0 || batch.maxSeq <= 0) {
+            // Sem identificador de sequencia confiavel nao ha como ACK seguro.
+            throw QueuePaused("Lote ESP32 vazio/sem seq valido; fila mantida no Core")
         }
 
+        // Algumas versoes do Core podem devolver o objeto como string JSON.
+        // Recuperamos esse formato sem descartar o registro nem alterar seu seq.
+        // Uma amostra realmente malformada fica preservada INTEGRALMENTE em
+        // raw_batches, com commit antes do ACK Core, para posterior recuperacao.
         val rows = ArrayList<Pair<Long, String>>(batch.samples.length())
         val seen = HashSet<Long>()
+        var malformedReason: String? = if (batch.count != batch.samples.length()) {
+            "Contagem declarada (${batch.count}) diverge das amostras (${batch.samples.length()})"
+        } else null
         for (i in 0 until batch.samples.length()) {
-            val item = batch.samples.optJSONObject(i)
-                ?: throw QueuePaused("Amostra nao e objeto JSON")
+            val raw = batch.samples.opt(i)
+            val item = when (raw) {
+                is JSONObject -> raw
+                is String -> runCatching { JSONObject(raw) }.getOrNull()
+                else -> null
+            }
+            if (item == null) {
+                malformedReason = malformedReason ?: "Amostra [$i] nao e objeto JSON"
+                continue
+            }
             val seq = item.optLong("seq", 0L)
             if (seq <= 0L || !seen.add(seq)) {
-                throw QueuePaused("Sequencia de telemetria ausente ou repetida")
+                malformedReason = malformedReason ?: "Seq ausente/repetido na amostra [$i]"
+                continue
             }
             rows += seq to item.toString()
         }
-        if (rows.maxOf { it.first } != batch.maxSeq) {
-            throw QueuePaused("Sequencia maxima do lote nao confere")
+        if (rows.maxOfOrNull { it.first } != batch.maxSeq) {
+            malformedReason = malformedReason ?: "Seq maximo do lote nao confere"
         }
+
+        val rawBackup = if (malformedReason != null) {
+            // Os metadados e as amostras originais sao preservados juntos.
+            JSONObject().apply {
+                put("device_uid", batch.deviceUid)
+                put("count", batch.count)
+                put("max_seq", batch.maxSeq)
+                put("last_ack_seq", batch.lastAckSeq)
+                put("samples", batch.samples)
+            }.toString()
+        } else null
 
         val db = helper.writableDatabase
         db.beginTransaction()
@@ -115,6 +175,40 @@ class TelemetrySpool(context: Context) {
             val before = statsIn(db)
             var addedCount = 0L
             var addedBytes = 0L
+            var addedRawBytes = 0L
+            if (rawBackup != null) {
+                val previous = db.rawQuery(
+                    "SELECT raw_json FROM raw_batches WHERE device_uid=? AND max_seq=?",
+                    arrayOf(batch.deviceUid, batch.maxSeq.toString())
+                ).use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                if (previous != null && previous != rawBackup) {
+                    throw QueuePaused("Conflito no lote bruto seq ${batch.maxSeq}; Core preservado")
+                }
+                if (previous == null) {
+                    val size = rawBackup.toByteArray(Charsets.UTF_8).size
+                    if (before.bytes + before.quarantinedBytes + addedBytes + size > MAX_PENDING_BYTES) {
+                        throw QueuePaused("Fila Android atingiu 512 MB; ESP32 nao sera liberado")
+                    }
+                    if (appContext.filesDir.usableSpace < MIN_FREE_BYTES + size) {
+                        throw QueuePaused("Pouco espaco no celular; ESP32 nao sera liberado")
+                    }
+                    val values = ContentValues().apply {
+                        put("device_uid", batch.deviceUid)
+                        put("max_seq", batch.maxSeq)
+                        put("raw_json", rawBackup)
+                        put("sample_count", batch.samples.length())
+                        put("bytes", size)
+                        put("reason", malformedReason ?: "Lote suspeito")
+                        put("created_at_ms", System.currentTimeMillis())
+                    }
+                    db.insertOrThrow("raw_batches", null, values)
+                    // Quarentena possui contadores proprios calculados na tabela
+                    // raw_batches; NUNCA incrementar queue_stats para lote bruto.
+                    addedRawBytes += size
+                }
+            }
+            // As amostras validas do mesmo lote seguem para Cloud; o backup
+            // completo continua retido ate um reparo/manual export explicito.
             for ((seq, json) in rows) {
                 val previous = db.rawQuery(
                     "SELECT payload FROM samples WHERE device_uid=? AND seq=?",
@@ -128,7 +222,7 @@ class TelemetrySpool(context: Context) {
                 }
 
                 val size = json.toByteArray(Charsets.UTF_8).size
-                if (before.bytes + addedBytes + size > MAX_PENDING_BYTES) {
+                if (before.bytes + before.quarantinedBytes + addedRawBytes + addedBytes + size > MAX_PENDING_BYTES) {
                     throw QueuePaused("Fila Android atingiu 512 MB; ESP32 nao sera liberado")
                 }
                 if (appContext.filesDir.usableSpace < MIN_FREE_BYTES + size) {

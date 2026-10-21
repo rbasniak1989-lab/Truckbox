@@ -58,7 +58,7 @@ jobs:
       - name: Upload Motorista APK
         uses: actions/upload-artifact@v4
         with:
-          name: TruckBox-Motorista-v0.6.5-OfflineSpool-debug
+          name: TruckBox-Motorista-v0.6.6-OfflineSpoolRecovery-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -66,14 +66,14 @@ jobs:
       - name: Build independent Motorista BETA package
         run: |
           sed -i 's/applicationId = "br.com.truckbox.driver"/applicationId = "br.com.truckbox.driver.beta"/' app/build.gradle.kts
-          sed -i 's/versionName = "0.6.5-offline-spool"/versionName = "0.6.5-offline-spool-beta"/' app/build.gradle.kts
+          sed -i 's/versionName = "0.6.6-offline-spool-recovery"/versionName = "0.6.6-offline-spool-recovery-beta"/' app/build.gradle.kts
           sed -i 's/android:label="TruckBox Motorista"/android:label="TruckBox Motorista BETA"/' app/src/main/AndroidManifest.xml
           gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload Motorista BETA APK
         uses: actions/upload-artifact@v4
         with:
-          name: TruckBox-Motorista-v0.6.5-OfflineSpool-BETA
+          name: TruckBox-Motorista-v0.6.6-OfflineSpoolRecovery-BETA
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

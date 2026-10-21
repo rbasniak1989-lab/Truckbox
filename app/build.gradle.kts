@@ -11,8 +11,9 @@ android {
         applicationId = "br.com.truckbox.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 65
-        versionName = "0.6.5-offline-spool"
+        versionCode = 66
+        versionName = "0.6.6-offline-spool-recovery"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures {
@@ -39,4 +40,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

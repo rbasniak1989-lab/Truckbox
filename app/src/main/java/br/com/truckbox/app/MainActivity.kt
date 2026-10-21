@@ -127,11 +127,11 @@ private fun DriverApp(
                     title = {
                         Column {
                             Text("TruckBox Motorista", fontWeight = FontWeight.Bold)
-                            Text("Gateway Android • v0.6.5", fontSize = 11.sp)
+                            Text("Gateway Android • v0.6.6", fontSize = 11.sp)
                         }
                     },
                     actions = {
-                        val ok = gateway.cloudOnline && gateway.androidPendingCount == 0L && !gateway.phoneNearLimit
+                        val ok = gateway.cloudOnline && gateway.androidPendingCount == 0L && gateway.androidQuarantinedBatches == 0L && !gateway.phoneNearLimit
                         Icon(if (ok) Icons.Default.CloudDone else Icons.Default.CloudOff, null)
                         Spacer(Modifier.width(12.dp))
                     }
@@ -237,13 +237,16 @@ private fun StatusPage(s: br.com.truckbox.app.gateway.GatewaySnapshot) {
         Text("Gateway", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         StatusCard("ESP32 / Starlink", if (s.coreOnline) "ONLINE" else "OFFLINE", s.coreOnline)
         StatusCard("Cloud", if (s.cloudOnline) "ONLINE" else if (s.androidPendingCount > 0) "AGUARDANDO" else "SEM ENVIO", s.cloudOnline)
-        StatusCard("Fila Android", if (s.phoneNearLimit) "QUASE CHEIA" else if (s.androidPendingCount > 0) "SALVANDO" else "VAZIA", !s.phoneNearLimit)
+        StatusCard("Fila Android", if (s.phoneNearLimit) "QUASE CHEIA" else if (s.androidQuarantinedBatches > 0) "RECUPERACAO" else if (s.androidPendingCount > 0) "SALVANDO" else "VAZIA", !s.phoneNearLimit && s.androidQuarantinedBatches == 0L)
         StatusCard("GPS", if (s.gpsFix) "FIX OK" else "AGUARDANDO FIX", s.gpsFix)
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("Fila de telemetria offline", fontWeight = FontWeight.Bold)
                 Text("ESP32: ${(s.pendingBytes / 1024.0).format1()} KB aguardando coleta")
-                Text("Celular: ${(s.androidPendingBytes / 1024.0 / 1024.0).format1()} MB salvos • ${s.androidPendingCount} amostras")
+                Text("Celular (prontas para Cloud): ${(s.androidPendingBytes / 1024.0 / 1024.0).format1()} MB • ${s.androidPendingCount} amostras")
+                if (s.androidQuarantinedBatches > 0) {
+                    Text("Backup protegido no Android: ${(s.androidQuarantinedBytes / 1024.0).format1()} KB • ${s.androidQuarantinedBatches} lotes • ${s.androidQuarantinedSamples} amostras para recuperacao", color = MaterialTheme.colorScheme.error)
+                }
                 Text("Limite da fila Android: 512 MB; ao atingir o limite, nao liberamos o ESP32")
                 Text("Último ACK no ESP32: ${s.lastAckSeq}")
                 Text("Último lote recebido: ${s.lastBatchCount} amostras")

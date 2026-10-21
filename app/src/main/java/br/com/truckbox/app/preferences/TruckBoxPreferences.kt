@@ -14,6 +14,9 @@ enum class AccentOption(val label: String, val argb: Long) {
 
 class TruckBoxPreferences(context: Context) {
     private val p = context.getSharedPreferences("truckbox", Context.MODE_PRIVATE)
+    // A versao BETA tem fila SQLite e tokens separados. Comeca desligada
+    // para nao disputar ACKs com o gateway principal durante a configuracao.
+    private val isBeta = context.packageName.endsWith(".beta")
 
     var accent: AccentOption
         get() = runCatching { AccentOption.valueOf(p.getString("accent", AccentOption.BLUE.name)!!) }.getOrDefault(AccentOption.BLUE)
@@ -48,7 +51,7 @@ class TruckBoxPreferences(context: Context) {
         set(v) { p.edit().putString("gps_device_token", v.trim()).apply() }
 
     var gatewayEnabled: Boolean
-        get() = p.getBoolean("gateway_enabled", true)
+        get() = p.getBoolean("gateway_enabled", !isBeta)
         set(v) { p.edit().putBoolean("gateway_enabled", v).apply() }
 
     val installId: String

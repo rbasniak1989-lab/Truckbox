@@ -128,7 +128,7 @@ class TruckBoxGatewayService : Service(), LocationListener {
                     lastBatchCount = batch.count,
                 )
             }
-            if (batch.count <= 0) {
+            if (batch.count <= 0 && batch.samples.length() == 0) {
                 delay(1_000L)
                 continue
             }
@@ -138,8 +138,16 @@ class TruckBoxGatewayService : Service(), LocationListener {
                     it.copy(
                         androidPendingBytes = saved.bytes,
                         androidPendingCount = saved.count,
+                        androidQuarantinedBatches = saved.quarantinedBatches,
+                        androidQuarantinedSamples = saved.quarantinedSamples,
+                        androidQuarantinedBytes = saved.quarantinedBytes,
                         phoneNearLimit = saved.nearLimit,
-                        lastError = if (saved.nearLimit) "Fila Android proxima de 512 MB" else null,
+                        lastError = when {
+                            saved.nearLimit -> "Fila Android proxima de 512 MB"
+                            saved.quarantinedBatches > 0L ->
+                                "${saved.quarantinedBatches} lote(s) do ESP32 protegidos no Android; ${saved.quarantinedSamples} amostras exigem recuperacao"
+                            else -> null
+                        },
                     )
                 }
             } catch (e: CancellationException) {
@@ -147,6 +155,17 @@ class TruckBoxGatewayService : Service(), LocationListener {
             } catch (e: Throwable) {
                 GatewayStatus.update {
                     it.copy(lastError = "Dados no ESP32: ${e.message?.take(150)}")
+                }
+                updateNotification()
+                delay(5_000L)
+                continue
+            }
+            // Se o Core declara mais registros do que entregou, um ACK poderia
+            // eliminar amostras ausentes do corpo da resposta. Guardar o JSON
+            // bruto ajuda no diagnostico, mas NAO autoriza descarte no ESP32.
+            if (batch.count != batch.samples.length()) {
+                GatewayStatus.update {
+                    it.copy(lastError = "Lote incompleto no ESP32: ${batch.samples.length()}/${batch.count}; backup salvo no Android, ACK bloqueado")
                 }
                 updateNotification()
                 delay(5_000L)
@@ -184,6 +203,9 @@ class TruckBoxGatewayService : Service(), LocationListener {
                     it.copy(
                         androidPendingBytes = saved.bytes,
                         androidPendingCount = saved.count,
+                        androidQuarantinedBatches = saved.quarantinedBatches,
+                        androidQuarantinedSamples = saved.quarantinedSamples,
+                        androidQuarantinedBytes = saved.quarantinedBytes,
                         phoneNearLimit = saved.nearLimit,
                     )
                 }
@@ -220,9 +242,14 @@ class TruckBoxGatewayService : Service(), LocationListener {
                         cloudOnline = true,
                         androidPendingBytes = remaining.bytes,
                         androidPendingCount = remaining.count,
+                        androidQuarantinedBatches = remaining.quarantinedBatches,
+                        androidQuarantinedSamples = remaining.quarantinedSamples,
+                        androidQuarantinedBytes = remaining.quarantinedBytes,
                         phoneNearLimit = remaining.nearLimit,
                         lastUploadMs = System.currentTimeMillis(),
-                        lastError = null,
+                        lastError = if (remaining.quarantinedBatches > 0L)
+                            "${remaining.quarantinedBatches} lote(s) brutos preservados no Android para recuperacao"
+                        else null,
                     )
                 }
                 updateNotification()
@@ -361,6 +388,7 @@ class TruckBoxGatewayService : Service(), LocationListener {
             s.androidPendingCount > 0 -> "Enviando ${s.androidPendingCount} amostras do Android"
             !s.coreOnline -> "Core offline • aguardando Starlink"
             prefs.cloudDeviceToken.isBlank() -> "Core online • configure a Cloud"
+            s.androidQuarantinedBatches > 0 -> "Salvos ${s.androidQuarantinedBatches} lotes brutos no Android para recuperacao"
             s.pendingBytes > 0 -> "Salvando dados do ESP32 no Android"
             else -> "ESP32 + Cloud • fila local vazia"
         }
