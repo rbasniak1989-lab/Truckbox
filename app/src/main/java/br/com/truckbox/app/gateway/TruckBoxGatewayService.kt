@@ -160,6 +160,17 @@ class TruckBoxGatewayService : Service(), LocationListener {
                 delay(5_000L)
                 continue
             }
+            // Se o Core declara mais registros do que entregou, um ACK poderia
+            // eliminar amostras ausentes do corpo da resposta. Guardar o JSON
+            // bruto ajuda no diagnostico, mas NAO autoriza descarte no ESP32.
+            if (batch.count != batch.samples.length()) {
+                GatewayStatus.update {
+                    it.copy(lastError = "Lote incompleto no ESP32: ${batch.samples.length()}/${batch.count}; backup salvo no Android, ACK bloqueado")
+                }
+                updateNotification()
+                delay(5_000L)
+                continue
+            }
             // NUNCA confirmar ao Core antes da transacao no SQLite.
             if (!core.ack(batch.maxSeq)) {
                 GatewayStatus.update {
