@@ -139,7 +139,12 @@ class TruckBoxGatewayService : Service(), LocationListener {
                         androidPendingBytes = saved.bytes,
                         androidPendingCount = saved.count,
                         phoneNearLimit = saved.nearLimit,
-                        lastError = if (saved.nearLimit) "Fila Android proxima de 512 MB" else null,
+                        lastError = when {
+                            saved.nearLimit -> "Fila Android proxima de 512 MB"
+                            saved.quarantinedBatches > 0L ->
+                                "${saved.quarantinedBatches} lote(s) do ESP32 protegidos no Android; ${saved.quarantinedSamples} amostras exigem recuperacao"
+                            else -> null
+                        },
                     )
                 }
             } catch (e: CancellationException) {
@@ -222,7 +227,9 @@ class TruckBoxGatewayService : Service(), LocationListener {
                         androidPendingCount = remaining.count,
                         phoneNearLimit = remaining.nearLimit,
                         lastUploadMs = System.currentTimeMillis(),
-                        lastError = null,
+                        lastError = if (remaining.quarantinedBatches > 0L)
+                            "${remaining.quarantinedBatches} lote(s) brutos preservados no Android para recuperacao"
+                        else null,
                     )
                 }
                 updateNotification()
