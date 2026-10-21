@@ -1,0 +1,41 @@
+name: Motorista spool recovery QA
+on:
+  push:
+    branches:
+      - fix/motorista-spool-malformed-batches-v066
+  pull_request:
+    branches:
+      - feature/motorista-offline-queue-v065
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK platforms
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platforms;android-35"
+      - name: Compile Motorista and Android regression tests
+        run: gradle :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Run data-integrity tests on isolated Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          script: gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace
+
+# IMPORTANT: no APK is published. A debug-signed artifact is NOT an update
+# for the user's installed app without the identical original signing key.
