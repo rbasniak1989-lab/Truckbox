@@ -105,6 +105,8 @@ data class OperationsSnapshot(
     val emptyStartedAtMs: Long? = null,
     val emptyStartOdometerKm: Double? = null,
     val emptyStartFuelCounterL: Double? = null,
+    val emptyDistanceKm: Double? = null,
+    val emptyFuelLiters: Double? = null,
 )
 
 /**
@@ -156,6 +158,8 @@ class OperationsStore(context: Context) {
             emptyStartedAtMs = null,
             emptyStartOdometerKm = null,
             emptyStartFuelCounterL = null,
+            emptyDistanceKm = null,
+            emptyFuelLiters = null,
         ))
     }
 
@@ -182,6 +186,8 @@ class OperationsStore(context: Context) {
             emptyStartedAtMs = ended.endedAtMs,
             emptyStartOdometerKm = currentOdometerKm,
             emptyStartFuelCounterL = currentFuelCounterL,
+            emptyDistanceKm = 0.0,
+            emptyFuelLiters = 0.0,
         ))
     }
 
@@ -288,6 +294,8 @@ class OperationsStore(context: Context) {
                 emptyStartedAtMs = op?.optNullableIsoMs("empty_started_at") ?: _state.value.emptyStartedAtMs,
                 emptyStartOdometerKm = op?.optNullableDouble("empty_start_odometer_km") ?: _state.value.emptyStartOdometerKm,
                 emptyStartFuelCounterL = op?.optNullableDouble("empty_start_fuel_counter_l") ?: _state.value.emptyStartFuelCounterL,
+                emptyDistanceKm = op?.optNullableDouble("empty_distance_km") ?: _state.value.emptyDistanceKm,
+                emptyFuelLiters = op?.optNullableDouble("empty_fuel_liters") ?: _state.value.emptyFuelLiters,
             )
         )
     }
@@ -304,6 +312,8 @@ class OperationsStore(context: Context) {
         root.put("emptyStartedAtMs", s.emptyStartedAtMs)
         root.put("emptyStartOdometerKm", s.emptyStartOdometerKm)
         root.put("emptyStartFuelCounterL", s.emptyStartFuelCounterL)
+        root.put("emptyDistanceKm", s.emptyDistanceKm)
+        root.put("emptyFuelLiters", s.emptyFuelLiters)
         root.put("trips", JSONArray().apply { s.trips.forEach { put(it.toJson()) } })
         root.put("fuelings", JSONArray().apply { s.fuelings.forEach { put(it.toJson()) } })
         root.put("expenses", JSONArray().apply { s.expenses.forEach { put(it.toJson()) } })
@@ -327,6 +337,8 @@ class OperationsStore(context: Context) {
                 emptyStartedAtMs = root.optNullableLong("emptyStartedAtMs"),
                 emptyStartOdometerKm = root.optNullableDouble("emptyStartOdometerKm"),
                 emptyStartFuelCounterL = root.optNullableDouble("emptyStartFuelCounterL"),
+                emptyDistanceKm = root.optNullableDouble("emptyDistanceKm"),
+                emptyFuelLiters = root.optNullableDouble("emptyFuelLiters"),
             )
         }.getOrElse { OperationsSnapshot() }
     }
