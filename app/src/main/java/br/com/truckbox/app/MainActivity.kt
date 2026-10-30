@@ -26,6 +26,8 @@ import br.com.truckbox.app.cloud.TruckBoxCloudClient
 import br.com.truckbox.app.gateway.GatewayStatus
 import br.com.truckbox.app.gateway.TruckBoxGatewayService
 import br.com.truckbox.app.operations.OperationsStore
+import br.com.truckbox.app.operations.OperationsSnapshot
+import br.com.truckbox.app.data.OperationMode
 import br.com.truckbox.app.operations.RoutePlanSnapshot
 import br.com.truckbox.app.preferences.TruckBoxPreferences
 import br.com.truckbox.app.ui.theme.TruckBoxTheme
@@ -116,7 +118,7 @@ private fun DriverApp(
             if (cloud.configured()) {
                 withContext(Dispatchers.IO) { cloud.snapshot() }?.let(store::applyCloudSnapshot)
             }
-            delay(60_000L)
+            delay(20_000L)
         }
     }
 
@@ -160,7 +162,7 @@ private fun DriverApp(
                 when (page) {
                     DriverPage.STATUS -> StatusPage(gateway)
                     DriverPage.TRIP -> TripPage(
-                        active = operations.activeTrip,
+                        operations = operations,
                         odometerKm = gateway.odometerKm,
                         coreFuelLiters = gateway.coreFuelLiters,
                         routePlan = routePlan,
@@ -274,7 +276,7 @@ private fun StatusCard(title: String, value: String, ok: Boolean) {
 
 @Composable
 private fun TripPage(
-    active: br.com.truckbox.app.operations.TripRecord?,
+    operations: OperationsSnapshot,
     odometerKm: Double?,
     coreFuelLiters: Double?,
     routePlan: RoutePlanSnapshot?,
@@ -288,6 +290,7 @@ private fun TripPage(
     onStart: (String, String, Double?, Double?) -> Unit,
     onEnd: () -> Unit,
 ) {
+    val active = operations.activeTrip
     var showStart by remember { mutableStateOf(false) }
     var showCalculate by remember { mutableStateOf(false) }
     var sharedLink by remember { mutableStateOf("") }
@@ -302,7 +305,35 @@ private fun TripPage(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Viagem", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (active == null) {
-            Text("Nenhuma viagem carregada ativa.")
+            if (operations.mode == OperationMode.EMPTY_MODE) {
+                val localDistance = if (odometerKm != null && operations.emptyStartOdometerKm != null)
+                    (odometerKm - operations.emptyStartOdometerKm).coerceAtLeast(0.0) else null
+                val distance = operations.emptyDistanceKm ?: localDistance
+                val diesel = operations.emptyFuelLiters
+                val average = if (distance != null && diesel != null && diesel > 0.02) distance / diesel else null
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text("MODO VAZIO — DESDE A DESCARGA", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Distância", fontSize = 11.sp)
+                                Text(distance?.let { String.format(Locale.US, "%.1f km", it) } ?: "—", fontWeight = FontWeight.Bold)
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("Consumido", fontSize = 11.sp)
+                                Text(diesel?.let { String.format(Locale.US, "%.1f L", it) } ?: "—", fontWeight = FontWeight.Bold)
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("Média", fontSize = 11.sp)
+                                Text(average?.let { String.format(Locale.US, "%.2f km/L", it) } ?: "—", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Text("Acumulado deste trecho vazio até a próxima carga. Valores sincronizados com a Cloud.", fontSize = 11.sp)
+                    }
+                }
+            } else {
+                Text("Nenhuma viagem carregada ativa.")
+            }
             Button(onClick = { sharedLink = ""; showCalculate = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Route, null); Spacer(Modifier.width(8.dp)); Text("CALCULAR ROTA")
             }
