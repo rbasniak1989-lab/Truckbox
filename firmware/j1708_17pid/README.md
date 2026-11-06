@@ -14,9 +14,11 @@ Os **17 ficam habilitados no catálogo**. Eles usam uma fila global, com uma req
 ## Recepção passiva também incluída
 
 - `src/tbx_j1587_passive.c/.h`: catálogo de 48 PIDs observados/passivos, sem requisições.
-- 17 conversões numéricas provisórias; outros 31 formatos brutos aguardando definição segura de bitmasks/offsets.
+- 17 conversões numéricas básicas + **31 decodificadores adicionais** de escalares, estados, marcha ASCII, falhas, relógio, data e comandos J1587.
 - `tests/test_tbx_j1587_passive.c`: replay de amostras, catálogo sem duplicatas, indisponíveis e tamanhos inválidos.
-- `PASSIVE.md`: lista de escalas, origem e observações de qualidade dos registros.
+- `PASSIVE.md`: todas as 31 fórmulas/estruturas da SAE, exemplos de captura e ressalvas de validação.
+- `src/tbx_j1587_passive_full.c/.h`: interpreta todos os 31 PIDs antes mantidos apenas brutos.
+- `tests/test_tbx_j1587_passive_full.c`: 31 amostras reais, unidades, masks, DTCs, faixas e datas.
 - A biblioteca é isolada: **ainda não foi incorporada ao binário da Rev.B.1**.
 
 ## Estado
