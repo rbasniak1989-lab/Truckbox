@@ -42,6 +42,20 @@ Base original: `TruckBox_Mapa_Sinais_Explicado_Prioridades_2026-11-06.xlsx`, pla
 - **PGN 61444:** potência é **derivada** de RPM/torque usando referência da calibração, não medição direta. A ECU deste Volvo foi modificada: não presumir que 540 hp é valor de calibração real.
 - Qualidade, range checks, códigos SAE "not available"/"error", timeout e reset de contador são obrigatórios. Nunca gravar dado inválido como número válido.
 
+## CHECAGEM HARDWARE CRÍTICA: J1708 pode transmitir via DE (DI fixo em zero)
+
+**Não declarar a Rev.B.1 RX-only somente porque DI (U4 pino 4) está ligado ao GND.** O projeto da Rev.B pretende implementar transmissão *dominante/recessiva* usando o enable do driver, não DI como entrada de TX padrão:
+
+- Projeto: branch `hardware-revb-j1708-4g`, `hardware/reva/apply_revb_j1708.py`, linhas 10–14 e 130–155: U4 = SN65HVD1781-Q1, `/RE=GND` (RX habilitado), `DI=GND`, `DE=J1708_DE`, `RO=J1708_RX`, 10k pulldown no DE; UART TX **invertido** deve acionar `DE`.
+- Quando DE=0, saídas A/B alta impedância (recessivo); quando DE=1 com DI=0, A/B são forçadas ao estado oposto (dominante). Fonte: TI SN65HVD1781-Q1 datasheet (Device Functional Modes/Driver Function Table).
+- A mesma rotina liga `J1708_DE` ao **pad 19 do U1**. ATENÇÃO: há erro no comentário do script que diz `GPIO14` de ESP32-C6-MINI-1; o BOM final `TruckBox_RevB1_FINAL_Run318_BOM.csv` especifica **ESP32-C6-WROOM-1-N8** e o pinout oficial Espressif define **pad 19 = IO21 / GPIO21**, NÃO GPIO14.
+- CONFIRMAR pela **placa Rev.B.1 FINAL Run318 ou esquemático/netlist final + multímetro de placa desligada** a continuidade física `U1 pad19 ↔ U4 pin3 (DE)`, pulldown R4 e inexistência de conflitos com outros periféricos. Script de projeto demonstra intenção; não substitui verificação do produto fabricado.
+- Se confirmado, configurar a UART TX mapeada ao **GPIO21** (ou GPIO real que o netlist final comprovar), TX invertido, 9600 8N1 conforme J1708 e temporização de espera de barramento / prioridade / monitor de colisão via RO. Nunca usar GPIO14 só porque o comentário do script o afirma.
+- Com GPIO21/DE comprovado, DI=0 **não impede envio de requisições**: o TX controla habilitação do driver, não os dados em DI. Se não houver continuidade real no PCB fabricado, classificar TX como bloqueado por hardware e documentar a correção física necessária.
+- Antes de transmissão: teste OFF-VEHICLE em bancada, com osciloscópio/analisador lógico no DE e par diferencial A/B isolado do veículo; confirmar idle/recessivo, bits dominantes, recepção, eco e checksum. Em seguida apenas teste estacionário, com limite de cadência e botão/caminho de corte imediato. Não habilitar TX operacional sem esses testes.
+
+**Estado desta hipótese:** circuito planejado como bidirecional, mas a capacidade TX da peça Rev.B.1 montada NÃO está fisicamente comprovada. Não alterar firmware estável, nem soldar jumper sem comprovar continuidade/pinagem.
+
 ## Entrada J1708/J1587 — módulos já criados nesta branch
 
 - `firmware/j1708_17pid/src/tbx_j1587_passive.c/.h` — 48 PIDs catalogados, 17 números básicos.
