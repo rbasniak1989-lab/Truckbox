@@ -29,17 +29,12 @@ O código detalhado agora interpreta **31 de 31**, classificados assim:
   86 (cruzeiro programado), 105/110 (admissão e líquido de arrefecimento),
   106 (pressão absoluta de admissão), 111 (nível arrefecimento),
   122 (freio motor), 171/174/175/177 (temperaturas) e 249 (voltas totais).
-- **13 grupos de estado/bitfields**: 43, 44, 49, 70, 71, 83, 85, 89, 97,
-  150, 151, 155 e os grupos de bits de indicação da transmissão 162/163
-  são tratados como **texto ASCII**, não como bitfields.
-- **5 formatos especiais**: 128 (pedido dirigido por MID), 162/163 (marcha
-  selecionada/atingida em ASCII e marcador Volvo quando presente),
-  194 (DTCs estruturados com SID/PID, FMI, ativo/inativo, contador),
-  251 (relógio) e 252 (data). O grupo especial tem 6 PIDs; a separação
-  exata é 13 escalares + 12 PIDs de estado + 6 especiais = 31.
-
-Nota de contagem: **12 PIDs de estado** são 43,44,49,70,71,83,85,89,
-97,150,151,155. A lista completa contém 31 tipos.
+- **12 sinais de estado/bitfields**: 43, 44, 49, 70, 71, 83, 85,
+  89, 97, 150, 151 e 155 (interruptores, lâmpadas e atuadores).
+- **6 formatos especiais**: 128 (pedido de parâmetro e MID-alvo),
+  162 e 163 (marcha em ASCII e possível código de controle Volvo),
+  194 (DTC: SID/PID, FMI, ativo/inativo, contador de ocorrências),
+  251 (relógio) e 252 (data).
 
 Exemplos da captura de 29/10/2026:
 - PID36 `00` → desgaste 0,0% (interpretação SAE preliminar).
@@ -86,13 +81,16 @@ interpretação e status. Arquivos de teste:
 
 Em especial PID 185 teve amostra incompatível com consumo habitual;
 não utilizá-lo para custos, médias oficiais ou indicadores sem validar.
-Campos de temperatura ainda não foram convertidos para evitar aplicar
-offsets incorretos. Cada grandeza duplicada na J1939 precisa de regra
-de preferência de fonte e comparação antes de entrar no painel.
+As temperaturas, estados, marchas ASCII, DTCs, relógio e data já têm
+conversão/estrutura SAE provisória implementada. Cada grandeza duplicada
+na J1939 precisa de regra de preferência de fonte e comparação antes
+de entrar no painel.
 
 ## Testes portáteis
 
-    cc -std=c11 -Wall -Wextra -Werror -pedantic src/tbx_j1587_passive.c tests/test_tbx_j1587_passive.c -lm -o /tmp/test_passive && /tmp/test_passive
+    cc -std=c11 -Wall -Wextra -Werror -pedantic src/tbx_j1587_passive.c src/tbx_j1587_passive_full.c tests/test_tbx_j1587_passive_full.c -lm -o /tmp/test_passive_full && /tmp/test_passive_full
+
+CI: `.github/workflows/j1708-unit-tests.yml` testa também os 17 PIDs solicitados.
 
 ## Pendente para firmware compilável
 
