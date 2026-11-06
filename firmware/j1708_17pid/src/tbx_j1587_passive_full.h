@@ -9,7 +9,7 @@
  * All results remain PROVISIONAL for this Volvo; raw data is retained.
  * This is a decoder, not a J1708 frame parser or a vehicle control API. */
 #define TBX_J1587_MAX_FIELDS 8u
-#define TBX_J1587_MAX_DTCS 10u
+#define TBX_J1587_MAX_DTCS 16u
 
 typedef enum {
     TBX_J1587_KIND_SCALAR=1,
