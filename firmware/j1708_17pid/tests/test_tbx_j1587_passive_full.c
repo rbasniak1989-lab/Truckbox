@@ -102,6 +102,12 @@ int main(void) {
     const uint8_t date[]={0x78,0x0A,0x29};
     assert(tbx_j1587_decode_passive_full(140,252,date,3,&r));
     assert(r.day==30 && r.month==10 && r.year==2026);
+    const uint8_t first_day[] = {0x01,0x0B,0x29};
+    const uint8_t fourth_tick[] = {0x04,0x0B,0x29};
+    const uint8_t second_day[] = {0x05,0x0B,0x29};
+    assert(tbx_j1587_decode_passive_full(140,252,first_day,3,&r) && r.day==1);
+    assert(tbx_j1587_decode_passive_full(140,252,fourth_tick,3,&r) && r.day==1);
+    assert(tbx_j1587_decode_passive_full(140,252,second_day,3,&r) && r.day==2);
     const uint8_t two[]={0xFF,0xFF};
     assert(!tbx_j1587_decode_passive_full(130,163,two,1,&r));
     assert(r.base.quality==TBX_PASSIVE_COMPRIMENTO_INVALIDO);
