@@ -4,6 +4,13 @@
 
 Os **17 ficam habilitados no catálogo**. Eles usam uma fila global, com uma requisição pendente por vez, espaçamento inicial de 250 ms (até 4 pedidos/s), timeout de 450 ms, contadores individuais, desarme após 8 timeouts consecutivos ou 3 erros de link. O transmissor mestre exige autorização explícita de teste com veículo parado; não autorizar durante condução.
 
+## Escalas de decodificação — agora implementadas no módulo isolado
+
+- `src/tbx_j1587_decoder.c/.h`: leitura de payload dos **17 PIDs** usando escalas SAE J1587; conserva MID/PID/bytes originais e status **EM_VALIDACAO**.
+- `tests/test_tbx_j1587_decoder.c`: testes locais com os últimos bytes da captura de 29/10, valores indisponíveis, máscaras de estados e comprimentos incorretos.
+- `SCALES.md`: inventário de fórmulas, unidades e condições para validar os sinais.
+- **Pendente:** ligar ao firmware Core ESP-IDF dentro do ZIP, adicionar timestamp/persistência e compilar BIN. Não declarar o firmware de campo concluído.
+
 ## Estado
 - [x] Catálogo completo de 17 PIDs.
 - [x] Agendador portátil C11 e testes de fila/limites.
