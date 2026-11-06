@@ -2,7 +2,7 @@
 
 **Solicitados pelo proprietário:** 26, 33, 34, 37, 62, 68, 117, 118, 235, 236, 250, 31, 32, 63, 108, 158, 160.
 
-Os **17 ficam habilitados no catálogo**. Eles usam uma fila global, com uma requisição pendente por vez, espaçamento inicial de 250 ms (até 4 pedidos/s), timeout de 200 ms, contadores individuais, desarme após 8 timeouts consecutivos ou 3 erros de link. O transmissor mestre exige autorização explícita de teste com veículo parado; não autorizar durante condução.
+Os **17 ficam habilitados no catálogo**. Eles usam uma fila global, com uma requisição pendente por vez, espaçamento inicial de 250 ms (até 4 pedidos/s), timeout de 450 ms, contadores individuais, desarme após 8 timeouts consecutivos ou 3 erros de link. O transmissor mestre exige autorização explícita de teste com veículo parado; não autorizar durante condução.
 
 ## Estado
 - [x] Catálogo completo de 17 PIDs.
@@ -13,6 +13,8 @@ Os **17 ficam habilitados no catálogo**. Eles usam uma fila global, com uma req
 - [ ] Implementar os decodificadores dos 17 PIDs usando nossas capturas e inventário; validar comprimento, escala, unidades, valores especiais, qualidade e validade temporal.
 - [ ] Expor valores para multimídia, motorista e nuvem e preservar logs brutos no microSD.
 - [ ] Build ESP-IDF, replay das capturas e validação física supervisionada em caminhão estacionado.
+
+O timeout foi ajustado a 450 ms após cruzamento das capturas: PIDs 117 e 118 apresentaram latência média de aproximadamente 205-209 ms. O comportamento ainda requer teste na Rev.B.1.
 
 ## Testes locais
 `cc -std=c11 -Wall -Wextra -Werror -pedantic src/tbx_j1708_requests.c tests/test_tbx_j1708_requests.c -o /tmp/test_j1708 && /tmp/test_j1708`
