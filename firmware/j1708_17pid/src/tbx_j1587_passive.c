@@ -1,7 +1,9 @@
 #include "tbx_j1587_passive.h"
 #include <string.h>
 
-/* All 48 entries labelled PASSIVE_SEEN in Validator v2.2 matrix (29 Oct 2026).
+/* Field matrix 29 Oct 2026: 47 PIDs labelled PASSIVE_SEEN plus PID247,
+ * seen during passive baseline but labelled LIKELY_RESPONDED. PID188 has no
+ * baseline sample despite its PASSIVE_SEEN label; keep provisional.
  * This includes diagnostic/control PIDs, which must not become dashboard
  * sensor values. Standard, unambiguous scalar formulas are converted.
  * Others remain RAW_AGUARDANDO_ESCALA to avoid misleading readings.
