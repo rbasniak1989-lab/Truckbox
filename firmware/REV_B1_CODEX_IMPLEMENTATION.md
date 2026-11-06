@@ -60,6 +60,28 @@ Base original: `TruckBox_Mapa_Sinais_Explicado_Prioridades_2026-11-06.xlsx`, pla
 6. **API para Android** com campos antigos preservados e novos campos versionados. Para grandezas duplicadas: preferir J1939 validado, registrar J1708 como comparação; nunca somar peso/cálculos duplicados.
 7. **Diagnósticos**: estatísticas RX/TX, taxa de frames, descartes, erros checksum, MID/SA, percentis de latência e falhas, heartbeat para observar comportamento antes/depois.
 
+## REQUISITO OBRIGATÓRIO: coletar e salvar dados MESMO SEM GPS / ANTENA
+
+**Situação de teste:** a antena GNSS ainda não chegou. O firmware Core v0.2.0 deve operar normalmente com o GPS ausente, sem fix, desconectado, não inicializado ou retornando erro.
+
+- Inicialização da recepção **J1939 e J1708**, decodificação, agendamento J1708 autorizado, logger e **gravação persistente no microSD** devem ser completamente independentes do GNSS. Nenhuma espera bloqueante por GPS, satélites, fix ou horário GNSS na inicialização nem na coleta.
+- **GPS opcional**: manter `gps_status=UNAVAILABLE/NO_FIX`, `has_fix=false` e latitude/longitude/altitude como valores nulos/ausentes. Não fabricar coordenadas `0,0` (isso produz ponto falso no Golfo da Guiné), velocidade GPS zero ou tempo satelital inexistente.
+- Cada frame/sensor deve receber **sequência persistente/identificador e timestamp monotônico de captura**, inclusive sem relógio absoluto válido. Registrar a **fonte e qualidade** do horário: RTC/horário obtido da rede do caminhão/Android quando disponível, ou uptime monotônico relativo ao boot com `time_valid=false`; não inventar data/hora absoluta e não usar data de compilação como horário real.
+- Não impedir viagem, contadores, médias, armazenamento ou transmissão de telemetria por falta de posição GNSS. Distância/velocidade podem vir das redes veiculares com suas fontes e qualidade; quando GPS não existir, **não criar mapa/rota fictícios**.
+- O buffer persistente e o fluxo `Core → Android → Cloud` precisam aceitar dados sem localização. Enviar `gps=null`/campo omitido mantendo compatibilidade; não descartar lote de sensores por não haver lat/lon, nem mudar sua sequência/ACK. Quando a antena funcionar, associar posições **somente a partir dos fixes reais**; jamais retroatribuir posição aos registros anteriores.
+- Se microSD ou memória persistente falhar, reportar erro real e preservar o máximo possível por fila limitada; **não afirmar que gravou**. Após reboot sem GNSS, continuar adquirindo dados, registrar boot_id, lacunas e estado de recuperação.
+- Separar claramente as tarefas de RX/SD/Sync das de GPS. Falha, ausência ou timeout GNSS **não pode bloquear nem reiniciar os drivers J1939/J1708**.
+
+### Testes obrigatórios sem GNSS
+
+1. Inicializar Core com antena desconectada: verificar RX nas duas redes e persistência de frames/valores no microSD; `gps_status=NO_FIX`.
+2. Registrar período prolongado sem fix, inclusive reiniciando o Core; validar sequência, continuidade e `time_valid=false` quando aplicável.
+3. Receber dados pelo Android/Cloud sem GPS: confirmar aceitação de payload sem localização, ordenação, ACK e replay/reenvio após queda de internet.
+4. Ligar GPS depois de a gravação estar em andamento: fix real habilita apenas novos registros geográficos; manter histórico antigo sem posição.
+5. Simular GPS que trava/retorna erro durante coleta: telemetria e microSD continuam; sem lat/lon fictícias nem reinicialização do Core.
+
+**Critério de aceite prioritário:** o Core deve ser utilizável como data logger J1939/J1708 **mesmo que nenhuma antena GNSS seja instalada**.
+
 ## Critérios de aceitação — não dar como concluído sem evidência
 
 - [ ] Fonte real do firmware v0.1.0-b1 extraído da release, revisão de CMake/SDK/pinagem, compilação reproduzível ESP-IDF.
