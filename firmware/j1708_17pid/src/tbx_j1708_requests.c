@@ -13,7 +13,7 @@ void tbx_j1708_request_init(tbx_j1708_request_scheduler_t *s) {
     memset(s, 0, sizeof(*s));
     s->pending = TBX_J1708_NO_PENDING;
     s->min_spacing_ms = 250; /* maximum 4 requests/s; waits can slow it */
-    s->timeout_ms = 200;
+    s->timeout_ms = 450; /* MID 140 brake sensors had ~205-210 ms mean reply latency in field capture */
     for (uint8_t i=0; i<TBX_J1708_REQUEST_COUNT; ++i) {
         s->pids[i].pid = selected_pids[i];
         s->pids[i].enabled = true;
