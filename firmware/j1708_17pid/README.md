@@ -11,6 +11,14 @@ Os **17 ficam habilitados no catálogo**. Eles usam uma fila global, com uma req
 - `SCALES.md`: inventário de fórmulas, unidades e condições para validar os sinais.
 - **Pendente:** ligar ao firmware Core ESP-IDF dentro do ZIP, adicionar timestamp/persistência e compilar BIN. Não declarar o firmware de campo concluído.
 
+## Recepção passiva também incluída
+
+- `src/tbx_j1587_passive.c/.h`: catálogo de 48 PIDs observados/passivos, sem requisições.
+- 17 conversões numéricas provisórias; outros 31 formatos brutos aguardando definição segura de bitmasks/offsets.
+- `tests/test_tbx_j1587_passive.c`: replay de amostras, catálogo sem duplicatas, indisponíveis e tamanhos inválidos.
+- `PASSIVE.md`: lista de escalas, origem e observações de qualidade dos registros.
+- A biblioteca é isolada: **ainda não foi incorporada ao binário da Rev.B.1**.
+
 ## Estado
 - [x] Catálogo completo de 17 PIDs.
 - [x] Agendador portátil C11 e testes de fila/limites.
