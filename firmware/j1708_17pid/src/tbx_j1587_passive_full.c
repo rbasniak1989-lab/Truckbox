@@ -218,7 +218,7 @@ bool tbx_j1587_decode_passive_full(uint8_t mid, uint16_t pid,
         break;
     case 252:
         out->kind=TBX_J1587_KIND_DATE;
-        out->day=(uint8_t)(a/4u);
+        out->day=(uint8_t)((a+3u)/4u); /* SAE: raw 1..4 is day 1, 5..8 is day 2 */
         out->month=b;
         out->year=(uint16_t)(1985u+data[2]);
         if (!out->day || out->day>31u || !out->month || out->month>12u) {
