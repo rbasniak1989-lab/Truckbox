@@ -1,0 +1,87 @@
+{
+  "hardware_revision": "B1",
+  "version": "0.2.0-wdt1",
+  "state": "VERSAO_DE_TESTES",
+  "validation": "PARTIAL",
+  "physical_validation": "pending",
+  "esp_idf": "v5.5.2",
+  "preserves_nvs_and_storage": true,
+  "automatic_flash": false,
+  "images": {
+    "core": {
+      "project": "truckbox_core",
+      "flash_size": "8MB",
+      "flash_mode": "dio",
+      "flash_freq": "80m",
+      "usb_files": [
+        {
+          "offset": "0x0",
+          "file": "images/core/bootloader.bin",
+          "sha256": "7766c446494177c3734918d34dfc46da26b9f40089e3b498b85058de0b726514",
+          "size": 14736
+        },
+        {
+          "offset": "0x20000",
+          "file": "images/core/truckbox_core.bin",
+          "sha256": "6248f10cc813325396bd34a74770020a594a23cc60323465d210d094730d7765",
+          "size": 1434304
+        },
+        {
+          "offset": "0x8000",
+          "file": "images/core/partition-table.bin",
+          "sha256": "e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044",
+          "size": 3072
+        },
+        {
+          "offset": "0xf000",
+          "file": "images/core/ota_data_initial.bin",
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f",
+          "size": 8192
+        }
+      ],
+      "ota_file": "truckbox_core_0.2.0-wdt1_ota.bin",
+      "ota_sha256": "6248f10cc813325396bd34a74770020a594a23cc60323465d210d094730d7765",
+      "ota_size": 1434304
+    },
+    "link": {
+      "project": "truckbox_link",
+      "flash_size": "8MB",
+      "flash_mode": "dio",
+      "flash_freq": "80m",
+      "usb_files": [
+        {
+          "offset": "0x0",
+          "file": "images/link/bootloader.bin",
+          "sha256": "a81b9f000f03764b443bb27d6cb6a071c14d2b6edc8ca50fe340f5cb48f41a50",
+          "size": 14736
+        },
+        {
+          "offset": "0x20000",
+          "file": "images/link/truckbox_link.bin",
+          "sha256": "a3004f041de36cd9a20980fcf3949ee9f22c83e64ffa18ab023a3c4e3bfac1e5",
+          "size": 1423520
+        },
+        {
+          "offset": "0x8000",
+          "file": "images/link/partition-table.bin",
+          "sha256": "e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044",
+          "size": 3072
+        },
+        {
+          "offset": "0xf000",
+          "file": "images/link/ota_data_initial.bin",
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f",
+          "size": 8192
+        }
+      ],
+      "ota_file": "truckbox_link_0.2.0-wdt1_ota.bin",
+      "ota_sha256": "a3004f041de36cd9a20980fcf3949ee9f22c83e64ffa18ab023a3c4e3bfac1e5",
+      "ota_size": 1423520
+    }
+  },
+  "source": {
+    "file": "truckbox_firmware_source.zip",
+    "sha256": "249ab9eeebd735953075dad363d79e987091770f197b51689f1c94e588825b8a",
+    "layout": "firmware/espidf + firmware/j1708_17pid + firmware/j1939"
+  }
+}

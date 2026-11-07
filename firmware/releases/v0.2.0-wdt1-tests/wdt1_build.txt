@@ -1,0 +1,4 @@
+Build real ESP-IDF v5.5.2 / ESP32-C6 / 8 MB: PASS
+core: 1434304 bytes SHA256=6248f10cc813325396bd34a74770020a594a23cc60323465d210d094730d7765
+link: 1423520 bytes SHA256=a3004f041de36cd9a20980fcf3949ee9f22c83e64ffa18ab023a3c4e3bfac1e5
+Watchdog habilitado: timeout15s; panic desativado; IDLE CPU0 monitorada; tick100Hz. Sem flash/merge.
