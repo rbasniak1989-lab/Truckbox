@@ -1,0 +1,28 @@
+name: J1708 J1587 decoder unit tests
+on:
+  push:
+    branches:
+      - feature/revb1-j1708-17-pids
+  pull_request:
+    branches:
+      - firmware-revb1-ota-v0.1.0-b1
+jobs:
+  gcc-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test J1708 decoder modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd firmware/j1708_17pid
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic src/tbx_j1708_requests.c tests/test_tbx_j1708_requests.c -o /tmp/test_requests
+          /tmp/test_requests
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic src/tbx_j1587_decoder.c tests/test_tbx_j1587_decoder.c -lm -o /tmp/test_requested
+          /tmp/test_requested
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic src/tbx_j1587_passive.c tests/test_tbx_j1587_passive.c -lm -o /tmp/test_passive
+          /tmp/test_passive
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic src/tbx_j1587_passive.c src/tbx_j1587_passive_full.c tests/test_tbx_j1587_passive_full.c -lm -o /tmp/test_full
+          /tmp/test_full

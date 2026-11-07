@@ -1,0 +1,21 @@
+name: J1939 inventory consistency
+on:
+  push:
+    branches:
+      - feature/revb1-j1708-17-pids
+  pull_request:
+    branches:
+      - firmware-revb1-ota-v0.1.0-b1
+jobs:
+  check-inventory:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check 76 signals and 46 observed PGNs
+        run: python3 firmware/j1939/tests/test_inventory.py
+      - name: Validate recovered J1939 reference parser syntax
+        run: |
+          python3 -m py_compile firmware/j1939/references/truckbox_j1939_parser_v1.py
+          python3 firmware/j1939/references/truckbox_j1939_parser_v1.py --help >/dev/null

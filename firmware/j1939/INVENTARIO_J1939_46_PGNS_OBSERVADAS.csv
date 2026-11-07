@@ -1,0 +1,47 @@
+PGN,situacao,observacao
+PGN 0,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 1024,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 53248,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 57600,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 58112,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 60160,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 60416,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 61440,Há sinal traduzido,Força do freio motor
+PGN 61441,Há sinal traduzido,"ABS atuando, Aviso de ABS/EBS"
+PGN 61442,Há sinal traduzido,"Rotação da entrada da caixa, Rotação da saída da caixa, Patinação da embreagem, Estados internos da transmissão"
+PGN 61443,Há sinal traduzido,"Acelerador, Interruptores do acelerador"
+PGN 61444,Há sinal traduzido,"RPM, Torque do motor, Potência estimada, Demanda de torque, Estado da partida"
+PGN 61445,Há sinal traduzido,"Marcha selecionada, Marcha engatada, Relação de transmissão"
+PGN 61456,Alias/artefato,Alias de outros PGNs do motor/caixa
+PGN 65110,Sem leitura útil,Sinais do sistema SCR/ARLA
+PGN 65118,Alias/artefato,Alias do sistema de emissões
+PGN 65132,Há sinal traduzido,"Veículo em movimento pelo tacógrafo, Estado de trabalho do motorista, Rotação da saída pelo tacógrafo, Velocidade pelo tacógrafo"
+PGN 65150,Alias/artefato,Alias de tacógrafo
+PGN 65214,Alias/artefato,Alias da mensagem EBC2
+PGN 65215,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
+PGN 65217,Há sinal traduzido,"Distância total em alta resolução, Distância da viagem"
+PGN 65246,Alias/artefato,Alias na captura atual
+PGN 65247,Há sinal traduzido,Torque de atrito
+PGN 65249,Há sinal traduzido,"Curva de atuação do freio motor, Torque de referência do VEB"
+PGN 65251,Há sinal traduzido,"Torque de referência, Curva de torque, Rotação máxima da configuração, Limite de controle de torque, Parâmetros avançados da programação"
+PGN 65254,Há sinal traduzido,Data e hora do caminhão
+PGN 65258,Há sinal traduzido,"Peso nos eixos de tração, Peso por canal do bogie"
+PGN 65262,Há sinal traduzido,"Temperatura da água, Temperatura do óleo do motor, Temperatura do combustível"
+PGN 65263,Há sinal traduzido,"Pressão do combustível, Pressão do óleo do motor, Nível do óleo do motor, Pressão interna do cárter, Nível da água do motor, Pressão do arrefecimento, Blow-by por campo auxiliar"
+PGN 65265,Há sinal traduzido,"Velocidade do caminhão, Freio de estacionamento, Velocidade programada no piloto"
+PGN 65269,Há sinal traduzido,Temperatura ambiente
+PGN 65270,Há sinal traduzido,"Pressão do turbo, Temperatura do ar de admissão, Pressão de entrada do ar, Restrição do filtro de ar"
+PGN 65272,Há sinal traduzido,Temperatura do óleo da caixa
+PGN 65278,Alias/artefato,Alias de outras mensagens
+PGN 65282,Há sinal traduzido,"Acelerador, velocidade e piloto (cópia)"
+PGN 65286,Há sinal traduzido,"Modo da I-Shift, Comandos de troca de marcha"
+PGN 65292,Há sinal traduzido,Marcha mais alta
+PGN 65295,Há sinal traduzido,"Peso estimado do conjunto, Estado de movimento, I-Roll (cópia auxiliar)"
+PGN 65311,Alias/artefato,Alias de mensagens Volvo
+PGN 65317,Há sinal traduzido,"Farol baixo, Farol alto, Comandos auxiliares de iluminação"
+PGN 65320,Sem leitura útil,Mensagem Volvo ainda desconhecida
+PGN 65321,Há sinal traduzido,"I-Roll ativo, Modo econômico da I-Shift, Marcha pelo sinal proprietário, Seletor da I-Shift (cópia)"
+PGN 65323,Há sinal traduzido,"Estágio selecionado do VEB, Estado auxiliar do VEB, Piloto automático ligado, Limite superior do cruise, Caminhão parado ou rodando"
+PGN 65340,Há sinal traduzido,"Botão + do piloto, Botão - do piloto"
+PGN 65343,Alias/artefato,Alias de mensagens Volvo
+PGN 196607,Tráfego sem sinal útil,"Mensagem identificada no log, sem parâmetro prático decodificado neste inventário."
