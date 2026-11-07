@@ -1,0 +1,2 @@
+af8f9c8d9990df12ea31056753e2c0438c41ce033fd1cc89a3a02df8f5695170  Truckbox_B1_firmware_0.2.3_TESTES.zip
+eb68d1e03e4b329e08d460efd59ac481793797ba5438bf23d67aa0cddb3fe12c  truckbox_core_0.2.3_ota.bin
