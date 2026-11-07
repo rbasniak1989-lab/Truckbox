@@ -1,0 +1,32 @@
+{
+  "version": "0.2.1",
+  "role": "core",
+  "project": "truckbox_core",
+  "target": "esp32c6",
+  "flash_bytes": 8388608,
+  "esp_idf": "v5.5.2",
+  "base_commit": "c52c4d5f09482fcc5c56f2c1933e68316ab59b68",
+  "physical_validation": "PENDING",
+  "rollback_enabled": true,
+  "startup_heap_minimum_bytes": 20000,
+  "files": [
+    {
+      "name": "truckbox_core_0.2.1_ota.bin",
+      "bytes": 1434272,
+      "sha256": "671031d4ac8b53b6c15257ea60877729190cd7f275587977a3756b7183a52f2c"
+    },
+    {
+      "name": "truckbox_core_0.2.1_source.zip",
+      "bytes": 348950,
+      "sha256": "62d6aa1b88d5e81d1a0661bcac231c04df9bfe6a1282117de75304a265166870"
+    }
+  ],
+  "host_tests": [
+    "bridge_memory",
+    "telemetry",
+    "store_transactions",
+    "core_gps",
+    "capture_integration",
+    "j1939"
+  ]
+}

@@ -23,6 +23,10 @@
 
 #define LIVE_CLIENTS 4
 #define MAX_SAFE_SEQUENCE UINT64_C(9007199254740991)
+/* Drain faster after ACK rather than retaining a large JSON tree during a
+ * potentially 45-second HTTP wait. Decoder and durable queue sizes are unchanged. */
+#define BRIDGE_BATCH_LIMIT 8U
+#define BRIDGE_BATCH_BYTES 8192U
 static const char *TAG = "tb_core";
 typedef struct { char line[128]; size_t length; } live_line_t;
 typedef struct {
@@ -159,13 +163,45 @@ static bool numeric_sequence(const cJSON *number, uint64_t *sequence)
     return true;
 }
 
-static bool batch_contains(const cJSON *batch, uint64_t sequence)
+typedef struct {
+    char *payload;
+    uint64_t sequences[BRIDGE_BATCH_LIMIT];
+    size_t count;
+} bridge_batch_t;
+
+/* Always consumes batch, including errors. Only the compact wire payload and
+ * exact offered sequence IDs survive; no cJSON tree crosses the network wait. */
+static bool prepare_bridge_batch(cJSON *batch, bridge_batch_t *prepared)
 {
+    memset(prepared, 0, sizeof(*prepared));
+    const cJSON *samples = cJSON_GetObjectItemCaseSensitive(batch, "samples");
+    const cJSON *count = cJSON_GetObjectItemCaseSensitive(batch, "count");
+    bool valid = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(batch, "ok")) &&
+        cJSON_IsArray(samples) && cJSON_IsNumber(count);
     const cJSON *sample;
-    cJSON_ArrayForEach(sample, cJSON_GetObjectItemCaseSensitive(batch, "samples")) {
+    cJSON_ArrayForEach(sample, samples) {
         uint64_t candidate;
-        if (numeric_sequence(cJSON_GetObjectItemCaseSensitive(sample, "seq"), &candidate) && candidate == sequence) return true;
+        if (!valid || prepared->count >= BRIDGE_BATCH_LIMIT ||
+            !numeric_sequence(cJSON_GetObjectItemCaseSensitive(sample, "seq"), &candidate) ||
+            (prepared->count && candidate <= prepared->sequences[prepared->count - 1])) {
+            valid = false;
+            break;
+        }
+        prepared->sequences[prepared->count++] = candidate;
     }
+    valid = valid && prepared->count > 0 && count->valuedouble == (double)prepared->count;
+    if (valid) prepared->payload = cJSON_PrintUnformatted(batch);
+    cJSON_Delete(batch);
+    if (prepared->payload && strlen(prepared->payload) <= BRIDGE_BATCH_BYTES) return true;
+    cJSON_free(prepared->payload);
+    memset(prepared, 0, sizeof(*prepared));
+    return false;
+}
+
+static bool batch_contains(const bridge_batch_t *batch, uint64_t sequence)
+{
+    for (size_t i = 0; i < batch->count; ++i)
+        if (batch->sequences[i] == sequence) return true;
     return false;
 }
 
@@ -175,12 +211,10 @@ static void bridge_task(void *unused)
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(delay_ms));
         if (tb_web_ota_busy() || !tb_config()->pair_key[0]) continue;
-        cJSON *batch = tb_store_batch(16, 16000);
+        cJSON *batch = tb_store_batch(BRIDGE_BATCH_LIMIT, BRIDGE_BATCH_BYTES);
         if (!batch) continue;
-        const cJSON *count = cJSON_GetObjectItemCaseSensitive(batch, "count");
-        if (!cJSON_IsNumber(count) || count->valueint < 1) { cJSON_Delete(batch); continue; }
-        char *payload = cJSON_PrintUnformatted(batch);
-        if (!payload) { cJSON_Delete(batch); continue; }
+        bridge_batch_t prepared;
+        if (!prepare_bridge_batch(batch, &prepared)) continue;
         response_t response = {0};
         esp_http_client_config_t config = { .url = "http://" TB_LINK_IP "/api/uplink", .method = HTTP_METHOD_POST,
             .timeout_ms = 45000, .event_handler = response_event, .user_data = &response, .buffer_size = 1024,
@@ -193,19 +227,22 @@ static void bridge_task(void *unused)
             snprintf(authorization, sizeof(authorization), "Bearer %s", tb_config()->pair_key);
             esp_http_client_set_header(client, "Authorization", authorization);
             esp_http_client_set_header(client, "Content-Type", "application/json");
-            esp_http_client_set_post_field(client, payload, strlen(payload));
+            esp_http_client_set_post_field(client, prepared.payload, strlen(prepared.payload));
             ++s.uplink_attempts;
             err = esp_http_client_perform(client);
             status = esp_http_client_get_status_code(client);
             esp_http_client_cleanup(client);
         }
+        /* HTTP is complete. The ACK guard needs sequence IDs, not payload text. */
+        cJSON_free(prepared.payload);
+        prepared.payload = NULL;
         bool acknowledged = false;
         if (err == ESP_OK && status >= 200 && status < 300 && !response.overflow) {
             cJSON *result = cJSON_Parse(response.bytes);
             uint64_t ack;
             if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result, "ok")) &&
                 numeric_sequence(cJSON_GetObjectItemCaseSensitive(result, "ack_seq"), &ack) &&
-                batch_contains(batch, ack) && tb_store_ack(ack) == ESP_OK) acknowledged = true;
+                batch_contains(&prepared, ack) && tb_store_ack(ack) == ESP_OK) acknowledged = true;
             cJSON_Delete(result);
         }
         xSemaphoreTake(s.lock, portMAX_DELAY);
@@ -219,7 +256,6 @@ static void bridge_task(void *unused)
             if (delay_ms > 60000) delay_ms = 60000;
         }
         xSemaphoreGive(s.lock);
-        free(payload); cJSON_Delete(batch);
     }
 }
 

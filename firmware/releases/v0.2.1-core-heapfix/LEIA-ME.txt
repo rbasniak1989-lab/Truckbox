@@ -1,0 +1,24 @@
+Truckbox Rev B1 - Core 0.2.1 (correcao de RAM; teste na placa pendente)
+
+O log confirmou que 0.2.0 iniciou e voltou para 0.1.0-b1 por pouca RAM livre.
+Esta imagem libera a arvore do lote antes de esperar o Link e envia lotes
+menores, mantendo a guarda de RAM e o rollback. Configuracoes, particoes e
+registros persistidos sao preservados. Nao altera o firmware do Link.
+
+COMO TESTAR
+1. Abra a pagina do Core e selecione "Core, neste dispositivo".
+2. Deixe o monitor USB do Core aberto, gravando o log como no teste anterior.
+3. Selecione truckbox_core_0.2.1_ota.bin e clique em "Validar e atualizar".
+4. Mantenha a alimentacao e aguarde 60 segundos depois do reinicio.
+5. Consulte o diagnostico: version deve ser 0.2.1, ota.state deve ser 2 e
+   rollback_enabled deve permanecer true. A particao pode ser ota_0 ou ota_1.
+6. Envie o novo diagnostico e o log de inicializacao para verificar a margem
+   de RAM, inclusive heap_free, heap_minimum e heap_largest_block.
+
+Se voltar a versao anterior, preserve a instalacao e envie o log. Esta imagem
+foi compilada e passou nos testes host; ainda depende do teste na sua PCB.
+
+Imagem ESP32-C6, flash 8 MB, ESP-IDF v5.5.2, projeto truckbox_core.
+Detalhes, testes e limitacoes: firmware/espidf/HEAPFIX_v0.2.1.md no ZIP de fontes.
+Os fontes incluem o historico 0.2.0; reproduza esta compilacao com:
+idf.py -B build-core -DTRUCKBOX_ROLE=core -DPROJECT_VER=0.2.1 build

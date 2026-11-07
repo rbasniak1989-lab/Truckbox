@@ -4,6 +4,7 @@
 #include <time.h>
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -76,6 +77,7 @@ void tb_base_add_json(cJSON *object)
     cJSON_AddNumberToObject(object, "uptime_ms", esp_timer_get_time() / 1000);
     cJSON_AddNumberToObject(object, "heap_free", esp_get_free_heap_size());
     cJSON_AddNumberToObject(object, "heap_minimum", esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(object, "heap_largest_block", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     cJSON_AddNumberToObject(object, "reset_reason", esp_reset_reason());
     cJSON_AddBoolToObject(object, "clock_synced", time(NULL) >= 1704067200);
     cJSON *ota = cJSON_AddObjectToObject(object, "ota");

@@ -6,6 +6,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -102,7 +103,11 @@ void app_main(void)
     ESP_LOGI(TAG, "Services ready. Type setup on USB to retrieve local access credentials.");
     /* Do not require router connectivity, a SIM, GPS fix or vehicle traffic. */
     vTaskDelay(pdMS_TO_TICKS(15000));
-    if (esp_get_free_heap_size() < 20000) fail_startup(ESP_ERR_NO_MEM, "startup heap");
+    size_t startup_free = esp_get_free_heap_size();
+    ESP_LOGI(TAG, "Startup heap: free=%u minimum=%u largest=%u bytes (required=20000)",
+             (unsigned)startup_free, (unsigned)esp_get_minimum_free_heap_size(),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    if (startup_free < 20000) fail_startup(ESP_ERR_NO_MEM, "startup heap");
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;
     if (running && esp_ota_get_state_partition(running, &state) == ESP_OK
