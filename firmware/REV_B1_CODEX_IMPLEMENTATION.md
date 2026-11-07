@@ -10,6 +10,30 @@
 - Preservar app Motorista e Multimídia e seus protocolos existentes; versionar mudanças de formato para manter compatibilidade.
 - Esta branch: `feature/revb1-j1708-17-pids`. PR #4 fica em rascunho até testes completos.
 
+## FONTES J1939 RECUPERADAS — PRIORIDADE MÁXIMA PARA O CODEX
+
+O Documento Mestre **existe** e foi recuperado da biblioteca histórica do usuário. Não declarar bloqueio por falta dele.
+
+Arquivos agora presentes nesta mesma branch, em `firmware/j1939/references/`:
+1. `DOCUMENTO_MESTRE_J1939_v1.1_2026-08-11.md` — transcrição integral em Markdown da versão 1.1 (11/08/2026), **incluindo suas 31 tabelas** de bytes, offsets, escalas, enumerações, PGNs proprietárias Volvo, tratamento de aliases e pendências.
+2. `truckbox_j1939_parser_v1.py` — **implementação Python de referência**, ~737 linhas, já testada historicamente contra os dois Logs Mãe e que implementa muitas dessas regras.
+3. `VALIDACAO_LOGS_MAE_PARSER_V1.md` — relatório dos testes dos Logs Mãe carregado e vazio, 11 testes originais, faixas operacionais, IDs, fatores de consumo, registros corrompidos e ressalvas.
+
+**Limite real:** os dois ZIPs originais do Log Mãe foram pesquisados na biblioteca desta conversa, mas ainda não foram localizados como arquivos acessíveis:
+- `TruckBox_2026-08-02_23-06-38(1).zip` — carregado, ~9,08 milhões de frames.
+- `TruckBox_2026-08-03_23-21-21.zip` — vazio, ~9,85 milhões de frames.
+Não afirmar que foram reproduzidos no Codex nem que estão ausentes de todas as fontes; solicitar upload se replay completo depender deles.
+
+**Instruções obrigatórias antes de manter 47 sinais J1939 como nulos:**
+- Comparar os 76 itens do CSV de inventário, um por um, contra as 24 seções de decodificações detalhadas do Mestre v1.1 e os decoders Python. Gerar matriz de cobertura `item/PGN → offset/escala/enum → evidência → status → implementação → teste`.
+- Portar todas as fórmulas e estados **realmente fundamentados**, e criar testes de regressão reproduzíveis de cada campo contra exemplos, limites e códigos de indisponível do Mestre e do relatório. Não limitar implementação aos 29 itens que estavam no repo antes deste resgate.
+- O parser de referência foi baseado originalmente na v1.0; confrontar correções e acréscimos da v1.1, em particular a calibração **2643 Nm** e fator **C0=0,9720031611625598** (PROVISÓRIO), o P5 da curva VEB 65249 em B18, e o tratamento específico de aliases PGN+SA.
+- O relatório validou historicamente 27 PGNs úteis como decodificadas/tratadas; **61 sinais rotulados 'Validado' no inventário NÃO significam necessariamente 61 fórmulas independentes**. Alguns são estimativas, cálculos derivados, sinônimos ou cópias auxiliares. Não converter N/A para valores numéricos sem prova.
+- Manter explicitamente sem interpretação os bits proprietários não fechados: 61441 ABS nominal, partes 65282/65286/65292, 65317 D0/D2, timezone 65254, Engine Gain Kp/limites 65251 e demais itens parcial/indisponível.
+- Preservar logs originais e proveniência em cada leitura, e distinguir `VALIDADO_NOS_LOGS` de validação física no caminhão.
+
+**Entrega exigida:** depois de revisar estas fontes, atualizar no PR o número de campos realmente implementados e de campos ainda nulos, com suas causas. O número antigo **29/76** é ponto de partida, não uma limitação técnica permanente, mas nunca prometer 76/76 sem evidência.
+
 ## Entrada J1939 — inventário que deve ser implementado
 
 Arquivo **`firmware/j1939/INVENTARIO_J1939_76_SINAIS.csv`** contém os **76 sinais**, com:
