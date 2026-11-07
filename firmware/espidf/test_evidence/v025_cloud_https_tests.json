@@ -1,0 +1,22 @@
+[
+  {
+    "test": "diagnostics_without_gps",
+    "status": 200,
+    "ack_seq": 8
+  },
+  {
+    "test": "idempotent_retry",
+    "status": 200,
+    "ack_seq": 8
+  },
+  {
+    "test": "invalid_sequence_rejects_entire_batch",
+    "status": 400,
+    "ack_seq": null
+  },
+  {
+    "test": "invalid_authentication",
+    "status": 401,
+    "ack_seq": null
+  }
+]

@@ -1,4 +1,11 @@
-# Relatório executado — Rev.B.1 v0.2.0 de testes
+# Relatório executado — Rev.B.1 de testes
+
+Atualização v0.2.2: suites deste relatório executadas novamente, acrescentando
+seleção Wi-Fi/PPP do Link, uploader/ACK/memória e cache de pares em C real com
+fronteiras simuladas. Ingestão v25 implantada e testada por HTTPS/banco sem GPS.
+Detalhes e limites físicos em WIFI_LINK_CLOUD_v0.2.2.md e evidências v022.
+
+## Histórico da entrega v0.2.0
 
 Sessão de desenvolvimento:06/11/2026, America/Sao_Paulo. Alvo real de compilação:
 ESP32-C6-WROOM-1/8MB, ESP-IDF **v5.5.2** commit

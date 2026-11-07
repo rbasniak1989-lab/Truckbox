@@ -39,7 +39,8 @@ async function invoke(path, samples, options = {}) {
     }
     then(resolve, reject) {
       return (async () => {
-        if (this.table === 'telemetry_samples' && options.failPersistence) return { error: { message: 'mock persistence failure' } };
+        if ((this.table === 'telemetry_samples' && options.failPersistence) ||
+            (this.table === 'health_minute_samples' && options.failHealthPersistence)) return { error: { message: 'mock persistence failure' } };
         writes.push({ table: this.table, operation: this.operation, data: clone(this.data) });
         if (this.table === 'telemetry_latest') state.latest = clone(this.data);
         if (this.table === 'operation_state' && this.data.runtime_counters) state.counters = clone(this.data.runtime_counters);
@@ -148,3 +149,34 @@ if (baselinePath) {
   console.log('PASS: persistence failure prevents ACK and aggregate side effects');
 }
 console.log('Cloud ingest compatibility mock tests: PASS (local only; no deployment/network/database)');
+if (args.includes('--v25')) {
+  const got = await invoke(sourcePath, diagnostics);
+  for (const [index, row] of got.rows.entries()) {
+    assert.equal(row.sample_kind, diagnostics[index].sample_kind);
+    for (const key of ['rpm','fuel_rate_lph','engine_running','trip_fuel_l','gear','lat','lon'])
+      assert.equal(row[key], null, `diagnostic ${key} must not reach SQL operational triggers`);
+  }
+  const nullable = await invoke(sourcePath, [{seq: 10, rpm: null, gear: null, fuel_rate_lph: '', speed_kmh: false}], {noTrip:true});
+  assert.equal(nullable.status, 200);
+  for (const key of ['rpm','gear','fuel_rate_lph','speed_kmh']) assert.equal(nullable.rows[0][key], null);
+  for (const bad of [null, -1, 1.5, '', false, {}, 9007199254740992]) {
+    const invalid = await invoke(sourcePath, [{seq:11}, {seq:bad}]);
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.response.ack_seq, undefined);
+    assert.equal(invalid.writes.length, 0);
+  }
+  const malformed = await invoke(sourcePath, [], {body:{samples:{seq:12}}});
+  assert.equal(malformed.status, 400);
+  const badToken = await invoke(sourcePath, [{seq:12}], {body:{token:'wrong-token'}});
+  assert.equal(badToken.status, 401);
+  assert.equal(badToken.writes.length, 0);
+  const health = {seq:13,sample_kind:'HEALTH',boot_id:55,uptime_us:10000000,time_valid:false,metrics:{queue_depth:0}};
+  const hgot = await invoke(sourcePath, [health], {noTrip:true});
+  assert.equal(hgot.status, 200);
+  assert.equal(hgot.response.ack_seq, 13);
+  assert.deepEqual(hgot.writes.find(w=>w.table==='health_minute_samples').data[0].context.firmware_record, health);
+  const hfailed = await invoke(sourcePath, [health], {failHealthPersistence:true});
+  assert.equal(hfailed.status, 500);
+  assert.equal(hfailed.response.ack_seq, undefined);
+  console.log('PASS: v25 preserves diagnostic kinds, NULLs and health provenance; malformed sequences/auth/storage errors never ACK');
+}

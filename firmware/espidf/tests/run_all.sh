@@ -5,6 +5,7 @@ test_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 export ASAN_OPTIONS=detect_leaks=0
 cd "$test_root"
 sh components/tb_base/tests/run_host_tests.sh
+sh components/tb_base/tests/run_peer_address.sh
 sh components/tb_web/tests/run_policy_test.sh
 sh components/tb_core/tests/run.sh
 sh components/tb_core/tests/run_store_format.sh
@@ -22,6 +23,7 @@ sh components/tb_core/tests/run_capture_integration.sh
 sh components/tb_core/tests/run_core_gps.sh
 sh components/tb_core/tests/run_telemetry.sh
 sh components/tb_core/tests/run_j1708_active.sh
+sh components/tb_link/tests/run_wifi_uplink.sh
 test_binary=$(mktemp /tmp/tb-link-test.XXXXXX)
 trap 'rm -f "$test_binary"' EXIT HUP INT TERM
 cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror \

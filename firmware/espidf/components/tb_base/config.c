@@ -43,7 +43,7 @@ typedef struct {
 static const string_field_t STRING_FIELDS[] = {
     STRING_FIELD(wifi_ssid), STRING_FIELD(wifi_password),
     STRING_FIELD(admin_token), STRING_FIELD(ap_password), STRING_FIELD(pair_key),
-    STRING_FIELD(core_ssid), STRING_FIELD(core_password),
+    STRING_FIELD(core_ssid), STRING_FIELD(core_password), STRING_FIELD(core_host),
     STRING_FIELD(uplink_url), STRING_FIELD(uplink_token),
     STRING_FIELD(cloud_device_uid), STRING_FIELD(gps_url),
     STRING_FIELD(gps_device_uid), STRING_FIELD(gps_token),
@@ -152,6 +152,7 @@ static void defaults(tb_config_t *config)
     config->gnss_baud = 9600;
     config->capture_enabled = true;
     config->gnss_enabled = true;
+    snprintf(config->core_host, sizeof(config->core_host), "truckbox.local");
     snprintf(config->uplink_url, sizeof(config->uplink_url),
              "https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-ingest");
     snprintf(config->gps_url, sizeof(config->gps_url),
@@ -221,6 +222,11 @@ static esp_err_t validate_config(const tb_config_t *config, char *error, size_t 
     }
     if (config->sd_enabled && !config->repaired_power_gates) {
         return invalid(error, capacity, "sd_enabled: confirme primeiro o reparo dos controles de alimentacao");
+    }
+    if (!config->core_host[0]) return invalid(error, capacity, "core_host: informe o hostname ou IPv4 do Core");
+    for (const unsigned char *p = (const unsigned char *)config->core_host; *p; ++p) {
+        if (!isalnum(*p) && *p != '.' && *p != '-')
+            return invalid(error, capacity, "core_host: use somente hostname ou IPv4, sem http, porta ou caminho");
     }
     if (tb_role() == TB_ROLE_LINK && *config->core_ssid != '\0' &&
         *config->core_password == '\0') {
@@ -521,6 +527,7 @@ cJSON *tb_config_public_json(void)
     }
     cJSON_AddStringToObject(json, "wifi_ssid", s_config.wifi_ssid);
     cJSON_AddStringToObject(json, "core_ssid", s_config.core_ssid);
+    cJSON_AddStringToObject(json, "core_host", s_config.core_host);
     cJSON_AddStringToObject(json, "uplink_url", s_config.uplink_url);
     cJSON_AddStringToObject(json, "cloud_device_uid", s_config.cloud_device_uid);
     cJSON_AddStringToObject(json, "gps_url", s_config.gps_url);

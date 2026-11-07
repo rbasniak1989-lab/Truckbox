@@ -144,6 +144,7 @@ static void test_first_boot_and_public_data(void)
     assert(strlen(tb_config()->pair_key) == 64);
     assert(tb_config()->capture_enabled && tb_config()->gnss_enabled);
     assert(!tb_config()->sd_enabled && !tb_config()->modem_enabled);
+    assert(!strcmp(tb_config()->core_host, "truckbox.local"));
     assert(tb_auth_admin(tb_config()->admin_token));
     assert(tb_auth_pair(tb_config()->pair_key));
     assert(!tb_auth_admin(NULL) && !tb_auth_admin("wrong"));
@@ -172,7 +173,7 @@ static void test_save_reboot_and_partial_updates(void)
     assert(tb_config_init() == ESP_OK);
     const tb_config_t before = *tb_config();
     assert(apply("{\"wifi_ssid\":\"Truck WiFi\",\"wifi_password\":\"long-password\","
-                 "\"cloud_device_uid\":\"vehicle-a\",\"sequence_floor\":12345}") == ESP_OK);
+                 "\"cloud_device_uid\":\"vehicle-a\",\"core_host\":\"192.168.68.105\",\"sequence_floor\":12345}") == ESP_OK);
     assert(memcmp(&before, tb_config(), sizeof(before)) == 0);
     assert(apply("{\"can_baud\":500000,\"gps_device_uid\":\"gps-a\"}") == ESP_OK);
     reboot();
@@ -180,6 +181,7 @@ static void test_save_reboot_and_partial_updates(void)
     assert(strcmp(tb_config()->wifi_ssid, "Truck WiFi") == 0);
     assert(strcmp(tb_config()->wifi_password, "long-password") == 0);
     assert(strcmp(tb_config()->cloud_device_uid, "vehicle-a") == 0);
+    assert(strcmp(tb_config()->core_host, "192.168.68.105") == 0);
     assert(strcmp(tb_config()->gps_device_uid, "gps-a") == 0);
     assert(tb_config()->can_baud == 500000 && tb_config()->sequence_floor == 12345);
     assert(apply("{\"wifi_password\":\"\",\"sd_enabled\":true,\"repaired_power_gates\":true}") == ESP_OK);
@@ -206,6 +208,8 @@ static void test_invalid_inputs_never_persist(void)
         "{\"gnss_baud\":10000}", "{\"sequence_floor\":-1}",
         "{\"sequence_floor\":1.5}", "{\"sequence_floor\":9007199254740992}",
         "{\"sd_enabled\":true}",
+        "{\"core_host\":\"http://192.168.4.1\"}", "{\"core_host\":\"\"}",
+        "{\"core_host\":\"truckbox.local:80/path\"}",
     };
     const unsigned initial_writes = writes;
     const char *stored = strdup(persisted);

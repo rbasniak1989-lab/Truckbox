@@ -1,4 +1,15 @@
-# Compatibilidade Cloud — patch local pendente
+# Compatibilidade Cloud — ingestão v25 ativa
+
+A revisão 25 foi implantada e verificada por HTTPS/banco em 07/11/2026 para
+receber a telemetria da Rev.B.1 sem GPS. Leia `../WIFI_LINK_CLOUD_v0.2.2.md`.
+O histórico abaixo documenta a preparação inicial do patch v24; a alteração
+atual reproduzível está em `patch_ingest_v25.py`/`truckbox-ingest-v25.patch`.
+A fonte integral privada e os tokens não fazem parte deste diretório.
+
+Validação atual: `node cloud/test_ingest_mock.mjs --source PRIVADO.ts --v25`.
+O teste real confirmou persistência, deduplicação, nulos e rejeição sem ACK.
+
+## Histórico da preparação inicial
 
 **Este diretório não implanta nem altera a Cloud.** A função `truckbox-ingest`
 versão 24 foi examinada por leitura. O código completo dessa função contém

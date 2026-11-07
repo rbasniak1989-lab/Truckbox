@@ -1,9 +1,9 @@
-# TruckBox Rev.B.1 v0.2.0-wdt1 — VERSÃO DE TESTES
+# TruckBox Rev.B.1 v0.2.2 — VERSÃO DE TESTES
 
-Correção do watchdog observado em campo na v0.2.0. Leia `WDT_FIX_REPORT.md`.
-O Core limita os lotes do decoder e do gravador para deixar executar IDLE/USB.
-A confirmação final de Wi-Fi e operação sustentada depende de novo ensaio na placa.
-A versão anterior permanece arquivada, sem sobrescrita.
+Core captura; Link envia à nuvem pela internet do Wi-Fi. Atualize os dois módulos
+e leia `WIFI_LINK_CLOUD_v0.2.2.md` para configuração e limites dos testes.
+Inclui a redução de RAM da 0.2.1 e a correção de watchdog da 0.2.0-wdt1.
+As versões anteriores permanecem arquivadas, sem sobrescrita.
 
 Firmware derivado do fonte real de `truckbox-b1.zip`, branch funcional
 `firmware-revb1-ota-v0.1.0-b1`. Projeto ESP-IDF5.5.2, ESP32-C6-WROOM-1, flash8MB.
@@ -28,11 +28,11 @@ as novas referências foram lidas, e os testes comparam vetores construídos a
 partir delas com o parser Python. Não foi reprocessado o conjunto de milhões
 de frames dos Logs Mãe.
 
-A Cloud atual aceita GPS ausente e conserva o payload em `raw`, mas seu ingest
+O histórico da integração v0.2.0 identificou que o ingest antigo
 v24 trata RAW/DECODED como operacional e pode esvaziar o estado do painel.
-A correção local em `cloud/` precisa ser revisada, testada e implantada antes de
-usar o gateway antigo com a nova fila de registros. Não foi implantada aqui.
-Não afirmar integração Cloud de ponta a ponta validada enquanto isso estiver pendente.
+Essa situação foi corrigida na ingestão v25, implantada e testada por HTTPS e
+consulta ao banco. O caminho físico Core → Link → Wi-Fi → Cloud ainda precisa
+ser ensaiado nos dispositivos após atualização e configuração da v0.2.2.
 
 ## Compilar, testar e empacotar
 
@@ -44,7 +44,7 @@ Ative ESP-IDF5.5.2 e siga `BUILD_ENVIRONMENT.md`:
 cd firmware/espidf
 bash tools/build_v020.sh all
 sh tests/run_all.sh
-python tools/build_release.py --output-dir release --package Truckbox_B1_firmware_0.2.0-wdt1_TESTES.zip
+python tools/build_release.py --output-dir release --package Truckbox_B1_firmware_0.2.2_TESTES.zip
 ```
 
 O pacote contém fontes completos, Core/Link `.bin`, bootloaders, tabela de

@@ -15,7 +15,7 @@ Após a primeira gravação USB e o vínculo, a página do Core permite atualiza
 
 Envie a **aplicação OTA**. Não envie ZIP, bootloader, tabela de partições ou pacote USB concatenado. O receptor também confere a função da imagem.
 
-Na atualização do Link, o Core encaminha o arquivo pela rede interna. O Link precisa estar alimentado, vinculado e acessível em `192.168.4.2`. O Core permanece com sua própria aplicação; o módulo atualizado reinicia.
+Na atualização do Link, o Core encaminha o arquivo pela rede local. O Link precisa estar alimentado e vinculado. No modo privado, o endereço é `192.168.4.2`; no modo Wi-Fi externo da 0.2.2, é o IP LAN aprendido por mensagem autenticada (`network.link_host`). O Core permanece com sua aplicação; o módulo atualizado reinicia.
 
 Atualize um módulo por vez. Versões futuras devem manter compatibilidade de protocolo com a anterior e prever a ordem de atualização. Não há troca atômica dos dois firmwares como uma única operação.
 
@@ -54,7 +54,7 @@ OTA preserva NVS e registros. Futuras mudanças de formato persistente devem ler
 | Upload interrompido | Reconecte à página, confira versão/partição e tente novamente após o módulo responder. |
 | Página some após salvar Wi‑Fi | Reconecte à rede escolhida; consulte IP no USB ou use o AP de configuração. |
 | `truckbox.local` não resolve | Use o IP LAN mostrado no USB/diagnóstico. |
-| Link indisponível | Confira alimentação, SSID/senha/chave internos e `192.168.4.2`. |
+| Link indisponível | Confira alimentação e chave de vínculo; no modo externo confira mesma LAN, `core_host` e `network.link_host`; no privado confira SSID/senha e `192.168.4.2`. |
 | Nova versão volta à anterior | Veja o USB: o novo boot não foi confirmado. |
 | Nenhuma aplicação responde | Entre no bootloader pelo BOOT e faça manutenção USB; confira EN e alimentação. |
 

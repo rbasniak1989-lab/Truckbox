@@ -58,8 +58,9 @@
 
         <div class="config-group section" id="link-config" hidden>
           <h3>Ligação interna com o Core</h3>
-          <p class="hint">Copie os dados de vínculo exibidos no painel do Core. Essa rede permite enviar os dados do GPS e do modem.</p>
+          <p class="hint">Para enviar pela internet do Wi-Fi, configure Core e Link na mesma rede de 2,4 GHz, sem isolamento entre clientes. O Link usa essa rede quando o SSID acima está preenchido. Com o SSID acima vazio, mantém a ligação privada antiga com o Core.</p>
           <div class="grid">
+            <label class="wide">Endereço do Core na rede<input name="core_host" maxlength="64" autocomplete="off" spellcheck="false" placeholder="truckbox.local"><small>Informe o hostname ou IP do Core, sem http://. Se o roteador bloquear mDNS, reserve o IP do Core no DHCP.</small></label>
             <label>Rede interna do Core<input name="core_ssid" maxlength="32" autocomplete="off" spellcheck="false"></label>
             <label>Senha da rede interna<input name="core_password" type="password" maxlength="64" autocomplete="new-password" placeholder="Deixe em branco para manter"></label>
             <label class="wide">Chave de vínculo<input name="pair_key" type="password" maxlength="64" autocomplete="new-password" placeholder="Deixe em branco para manter" spellcheck="false"></label>
@@ -91,7 +92,7 @@
             <label>Usuário da APN (opcional)<input name="apn_user" maxlength="64" autocomplete="off" spellcheck="false"></label>
             <label>Senha da APN (opcional)<input name="apn_password" type="password" maxlength="64" autocomplete="new-password" placeholder="Deixe em branco para manter"></label>
             <label class="wide">Endereço HTTPS para envio dos dados<input name="uplink_url" type="url" maxlength="256" placeholder="https://seu-servidor/caminho" autocomplete="off" spellcheck="false"></label>
-            <label class="wide">Token deste dispositivo<input name="uplink_token" type="password" maxlength="128" autocomplete="new-password" placeholder="Deixe em branco para manter" spellcheck="false"><small>Use o token individual de ingestão deste dispositivo. Não use chaves administrativas do Supabase.</small></label>
+            <label class="wide">Token para envio da telemetria do Core<input name="uplink_token" type="password" maxlength="128" autocomplete="new-password" placeholder="Deixe em branco para manter" spellcheck="false"><small>Use o token individual cadastrado para o Core na nuvem. Não use chaves administrativas do Supabase.</small></label>
             <label class="wide">Endereço HTTPS para envio do GPS<input name="gps_url" type="url" maxlength="256" placeholder="https://seu-servidor/gps-ingest" autocomplete="off" spellcheck="false"></label>
             <label>Identificação do GPS na nuvem (opcional)<input name="gps_device_uid" maxlength="64" autocomplete="off" spellcheck="false"><small>Preencha quando os pontos GPS usam um cadastro diferente no servidor.</small></label>
             <label>Token deste dispositivo para GPS<input name="gps_token" type="password" maxlength="128" autocomplete="new-password" placeholder="Deixe em branco para manter" spellcheck="false"><small>Use o token próprio desse cadastro GPS.</small></label>
@@ -335,7 +336,7 @@
     try {
       const result = await request('/api/pairing');
       const data = result.pairing || result;
-      const safe = {ssid:data.ssid || data.core_ssid || '', password:data.password || data.core_password || '', pair_key:data.pair_key || '', host:data.host || '192.168.4.2'};
+      const safe = {ssid:data.ssid || data.core_ssid || '', password:data.password || data.core_password || '', pair_key:data.pair_key || '', host:data.host || '192.168.4.2', core_host:data.core_host || 'truckbox.local'};
       $('pair-text').value = JSON.stringify(safe, null, 2);
       $('pair-data').hidden = false;
       message('pair-message', 'Dados de vínculo carregados.', 'success');

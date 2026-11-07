@@ -294,7 +294,10 @@ static esp_err_t pairing_handler(httpd_req_t *request)
         cJSON_AddStringToObject(body, "ssid", network.ap_ssid);
         cJSON_AddStringToObject(body, "password", config->ap_password);
         cJSON_AddStringToObject(body, "pair_key", config->pair_key);
-        cJSON_AddStringToObject(body, "host", TB_LINK_IP);
+        char link_host[16];
+        tb_network_link_host(link_host, sizeof(link_host));
+        cJSON_AddStringToObject(body, "host", link_host);
+        cJSON_AddStringToObject(body, "core_host", network.station_connected ? network.station_ip : TB_CORE_AP_IP);
     }
     return tb_http_send_json(request, body);
 }
@@ -497,8 +500,11 @@ static esp_err_t ota_link_handler(httpd_req_t *request)
         failure = "Cadastre o vínculo entre Core e Link antes de atualizar o Link.";
         goto cleanup;
     }
+    char link_host[16], link_url[64];
+    tb_network_link_host(link_host, sizeof(link_host));
+    snprintf(link_url, sizeof(link_url), "http://%s/api/ota", link_host);
     const esp_http_client_config_t config = {
-        .url = "http://" TB_LINK_IP "/api/ota",
+        .url = link_url,
         .method = HTTP_METHOD_POST,
         .timeout_ms = 5000,
         .disable_auto_redirect = true,

@@ -12,7 +12,17 @@ Review agent: read-only pin audit.
 
 ## Network topology
 
-Core runs STA on the user's 2.4 GHz router/hotspot and a private WPA2 AP for the Link. Link uses STA on that private AP; its UART0 receives GNSS and UART1 runs LTE PPP. This avoids the Link PCB's three-UART requirement on two routable HP UARTs. Core-to-Link bridge uses HTTP on the private AP, authenticated with a separate random pairing key. Core provides the user-facing OTA page on the LAN and forwards Link updates. First-boot setup uses a password-protected AP; per-device random setup/admin credentials are printed to USB and saved in NVS. No credentials are embedded in source.
+Core runs STA on the user's 2.4 GHz router/hotspot and keeps its private WPA2 AP.
+In 0.2.2, a configured external `wifi_ssid` makes Link use router DHCP and upload
+HTTPS through Wi-Fi without LTE. Core and Link must share a reachable LAN.
+Link reports to `core_host`; Core learns its socket address only after pair-key
+authentication and validation against its local subnets, with a 60-second TTL.
+Core uses that address for forwarding batches and OTA. If Link's external SSID
+is empty, the original private STA 192.168.4.2 topology and LTE path remain.
+UART0 receives GNSS and UART1 is reserved for optional LTE; the physical UART
+Core–Link remains unused. Core performs no cloud HTTPS or Internet NAT.
+AP credentials, pair authentication, Android APIs and NVS are preserved.
+No credentials are embedded in the public sources. See WIFI_LINK_CLOUD_v0.2.2.md.
 
 ## Confirmed pins (module WROOM, not MINI)
 

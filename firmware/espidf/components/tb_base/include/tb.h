@@ -21,6 +21,7 @@ typedef struct {
     char pair_key[65];
     char core_ssid[33];
     char core_password[65];
+    char core_host[65];
     char uplink_url[257];
     char uplink_token[129];
     char cloud_device_uid[65];
@@ -67,6 +68,10 @@ void tb_schedule_restart(uint32_t delay_ms);
 esp_err_t tb_network_start(void);
 void tb_network_status(tb_network_status_t *status);
 void tb_network_add_json(cJSON *object);
+bool tb_network_wifi_uplink(void);
+void tb_network_start_time_sync(void);
+void tb_network_note_link_address(const char *address);
+void tb_network_link_host(char *host, size_t capacity);
 void tb_base_add_json(cJSON *object);
 
 esp_err_t tb_web_start(void);

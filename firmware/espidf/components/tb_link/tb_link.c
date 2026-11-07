@@ -52,7 +52,13 @@ static tb_gps_outbox_t s_gps_outbox;
 static wl_handle_t s_gps_wl = WL_INVALID_HANDLE;
 static esp_netif_t *s_ppp_netif;
 static esp_modem_dce_t *s_modem;
-static bool s_sntp_started;
+static esp_netif_t *uplink_netif(void);
+
+static const char *uplink_transport(void)
+{
+    esp_netif_t *netif = uplink_netif();
+    return !netif ? "UNAVAILABLE" : netif == s_ppp_netif ? "LTE" : "WIFI";
+}
 
 typedef struct {
     tb_gnss_fix_t fix;
@@ -159,6 +165,13 @@ void tb_application_add_json(cJSON *object)
     cJSON_AddBoolToObject(cellular, "uplink_configured", config->uplink_url[0] != 0);
     cJSON_AddNumberToObject(cellular, "uplink_ok", (double)state.uplink_ok);
     cJSON_AddNumberToObject(cellular, "uplink_failed", (double)state.uplink_failed);
+    cJSON *uplink = cJSON_AddObjectToObject(object, "uplink");
+    cJSON_AddStringToObject(uplink, "transport", uplink_transport());
+    cJSON_AddBoolToObject(uplink, "configured", config->uplink_url[0] && config->uplink_token[0]);
+    cJSON_AddNumberToObject(uplink, "successful_acks", (double)state.uplink_ok);
+    cJSON_AddNumberToObject(uplink, "failed", (double)state.uplink_failed);
+    cJSON_AddNumberToObject(uplink, "http_status", state.last_http_status);
+    cJSON_AddStringToObject(uplink, "error", state.uplink_error);
     cJSON_AddNumberToObject(cellular, "gps_upload_ok", (double)state.gps_upload_ok);
     cJSON_AddNumberToObject(cellular, "gps_upload_failed", (double)state.gps_upload_failed);
     if (state.last_http_status) cJSON_AddNumberToObject(cellular, "last_http_status", state.last_http_status);
@@ -256,10 +269,7 @@ static void on_ppp_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
         xEventGroupClearBits(s_ppp_events, TB_PPP_DISCONNECTED);
         xEventGroupSetBits(s_ppp_events, TB_PPP_CONNECTED);
         modem_phase("online", ESP_OK);
-        if (!s_sntp_started) {
-            esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-            s_sntp_started = esp_netif_sntp_init(&sntp) == ESP_OK;
-        }
+        tb_network_start_time_sync();
     } else if (id == IP_EVENT_PPP_LOST_IP) {
         portENTER_CRITICAL(&s_state_lock);
         s_state.ppp_connected = false;
@@ -484,14 +494,28 @@ static bool safe_sequence(const cJSON *item, double *value)
     return true;
 }
 
+static esp_netif_t *uplink_netif(void)
+{
+    tb_network_status_t network;
+    tb_network_status(&network);
+    if (tb_network_wifi_uplink() && network.station_connected) {
+        esp_netif_t *wifi = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (wifi) return wifi;
+    }
+    if (s_ppp_events && s_ppp_netif && (xEventGroupGetBits(s_ppp_events) & TB_PPP_CONNECTED))
+        return s_ppp_netif;
+    return NULL;
+}
+
 static esp_err_t https_post_json(const char *url, const char *payload, size_t length,
                                  http_capture_t *capture, int *status)
 {
     if (strncmp(url, "https://", 8) != 0 || !url[8]) return ESP_ERR_INVALID_ARG;
-    if (!(xEventGroupGetBits(s_ppp_events) & TB_PPP_CONNECTED)) return ESP_ERR_INVALID_STATE;
+    esp_netif_t *netif = uplink_netif();
+    if (!netif) return ESP_ERR_INVALID_STATE;
     if (time(NULL) < 1704067200) return ESP_ERR_INVALID_STATE;
     struct ifreq interface = {0};
-    if (esp_netif_get_netif_impl_name(s_ppp_netif, interface.ifr_name) != ESP_OK) return ESP_ERR_INVALID_STATE;
+    if (esp_netif_get_netif_impl_name(netif, interface.ifr_name) != ESP_OK) return ESP_ERR_INVALID_STATE;
     capture->started_us = esp_timer_get_time();
     esp_http_client_config_t http = {
         .url = url,
@@ -539,15 +563,16 @@ esp_err_t tb_link_uplink(const char *json, size_t length, char **response_json)
     http_capture_t *capture = NULL;
     char *post_payload = NULL;
     const tb_config_t *config = tb_config();
-    double maximum_sequence = 0, acknowledgement = 0;
-    if (!config->modem_enabled || !config->apn[0] || !config->uplink_url[0] || !config->uplink_token[0]) {
+    double maximum_sequence = 0, acknowledgement = 0, offered_sequences[32];
+    size_t offered_count = 0;
+    if (!config->uplink_url[0] || !config->uplink_token[0]) {
         reason = "uplink_configuration_required"; error = ESP_ERR_INVALID_STATE; goto done;
     }
     if (strncmp(config->uplink_url, "https://", 8) != 0 || !config->uplink_url[8]) {
         reason = "https_endpoint_required"; error = ESP_ERR_INVALID_ARG; goto done;
     }
-    if (!(xEventGroupGetBits(s_ppp_events) & TB_PPP_CONNECTED)) {
-        reason = "cellular_not_connected"; error = ESP_ERR_INVALID_STATE; goto done;
+    if (!uplink_netif()) {
+        reason = "wifi_or_cellular_not_connected"; error = ESP_ERR_INVALID_STATE; goto done;
     }
     if (time(NULL) < 1704067200) {
         reason = "tls_clock_not_synchronized"; error = ESP_ERR_INVALID_STATE; goto done;
@@ -568,12 +593,13 @@ esp_err_t tb_link_uplink(const char *json, size_t length, char **response_json)
             reason = "invalid_sequence"; error = ESP_ERR_INVALID_ARG; goto done;
         }
         maximum_sequence = sequence;
+        offered_sequences[offered_count++] = sequence;
     }
     envelope = cJSON_CreateObject();
     if (!envelope) { reason = "out_of_memory"; error = ESP_ERR_NO_MEM; goto done; }
     cJSON_AddStringToObject(envelope, "device_uid", device_uid->valuestring);
     cJSON_AddStringToObject(envelope, "token", config->uplink_token);
-    cJSON *copied_samples = cJSON_Duplicate(samples, true);
+    cJSON *copied_samples = cJSON_DetachItemFromObjectCaseSensitive(batch, "samples");
     if (!copied_samples) { reason = "out_of_memory"; error = ESP_ERR_NO_MEM; goto done; }
     cJSON_AddItemToObject(envelope, "samples", copied_samples);
     struct timeval utc;
@@ -587,10 +613,13 @@ esp_err_t tb_link_uplink(const char *json, size_t length, char **response_json)
         cJSON_AddNumberToObject(envelope, "boot_id", boot->valuedouble);
     post_payload = cJSON_PrintUnformatted(envelope);
     if (!post_payload) { reason = "out_of_memory"; error = ESP_ERR_NO_MEM; goto done; }
+    cJSON_Delete(envelope); envelope = NULL;
+    cJSON_Delete(batch); batch = NULL;
     capture = calloc(1, sizeof(*capture));
     if (!capture) { reason = "out_of_memory"; error = ESP_ERR_NO_MEM; goto done; }
     int status = 0;
     error = https_post_json(config->uplink_url, post_payload, strlen(post_payload), capture, &status);
+    free(post_payload); post_payload = NULL;
     portENTER_CRITICAL(&s_state_lock);
     s_state.last_http_status = status;
     portEXIT_CRITICAL(&s_state_lock);
@@ -604,6 +633,10 @@ esp_err_t tb_link_uplink(const char *json, size_t length, char **response_json)
         acknowledgement > maximum_sequence) {
         reason = "backend_ack_required"; error = ESP_ERR_INVALID_RESPONSE; goto done;
     }
+    bool offered = false;
+    for (size_t i = 0; i < offered_count; ++i)
+        if (offered_sequences[i] == acknowledgement) offered = true;
+    if (!offered) { reason = "backend_ack_not_offered"; error = ESP_ERR_INVALID_RESPONSE; goto done; }
     *response_json = result_json(true, NULL, acknowledgement);
     if (!*response_json) { reason = "out_of_memory"; error = ESP_ERR_NO_MEM; goto done; }
     portENTER_CRITICAL(&s_state_lock);
@@ -788,7 +821,7 @@ static void gps_uploader_task(void *arg)
             portEXIT_CRITICAL(&s_state_lock);
             continue;
         }
-        if (tb_web_ota_busy() || !(xEventGroupGetBits(s_ppp_events) & TB_PPP_CONNECTED) || time(NULL) < 1704067200)
+        if (tb_web_ota_busy() || !uplink_netif() || time(NULL) < 1704067200)
             continue;
         if (xSemaphoreTake(s_uplink_lock, 0) != pdTRUE) continue;
         char record[TB_GPS_OUTBOX_JSON_MAX];
@@ -887,6 +920,7 @@ static void telemetry_task(void *arg)
         cJSON_AddBoolToObject(cellular, "ppp_connected", state.ppp_connected);
         cJSON_AddBoolToObject(cellular, "sim_ready", state.sim_ready);
         cJSON_AddStringToObject(cellular, "phase", state.modem_phase);
+        cJSON_AddStringToObject(record, "uplink_transport", uplink_transport());
         if (state.has_signal) cJSON_AddNumberToObject(cellular, "signal_dbm", state.signal_dbm);
         char *payload = cJSON_PrintUnformatted(record);
         cJSON_Delete(record);
@@ -898,7 +932,10 @@ static void telemetry_task(void *arg)
             portEXIT_CRITICAL(&s_state_lock);
             continue;
         }
-        esp_http_client_config_t http = {.url = "http://" TB_CORE_AP_IP "/api/link/telemetry",
+        char core_url[128];
+        snprintf(core_url, sizeof(core_url), "http://%s/api/link/telemetry",
+                 tb_network_wifi_uplink() ? tb_config()->core_host : TB_CORE_AP_IP);
+        esp_http_client_config_t http = {.url = core_url,
                                           .method = HTTP_METHOD_POST, .timeout_ms = 3000,
                                           .disable_auto_redirect = true};
         esp_http_client_handle_t client = esp_http_client_init(&http);

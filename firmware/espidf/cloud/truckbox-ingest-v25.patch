@@ -1,0 +1,142 @@
+--- truckbox-ingest-v24/index.ts
++++ truckbox-ingest-v25/index.ts
+@@ -7,8 +7,11 @@
+   const h=await crypto.subtle.digest('SHA-256',d);
+   return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');
+ }
+-const num=(v:any)=>typeof v==='number'&&Number.isFinite(v)?v:(Number.isFinite(Number(v))?Number(v):null);
+-const int=(v:any)=>{const n=Number(v);return Number.isSafeInteger(n)?n:null};
++const num=(v:any)=>{
++  if((typeof v!=='number'&&typeof v!=='string')||(typeof v==='string'&&!v.trim()))return null;
++  const n=Number(v);return Number.isFinite(n)?n:null;
++};
++const int=(v:any)=>{const n=num(v);return n!=null&&Number.isSafeInteger(n)?n:null};
+ const bool=(v:any)=>typeof v==='boolean'?v:null;
+ const str=(v:any)=>typeof v==='string'&&v.length?v:null;
+ const isoMs=(v:any)=>{const d=new Date(String(v??''));const ms=d.getTime();return Number.isFinite(ms)?ms:null};
+@@ -22,6 +25,14 @@
+     const deviceUid=String(body.device_uid??'');
+     const token=String(body.token??'');
+     const validObj=(s:any)=>s!==null&&typeof s==='object'&&!Array.isArray(s);
++    // Reject the entire batch before writing: a cumulative ACK must not skip malformed records.
++    for(const key of ['samples','operational','health','events']){
++      if(body[key]!=null&&!Array.isArray(body[key]))return J({error:'invalid_batch_array'},400);
++      for(const s of body[key]??[]){
++        const seq=validObj(s)?int(s.seq):null;
++        if(seq==null||seq<0)return J({error:'invalid_record_sequence'},400);
++      }
++    }
+     const mixed=(Array.isArray(body.samples)?body.samples:[]).filter(validObj);
+     const explicitOperational=(Array.isArray(body.operational)?body.operational:[]).filter(validObj);
+     const explicitHealth=(Array.isArray(body.health)?body.health:[]).filter(validObj);
+@@ -72,12 +83,22 @@
+     }
+ 
+     const deviceNowMs=num(body.device_time_ms),deviceUptimeMs=num(body.device_uptime_ms),currentBootId=num(body.boot_id);
++    const captureUptimeMs=(s:any)=>{
++      const ms=s.uptime_ms==null?null:num(s.uptime_ms),us=s.uptime_us==null?null:num(s.uptime_us);
++      return ms??(us==null?null:us/1000);
++    };
+     const captureTs=(s:any)=>{
+-      if(typeof s.ts==='string'&&s.ts.length>=20)return s.ts;
+-      const su=num(s.uptime_ms),sbid=num(s.boot_id);
+-      if(deviceNowMs!=null&&deviceUptimeMs!=null&&su!=null&&currentBootId!=null&&sbid===currentBootId&&su<=deviceUptimeMs){
+-        return new Date(deviceNowMs-(deviceUptimeMs-su)).toISOString();
+-      }
++      if(typeof s.ts==='string'&&s.ts.length>=20&&isoMs(s.ts)!=null)return s.ts;
++      const epoch=s.time_valid===true&&typeof s.unix_ms==='number'?s.unix_ms:null;
++      if(epoch!=null&&Number.isFinite(epoch)&&epoch>=1704067200000&&epoch<=8640000000000000){
++        return new Date(epoch).toISOString();
++      }
++      const su=captureUptimeMs(s),sbid=num(s.boot_id);
++      if(deviceNowMs!=null&&deviceNowMs>=1704067200000&&deviceUptimeMs!=null&&su!=null&&su>=0&&currentBootId!=null&&sbid===currentBootId&&su<=deviceUptimeMs){
++        const reconstructed=deviceNowMs-(deviceUptimeMs-su);
++        if(reconstructed>=1704067200000&&reconstructed<=8640000000000000)return new Date(reconstructed).toISOString();
++      }
++      // Receipt time only; original boot/monotonic/time_valid remain unchanged in raw.
+       return new Date().toISOString();
+     };
+ 
+@@ -88,7 +109,7 @@
+       sample_kind:'OPERATIONAL',
+       seq:int(s.seq),
+       ts:captureTs(s),
+-      uptime_ms:num(s.uptime_ms),
++      uptime_ms:captureUptimeMs(s),
+       speed_kmh:num(s.speed_kmh),
+       rpm:num(s.rpm),
+       gear:int(s.gear),
+@@ -139,6 +160,17 @@
+       raw:s
+     }); }).filter((r:any)=>r.seq!=null&&r.seq>=0);
+ 
++    // Keep diagnostics in the existing durable table, with their original kind and raw payload.
++    // Null operational columns also prevent SQL fuel/calibration triggers from using diagnostics.
++    const diagnosticMetadata=new Set(['truck_id','device_id','trip_id','sample_kind','seq','ts','uptime_ms','raw']);
++    for(const row of rows){
++      const kind=String(row.raw?.sample_kind??'OPERATIONAL').toUpperCase();
++      if(kind!=='OPERATIONAL'){
++        row.sample_kind=kind;
++        for(const key of Object.keys(row))if(!diagnosticMetadata.has(key))(row as any)[key]=null;
++      }
++    }
++
+     if(emergencyRawOnly){
+       const incomingSeqs=[
+         ...operational.map((x:any)=>int(x?.seq)),
+@@ -228,8 +260,9 @@
+ 
+     const tripStartOdo=num(activeTrip?.start_odometer_km);
+     const tripStartMs=isoMs(activeTrip?.started_at);
++    const isOperationalRow=(r:any)=>String(r.raw?.sample_kind??'OPERATIONAL').toUpperCase()==='OPERATIONAL';
+     const belongsToActiveTrip=(r:any)=>{
+-      if(!activeTrip)return false;
++      if(!activeTrip||!isOperationalRow(r))return false;
+       const odo=num(r.odometer_km),tms=isoMs(r.ts);
+       const odoOk=tripStartOdo==null||odo==null||odo>=tripStartOdo-0.25;
+       const timeOk=tripStartMs==null||tms==null||tms>=tripStartMs-300000;
+@@ -239,7 +272,7 @@
+       for(const r of rows)if(belongsToActiveTrip(r))r.trip_id=activeTrip.id;
+     }
+ 
+-    const tripRows=activeTrip?rows.filter((r:any)=>r.trip_id===activeTrip.id):[];
++    const tripRows=activeTrip?rows.filter((r:any)=>isOperationalRow(r)&&r.trip_id===activeTrip.id):[];
+     if(tripRows.length&&activeTrip){
+       for(const r of tripRows){
+         const coreTripFuel=num(r.trip_fuel_l);
+@@ -266,7 +299,7 @@
+         .abortSignal(AbortSignal.timeout(5000));
+       if(error)throw error;
+ 
+-      if(!emergencyRawOnly){
++      if(!emergencyRawOnly&&rows.some(isOperationalRow)){
+         // Trigger SPN183 trip consumption update by telemetry time, not shared sample sequence.
+         const newestTripMs=tripRows.reduce((acc:number,r:any)=>Math.max(acc,isoMs(r.ts)??0),0);
+         const lastRatedMs=isoMs(activeTrip?.rate_last_ts)??0;
+@@ -285,7 +318,7 @@
+           })();
+         }
+   
+-        const candidate=rows.reduce((a:any,b:any)=>{
++        const candidate=rows.filter(isOperationalRow).reduce((a:any,b:any)=>{
+           const ta=isoMs(a.ts)??0,tb=isoMs(b.ts)??0;
+           return tb>ta||(tb===ta&&(b.seq??0)>(a.seq??0))?b:a;
+         });
+@@ -343,7 +376,7 @@
+         truck_id:device.truck_id,device_id:device.id,trip_id:tripOk?activeTrip?.id??null:null,
+         seq:int(h.seq),window_start:start,window_end:end,
+         metrics:typeof h.metrics==='object'&&h.metrics?h.metrics:{},
+-        context:{...(typeof h.context==='object'&&h.context?h.context:{}),trip_weight_t:tripOk?activeTrip?.weight_t??null:null}
++        context:{...(typeof h.context==='object'&&h.context?h.context:{}),trip_weight_t:tripOk?activeTrip?.weight_t??null:null,firmware_record:h}
+       };
+     }).filter((r:any)=>r.seq!=null&&r.seq>=0);
+ 
+@@ -392,7 +425,7 @@
+       trip_average_kml:activeTrip?.average_kml??null,
+       fuel_source:activeTrip?.fuel_source??null,
+       rate_update_status:rateUpdateStatus,
+-      ingest_version:9
++      ingest_version:25
+     });
+   }catch(e){
+     console.error(e);

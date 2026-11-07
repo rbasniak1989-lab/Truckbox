@@ -4,6 +4,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_timer.h"
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_wifi.h"
@@ -23,6 +24,54 @@ static bool s_sntp_initialized;
 static bool s_sntp_started;
 static unsigned s_retries;
 static bool s_retry_pending;
+static char s_link_address[16];
+static int64_t s_link_seen_us;
+
+bool tb_network_wifi_uplink(void)
+{
+    /* A legacy Link STA connects to Core's private AP, which has no Internet route. */
+    return tb_role() == TB_ROLE_CORE || tb_config()->wifi_ssid[0] != '\0';
+}
+
+static const char *station_ssid(void)
+{
+    return tb_network_wifi_uplink() ? tb_config()->wifi_ssid : tb_config()->core_ssid;
+}
+
+void tb_network_start_time_sync(void)
+{
+    if (s_sntp_initialized && !s_sntp_started && esp_netif_sntp_start() == ESP_OK)
+        s_sntp_started = true;
+}
+
+void tb_network_note_link_address(const char *address)
+{
+    if (tb_role() != TB_ROLE_CORE || !address) return;
+    ip4_addr_t candidate;
+    if (!ip4addr_aton(address, &candidate) || !ip4_addr_get_u32(&candidate)) return;
+    bool local = false;
+    esp_netif_t *interfaces[] = {s_station, s_access_point};
+    for (size_t i = 0; i < 2; ++i) {
+        esp_netif_ip_info_t own;
+        if (interfaces[i] && esp_netif_get_ip_info(interfaces[i], &own) == ESP_OK && own.ip.addr &&
+            candidate.addr != own.ip.addr &&
+            (candidate.addr & own.netmask.addr) == (own.ip.addr & own.netmask.addr)) local = true;
+    }
+    if (!local) return;
+    portENTER_CRITICAL(&s_status_lock);
+    strlcpy(s_link_address, address, sizeof(s_link_address));
+    s_link_seen_us = esp_timer_get_time();
+    portEXIT_CRITICAL(&s_status_lock);
+}
+
+void tb_network_link_host(char *host, size_t capacity)
+{
+    if (!host || !capacity) return;
+    portENTER_CRITICAL(&s_status_lock);
+    const bool fresh = s_link_address[0] && esp_timer_get_time() - s_link_seen_us < INT64_C(60000000);
+    strlcpy(host, fresh ? s_link_address : TB_LINK_IP, capacity);
+    portEXIT_CRITICAL(&s_status_lock);
+}
 
 static void reconnect_task(void *unused)
 {
@@ -43,8 +92,7 @@ static void network_event(void *arg, esp_event_base_t base, int32_t id, void *da
 {
     (void)arg;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        const char *ssid = tb_role() == TB_ROLE_CORE
-            ? tb_config()->wifi_ssid : tb_config()->core_ssid;
+        const char *ssid = station_ssid();
         if (ssid[0]) {
             esp_wifi_connect();
         }
@@ -54,8 +102,7 @@ static void network_event(void *arg, esp_event_base_t base, int32_t id, void *da
         s_status.station_ip[0] = '\0';
         portEXIT_CRITICAL(&s_status_lock);
         ++s_retries;
-        const char *ssid = tb_role() == TB_ROLE_CORE
-            ? tb_config()->wifi_ssid : tb_config()->core_ssid;
+        const char *ssid = station_ssid();
         portENTER_CRITICAL(&s_status_lock);
         bool schedule = ssid[0] && !s_retry_pending;
         if (schedule) s_retry_pending = true;
@@ -77,21 +124,17 @@ static void network_event(void *arg, esp_event_base_t base, int32_t id, void *da
         portEXIT_CRITICAL(&s_status_lock);
         s_retries = 0;
         ESP_LOGI(TAG, "LAN: http://%s/ (%s.local)", address, s_status.hostname);
-        if (tb_role() == TB_ROLE_CORE) {
+        {
             esp_netif_ip_info_t ap;
             if (esp_netif_get_ip_info(s_access_point, &ap) == ESP_OK) {
                 s_subnet_conflict = ((ap.ip.addr & event->ip_info.netmask.addr)
                                     == (event->ip_info.ip.addr & event->ip_info.netmask.addr));
                 if (s_subnet_conflict) {
-                    ESP_LOGE(TAG, "Router overlaps private 192.168.4.0/24; use a different LAN subnet");
-                }
-            }
-            if (s_sntp_initialized && !s_sntp_started) {
-                if (esp_netif_sntp_start() == ESP_OK) {
-                    s_sntp_started = true;
+                    ESP_LOGE(TAG, "Router overlaps this module's private AP subnet; use a different LAN subnet");
                 }
             }
         }
+        if (tb_network_wifi_uplink()) tb_network_start_time_sync();
     }
 }
 
@@ -135,7 +178,7 @@ esp_err_t tb_network_start(void)
     s_station = esp_netif_create_default_wifi_sta();
     s_access_point = esp_netif_create_default_wifi_ap();
     if (!s_station || !s_access_point) return ESP_ERR_NO_MEM;
-    if (!core) {
+    if (!core && !tb_network_wifi_uplink()) {
         /* LTE PPP has a higher route priority. Keep the private connected route. */
         (void)esp_netif_set_route_prio(s_station, 10);
         (void)esp_netif_dhcpc_stop(s_station);
@@ -187,8 +230,8 @@ esp_err_t tb_network_start(void)
     if (err != ESP_OK) return err;
 
     wifi_config_t station = {0};
-    const char *ssid = core ? cfg->wifi_ssid : cfg->core_ssid;
-    const char *password = core ? cfg->wifi_password : cfg->core_password;
+    const char *ssid = station_ssid();
+    const char *password = tb_network_wifi_uplink() ? cfg->wifi_password : cfg->core_password;
     /* SSID may be exactly 32 bytes; copy with its explicit source length. */
     memcpy(station.sta.ssid, ssid, strnlen(ssid, sizeof(station.sta.ssid)));
     memcpy(station.sta.password, password,
@@ -198,7 +241,7 @@ esp_err_t tb_network_start(void)
     station.sta.pmf_cfg.required = false;
     err = esp_wifi_set_config(WIFI_IF_STA, &station);
     if (err != ESP_OK) return err;
-    if (core) {
+    {
         esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
         sntp.start = false;
         s_sntp_initialized = esp_netif_sntp_init(&sntp) == ESP_OK;
@@ -242,4 +285,10 @@ void tb_network_add_json(cJSON *object)
     cJSON_AddStringToObject(network, "ap_ip", status.ap_ip);
     cJSON_AddNumberToObject(network, "rssi", status.rssi);
     cJSON_AddBoolToObject(network, "subnet_conflict", s_subnet_conflict);
+    cJSON_AddStringToObject(network, "station_mode", tb_network_wifi_uplink() ? "ROUTER" : "CORE_PRIVATE_AP");
+    if (tb_role() == TB_ROLE_CORE) {
+        char link_host[16];
+        tb_network_link_host(link_host, sizeof(link_host));
+        cJSON_AddStringToObject(network, "link_host", link_host);
+    }
 }

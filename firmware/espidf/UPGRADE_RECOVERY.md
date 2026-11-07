@@ -1,15 +1,15 @@
 # Atualização e recuperação manual
 
-Esta é a **VERSÃO DE TESTES0.2.0**. Não houve gravação automática nem merge.
+Esta é a **VERSÃO DE TESTES0.2.2**. Não houve gravação automática nem merge.
 Preserve o pacote funcional v0.1.0-b1 e leia HARDWARE.md e PENDING.md antes do ensaio.
-O ingest Cloud precisa da correção descrita em cloud/ antes de consumir a nova fila
-pelo gateway antigo. Os testes ativos J1708 permanecem desarmados por padrão.
+A ingestão v25 já foi implantada; o caminho Wi-Fi do Link e suas credenciais
+estão descritos em WIFI_LINK_CLOUD_v0.2.2.md. J1708 ativo começa desarmado.
 
 ## Atualização por Wi-Fi
 
 1. Guarde configuração e backlog pendente; confirme alimentação estável e o estado do watchdog descrito na base. Use apenas a imagem da função correta.
 2. No console USB, `setup` obtém os dados locais gerados na placa; `status` mostra erros, filas, mídia e captura. Não publique senhas/tokens.
-3. Na página de OTA existente, envie `truckbox_core_0.2.0-wdt1_ota.bin` para o Core. Para o Link use o arquivo Link. Leia OTA.md para autenticação e encaminhamento existentes.
+3. Na página de OTA existente, envie `truckbox_core_0.2.2_ota.bin` para o Core. Depois envie `truckbox_link_0.2.2_ota.bin` ao Link, antes de alterar a rede dele. Leia OTA.md e WIFI_LINK_CLOUD_v0.2.2.md.
 4. Não espere GPS para validar aquisição. Confira `gps_status=NO_FIX`, ausência de lat/lon, contadores RX e registros `seq` persistentes. A ausência de fix não deve impedir boot nem gravação.
 5. Confirme no `status` a mídia real e contadores de confirmação/erros; `store_queue_accepted` não significa gravação no cartão. Teste recuperação do backlog sem Android/internet e depois de reboot.
 
@@ -35,7 +35,7 @@ no slot0; não deve ser tratada como atualização OTA nem garantir preservaçã
 imagem anterior nesse slot. Siga somente o procedimento físico já documentado em
 HARDWARE.md/README da release funcional; não improvise ligações.
 
-Se a v0.2.0 falhar, use a imagem OTA anterior da mesma função quando a página ainda
+Se a versão de testes falhar, use a imagem OTA anterior da mesma função quando a página ainda
 estiver acessível, ou o **pacote original v0.1.0-b1** em recuperação USB manual.
 Mantenha a mesma tabela de partições; nunca formate SD nem apague NVS como tentativa
 rotineira de recuperação. Antes de reinstalar, copie os logs para investigação.
