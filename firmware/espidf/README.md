@@ -1,4 +1,9 @@
-# TruckBox Rev.B.1 v0.2.0 — VERSÃO DE TESTES
+# TruckBox Rev.B.1 v0.2.0-wdt1 — VERSÃO DE TESTES
+
+Correção do watchdog observado em campo na v0.2.0. Leia `WDT_FIX_REPORT.md`.
+O Core limita os lotes do decoder e do gravador para deixar executar IDLE/USB.
+A confirmação final de Wi-Fi e operação sustentada depende de novo ensaio na placa.
+A versão anterior permanece arquivada, sem sobrescrita.
 
 Firmware derivado do fonte real de `truckbox-b1.zip`, branch funcional
 `firmware-revb1-ota-v0.1.0-b1`. Projeto ESP-IDF5.5.2, ESP32-C6-WROOM-1, flash8MB.
@@ -39,7 +44,7 @@ Ative ESP-IDF5.5.2 e siga `BUILD_ENVIRONMENT.md`:
 cd firmware/espidf
 bash tools/build_v020.sh all
 sh tests/run_all.sh
-python tools/build_release.py --output-dir release --package Truckbox_B1_firmware_0.2.0_TESTES.zip
+python tools/build_release.py --output-dir release --package Truckbox_B1_firmware_0.2.0-wdt1_TESTES.zip
 ```
 
 O pacote contém fontes completos, Core/Link `.bin`, bootloaders, tabela de

@@ -9,7 +9,7 @@ pelo gateway antigo. Os testes ativos J1708 permanecem desarmados por padrão.
 
 1. Guarde configuração e backlog pendente; confirme alimentação estável e o estado do watchdog descrito na base. Use apenas a imagem da função correta.
 2. No console USB, `setup` obtém os dados locais gerados na placa; `status` mostra erros, filas, mídia e captura. Não publique senhas/tokens.
-3. Na página de OTA existente, envie `truckbox_core_0.2.0_ota.bin` para o Core. Para o Link use o arquivo Link. Leia OTA.md para autenticação e encaminhamento existentes.
+3. Na página de OTA existente, envie `truckbox_core_0.2.0-wdt1_ota.bin` para o Core. Para o Link use o arquivo Link. Leia OTA.md para autenticação e encaminhamento existentes.
 4. Não espere GPS para validar aquisição. Confira `gps_status=NO_FIX`, ausência de lat/lon, contadores RX e registros `seq` persistentes. A ausência de fix não deve impedir boot nem gravação.
 5. Confirme no `status` a mídia real e contadores de confirmação/erros; `store_queue_accepted` não significa gravação no cartão. Teste recuperação do backlog sem Android/internet e depois de reboot.
 

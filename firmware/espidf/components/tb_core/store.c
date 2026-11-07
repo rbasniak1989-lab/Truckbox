@@ -2,6 +2,7 @@
 #include "tb.h"
 #endif
 #include "store_internal.h"
+#include "tb_task_budget.h"
 #include "fram.h"
 
 #include <dirent.h>
@@ -98,6 +99,7 @@ typedef struct {
     uint64_t dropped_unavailable;
     uint64_t dropped_full;
     uint64_t invalid_input;
+    uint64_t scheduling_yields;
     uint64_t buffered_during_recovery;
     volatile uint32_t recovery_segments;
     wl_handle_t flash_handle;
@@ -732,6 +734,8 @@ static void storage_task(void *argument)
     state.initializing = false;
     xSemaphoreGive(state.mutex);
     queued_record_t item;
+    tb_task_budget_t budget;
+    tb_task_budget_reset(&budget, esp_timer_get_time());
     for (;;) {
         /* Preserve the bounded volatile backlog after an I/O failure. Reading
          * and discarding it would erase the only remaining copy. Reboot is
@@ -744,6 +748,14 @@ static void storage_task(void *argument)
             xSemaphoreTake(state.mutex, portMAX_DELAY);
             append_record(&item);
             xSemaphoreGive(state.mutex);
+            /* Yield outside the media lock, including a full-medium fast
+             * rejection loop. The decoder and writer must both leave time
+             * for IDLE, startup, USB and other lower-priority services. */
+            if (tb_task_budget_due(&budget, esp_timer_get_time())) {
+                increment(&state.scheduling_yields);
+                vTaskDelay(TB_TASK_REST_TICKS);
+                tb_task_budget_reset(&budget, esp_timer_get_time());
+            }
         }
     }
 }
@@ -1147,6 +1159,7 @@ void tb_store_add_json(cJSON *object)
     cJSON_AddBoolToObject(storage, "backend_clean", state.medium_clean);
     cJSON_AddStringToObject(storage, "durability", "fflush_fsync_close_before_offer");
     cJSON_AddBoolToObject(storage, "queued_is_durable", false);
+    cJSON_AddNumberToObject(storage, "scheduling_yields", (double)counter_value(&state.scheduling_yields));
     cJSON_AddNumberToObject(storage, "queue_capacity", STORE_QUEUE);
     cJSON_AddNumberToObject(storage, "record_capacity", TB_RECORD_MAX - 1);
     cJSON_AddNumberToObject(storage, "buffered_during_recovery",

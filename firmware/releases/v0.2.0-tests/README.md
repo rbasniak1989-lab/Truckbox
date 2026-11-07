@@ -1,3 +1,5 @@
+> **Aviso de campo:** a v0.2.0 pode acionar taskWDT e bloquear o console sob tráfego contínuo. Use a correção [0.2.0-wdt1](../v0.2.0-wdt1-tests/). O ZIP original foi preservado para rastreabilidade.
+
 # TruckBox Rev.B.1 v0.2.0 — VERSÃO DE TESTES
 
 [**Baixar pacote ZIP completo**](./Truckbox_B1_firmware_0.2.0_TESTES.zip?raw=true)

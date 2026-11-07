@@ -5,6 +5,7 @@
 #include "tests/telemetry_host_stubs.h"
 #endif
 #include "protocols.h"
+#include "tb_task_budget.h"
 #include "tbx_j1939.h"
 #include "tbx_j1939_tp.h"
 #include "tbx_j1587_bridge.h"
@@ -59,7 +60,7 @@ static struct {
     latest_t latest[TELEMETRY_LATEST];
     size_t latest_count;
     uint64_t next_capture, captured, queue_dropped, store_accepted,
-        store_rejected, serialization_errors, processed, latest_evictions;
+        store_rejected, serialization_errors, processed, latest_evictions, scheduling_yields;
 } s;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -501,11 +502,20 @@ static void worker_task(void *unused)
 {
     (void)unused;
     packet_t packet;
+    tb_task_budget_t budget;
+    tb_task_budget_reset(&budget, esp_timer_get_time());
     for (;;) {
-        if (xQueueReceive(s.queue, &packet, pdMS_TO_TICKS(250)) == pdTRUE) process_packet(&packet);
-        else {
+        if (xQueueReceive(s.queue, &packet, pdMS_TO_TICKS(250)) == pdTRUE) {
+            process_packet(&packet);
+            if (tb_task_budget_due(&budget, esp_timer_get_time())) {
+                bump(&s.scheduling_yields);
+                vTaskDelay(TB_TASK_REST_TICKS);
+                tb_task_budget_reset(&budget, esp_timer_get_time());
+            }
+        } else {
             tbx_j1939_tp_expire(&s.transport, esp_timer_get_time() / 1000);
             transport_snapshot();
+            tb_task_budget_reset(&budget, esp_timer_get_time());
         }
     }
 }
@@ -533,7 +543,7 @@ void tb_telemetry_add_json(cJSON *object)
     uint64_t captured = s.captured, dropped = s.queue_dropped,
         accepted = s.store_accepted, rejected = s.store_rejected,
         errors = s.serialization_errors, processed = s.processed,
-        evictions = s.latest_evictions;
+        evictions = s.latest_evictions, yields = s.scheduling_yields;
     size_t latest_count = s.latest_count;
     uint32_t transport_stats[11];
     memcpy(transport_stats, s.transport_stats, sizeof(transport_stats));
@@ -541,6 +551,10 @@ void tb_telemetry_add_json(cJSON *object)
     cJSON_AddNumberToObject(telemetry, "schema_version", TELEMETRY_SCHEMA);
     cJSON_AddNumberToObject(telemetry, "captured_frames", (double)captured);
     cJSON_AddNumberToObject(telemetry, "processed_frames", (double)processed);
+    cJSON_AddNumberToObject(telemetry, "scheduling_yields", (double)yields);
+    cJSON_AddNumberToObject(telemetry, "burst_max_frames", TB_TASK_BURST_MAX);
+    cJSON_AddNumberToObject(telemetry, "burst_budget_us", TB_TASK_BURST_US);
+    cJSON_AddNumberToObject(telemetry, "rest_ticks", TB_TASK_REST_TICKS);
     cJSON_AddNumberToObject(telemetry, "rx_queue_dropped", (double)dropped);
     cJSON_AddNumberToObject(telemetry, "store_queue_accepted", (double)accepted);
     cJSON_AddNumberToObject(telemetry, "store_rejected", (double)rejected);

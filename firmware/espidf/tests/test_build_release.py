@@ -40,7 +40,7 @@ class ReleasePackageTests(unittest.TestCase):
             app[0], app[3] = 0xE9, 0x30
             struct.pack_into("<H", app, 12, 13)
             struct.pack_into("<I", app, 32, 0xABCD5432)
-            app[48:53] = b"0.2.0"
+            app[48:48 + len(package.VERSION)] = package.VERSION.encode("ascii")
             name = f"truckbox_{role}".encode()
             app[80:80 + len(name)] = name
             app[144:150] = b"v5.5.2"
@@ -49,7 +49,7 @@ class ReleasePackageTests(unittest.TestCase):
                 (build / filename).write_bytes(b"UNIT-TEST FIXTURE ONLY")
             (build / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32c6"\n')
             (build / "project_description.json").write_text(json.dumps({
-                "project_name": f"truckbox_{role}", "target": "esp32c6", "project_version": "0.2.0",
+                "project_name": f"truckbox_{role}", "target": "esp32c6", "project_version": package.VERSION,
                 "git_revision": "v5.5.2", "idf_path": str(self.temp / "no-idf-checkout"),
                 "c_compiler": "riscv32-esp-elf-gcc",
             }))
@@ -64,7 +64,7 @@ class ReleasePackageTests(unittest.TestCase):
 
     def test_archive_contains_compilable_sibling_sources_and_integrity_manifest(self):
         result = self.make_package()
-        self.assertEqual(result["version"], "0.2.0")
+        self.assertEqual(result["version"], package.VERSION)
         self.assertEqual(result["sha256"], hashlib.sha256(self.archive.read_bytes()).hexdigest())
         with zipfile.ZipFile(self.archive) as full:
             manifest = json.loads(full.read("manifest.json"))

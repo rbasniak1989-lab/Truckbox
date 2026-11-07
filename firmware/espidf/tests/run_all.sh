@@ -10,6 +10,7 @@ sh components/tb_core/tests/run.sh
 sh components/tb_core/tests/run_store_format.sh
 sh components/tb_core/tests/run_fram.sh
 sh components/tb_core/tests/run_store_transactions.sh
+sh components/tb_core/tests/run_worker_fairness.sh
 sh components/tb_core/tests/run_j1939.sh
 sh components/tb_core/tests/run_j1939_tp.sh
 python3 ../j1939/tests/test_inventory.py
