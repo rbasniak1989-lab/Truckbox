@@ -31,7 +31,9 @@ void tbx_j1708_request_permit_stationary_test(tbx_j1708_request_scheduler_t *s, 
 }
 bool tbx_j1708_request_arm(tbx_j1708_request_scheduler_t *s) {
     if (!s || !s->test_permitted || s->safety_stopped) return false;
+    if (s->armed) return true;
     s->armed = true;
+    s->next_tx_valid = false;
     return true;
 }
 bool tbx_j1708_request_enable_pid(tbx_j1708_request_scheduler_t *s, uint16_t pid, bool enabled) {
@@ -58,7 +60,7 @@ void tbx_j1708_request_note_link_error(tbx_j1708_request_scheduler_t *s) {
 }
 void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
                             tbx_j1708_send_request_fn send, void *ctx) {
-    if (!s || !send || !s->armed || !s->test_permitted || s->safety_stopped) return;
+    if (!s || !s->armed || !s->test_permitted || s->safety_stopped) return;
     if (s->pending != TBX_J1708_NO_PENDING) {
         if (!time_due(now, s->pending_since_ms + s->timeout_ms)) return;
         ++s->pids[s->pending].timed_out;
@@ -71,13 +73,18 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
             return;
         }
     }
-    if (!time_due(now, s->next_tx_ms)) return;
+    /* A NULL sender permits timeout accounting while transmission is deferred
+     * by the bus-access controller. No send or link error is then generated. */
+    if (!send) return;
+    if (s->next_tx_valid && !time_due(now, s->next_tx_ms)) return;
     for (uint8_t tries=0; tries<TBX_J1708_REQUEST_COUNT; tries++) {
         uint8_t i = (uint8_t)((s->cursor + tries) % TBX_J1708_REQUEST_COUNT);
         if (!s->pids[i].enabled) continue;
         if (!send(s->pids[i].pid, ctx)) {
             ++s->tx_failure_total;
+            tbx_j1708_request_note_link_error(s);
             s->next_tx_ms = now + s->min_spacing_ms;
+            s->next_tx_valid = true;
             return;
         }
         ++s->pids[i].sent;
@@ -87,6 +94,7 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
         s->pending_since_ms = now;
         s->cursor = (uint8_t)((i + 1) % TBX_J1708_REQUEST_COUNT);
         s->next_tx_ms = now + s->min_spacing_ms;
+        s->next_tx_valid = true;
         return;
     }
 }

@@ -1,0 +1,77 @@
+id,pgn,sinal,status_inventario,implementacao,unidade,evidencia_ou_impedimento,fixture_captura_real
+1,61444,RPM,Validado,DECODER_COM_EVIDENCIA,rpm,Android 61444/B3:B4: raw*0.125,NAO_DISPONIVEL_NO_REPOSITORIO
+2,61444,Torque do motor,Validado,DECODER_COM_EVIDENCIA,%,Android 61444/B2: raw-125,NAO_DISPONIVEL_NO_REPOSITORIO
+3,61444,Potência estimada,Validado,DECODER_COM_EVIDENCIA,kW,"Android derived: max(torque_pct,0)*2643/100*rpm/9550; inventory calibration 2643 Nm",NAO_DISPONIVEL_NO_REPOSITORIO
+4,61444,Demanda de torque,Parcial,BRUTO_SEM_FORMULA_DOCUMENTADA,,"No closed byte/scale in Master1.1, PythonV1 or Android; original inventory status retained",NAO_DISPONIVEL_NO_REPOSITORIO
+5,61444,Estado da partida,Pendente,BRUTO_SEM_FORMULA_DOCUMENTADA,,"No closed byte/scale in Master1.1, PythonV1 or Android; original inventory status retained",NAO_DISPONIVEL_NO_REPOSITORIO
+6,61443,Acelerador,Validado,DECODER_COM_EVIDENCIA,%,Android 61443/B1: raw*0.4,NAO_DISPONIVEL_NO_REPOSITORIO
+7,61443,Interruptores do acelerador,Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.1 B0 low nibble; individual switch enum notclosed,NAO_DISPONIVEL_NO_REPOSITORIO
+8,65247,Torque de atrito,Validado,DECODER_COM_EVIDENCIA,%,Master6.15 B0-125,NAO_DISPONIVEL_NO_REPOSITORIO
+9,65251,Torque de referência,Validado,DECODER_COM_EVIDENCIA,Nm,Master6.17 B19:B20 LE; canonical2643Nm,NAO_DISPONIVEL_NO_REPOSITORIO
+10,65251,Curva de torque,Validado,DECODER_COM_EVIDENCIA,curve,Master6.17 five rpm/percent curvepoints B0..B14,NAO_DISPONIVEL_NO_REPOSITORIO
+11,65251,Rotação máxima da configuração,Validado,DECODER_COM_EVIDENCIA,rpm,Master6.17 highidle B15:B16 and extendedspeedupper B28:B29 *0.125,NAO_DISPONIVEL_NO_REPOSITORIO
+12,65251,Limite de controle de torque,Validado,DECODER_COM_EVIDENCIA,%,Master6.17 B26/B27 minus125 torquecontrollimits,NAO_DISPONIVEL_NO_REPOSITORIO
+13,65251,Parâmetros avançados da programação,Parcial,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.17 Kp B21:B22 and B24/B25 raw; physicalscales unresolved,NAO_DISPONIVEL_NO_REPOSITORIO
+14,65265,Velocidade do caminhão,Validado,DECODER_COM_EVIDENCIA,km/h,Android 65265/B1:B2: raw/256,NAO_DISPONIVEL_NO_REPOSITORIO
+15,65265,Freio de estacionamento,Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.3 B0 raw; parkingbitmask nottranscribed,NAO_DISPONIVEL_NO_REPOSITORIO
+16,65265,Velocidade programada no piloto,Validado,DECODER_COM_EVIDENCIA,km/h,Master6.3 B5 cruisesetspeed km/h,NAO_DISPONIVEL_NO_REPOSITORIO
+17,65217,Distância total em alta resolução,Validado,DECODER_COM_EVIDENCIA,km,Android 65217/B0:B3: raw*0.005,NAO_DISPONIVEL_NO_REPOSITORIO
+18,65217,Distância da viagem,Validado,DECODER_COM_EVIDENCIA,km,Inventory and Android: differences of total distance; same source only,NAO_DISPONIVEL_NO_REPOSITORIO
+19,65258,Peso nos eixos de tração,Validado,DECODER_COM_EVIDENCIA,kg,Android 65258/1F or 2F redundant bogie: raw*0.5; never sum,NAO_DISPONIVEL_NO_REPOSITORIO
+20,65258,Peso por canal do bogie,Validado,DECODER_COM_EVIDENCIA,kg,Android 65258/B1:B2 channel 1F or 2F: raw*0.5,NAO_DISPONIVEL_NO_REPOSITORIO
+21,65295,Peso estimado do conjunto,Validado,DECODER_COM_EVIDENCIA,kg,"Android Volvo 65295/B5: raw*1000, 10000..100000 kg estimate",NAO_DISPONIVEL_NO_REPOSITORIO
+22,65295,Estado de movimento,Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.20 B0 proprietaryspeedstate raw; enum unknown,NAO_DISPONIVEL_NO_REPOSITORIO
+23,65295,I-Roll (cópia auxiliar),Validado,DECODER_COM_EVIDENCIA,bool,"Master6.20 B2 C0=inactive,C1=active secondaryIroll",NAO_DISPONIVEL_NO_REPOSITORIO
+24,65262,Temperatura da água,Validado,DECODER_COM_EVIDENCIA,degC,Android 65262/B0: raw-40,NAO_DISPONIVEL_NO_REPOSITORIO
+25,65262,Temperatura do óleo do motor,Validado,DECODER_COM_EVIDENCIA,degC,Android 65262/B2:B3: raw*0.03125-273,NAO_DISPONIVEL_NO_REPOSITORIO
+26,65262,Temperatura do combustível,Parcial,DECODER_COM_EVIDENCIA,degC,Master6.8 B1-40; may mirrorcoolant; notindependent,NAO_DISPONIVEL_NO_REPOSITORIO
+27,65272,Temperatura do óleo da caixa,Validado,DECODER_COM_EVIDENCIA,degC,Android 65272/B4:B5: raw*0.03125-273,NAO_DISPONIVEL_NO_REPOSITORIO
+28,65269,Temperatura ambiente,Validado,DECODER_COM_EVIDENCIA,degC,Android 65269/B3:B4: raw*0.03125-273,NAO_DISPONIVEL_NO_REPOSITORIO
+29,65270,Pressão do turbo,Validado,DECODER_COM_EVIDENCIA,bar,Android 65270/B1: raw*0.02 operational boost,NAO_DISPONIVEL_NO_REPOSITORIO
+30,65270,Temperatura do ar de admissão,Validado,DECODER_COM_EVIDENCIA,degC,Android 65270/B2: raw-40,NAO_DISPONIVEL_NO_REPOSITORIO
+31,65270,Pressão de entrada do ar,Validado,DECODER_COM_EVIDENCIA,kPa abs,Master6.6 B3*2 kPaabsolute,NAO_DISPONIVEL_NO_REPOSITORIO
+32,65270,Restrição do filtro de ar,Validado,DECODER_COM_EVIDENCIA,kPa,Master6.6 B4*0.05 kPa differential; nofilteralert,NAO_DISPONIVEL_NO_REPOSITORIO
+33,65263,Pressão do combustível,Validado,DECODER_COM_EVIDENCIA,bar,Android 65263/B0: raw*0.04,NAO_DISPONIVEL_NO_REPOSITORIO
+34,65263,Pressão do óleo do motor,Validado,DECODER_COM_EVIDENCIA,bar,Android 65263/B3: raw*0.04,NAO_DISPONIVEL_NO_REPOSITORIO
+35,65263,Nível do óleo do motor,Validado,DECODER_COM_EVIDENCIA,%,Android 65263/B2: raw*0.4,NAO_DISPONIVEL_NO_REPOSITORIO
+36,65263,Pressão interna do cárter,Validado,DECODER_COM_EVIDENCIA,kPa,Master6.5 B4:B5 LE /128-250 kPa,NAO_DISPONIVEL_NO_REPOSITORIO
+37,65263,Nível da água do motor,Parcial,DECODER_COM_EVIDENCIA,%,Master6.5 B7*0.4; partial,NAO_DISPONIVEL_NO_REPOSITORIO
+38,65263,Pressão do arrefecimento,Indisponível,BRUTO_SEM_FORMULA_DOCUMENTADA,,"No closed byte/scale in Master1.1, PythonV1 or Android; original inventory status retained",NAO_DISPONIVEL_NO_REPOSITORIO
+39,65263,Blow-by por campo auxiliar,Indisponível,BRUTO_SEM_FORMULA_DOCUMENTADA,,"No closed byte/scale in Master1.1, PythonV1 or Android; original inventory status retained",NAO_DISPONIVEL_NO_REPOSITORIO
+40,61442,Rotação da entrada da caixa,Validado,DECODER_COM_EVIDENCIA,rpm,Android 61442/B5:B6: raw*0.125,NAO_DISPONIVEL_NO_REPOSITORIO
+41,61442,Rotação da saída da caixa,Validado,DECODER_COM_EVIDENCIA,rpm,Android 61442/B1:B2: raw*0.125,NAO_DISPONIVEL_NO_REPOSITORIO
+42,61442,Patinação da embreagem,Validado,DECODER_COM_EVIDENCIA,%,Android 61442/B3: raw*0.4; inventory derived estimate,NAO_DISPONIVEL_NO_REPOSITORIO
+43,61442,Estados internos da transmissão,Parcial,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.10 B0 ETC1raw; internalenum unknown,NAO_DISPONIVEL_NO_REPOSITORIO
+44,61445,Marcha selecionada,Validado,DECODER_COM_EVIDENCIA,gear,Android 61445/B0: raw-125,NAO_DISPONIVEL_NO_REPOSITORIO
+45,61445,Marcha engatada,Validado,DECODER_COM_EVIDENCIA,gear,Android 61445/B3: raw-125,NAO_DISPONIVEL_NO_REPOSITORIO
+46,61445,Relação de transmissão,Validado,DECODER_COM_EVIDENCIA,ratio,Android 61445/B1:B2: raw*0.001,NAO_DISPONIVEL_NO_REPOSITORIO
+47,65286,Modo da I-Shift,Validado,DECODER_COM_EVIDENCIA,enum,"Android Volvo 65286/B0: F2=N,F3=A,F4=M",NAO_DISPONIVEL_NO_REPOSITORIO
+48,65286,Comandos de troca de marcha,Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.21/validation: rawVolvo payload; commandbitmapping absent,NAO_DISPONIVEL_NO_REPOSITORIO
+49,65292,Marcha mais alta,Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master/validation: topgear functional but byte/enum absent,NAO_DISPONIVEL_NO_REPOSITORIO
+50,65321,I-Roll ativo,Validado,DECODER_COM_EVIDENCIA,bool,Android Volvo 65321: exact ASCII AN E+00 with leading space; only known active pattern,NAO_DISPONIVEL_NO_REPOSITORIO
+51,65321,Modo econômico da I-Shift,Validado,DECODER_COM_EVIDENCIA,bool,Master6.21 ASCII B4=E Economy,NAO_DISPONIVEL_NO_REPOSITORIO
+52,65321,Marcha pelo sinal proprietário,Validado,DECODER_COM_EVIDENCIA,gear,Master6.21 B2:B3 ASCII gear,NAO_DISPONIVEL_NO_REPOSITORIO
+53,65321,Seletor da I-Shift (cópia),Validado,DECODER_COM_EVIDENCIA,enum,Master6.21 B1 ASCII A/M/N selector,NAO_DISPONIVEL_NO_REPOSITORIO
+54,61440,Força do freio motor,Validado,DECODER_COM_EVIDENCIA,%,"Master6.12 B1-125 retarderpercent, negative braking",NAO_DISPONIVEL_NO_REPOSITORIO
+55,65249,Curva de atuação do freio motor,Validado,DECODER_COM_EVIDENCIA,curve,"Master6.16/validation correctedretardercurve P1..P4 B2/5/8/11, P5rpm B14:B15, P5torque B18",NAO_DISPONIVEL_NO_REPOSITORIO
+56,65249,Torque de referência do VEB,Parcial,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.16 B16:B17 raw reference930; no physicalscale,NAO_DISPONIVEL_NO_REPOSITORIO
+57,65323,Estágio selecionado do VEB,Validado,DECODER_COM_EVIDENCIA,enum,Master6.22 B1 bits5..7 enum0off1auto2stage1 3stage2 4stage3,NAO_DISPONIVEL_NO_REPOSITORIO
+58,65323,Estado auxiliar do VEB,Validado,DECODER_COM_EVIDENCIA,bool,Master6.22 B2 CF=belowmax DF=maxstage,NAO_DISPONIVEL_NO_REPOSITORIO
+59,65323,Piloto automático ligado,Validado,DECODER_COM_EVIDENCIA,bool,Master6.22 B0 C7off DFon D7transition,NAO_DISPONIVEL_NO_REPOSITORIO
+60,65323,Limite superior do cruise,Validado,DECODER_COM_EVIDENCIA,km/h,Master6.22 B1bit0valid +B3 direct km/h; never manufacture cruise+5,NAO_DISPONIVEL_NO_REPOSITORIO
+61,65323,Caminhão parado ou rodando,Validado,DECODER_COM_EVIDENCIA,bool,Master6.22 B4 F7stationary F3moving,NAO_DISPONIVEL_NO_REPOSITORIO
+62,65340,Botão + do piloto,Validado,DECODER_COM_EVIDENCIA,bool,"Master6.23 B6 D1 plus,C1normal,C5minus",NAO_DISPONIVEL_NO_REPOSITORIO
+63,65340,Botão - do piloto,Validado,DECODER_COM_EVIDENCIA,bool,"Master6.23 B6 C5 minus,C1normal,D1plus",NAO_DISPONIVEL_NO_REPOSITORIO
+64,61441,ABS atuando,Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.13/validation B0raw; ABSbitmask notclosed,NAO_DISPONIVEL_NO_REPOSITORIO
+65,61441,Aviso de ABS/EBS,Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.13/validation B5raw; warningbitmask notclosed,NAO_DISPONIVEL_NO_REPOSITORIO
+66,65132,Veículo em movimento pelo tacógrafo,Validado,DECODER_COM_EVIDENCIA,bool,Master6.14 B0bits6..7 state0stationary1moving,NAO_DISPONIVEL_NO_REPOSITORIO
+67,65132,Estado de trabalho do motorista,Parcial,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.14 B0bits0..2 driverraw; enum incompletelyclosed,NAO_DISPONIVEL_NO_REPOSITORIO
+68,65132,Rotação da saída pelo tacógrafo,Validado,DECODER_COM_EVIDENCIA,rpm,Master6.14 B4:B5 LE*0.125,NAO_DISPONIVEL_NO_REPOSITORIO
+69,65132,Velocidade pelo tacógrafo,Validado,DECODER_COM_EVIDENCIA,km/h,Master6.14 B6:B7 LE/256,NAO_DISPONIVEL_NO_REPOSITORIO
+70,65254,Data e hora do caminhão,Validado,DECODER_COM_EVIDENCIA,calendar_local,Master6.18 calendar quarterseconds/quarterdays; rawlocaloffsets notUTC,NAO_DISPONIVEL_NO_REPOSITORIO
+71,65282,"Acelerador, velocidade e piloto (cópia)",Validado,CAMPOS_BRUTOS_PARCIAIS,raw,Master/validation aggregatorraw; nobyte mapping closed,NAO_DISPONIVEL_NO_REPOSITORIO
+72,65317,Farol baixo,Parcial,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.24 B1 D0 probablelowbeam; no physicalassertion,NAO_DISPONIVEL_NO_REPOSITORIO
+73,65317,Farol alto,Parcial,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.24 B1 D2 probablehighbeam; no physicalassertion,NAO_DISPONIVEL_NO_REPOSITORIO
+74,65317,Comandos auxiliares de iluminação,Pendente,CAMPOS_BRUTOS_PARCIAIS,raw,Master6.24 B0 rawauxiliarycommands 44/50/60; namesunknown,NAO_DISPONIVEL_NO_REPOSITORIO
+75,65110,Sinais do sistema SCR/ARLA,Indisponível,BRUTO_SEM_FORMULA_DOCUMENTADA,,"No closed byte/scale in Master1.1, PythonV1 or Android; original inventory status retained",NAO_DISPONIVEL_NO_REPOSITORIO
+76,65320,Mensagem Volvo ainda desconhecida,Sem decodificação,BRUTO_SEM_FORMULA_DOCUMENTADA,,"No closed byte/scale in Master1.1, PythonV1 or Android; original inventory status retained",NAO_DISPONIVEL_NO_REPOSITORIO

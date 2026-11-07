@@ -1,0 +1,12 @@
+build-*/
+managed_components/
+sdkconfig
+sdkconfig.old
+*.pyc
+__pycache__/
+private/
+release/
+Truckbox_B1_firmware_*.zip
+*.log
+tests/web/*.png
+tests/web/result.json

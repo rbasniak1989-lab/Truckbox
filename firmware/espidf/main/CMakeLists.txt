@@ -1,0 +1,6 @@
+if(CONFIG_TB_ROLE_LINK)
+    set(role_component tb_link)
+else()
+    set(role_component tb_core)
+endif()
+idf_component_register(SRCS "main.c" INCLUDE_DIRS "." REQUIRES tb_base tb_web ${role_component} app_update esp_driver_gpio esp_driver_usb_serial_jtag vfs nvs_flash)

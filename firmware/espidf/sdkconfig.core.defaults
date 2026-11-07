@@ -1,0 +1,2 @@
+CONFIG_TB_ROLE_CORE=y
+# CONFIG_TB_ROLE_LINK is not set

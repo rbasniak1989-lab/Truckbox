@@ -1,0 +1,66 @@
+rede,pid,modo,sinal,estado,implementacao,observacao
+J1708/J1587,36,PASSIVA,Clutch plates wear condition,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,43,PASSIVA,Ignition switch,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,44,PASSIVA,Warning/indicator lamps,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,46,PASSIVA,Vehicle wet tank pressure,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,49,PASSIVA,ABS control status,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,70,PASSIVA,Parking brake switch,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,71,PASSIVA,Idle shutdown timer status,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,83,PASSIVA,Road speed limit status,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,84,PASSIVA,Road speed,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,85,PASSIVA,Cruise control status,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,86,PASSIVA,Cruise control set speed,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,89,PASSIVA,Power takeoff status,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,91,PASSIVA,Accelerator pedal,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,92,PASSIVA,Engine load,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,96,PASSIVA,Fuel level,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,97,PASSIVA,Water in fuel indicator,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,98,PASSIVA,Engine oil level,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,100,PASSIVA,Engine oil pressure,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,102,PASSIVA,Boost pressure,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,105,PASSIVA,Intake manifold temperature,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,106,PASSIVA,Air inlet pressure,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,110,PASSIVA,Engine coolant temperature,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,111,PASSIVA,Coolant level,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,122,PASSIVA,Engine retarder percentage,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,128,PASSIVA,Component-specific parameter request (control),EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,150,PASSIVA,PTO engagement control status,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,151,PASSIVA,ATC status,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,155,PASSIVA,Auxiliary input/output #1,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,162,PASSIVA,Transmission range selected,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,163,PASSIVA,Transmission range attained,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,168,PASSIVA,Battery voltage,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,171,PASSIVA,Ambient air temperature,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,174,PASSIVA,Fuel temperature,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,175,PASSIVA,Engine oil temperature,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,177,PASSIVA,Transmission oil temperature,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,183,PASSIVA,Instantaneous fuel rate,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,184,PASSIVA,Instantaneous fuel economy,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,185,PASSIVA,Average fuel economy,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,187,PASSIVA,PTO set speed,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,188,PASSIVA,Idle engine speed,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,190,PASSIVA,Engine speed,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,194,PASSIVA,Diagnostic trouble codes (variable),EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,245,PASSIVA,Total vehicle distance,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,247,PASSIVA,Total engine hours,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,249,PASSIVA,Total engine revolutions,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,251,PASSIVA,Clock,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,252,PASSIVA,Date,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,440,PASSIVA,Extended boost pressure #2,EM_VALIDACAO,tbx_j1587_passive_full,Unidades/interpretacao conforme catalogo e modulo; bytes/MID preservados. PID128=controle; PID194=DTC; PID440=pagina2.
+J1708/J1587,26,REQUISICAO_CATALOGO_INICIAL,PID26,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.4; unidade=%; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,31,REQUISICAO_CATALOGO_INICIAL,PID31,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.4; unidade=%; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,32,REQUISICAO_CATALOGO_INICIAL,PID32,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.4; unidade=%; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,33,REQUISICAO_CATALOGO_INICIAL,PID33,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.4; unidade=%; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,34,REQUISICAO_CATALOGO_INICIAL,PID34,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=1.0; unidade=estados; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,37,REQUISICAO_CATALOGO_INICIAL,PID37,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.0689; unidade=bar; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,62,REQUISICAO_CATALOGO_INICIAL,PID62,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=1.0; unidade=estado; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,63,REQUISICAO_CATALOGO_INICIAL,PID63,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=1.0; unidade=estados; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,68,REQUISICAO_CATALOGO_INICIAL,PID68,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.5; unidade=%; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,108,REQUISICAO_CATALOGO_INICIAL,PID108,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.431; unidade=kPa; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,117,REQUISICAO_CATALOGO_INICIAL,PID117,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.0414; unidade=bar; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,118,REQUISICAO_CATALOGO_INICIAL,PID118,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=1; escala=0.0414; unidade=bar; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,158,REQUISICAO_CATALOGO_INICIAL,PID158,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=2; escala=0.05; unidade=V; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,160,REQUISICAO_CATALOGO_INICIAL,PID160,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=2; escala=0.25; unidade=rpm; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,235,REQUISICAO_CATALOGO_INICIAL,PID235,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=4; escala=0.05; unidade=h; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,236,REQUISICAO_CATALOGO_INICIAL,PID236,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=4; escala=0.473176473; unidade=L; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.
+J1708/J1587,250,REQUISICAO_CATALOGO_INICIAL,PID250,EM_VALIDACAO,tbx_j1587_decode + tbx_j1708_active,bytes=4; escala=0.473176473; unidade=L; TX desarmado por padrao; requer MIDs confirmados e autorizacao estacionado.

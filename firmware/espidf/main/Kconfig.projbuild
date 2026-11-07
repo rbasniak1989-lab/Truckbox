@@ -1,0 +1,10 @@
+menu "Truckbox B1"
+choice TB_ROLE
+    prompt "Device role"
+    default TB_ROLE_CORE
+config TB_ROLE_CORE
+    bool "Core"
+config TB_ROLE_LINK
+    bool "Link"
+endchoice
+endmenu

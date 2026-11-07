@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Truckbox · Rev B1</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5;color-scheme:light dark;--bg:#11171e;--panel:#19232e;--panel2:#202d3b;--text:#edf3f8;--muted:#b3c1cf;--line:#364759;--accent:#69d5b8;--accent-text:#09291f;--danger:#ffb1ad;--warn:#ffd18b;--field:#101923;--shadow:0 12px 35px #0002}
+    :root[data-theme="light"]{color-scheme:light;--bg:#eef3f5;--panel:#fff;--panel2:#f2f6f8;--text:#182936;--muted:#506576;--line:#cad7df;--accent:#126c58;--accent-text:#fff;--danger:#a52929;--warn:#80520d;--field:#fff;--shadow:0 10px 30px #1833410c}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}a{color:var(--accent)}button,input,select,textarea{font:inherit}button,input,select,textarea{border-radius:9px}button{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:.65rem 1rem;min-height:43px;font-weight:650}button:hover:not(:disabled){border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}button:disabled{opacity:.5;cursor:wait}input,select,textarea{display:block;width:100%;padding:.65rem .75rem;background:var(--field);color:var(--text);border:1px solid var(--line);min-height:43px}input:focus,select:focus,textarea:focus,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}input[type="checkbox"],input[type="radio"]{width:1.1rem;height:1.1rem;min-height:0;margin:.2rem .6rem 0 0;flex:0 0 auto;accent-color:var(--accent)}input[type="file"]{padding:.55rem}fieldset{border:0;padding:0;margin:0;min-width:0}fieldset:disabled{opacity:.65}label{display:block;font-size:.92rem;font-weight:600}label>input,label>select{margin-top:.35rem}small,.hint{display:block;color:var(--muted);font-size:.84rem;font-weight:400;margin:.35rem 0 0}.check{display:flex;align-items:flex-start;font-weight:500}.check span{display:block}.check small{margin-top:.1rem}h1,h2,h3,p{margin-top:0}h1{font-size:1.6rem;letter-spacing:-.04em;margin-bottom:0}h2{font-size:1.15rem;letter-spacing:-.02em;margin-bottom:.6rem}h3{font-size:1rem;margin:0 0 .8rem}p{margin-bottom:.9rem}.muted{color:var(--muted)}header,main,footer{max-width:1100px;margin:auto;padding:1.4rem}header{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding-top:1.8rem}.brand{display:flex;align-items:center;gap:.8rem}.mark{display:grid;place-items:center;width:47px;height:47px;border-radius:13px;background:var(--accent);color:var(--accent-text);font-weight:850;letter-spacing:-.06em}.eyebrow{color:var(--muted);font-size:.85rem}.tools,.actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap}.tools button{font-size:.85rem;padding:.55rem .75rem}main{padding-top:.2rem;display:grid;gap:1rem}.panel{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:1.25rem;box-shadow:var(--shadow)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin:.9rem 0}.stat{background:var(--panel2);border-radius:10px;padding:.85rem;min-width:0}.stat span{display:block;color:var(--muted);font-size:.78rem;margin-bottom:.25rem}.stat strong{display:block;overflow-wrap:anywhere;font-size:.95rem;font-weight:650}.section{border-top:1px solid var(--line);padding-top:1rem;margin-top:1rem}.banner{padding:.8rem 1rem;border-radius:10px;background:var(--panel2);border:1px solid var(--line);font-size:.9rem;overflow-wrap:anywhere}.banner.error{color:var(--danger);border-color:var(--danger)}.banner.warning{color:var(--warn);border-color:var(--warn)}.banner.success{color:var(--accent);border-color:var(--accent)}.message:empty{display:none}.message{margin-top:.9rem;white-space:pre-wrap}.pill{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:.18rem .6rem;font-size:.78rem;color:var(--muted);white-space:nowrap}.heading{display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem}.heading p{margin:.3rem 0 0}.config-group{display:grid;gap:.9rem}.config-group .grid{row-gap:.9rem}.wide{grid-column:1/-1}details{margin-top:.9rem}summary{cursor:pointer;font-size:.9rem;color:var(--muted);width:fit-content}pre{margin:.75rem 0 0;padding:.9rem;border:1px solid var(--line);background:var(--field);border-radius:9px;max-height:360px;overflow:auto;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.85rem;resize:vertical}progress{width:100%;height:14px;margin-top:1rem;accent-color:var(--accent)}.radio-row{display:flex;flex-wrap:wrap;gap:.8rem;margin:.9rem 0}.hidden,[hidden]{display:none!important}.login-row{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:.65rem;align-items:end;max-width:650px}.login-row label{min-width:0}.file-size{font-size:.85rem;color:var(--muted);margin:.4rem 0 .9rem}.note{color:var(--warn);font-size:.86rem}.split{display:grid;grid-template-columns:1.25fr 1fr;gap:1rem}footer{font-size:.8rem;color:var(--muted);padding-top:.2rem;padding-bottom:2rem}.spacer{margin-top:1rem}
+    @media(prefers-color-scheme:light){:root:not([data-theme="dark"]){color-scheme:light;--bg:#eef3f5;--panel:#fff;--panel2:#f2f6f8;--text:#182936;--muted:#506576;--line:#cad7df;--accent:#126c58;--accent-text:#fff;--danger:#a52929;--warn:#80520d;--field:#fff;--shadow:0 10px 30px #1833410c}}
+    @media(max-width:720px){header,main,footer{padding-left:1rem;padding-right:1rem}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.split,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.panel{padding:1rem}.heading{flex-wrap:wrap}header{align-items:flex-start}.tools{justify-content:flex-end}.login-row{grid-template-columns:1fr}.login-row button{width:100%}h1{font-size:1.4rem}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="mark" aria-hidden="true">TB</span><div><h1>Truckbox</h1><div class="eyebrow">Rev B1 · painel local</div></div></div>
+  <div class="tools"><button id="refresh" type="button">Atualizar estado</button><button id="theme" type="button" aria-label="Alternar tema">Tema</button></div>
+</header>
+<main>
+  <section class="panel" aria-labelledby="state-title">
+    <div class="heading"><div><h2 id="state-title">Estado do dispositivo</h2><p class="muted" id="device-label">Consultando a placa…</p></div><span class="pill" id="connection">Conectando</span></div>
+    <div class="stats">
+      <div class="stat"><span>Função</span><strong id="stat-role">—</strong></div>
+      <div class="stat"><span>Firmware</span><strong id="stat-version">—</strong></div>
+      <div class="stat"><span>Endereço na rede</span><strong id="stat-ip">—</strong></div>
+      <div class="stat"><span>Wi‑Fi</span><strong id="stat-wifi">—</strong></div>
+    </div>
+    <div id="state-message" class="banner message" role="status" aria-live="polite"></div>
+    <details><summary>Ver diagnóstico completo</summary><pre id="state-json">Aguardando resposta.</pre></details>
+  </section>
+
+  <section class="panel" aria-labelledby="access-title">
+    <div class="heading"><div><h2 id="access-title">Acesso de administração</h2><p class="muted">No console USB da placa, digite <code>setup</code> para consultar a chave de administração.</p></div><span class="pill" id="auth-status">Somente leitura</span></div>
+    <form id="login-form" class="login-row spacer">
+      <label>Chave de administração<input id="admin-token" name="admin_token" type="password" autocomplete="off" spellcheck="false" required maxlength="128"></label>
+      <button class="primary" id="login" type="submit">Entrar</button>
+    </form>
+    <button id="logout" class="spacer" type="button" hidden>Encerrar acesso</button>
+    <small>A chave fica apenas nesta página enquanto ela está aberta.</small>
+    <div id="auth-message" class="banner message" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="config-title">
+    <h2 id="config-title">Configuração</h2>
+    <p class="muted">As alterações são salvas na placa e aplicadas após o reinício. Senhas em branco mantêm o valor já cadastrado.</p>
+    <form id="config-form">
+      <fieldset id="config-fields" disabled>
+        <div class="config-group">
+          <h3>Wi‑Fi do celular ou roteador</h3>
+          <div class="grid">
+            <label>Nome da rede (SSID)<input name="wifi_ssid" maxlength="32" autocomplete="off" spellcheck="false"><small>Use uma rede de 2,4 GHz.</small></label>
+            <label>Senha da rede<input name="wifi_password" type="password" maxlength="64" autocomplete="new-password" placeholder="Deixe em branco para manter"></label>
+          </div>
+          <label class="check"><input id="open-wifi" type="checkbox"><span>Esta rede não tem senha<small>Ao salvar, a senha Wi‑Fi atual será removida.</small></span></label>
+        </div>
+
+        <div class="config-group section" id="link-config" hidden>
+          <h3>Ligação interna com o Core</h3>
+          <p class="hint">Copie os dados de vínculo exibidos no painel do Core. Essa rede permite enviar os dados do GPS e do modem.</p>
+          <div class="grid">
+            <label>Rede interna do Core<input name="core_ssid" maxlength="32" autocomplete="off" spellcheck="false"></label>
+            <label>Senha da rede interna<input name="core_password" type="password" maxlength="64" autocomplete="new-password" placeholder="Deixe em branco para manter"></label>
+            <label class="wide">Chave de vínculo<input name="pair_key" type="password" maxlength="64" autocomplete="new-password" placeholder="Deixe em branco para manter" spellcheck="false"></label>
+          </div>
+        </div>
+
+        <div class="config-group section" id="core-config" hidden>
+          <h3>Coleta e armazenamento</h3>
+          <div class="grid">
+            <label>Velocidade CAN<select name="can_baud"><option value="250000">250 kbit/s</option><option value="500000">500 kbit/s</option></select><small>A coleta CAN desta placa é somente recepção.</small></label>
+            <div class="config-group">
+              <label class="check"><input name="capture_enabled" type="checkbox"><span>Ativar coleta CAN e J1708</span></label>
+              <label class="check"><input name="fram_enabled" type="checkbox"><span>Usar FRAM</span></label>
+              <label class="check"><input name="sd_enabled" type="checkbox"><span>Usar cartão microSD</span></label>
+            </div>
+          </div>
+          <details><summary>Sequências de um cadastro existente</summary><div class="grid spacer"><label class="wide">Primeira sequência livre (migração)<input name="sequence_floor" type="number" min="0" max="9007199254740991" step="1" inputmode="numeric" placeholder="0"><small>Ao reutilizar uma identificação já cadastrada na nuvem, informe a maior sequência já usada mais 1. Para um cadastro novo, mantenha 0. Esse ajuste não reduz o contador já salvo na placa.</small></label></div></details>
+        </div>
+
+        <div class="config-group section" id="modem-config" hidden>
+          <h3>GPS e comunicação celular</h3>
+          <div class="grid">
+            <label>Velocidade do GPS<select name="gnss_baud"><option value="9600">9.600 bit/s</option><option value="115200">115.200 bit/s</option></select></label>
+            <div class="config-group">
+              <label class="check"><input name="gnss_enabled" type="checkbox"><span>Ativar leitura do GPS</span></label>
+              <label class="check"><input name="modem_enabled" type="checkbox"><span>Ativar modem celular</span></label>
+            </div>
+            <label>APN da operadora<input name="apn" maxlength="64" autocomplete="off" spellcheck="false"></label>
+            <label>Usuário da APN (opcional)<input name="apn_user" maxlength="64" autocomplete="off" spellcheck="false"></label>
+            <label>Senha da APN (opcional)<input name="apn_password" type="password" maxlength="64" autocomplete="new-password" placeholder="Deixe em branco para manter"></label>
+            <label class="wide">Endereço HTTPS para envio dos dados<input name="uplink_url" type="url" maxlength="256" placeholder="https://seu-servidor/caminho" autocomplete="off" spellcheck="false"></label>
+            <label class="wide">Token deste dispositivo<input name="uplink_token" type="password" maxlength="128" autocomplete="new-password" placeholder="Deixe em branco para manter" spellcheck="false"><small>Use o token individual de ingestão deste dispositivo. Não use chaves administrativas do Supabase.</small></label>
+            <label class="wide">Endereço HTTPS para envio do GPS<input name="gps_url" type="url" maxlength="256" placeholder="https://seu-servidor/gps-ingest" autocomplete="off" spellcheck="false"></label>
+            <label>Identificação do GPS na nuvem (opcional)<input name="gps_device_uid" maxlength="64" autocomplete="off" spellcheck="false"><small>Preencha quando os pontos GPS usam um cadastro diferente no servidor.</small></label>
+            <label>Token deste dispositivo para GPS<input name="gps_token" type="password" maxlength="128" autocomplete="new-password" placeholder="Deixe em branco para manter" spellcheck="false"><small>Use o token próprio desse cadastro GPS.</small></label>
+          </div>
+        </div>
+
+        <div class="config-group section">
+          <h3>Identificação na nuvem</h3>
+          <label>Identificador do dispositivo na ingestão<input name="cloud_device_uid" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Identificação cadastrada no servidor"><small>Use a identificação cadastrada no servidor de ingestão. Ela pode ser diferente da identificação de hardware mostrada no estado da placa.</small></label>
+        </div>
+
+        <div class="config-group section">
+          <h3>Verificação da Rev B1</h3>
+          <label class="check"><input name="repaired_power_gates" type="checkbox"><span>Acionamento de alimentação corrigido<small>Marque somente após o retrabalho e a verificação dos circuitos de alimentação da Rev B1. O firmware não corrige a pinagem da placa.</small></span></label>
+        </div>
+        <div class="actions section"><button id="save-config" class="primary" type="submit">Salvar e reiniciar</button><button id="reload-config" type="button">Descartar alterações</button></div>
+      </fieldset>
+    </form>
+    <div id="config-message" class="banner message" role="status" aria-live="polite"></div>
+  </section>
+
+  <div class="split">
+    <section class="panel" aria-labelledby="ota-title">
+      <h2 id="ota-title">Atualização por Wi‑Fi</h2>
+      <p class="muted">Envie o arquivo <strong>.bin de aplicação</strong> correspondente ao módulo. A placa valida a imagem antes de selecioná-la para a próxima inicialização.</p>
+      <form id="ota-form">
+        <fieldset id="ota-fields" disabled>
+          <div class="radio-row">
+            <label class="check"><input id="target-local" name="ota_target" type="radio" value="local" checked><span id="local-target-label">Este módulo</span></label>
+            <label id="forward-target" class="check" hidden><input name="ota_target" type="radio" value="link"><span>Link, pela rede interna</span></label>
+          </div>
+          <label>Arquivo de firmware<input id="firmware-file" type="file" accept=".bin,application/octet-stream" required></label>
+          <div id="file-size" class="file-size">Selecione o .bin de aplicação; não use a imagem mesclada da primeira gravação.</div>
+          <button class="primary" id="upload" type="submit">Validar e atualizar</button>
+        </fieldset>
+      </form>
+      <progress id="upload-progress" value="0" max="100" hidden aria-label="Progresso do envio"></progress>
+      <div id="ota-message" class="banner message" role="status" aria-live="polite"></div>
+    </section>
+    <section class="panel" aria-labelledby="pair-title">
+      <h2 id="pair-title">Vínculo Core e Link</h2>
+      <p class="muted" id="pair-hint">No Core, consulte os dados da rede interna e cadastre-os no Link.</p>
+      <button id="show-pair" type="button" disabled>Mostrar dados de vínculo</button>
+      <div id="pair-data" hidden><label class="spacer">Dados para configurar o Link<textarea id="pair-text" rows="8" readonly spellcheck="false"></textarea></label><small>Esses dados dão acesso à rede interna. Compartilhe apenas com quem configura esta placa.</small><button class="spacer" id="copy-pair" type="button">Copiar dados</button></div>
+      <div id="pair-message" class="banner message" role="status" aria-live="polite"></div>
+    </section>
+  </div>
+</main>
+<footer><span id="footer-id">Truckbox Rev B1</span> · Estado consultado diretamente na placa.</footer>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const configForm = $('config-form');
+  const dirty = new Set();
+  const secretNames = new Set(['wifi_password','core_password','pair_key','apn_password','uplink_token','gps_token']);
+  let token = '';
+  let role = '';
+  let lastState = null;
+  let stateBusy = false;
+  let uploadBusy = false;
+
+  function message(id, text, kind = '') {
+    const element = $(id);
+    element.textContent = text || '';
+    element.className = 'banner message' + (kind ? ' ' + kind : '');
+  }
+
+  function errorText(body, fallback) {
+    if (body && typeof body === 'object') {
+      const value = body.error || body.message || body.detail;
+      if (typeof value === 'string') return value;
+    }
+    return fallback;
+  }
+
+  async function request(path, options = {}, timeout = 10000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    const headers = new Headers(options.headers || {});
+    if (token) headers.set('Authorization', 'Bearer ' + token);
+    try {
+      const response = await fetch(path, {...options, headers, signal:controller.signal, cache:'no-store', credentials:'omit'});
+      const text = await response.text();
+      let json = null;
+      try { json = text ? JSON.parse(text) : {}; } catch (_) { throw new Error('A placa enviou uma resposta inválida (HTTP ' + response.status + ').'); }
+      if (!response.ok || json.ok === false) throw new Error(errorText(json, 'Falha na solicitação (HTTP ' + response.status + ').'));
+      return json;
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error('A placa não respondeu no prazo. Verifique a conexão Wi‑Fi.');
+      throw error;
+    } finally { clearTimeout(timer); }
+  }
+
+  function text(id, value, fallback = '—') { $(id).textContent = value === undefined || value === null || value === '' ? fallback : String(value); }
+
+  function applyRole(value) {
+    if (value === 0) value = 'core';
+    if (value === 1) value = 'link';
+    const normalized = typeof value === 'string' ? value.toLowerCase() : '';
+    role = normalized.includes('core') ? 'core' : normalized.includes('link') ? 'link' : '';
+    text('stat-role', role === 'core' ? 'Core' : role === 'link' ? 'Link' : value);
+    $('core-config').hidden = role !== 'core';
+    $('link-config').hidden = role !== 'link';
+    $('modem-config').hidden = role !== 'link';
+    $('forward-target').hidden = role !== 'core';
+    $('show-pair').disabled = !token || role !== 'core';
+    text('local-target-label', role === 'core' ? 'Core, neste dispositivo' : role === 'link' ? 'Link, neste dispositivo' : 'Este módulo');
+    $('pair-hint').textContent = role === 'link' ? 'Cadastre a rede e a chave exibidas no painel do Core, na seção “Ligação interna com o Core”.' : 'Consulte a rede interna e a chave de vínculo para cadastrar este Core no Link.';
+    if (role !== 'core') $('target-local').checked = true;
+  }
+
+  async function refreshState() {
+    if (stateBusy || uploadBusy) return;
+    stateBusy = true;
+    $('refresh').disabled = true;
+    try {
+      const state = await request('/api/state');
+      lastState = state;
+      const network = state.network || state.wifi || {};
+      applyRole(state.role === undefined ? state.device_role : state.role);
+      text('stat-version', state.version || state.firmware_version || state.firmware);
+      text('stat-ip', network.station_ip && network.station_ip !== '0.0.0.0' ? network.station_ip : network.ap_ip || location.hostname);
+      const connected = network.station_connected === true || network.connected === true;
+      text('stat-wifi', connected ? 'Conectado' : network.access_point_running ? 'Rede de configuração ativa' : 'Aguardando conexão');
+      text('device-label', state.device_uid || state.uid || state.device_id || 'Dispositivo Truckbox');
+      text('footer-id', state.device_uid || state.uid || 'Truckbox Rev B1');
+      $('state-json').textContent = JSON.stringify(state, null, 2);
+      text('connection', 'Online');
+      message('state-message', '');
+    } catch (error) {
+      text('connection', 'Sem resposta');
+      message('state-message', error.message, 'warning');
+    } finally { stateBusy = false; $('refresh').disabled = false; }
+  }
+
+  function configControl(name) { return configForm.elements.namedItem(name); }
+
+  function fillConfig(response) {
+    const config = response.config || response;
+    for (const element of configForm.elements) {
+      if (!element.name || element.type === 'submit' || element.type === 'button') continue;
+      if (secretNames.has(element.name)) { element.value = ''; continue; }
+      if (!(element.name in config)) continue;
+      if (element.type === 'checkbox') element.checked = config[element.name] === true;
+      else element.value = config[element.name] === null ? '' : String(config[element.name]);
+    }
+    $('open-wifi').checked = false;
+    configControl('wifi_password').disabled = false;
+    dirty.clear();
+    if (config.role !== undefined) applyRole(config.role);
+  }
+
+  async function loadConfig() {
+    const result = await request('/api/config');
+    fillConfig(result);
+    $('config-fields').disabled = false;
+    $('ota-fields').disabled = false;
+    $('show-pair').disabled = role !== 'core';
+  }
+
+  function signOut() {
+    token = '';
+    $('admin-token').value = '';
+    $('login-form').hidden = false;
+    $('logout').hidden = true;
+    $('config-fields').disabled = true;
+    $('ota-fields').disabled = true;
+    $('show-pair').disabled = true;
+    $('pair-data').hidden = true;
+    $('pair-text').value = '';
+    for (const name of secretNames) configControl(name).value = '';
+    text('auth-status', 'Somente leitura');
+    message('auth-message', 'Acesso de administração encerrado.');
+    message('pair-message', '');
+  }
+
+  $('login-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const candidate = $('admin-token').value.trim();
+    if (!candidate) return;
+    $('login').disabled = true;
+    token = candidate;
+    try {
+      await loadConfig();
+      $('admin-token').value = '';
+      $('login-form').hidden = true;
+      $('logout').hidden = false;
+      text('auth-status', 'Administrador');
+      message('auth-message', 'Acesso liberado para configuração e atualização.', 'success');
+    } catch (error) { token = ''; message('auth-message', error.message, 'error'); }
+    finally { $('login').disabled = false; }
+  });
+
+  $('logout').addEventListener('click', signOut);
+  configForm.addEventListener('input', event => { if (event.target.name) dirty.add(event.target.name); });
+  configForm.addEventListener('change', event => { if (event.target.name) dirty.add(event.target.name); });
+  $('open-wifi').addEventListener('change', () => {
+    configControl('wifi_password').disabled = $('open-wifi').checked;
+    if ($('open-wifi').checked) configControl('wifi_password').value = '';
+    dirty.add('wifi_password');
+  });
+
+  $('reload-config').addEventListener('click', async () => {
+    $('reload-config').disabled = true;
+    try { await loadConfig(); message('config-message', 'Configuração atual recarregada.'); }
+    catch (error) { message('config-message', error.message, 'error'); }
+    finally { $('reload-config').disabled = false; }
+  });
+
+  configForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!token || uploadBusy) return;
+    const payload = {};
+    for (const name of dirty) {
+      const element = configControl(name);
+      if (!element) continue;
+      if (secretNames.has(name) && !element.value && !(name === 'wifi_password' && $('open-wifi').checked)) continue;
+      if (name === 'sequence_floor') {
+        const sequence = Number(element.value);
+        if (!Number.isSafeInteger(sequence) || sequence < 0) { message('config-message', 'A primeira sequência livre deve ser um inteiro de 0 a 9007199254740991.', 'error'); return; }
+        payload[name] = sequence;
+      } else payload[name] = element.type === 'checkbox' ? element.checked : element.tagName === 'SELECT' ? Number(element.value) : element.value;
+    }
+    if (!Object.keys(payload).length) { message('config-message', 'Nenhuma alteração para salvar.'); return; }
+    if (payload.repaired_power_gates === true && !confirm('Os circuitos de alimentação da Rev B1 já foram retrabalhados e medidos? Esta opção permite acionar essas saídas.')) return;
+    if (!confirm('Salvar as alterações e reiniciar a placa? A conexão Wi‑Fi pode mudar.')) return;
+    $('save-config').disabled = true;
+    try {
+      const result = await request('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}, 15000);
+      for (const name of secretNames) configControl(name).value = '';
+      dirty.clear();
+      message('config-message', result.message || 'Configuração salva. A placa será reiniciada. Se a rede mudar, conecte-se à nova rede e abra o novo endereço.', 'success');
+      setTimeout(refreshState, 7000);
+    } catch (error) { message('config-message', error.message, 'error'); }
+    finally { $('save-config').disabled = false; }
+  });
+
+  $('show-pair').addEventListener('click', async () => {
+    $('show-pair').disabled = true;
+    try {
+      const result = await request('/api/pairing');
+      const data = result.pairing || result;
+      const safe = {ssid:data.ssid || data.core_ssid || '', password:data.password || data.core_password || '', pair_key:data.pair_key || '', host:data.host || '192.168.4.2'};
+      $('pair-text').value = JSON.stringify(safe, null, 2);
+      $('pair-data').hidden = false;
+      message('pair-message', 'Dados de vínculo carregados.', 'success');
+    } catch (error) { message('pair-message', error.message, 'error'); }
+    finally { $('show-pair').disabled = !token || role !== 'core'; }
+  });
+
+  $('copy-pair').addEventListener('click', async () => {
+    const field = $('pair-text');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(field.value);
+      else { field.focus(); field.select(); if (!document.execCommand('copy')) throw new Error('manual'); }
+      message('pair-message', 'Dados copiados.');
+    } catch (_) { field.focus(); field.select(); message('pair-message', 'Os dados estão selecionados. Use Ctrl+C para copiar.'); }
+  });
+
+  $('firmware-file').addEventListener('change', () => {
+    const file = $('firmware-file').files[0];
+    text('file-size', file ? file.name + ' · ' + (file.size / 1024).toFixed(1) + ' KiB' : 'Selecione o .bin de aplicação; não use a imagem mesclada da primeira gravação.');
+    message('ota-message', '');
+    $('upload-progress').hidden = true;
+  });
+
+  $('ota-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const file = $('firmware-file').files[0];
+    if (!token || uploadBusy || !file) return;
+    if (!/\.bin$/i.test(file.name)) { message('ota-message', 'Selecione um arquivo .bin de aplicação.', 'error'); return; }
+    if (file.size < 288 || file.size > 3 * 1024 * 1024) { message('ota-message', 'O arquivo deve ter entre 288 bytes e 3 MiB, conforme as partições desta versão.', 'error'); return; }
+    try {
+      const header = new Uint8Array(await file.slice(0, 1).arrayBuffer());
+      if (header[0] !== 0xE9) { message('ota-message', 'O arquivo não tem o cabeçalho de uma aplicação ESP32.', 'error'); return; }
+    } catch (_) { message('ota-message', 'Não foi possível ler o arquivo selecionado.', 'error'); return; }
+    const target = $('ota-form').elements.ota_target.value;
+    const targetName = target === 'link' ? 'Link pela rede interna' : role === 'core' ? 'Core' : role === 'link' ? 'Link' : 'módulo local';
+    if (!confirm('Atualizar o ' + targetName + ' com “' + file.name + '”? O módulo será reiniciado após validar a imagem.')) return;
+    const path = target === 'link' ? '/api/ota/link' : '/api/ota';
+    const xhr = new XMLHttpRequest();
+    uploadBusy = true;
+    $('ota-fields').disabled = true;
+    $('save-config').disabled = true;
+    $('logout').disabled = true;
+    $('upload-progress').value = 0;
+    $('upload-progress').hidden = false;
+    message('ota-message', 'Enviando o firmware…');
+    xhr.open('POST', path);
+    xhr.timeout = 250000;
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = progress => {
+      if (!progress.lengthComputable) return;
+      const percent = Math.min(100, Math.round(progress.loaded * 100 / progress.total));
+      $('upload-progress').value = percent;
+      message('ota-message', percent === 100 ? 'Arquivo enviado. Aguardando validação da placa…' : 'Enviando o firmware: ' + percent + '%');
+    };
+    function finish() {
+      uploadBusy = false;
+      $('ota-fields').disabled = !token;
+      $('save-config').disabled = false;
+      $('logout').disabled = false;
+    }
+    xhr.onload = () => {
+      let result = null;
+      try { result = JSON.parse(xhr.responseText); } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300 && result && result.ok !== false) {
+        $('upload-progress').value = 100;
+        message('ota-message', result.message || (target === 'link' ? 'Firmware validado pelo Link. Aguarde o reinício desse módulo.' : 'Firmware validado. Aguarde o reinício da placa e consulte o estado novamente.'), 'success');
+        $('firmware-file').value = '';
+        setTimeout(refreshState, 8000);
+      } else message('ota-message', errorText(result, 'Atualização recusada (HTTP ' + xhr.status + ').'), 'error');
+      finish();
+    };
+    xhr.onerror = () => { message('ota-message', 'A conexão foi interrompida. Consulte o estado da placa antes de tentar novamente.', 'error'); finish(); };
+    xhr.ontimeout = () => { message('ota-message', 'O prazo do envio terminou. Consulte o estado da placa antes de tentar novamente.', 'error'); finish(); };
+    xhr.onabort = () => { message('ota-message', 'Envio interrompido. Consulte o estado da placa.', 'warning'); finish(); };
+    xhr.send(file);
+  });
+
+  $('refresh').addEventListener('click', refreshState);
+  $('theme').addEventListener('click', () => {
+    const current = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme:light)').matches ? 'light' : 'dark');
+    document.documentElement.dataset.theme = current === 'light' ? 'dark' : 'light';
+  });
+  window.addEventListener('pagehide', signOut);
+  refreshState();
+  setInterval(refreshState, 10000);
+})();
+</script>
+</body>
+</html>

@@ -63,11 +63,56 @@ static void test_link_cutoff(void) {
     for(int i=0;i<3;i++) tbx_j1708_request_note_link_error(&s);
     assert(s.safety_stopped && !s.armed);
 }
+static bool failing_send(uint16_t pid, void *ctx) {
+    (void)pid; (void)ctx;
+    return false;
+}
+static void test_send_failure_and_immediate_stop(void) {
+    tbx_j1708_request_scheduler_t s;
+    tbx_j1708_request_init(&s);
+    tbx_j1708_request_permit_stationary_test(&s,true);
+    assert(tbx_j1708_request_arm(&s));
+    for(unsigned i=0;i<3;i++)
+        tbx_j1708_request_tick(&s,i*250,failing_send,NULL);
+    assert(s.tx_failure_total==3 && s.link_error_count==3);
+    assert(!s.armed && s.safety_stopped && s.sent_total==0);
+    tbx_j1708_request_init(&s);
+    tbx_j1708_request_permit_stationary_test(&s,true);
+    assert(tbx_j1708_request_arm(&s));
+    count=0;
+    tbx_j1708_request_tick(&s,0,mock_send,NULL);
+    assert(count==1 && s.pending!=TBX_J1708_NO_PENDING);
+    tbx_j1708_request_permit_stationary_test(&s,false);
+    assert(!s.armed && s.pending==TBX_J1708_NO_PENDING);
+    tbx_j1708_request_tick(&s,1000,mock_send,NULL);
+    assert(count==1 && !tbx_j1708_request_note_response(&s,26,1001));
+}
+static void test_uptime_wrap(void) {
+    tbx_j1708_request_scheduler_t s;
+    tbx_j1708_request_init(&s);
+    tbx_j1708_request_permit_stationary_test(&s,true);
+    assert(tbx_j1708_request_arm(&s));
+    count=0;
+    uint32_t now=UINT32_MAX-100u;
+    tbx_j1708_request_tick(&s,now,mock_send,NULL);
+    assert(count==1 && s.pending==0);
+    assert(tbx_j1708_request_note_response(&s,26,now+50u));
+    tbx_j1708_request_tick(&s,now+249u,mock_send,NULL);
+    assert(count==1);
+    tbx_j1708_request_tick(&s,now+250u,mock_send,NULL);
+    assert(count==2 && s.pending==1);
+    tbx_j1708_request_tick(&s,now+699u,mock_send,NULL);
+    assert(s.timeout_total==0);
+    tbx_j1708_request_tick(&s,now+700u,mock_send,NULL);
+    assert(s.timeout_total==1);
+}
 int main(void) {
     test_order_and_replies();
     test_timeouts();
     test_link_cutoff();
     test_delayed_brake_reply();
+    test_send_failure_and_immediate_stop();
+    test_uptime_wrap();
     puts("OK: 17 PIDs, authorization, spacing, replies and cutoffs");
     return 0;
 }

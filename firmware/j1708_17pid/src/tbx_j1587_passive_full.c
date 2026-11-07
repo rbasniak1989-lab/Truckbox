@@ -84,6 +84,12 @@ bool tbx_j1587_decode_passive_full(uint8_t mid, uint16_t pid,
     }
     if (!tbx_j1587_decode_passive(mid,pid,data,length,&out->base))
         return false;
+    /* These variable wire-format PIDs still require exactly three value
+       bytes. Check before reading data[2], including in standalone use. */
+    if ((pid==251u || pid==252u) && length!=3u) {
+        out->base.quality=TBX_PASSIVE_COMPRIMENTO_INVALIDO;
+        return false;
+    }
     /* 17 scalar PIDs are already decoded by the established passive
        decoder; this layer completes the remaining 31 only. */
     if (out->base.has_numeric_value) {
@@ -92,6 +98,23 @@ bool tbx_j1587_decode_passive_full(uint8_t mid, uint16_t pid,
         return true;
     }
     if (out->base.quality==TBX_PASSIVE_INDISPONIVEL) return true;
+    /* Formerly-raw scalar fields must follow the same unavailable policy as
+       the original numeric catalog. Do not convert FF temperatures or
+       FFFFFFFF revolutions into plausible-looking measurements. */
+    switch(pid) {
+    case 36: case 46: case 86: case 105: case 106: case 110:
+    case 111: case 122: case 171: case 174: case 175: case 177:
+    case 249: case 251: case 252: case 162: case 163: {
+        bool all_ff=true;
+        for (uint8_t i=0;i<length;i++) if (data[i]!=0xffu) all_ff=false;
+        if (all_ff) {
+            out->base.quality=TBX_PASSIVE_INDISPONIVEL;
+            return true;
+        }
+        break;
+    }
+    default: break;
+    }
     uint8_t a=data[0];
     uint8_t b=length>1u?data[1]:0;
     switch(pid) {
@@ -224,6 +247,16 @@ bool tbx_j1587_decode_passive_full(uint8_t mid, uint16_t pid,
         if (!out->day || out->day>31u || !out->month || out->month>12u) {
             out->base.quality=TBX_PASSIVE_COMPRIMENTO_INVALIDO;
             return false;
+        }
+        {
+            static const uint8_t days[]={31,28,31,30,31,30,31,31,30,31,30,31};
+            unsigned max_day=days[out->month-1u];
+            bool leap=(out->year%4u==0u && out->year%100u!=0u) || out->year%400u==0u;
+            if (out->month==2u && leap) ++max_day;
+            if (out->day>max_day) {
+                out->base.quality=TBX_PASSIVE_COMPRIMENTO_INVALIDO;
+                return false;
+            }
         }
         break;
     default:
