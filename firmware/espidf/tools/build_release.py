@@ -124,7 +124,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
         "commit": git_value(project_root, "rev-parse", "HEAD"),
         "dirty": bool(git_value(project_root, "status", "--porcelain")),
         "integration_base_branch": "feature/revb1-j1708-17-pids",
-        "integration_base_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
+        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "origin/feature/revb1-j1708-17-pids"),
+        "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
     }
     result["builds"] = {}
     for role, build in builds.items():
