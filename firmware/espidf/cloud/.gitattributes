@@ -1,0 +1,2 @@
+# Unified diffs preserve whitespace in context lines from the reviewed source.
+*.patch -whitespace
