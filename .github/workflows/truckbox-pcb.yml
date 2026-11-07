@@ -98,6 +98,11 @@ jobs:
           fi
           test -s hardware/reva/TruckBox_RevA.kicad_pcb
 
+      - name: Audit physical pin geometry and nets (hard release gate)
+        if: github.ref_name == 'hardware-revb-j1708-4g'
+        run: |
+          python3 hardware/reva/audit_revb1_pins.py hardware/reva/TruckBox_RevA.kicad_pcb
+
       - name: Run real PCB DRC with filled zones
         run: |
           mkdir -p hardware/reva/build
