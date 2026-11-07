@@ -44,3 +44,32 @@ O protótipo deve ser medido em bancada por técnico com fonte de corrente limit
 - TPL5010-Q1 fabricante: https://www.ti.com/lit/gpn/TPL5010-Q1
 
 **Sem as medições pós-isolamento e o pacote final da fabricação, não há como certificar que o protótipo funcionará nem prescrever fios/pads exatos com segurança.**
+
+
+## Identificação pelo lote final Run 317 (dados documentais, NÃO medição física)
+
+Arquivos da Biblioteca: `TruckBox_RevB1_Run317_Audit.txt`, `TruckBox_RevB1_FINAL_Run317_BOM.csv`, `TruckBox_RevB1_FINAL_Run317_CPL.csv`. Auditoria Run 317, commit `aaaf36e4d536eae048cc67f15c47edf57a3b7031`; BOM/CPL coerentes com 122 posições de montagem. O CPL indica **todos os transistores e U8 na face superior, rotação 0°**.
+
+| Ref. | Centro de montagem KiCad (mm) | Componente |
+|---|---|---|
+| Q1 | (67,00; 7,50) | AO3401A / C15127 |
+| Q2 | (55,50; 33,00) | AO3401A / C15127 |
+| Q3 | (88,00; 37,00) | MMBT5551 / C5184409 |
+| Q4 | (22,00; 31,50) | AO3401A / C15127 |
+| U8 | (22,00; 36,00) | TPL5010QDDCRQ1 / C1847955 |
+| J5 | (25,00; 80,00) | SIM8051-6-0-14-00-A / C7363812; CPL 90° |
+
+O CPL expressa as coordenadas Y com sinal invertido (`Mid Y = -y`). As coordenadas acima reexpressam Y positivo do gerador. **Servem para localizar componentes, NÃO como autorização para fazer pontes.**
+
+Com base no gerador e centros do CPL, *posições previstas dos pads de cobre* (não são números físicos corretos no componente espelhado):
+
+| Componente | Pad 1 no cobre (x;y) | Pad 2 no cobre (x;y) | Pad 3 no cobre (x;y) |
+|---|---|---|---|
+| Q1 | (65,95; 8,45) | (65,95; 6,55) | (68,05; 7,50) |
+| Q2 | (54,45; 33,95) | (54,45; 32,05) | (56,55; 33,00) |
+| Q3 | (86,95; 37,95) | (86,95; 36,05) | (89,05; 37,00) |
+| Q4 | (20,95; 32,45) | (20,95; 30,55) | (23,05; 31,50) |
+
+U8 cobre: pad1 (20,90;36,95), pad2 (20,90;36,00), pad3 (20,90;35,05), pad4 (23,10;35,05), pad5 (23,10;36,00), pad6 (23,10;36,95). Essas coordenadas são derivadas da geometria do gerador, que apresentou o espelhamento. **Confirmar com o arquivo físico da fabricação e continuidade antes de qualquer reparo.**
+
+Hash fornecido pelo Run 317: Gerbers `38faa550befcc9c120cb249fbd3f311908364c2820fa84afca5e3084506ea14c`; BOM `0f1895c4c5ace6c5e87afa79afe8223916f289434b4e8a3c6bbcec4bc3d48d41`; CPL `a531bfa7d97fc6ad5965534750314de905273f3f4c11a82b3a22a6dbe4d34ee4`. O Gerber completo não foi aberto nesta revisão: geometria deve ser tratada como previsão de fonte, não como prova final.
