@@ -1,4 +1,14 @@
-# Compatibilidade Cloud — ingestão v25 ativa
+# Compatibilidade Cloud — ingestão v26 ativa
+
+Hotfix v26: conversão de microssegundos para milissegundos inteiros, conforme a
+coluna bigint do PostgreSQL. Corrige o erro 22P02 que bloqueava os lotes depois
+de 168 registros HEALTH. Não exige outro firmware. Leia UPTIME_FIX_v26.md.
+
+Preparador atual: patch_ingest_v26.py. Regressão: acrescente `--v26` e
+`--v25-source PRIVADO_V25.ts` ao teste completo. O original em microssegundos
+continua preservado em raw. Nenhuma migração SQL ou mudança de token.
+
+## Histórico v25
 
 A revisão 25 foi implantada e verificada por HTTPS/banco em 07/11/2026 para
 receber a telemetria da Rev.B.1 sem GPS. Leia `../WIFI_LINK_CLOUD_v0.2.2.md`.

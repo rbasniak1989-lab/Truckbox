@@ -32,9 +32,11 @@ de frames dos Logs Mãe.
 
 O histórico da integração v0.2.0 identificou que o ingest antigo
 v24 trata RAW/DECODED como operacional e pode esvaziar o estado do painel.
-Essa situação foi corrigida na ingestão v25, implantada e testada por HTTPS e
-consulta ao banco. O caminho físico Core → Link → Wi-Fi → Cloud ainda precisa
-ser ensaiado nos dispositivos após atualização e configuração da v0.2.2.
+Essa situação foi corrigida na ingestão v25 e complementada pela v26, que
+normaliza milissegundos para a coluna bigint sem alterar os microssegundos em raw.
+O envio físico Core → Link → Wi-Fi → Cloud foi confirmado para registros da fila
+pendente; vazão, perdas e captura atual precisam de ensaio prolongado.
+Leia `cloud/UPTIME_FIX_v26.md`. O hotfix v26 não exige atualizar dispositivos.
 
 ## Compilar, testar e empacotar
 

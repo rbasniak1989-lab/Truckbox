@@ -39,6 +39,9 @@ async function invoke(path, samples, options = {}) {
     }
     then(resolve, reject) {
       return (async () => {
+        if (this.table === 'telemetry_samples' && options.bigintContract &&
+            this.data.some(row=>row.uptime_ms!=null&&!Number.isSafeInteger(row.uptime_ms)))
+          return {error:{code:'22P02',message:'invalid input syntax for type bigint'}};
         if ((this.table === 'telemetry_samples' && options.failPersistence) ||
             (this.table === 'health_minute_samples' && options.failHealthPersistence)) return { error: { message: 'mock persistence failure' } };
         writes.push({ table: this.table, operation: this.operation, data: clone(this.data) });
@@ -179,4 +182,25 @@ if (args.includes('--v25')) {
   assert.equal(hfailed.status, 500);
   assert.equal(hfailed.response.ack_seq, undefined);
   console.log('PASS: v25 preserves diagnostic kinds, NULLs and health provenance; malformed sequences/auth/storage errors never ACK');
+}
+if (args.includes('--v26')) {
+  const samples = [{seq:14,sample_kind:'RAW',boot_id:55,uptime_us:339721,time_valid:false}];
+  const v25Path = args[args.indexOf('--v25-source') + 1];
+  if (args.includes('--v25-source')) {
+    const before=await invoke(v25Path,samples,{bigintContract:true});
+    assert.equal(before.status,500);assert.equal(before.response.ack_seq,undefined);
+    console.log('PASS: v25 fractional uptime reproduces PostgreSQL bigint rejection before ACK');
+  }
+  for (const [time,expected] of [
+    [{uptime_us:339721},339],[{uptime_ms:339.721},339],
+    [{uptime_ms:null,uptime_us:1234567},1234],[{uptime_us:1},0],
+    [{uptime_us:0},0],[{uptime_us:-1},null],[{uptime_ms:1e20},null],[{},null],
+  ]) {
+    const input={seq:15,sample_kind:'RAW',time_valid:false,...time};
+    const got=await invoke(sourcePath,[input],{bigintContract:true});
+    assert.equal(got.status,200);assert.equal(got.response.ack_seq,15);
+    assert.equal(got.rows[0].uptime_ms,expected);
+    assert.deepEqual(got.rows[0].raw,input);
+  }
+  console.log('PASS: v26 writes integer/null milliseconds and preserves original microseconds without GPS');
 }

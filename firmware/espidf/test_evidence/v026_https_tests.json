@@ -1,0 +1,14 @@
+[
+  {
+    "test": "fractional_microseconds_persisted",
+    "status": 200,
+    "ack_seq": 1,
+    "ingest_version": 26
+  },
+  {
+    "test": "idempotent_retry",
+    "status": 200,
+    "ack_seq": 1,
+    "ingest_version": 26
+  }
+]

@@ -1,5 +1,9 @@
 # Relatório executado — Rev.B.1 de testes
 
+Cloud v26: reproduzida rejeição 22P02 por uptime fracionário; correção implantada,
+testada por HTTPS/SQL e retomada real da fila do Core confirmada. Veja
+cloud/UPTIME_FIX_v26.md. Nenhuma nova imagem de dispositivo é necessária.
+
 Atualização v0.2.3: inclui regressão com sockets TCP dual stack reais, corrigindo
 a descoberta do Link no Core. Suites host e builds executados novamente.
 Leia PEER_FIX_v0.2.3.md. O Link 0.2.2 permanece compatível.

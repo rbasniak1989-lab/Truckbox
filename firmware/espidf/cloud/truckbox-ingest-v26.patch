@@ -1,0 +1,24 @@
+--- truckbox-ingest-v25/index.ts
++++ truckbox-ingest-v26/index.ts
+@@ -84,8 +84,10 @@
+ 
+     const deviceNowMs=num(body.device_time_ms),deviceUptimeMs=num(body.device_uptime_ms),currentBootId=num(body.boot_id);
+     const captureUptimeMs=(s:any)=>{
+-      const ms=s.uptime_ms==null?null:num(s.uptime_ms),us=s.uptime_us==null?null:num(s.uptime_us);
+-      return ms??(us==null?null:us/1000);
++      const ms=num(s.uptime_ms),us=num(s.uptime_us);
++      const value=ms??(us==null?null:us/1000);
++      // SQL uptime_ms is bigint. Preserve sub-millisecond precision in the original raw payload.
++      return value!=null&&value>=0&&Number.isSafeInteger(Math.trunc(value))?Math.trunc(value):null;
+     };
+     const captureTs=(s:any)=>{
+       if(typeof s.ts==='string'&&s.ts.length>=20&&isoMs(s.ts)!=null)return s.ts;
+@@ -425,7 +427,7 @@
+       trip_average_kml:activeTrip?.average_kml??null,
+       fuel_source:activeTrip?.fuel_source??null,
+       rate_update_status:rateUpdateStatus,
+-      ingest_version:25
++      ingest_version:26
+     });
+   }catch(e){
+     console.error(e);
