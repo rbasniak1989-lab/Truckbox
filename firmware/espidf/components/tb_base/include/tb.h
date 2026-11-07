@@ -71,6 +71,7 @@ void tb_network_add_json(cJSON *object);
 bool tb_network_wifi_uplink(void);
 void tb_network_start_time_sync(void);
 void tb_network_note_link_address(const char *address);
+void tb_network_note_link_socket(int socket_fd);
 void tb_network_link_host(char *host, size_t capacity);
 void tb_base_add_json(cJSON *object);
 

@@ -387,14 +387,7 @@ static esp_err_t link_telemetry_handler(httpd_req_t *request)
     esp_err_t err = tb_http_read_json(request, TB_RECORD_MAX - 1, &root);
     if (err != ESP_OK || !cJSON_IsObject(root)) { cJSON_Delete(root); return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid telemetry"); }
     /* Learn only the authenticated packet's socket peer, never a host supplied in JSON. */
-    struct sockaddr_in peer;
-    socklen_t peer_size = sizeof(peer);
-    if (getpeername(httpd_req_to_sockfd(request), (struct sockaddr *)&peer, &peer_size) == 0 &&
-        peer.sin_family == AF_INET) {
-        char address[16];
-        if (inet_ntop(AF_INET, &peer.sin_addr, address, sizeof(address)))
-            tb_network_note_link_address(address);
-    }
+    tb_network_note_link_socket(httpd_req_to_sockfd(request));
     gps_fix_t fix;
     const cJSON *gps = cJSON_GetObjectItemCaseSensitive(root, "gps");
     if (gps_from_json(gps, &fix, "link_gnss")) accept_gps(&fix);

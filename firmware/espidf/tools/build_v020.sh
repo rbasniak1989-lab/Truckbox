@@ -21,5 +21,5 @@ if [[ "$idf_version" != 'ESP-IDF v5.5.2' ]]; then
 fi
 for build_role in "${roles[@]}"; do
   idf.py -C "$project_root" -B "$project_root/build-$build_role" \
-    -DTRUCKBOX_ROLE="$build_role" -DPROJECT_VER=0.2.2 build
+    -DTRUCKBOX_ROLE="$build_role" -DPROJECT_VER=0.2.3 build
 done

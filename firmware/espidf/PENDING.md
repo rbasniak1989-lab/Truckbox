@@ -1,4 +1,8 @@
-# Pendências da v0.2.2 de testes
+# Pendências da v0.2.3 de testes
+
+O diagnóstico físico da 0.2.2 confirmou J1708 e o bloqueio do endereço do Link;
+PEER_FIX_v0.2.3.md documenta a correção e os testes reais de sockets locais.
+Ainda falta confirmar Core → Link → Cloud na placa após esta atualização.
 
 1. **Hardware real não acessível:** inicialização, recepção de duas redes, microSD real sem GPS, vazão/perda em carga, quedas de alimentação, reboot e recuperação/OTA precisam ser ensaiados na placa. Testes host com falhas simuladas não substituem esses ensaios.
 2. **J1939:**55/76 itens decodificados;15 brutos/parciais e6 sem valor físico seguro, detalhados por ID na cobertura. Não inventar máscaras ABS/estacionamento, demanda/starter, top gear ou escalas proprietárias. Campos já interpretados parcialmente conservam EM_VALIDACAO. Validação física não é inferida da compilação.

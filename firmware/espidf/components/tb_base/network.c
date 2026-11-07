@@ -11,6 +11,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/ip4_addr.h"
+#include "lwip/inet.h"
+#include "lwip/sockets.h"
 #include "dhcpserver/dhcpserver.h"
 #include "mdns.h"
 
@@ -71,6 +73,29 @@ void tb_network_link_host(char *host, size_t capacity)
     const bool fresh = s_link_address[0] && esp_timer_get_time() - s_link_seen_us < INT64_C(60000000);
     strlcpy(host, fresh ? s_link_address : TB_LINK_IP, capacity);
     portEXIT_CRITICAL(&s_status_lock);
+}
+
+void tb_network_note_link_socket(int socket_fd)
+{
+    /* IDF HTTPD uses AF_INET6 when IPv6 is enabled. lwIP then returns IPv4
+     * clients as ::ffff:a.b.c.d; a sockaddr_in buffer cannot represent them. */
+    struct sockaddr_storage peer = {0};
+    socklen_t length = sizeof(peer);
+    if (getpeername(socket_fd, (struct sockaddr *)&peer, &length) != 0) return;
+    struct in_addr ipv4;
+    if (peer.ss_family == AF_INET && length >= sizeof(struct sockaddr_in)) {
+        ipv4 = ((const struct sockaddr_in *)&peer)->sin_addr;
+#if CONFIG_LWIP_IPV6
+    } else if (peer.ss_family == AF_INET6 && length >= sizeof(struct sockaddr_in6)) {
+        const struct sockaddr_in6 *v6 = (const struct sockaddr_in6 *)&peer;
+        static const unsigned char mapped_prefix[12] = {0,0,0,0,0,0,0,0,0,0,255,255};
+        if (memcmp(v6->sin6_addr.s6_addr, mapped_prefix, sizeof(mapped_prefix)) != 0) return;
+        memcpy(&ipv4, v6->sin6_addr.s6_addr + 12, sizeof(ipv4));
+#endif
+    } else return;
+    char address[16];
+    if (inet_ntop(AF_INET, &ipv4, address, sizeof(address)))
+        tb_network_note_link_address(address);
 }
 
 static void reconnect_task(void *unused)

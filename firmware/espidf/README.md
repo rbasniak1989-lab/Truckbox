@@ -1,7 +1,9 @@
-# TruckBox Rev.B.1 v0.2.2 — VERSÃO DE TESTES
+# TruckBox Rev.B.1 v0.2.3 — VERSÃO DE TESTES
 
-Core captura; Link envia à nuvem pela internet do Wi-Fi. Atualize os dois módulos
-e leia `WIFI_LINK_CLOUD_v0.2.2.md` para configuração e limites dos testes.
+Core captura; Link envia à nuvem pela internet do Wi-Fi. A 0.2.3 corrige no Core
+a descoberta do Link em sockets IPv4/IPv6. Leia `PEER_FIX_v0.2.3.md`.
+Quem já usa Link 0.2.2 só precisa atualizar o Core; a configuração de rede e os
+limites continuam descritos em `WIFI_LINK_CLOUD_v0.2.2.md`.
 Inclui a redução de RAM da 0.2.1 e a correção de watchdog da 0.2.0-wdt1.
 As versões anteriores permanecem arquivadas, sem sobrescrita.
 
@@ -44,7 +46,7 @@ Ative ESP-IDF5.5.2 e siga `BUILD_ENVIRONMENT.md`:
 cd firmware/espidf
 bash tools/build_v020.sh all
 sh tests/run_all.sh
-python tools/build_release.py --output-dir release --package Truckbox_B1_firmware_0.2.2_TESTES.zip
+python tools/build_release.py --output-dir release --package Truckbox_B1_firmware_0.2.3_TESTES.zip
 ```
 
 O pacote contém fontes completos, Core/Link `.bin`, bootloaders, tabela de

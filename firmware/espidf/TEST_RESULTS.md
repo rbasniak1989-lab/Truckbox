@@ -1,6 +1,10 @@
 # Relatório executado — Rev.B.1 de testes
 
-Atualização v0.2.2: suites deste relatório executadas novamente, acrescentando
+Atualização v0.2.3: inclui regressão com sockets TCP dual stack reais, corrigindo
+a descoberta do Link no Core. Suites host e builds executados novamente.
+Leia PEER_FIX_v0.2.3.md. O Link 0.2.2 permanece compatível.
+
+Histórico v0.2.2: suites deste relatório executadas novamente, acrescentando
 seleção Wi-Fi/PPP do Link, uploader/ACK/memória e cache de pares em C real com
 fronteiras simuladas. Ingestão v25 implantada e testada por HTTPS/banco sem GPS.
 Detalhes e limites físicos em WIFI_LINK_CLOUD_v0.2.2.md e evidências v022.

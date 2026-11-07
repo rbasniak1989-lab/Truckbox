@@ -1,6 +1,6 @@
 # Atualização e recuperação manual
 
-Esta é a **VERSÃO DE TESTES0.2.2**. Não houve gravação automática nem merge.
+Esta é a **VERSÃO DE TESTES0.2.3**. Não houve gravação automática nem merge.
 Preserve o pacote funcional v0.1.0-b1 e leia HARDWARE.md e PENDING.md antes do ensaio.
 A ingestão v25 já foi implantada; o caminho Wi-Fi do Link e suas credenciais
 estão descritos em WIFI_LINK_CLOUD_v0.2.2.md. J1708 ativo começa desarmado.
@@ -9,7 +9,7 @@ estão descritos em WIFI_LINK_CLOUD_v0.2.2.md. J1708 ativo começa desarmado.
 
 1. Guarde configuração e backlog pendente; confirme alimentação estável e o estado do watchdog descrito na base. Use apenas a imagem da função correta.
 2. No console USB, `setup` obtém os dados locais gerados na placa; `status` mostra erros, filas, mídia e captura. Não publique senhas/tokens.
-3. Na página de OTA existente, envie `truckbox_core_0.2.2_ota.bin` para o Core. Depois envie `truckbox_link_0.2.2_ota.bin` ao Link, antes de alterar a rede dele. Leia OTA.md e WIFI_LINK_CLOUD_v0.2.2.md.
+3. Na página de OTA existente, envie `truckbox_core_0.2.3_ota.bin` para o Core. O Link 0.2.2 pode permanecer instalado. Em uma instalação nova, há também Link 0.2.3 no pacote. Leia PEER_FIX_v0.2.3.md e WIFI_LINK_CLOUD_v0.2.2.md.
 4. Não espere GPS para validar aquisição. Confira `gps_status=NO_FIX`, ausência de lat/lon, contadores RX e registros `seq` persistentes. A ausência de fix não deve impedir boot nem gravação.
 5. Confirme no `status` a mídia real e contadores de confirmação/erros; `store_queue_accepted` não significa gravação no cartão. Teste recuperação do backlog sem Android/internet e depois de reboot.
 
