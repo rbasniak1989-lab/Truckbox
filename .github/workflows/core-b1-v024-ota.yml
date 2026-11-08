@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-core:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - name: Checkout the exact experimental firmware source
         uses: actions/checkout@v4
@@ -21,7 +21,7 @@ jobs:
           esp_idf_version: v5.5.2
           target: esp32c6
           path: firmware/espidf
-          command: bash -lc 'bash tools/build_v020.sh core && sh tests/run_all.sh'
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
       - name: Validate OTA image identity, flash map and binary size
         run: |
           set -euo pipefail
