@@ -51,7 +51,7 @@ static const string_field_t STRING_FIELDS[] = {
 };
 
 static const bool_field_t BOOL_FIELDS[] = {
-    BOOL_FIELD(capture_enabled), BOOL_FIELD(sd_enabled), BOOL_FIELD(fram_enabled),
+    BOOL_FIELD(capture_enabled), BOOL_FIELD(full_decode_enabled), BOOL_FIELD(sd_enabled), BOOL_FIELD(fram_enabled),
     BOOL_FIELD(modem_enabled), BOOL_FIELD(gnss_enabled), BOOL_FIELD(repaired_power_gates),
 };
 
@@ -151,6 +151,7 @@ static void defaults(tb_config_t *config)
     config->can_baud = 250000;
     config->gnss_baud = 9600;
     config->capture_enabled = true;
+    config->full_decode_enabled = false; /* Rev B1: prioritize capture and avoid RAW flash backlog */
     config->gnss_enabled = true;
     snprintf(config->core_host, sizeof(config->core_host), "truckbox.local");
     snprintf(config->uplink_url, sizeof(config->uplink_url),

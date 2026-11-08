@@ -1,6 +1,7 @@
 #include "core_internal.h"
 #include "protocols.h"
 #include "telemetry.h"
+#include "telemetry_profile.h"
 #include "tbx_j1587_bridge.h"
 #include "tbx_j1708_active.h"
 #include "tbx_trip.h"
@@ -234,7 +235,8 @@ static void can_task(void *unused)
         if (err != ESP_OK) { ++s.can_errors; vTaskDelay(pdMS_TO_TICKS(100)); continue; }
         ++s.can_frames;
         uint64_t captured_us = esp_timer_get_time();
-        tb_telemetry_can(frame.identifier, frame.extd, frame.rtr, frame.data_length_code, frame.data, captured_us);
+        if (tb_config()->full_decode_enabled)
+            tb_telemetry_can(frame.identifier, frame.extd, frame.rtr, frame.data_length_code, frame.data, captured_us);
         if (frame.rtr) ++s.can_rtr;
         /* Raw frames go to the bounded legacy TCP stream. Cloud samples are 1 Hz snapshots. */
         if (!frame.rtr) tb_live_can(frame.identifier, frame.extd, frame.data_length_code, frame.data);
@@ -284,8 +286,11 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
         }
     }
     xSemaphoreGive(s.lock);
-    if (echo) { tb_telemetry_j1708_echo(frame, size, captured_us, oversize); return; }
-    tb_telemetry_j1708(frame, size, captured_us, oversize);
+    if (echo) {
+        if (tb_config()->full_decode_enabled) tb_telemetry_j1708_echo(frame, size, captured_us, oversize);
+        return;
+    }
+    if (tb_config()->full_decode_enabled) tb_telemetry_j1708(frame, size, captured_us, oversize);
     if (oversize || size > 21) {
         ++s.j1708_oversize;
         xSemaphoreTake(s.lock, portMAX_DELAY);
@@ -356,9 +361,11 @@ static void snapshot_task(void *unused)
     for (;;) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(1000));
         uint64_t now = esp_timer_get_time() / 1000;
-        cJSON *sample = cJSON_CreateObject();
-        if (!sample) continue;
-        add_sample_identity(sample, "OPERATIONAL");
+        /* Snapshot at 15 s in LEGACY. The 60 s health clock remains active. */
+        if (tb_operational_due(tb_config()->full_decode_enabled, seconds)) {
+            cJSON *sample = cJSON_CreateObject();
+            if (sample) {
+                add_sample_identity(sample, "OPERATIONAL");
         bool vehicle_data = false;
         xSemaphoreTake(s.lock, portMAX_DELAY);
         if (s.speed_at && now - s.speed_at <= 5000) {
@@ -385,7 +392,9 @@ static void snapshot_task(void *unused)
         if (tb_core_append_gps(sample)) vehicle_data = true;
         else { cJSON_AddNullToObject(sample, "gps"); cJSON_AddStringToObject(sample, "gps_status", "NO_FIX"); cJSON_AddBoolToObject(sample, "has_fix", false); }
         /* Do not replace operational cloud state with empty bench/diagnostic rows. */
-        if (vehicle_data) queue_sample(sample); else cJSON_Delete(sample);
+                if (vehicle_data) queue_sample(sample); else cJSON_Delete(sample);
+            }
+        }
         if (++seconds < 60) continue;
         seconds = 0;
         cJSON *health = cJSON_CreateObject();
@@ -404,6 +413,8 @@ static void snapshot_task(void *unused)
         cJSON *context = cJSON_AddObjectToObject(health, "context");
         cJSON_AddStringToObject(context, "role", "core");
         cJSON_AddStringToObject(context, "firmware", tb_version());
+        cJSON_AddStringToObject(context, "telemetry_profile",
+            tb_config()->full_decode_enabled ? "COMPLETO" : "LEGACY");
         cJSON_AddStringToObject(context, "j1708_framing", "uart_idle_10bits");
         old_can = s.can_frames; old_j1708 = s.j1708_frames;
         old_checksum = s.j1708_checksum_errors; old_overruns = s.uart_overruns;
@@ -497,8 +508,12 @@ esp_err_t tb_capture_start(void)
     }
     tbx_trip_init(&s.trip, s.distance_trip, s.distance_trip_valid);
     if (s.distance_counter_valid) tbx_trip_restore_counter(&s.trip, s.distance_counter_sa, s.distance_counter_raw);
-    esp_err_t telemetry_err = tb_telemetry_start();
-    if (telemetry_err != ESP_OK) return telemetry_err;
+    /* LEGACY does not allocate the full decode worker, its 128-frame queue,
+     * 10 KB stack or 192-value cache. Live capture and trip totals stay up. */
+    if (tb_config()->full_decode_enabled) {
+        esp_err_t telemetry_err = tb_telemetry_start();
+        if (telemetry_err != ESP_OK) return telemetry_err;
+    }
     /* GPIO1 is deliberately never an output on the uncorrected B1 watchdog. */
     gpio_set_direction(GPIO_NUM_1, GPIO_MODE_INPUT);
     if (tb_config()->repaired_power_gates) {
@@ -641,6 +656,10 @@ void tb_capture_add_json(cJSON *object)
     if (s.active.configured) cJSON_AddNumberToObject(requests, "local_mid", s.active.config.local_mid);
     cJSON_AddNumberToObject(requests, "idle_guard_us", s.active.idle_guard_us);
     xSemaphoreGive(s.lock);
+    cJSON_AddStringToObject(object, "telemetry_profile",
+        tb_config()->full_decode_enabled ? "COMPLETO" : "LEGACY");
+    cJSON_AddNumberToObject(object, "operational_interval_s",
+        tb_config()->full_decode_enabled ? 1 : TB_LEGACY_OPERATIONAL_SECONDS);
     tb_telemetry_add_json(object);
 }
 

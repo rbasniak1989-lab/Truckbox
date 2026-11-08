@@ -35,6 +35,7 @@ typedef struct {
     uint32_t gnss_baud;
     uint64_t sequence_floor;
     bool capture_enabled;
+    bool full_decode_enabled; /* opt-in; LEGACY telemetry is the default */
     bool sd_enabled;
     bool fram_enabled;
     bool modem_enabled;

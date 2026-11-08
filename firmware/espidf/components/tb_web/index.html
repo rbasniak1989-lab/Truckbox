@@ -73,6 +73,7 @@
             <label>Velocidade CAN<select name="can_baud"><option value="250000">250 kbit/s</option><option value="500000">500 kbit/s</option></select><small>A coleta CAN desta placa é somente recepção.</small></label>
             <div class="config-group">
               <label class="check"><input name="capture_enabled" type="checkbox"><span>Ativar coleta CAN e J1708</span></label>
+               <label class="check"><input name="full_decode_enabled" type="checkbox"><span>Modo COMPLETO: decodificar e persistir RAW de cada quadro<small>Desmarcado (LEGACY): captura e painel continuam, mas grava apenas resumos de 15 s e saúde de 60 s. Use COMPLETO apenas para testes curtos.</small></span></label>
               <label class="check"><input name="fram_enabled" type="checkbox"><span>Usar FRAM</span></label>
               <label class="check"><input name="sd_enabled" type="checkbox"><span>Usar cartão microSD</span></label>
             </div>
