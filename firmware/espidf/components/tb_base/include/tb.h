@@ -89,6 +89,8 @@ esp_err_t tb_application_register_routes(httpd_handle_t server);
 esp_err_t tb_store_submit(const char *record_json);
 cJSON *tb_store_batch(size_t limit, size_t max_bytes);
 esp_err_t tb_store_ack(uint64_t sequence);
+/* Explicitly discard local telemetry logs on the next boot. Never erase NVS/OTA. */
+esp_err_t tb_store_schedule_discard(void);
 void tb_store_add_json(cJSON *object);
 
 /* Link accepts batches from Core and returns an explicit ack_seq after HTTPS acceptance. */

@@ -13,6 +13,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include "esp_http_client.h"
+#include "esp_ota_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -436,6 +437,43 @@ static esp_err_t gps_handler(httpd_req_t *request)
     return tb_http_send_json(request, reply);
 }
 
+/* Intentional destructive operation. This is the new CORE, not the LINK.
+ * Refuse until the OTA image is marked VALID (main.c confirms after 15 s). */
+static esp_err_t discard_storage_handler(httpd_req_t *request)
+{
+    if (!tb_http_require_admin(request)) return ESP_OK;
+    if (tb_web_ota_busy()) { httpd_resp_set_status(request, "409 Conflict"); return httpd_resp_sendstr(request, "OTA in progress"); }
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t image_state = ESP_OTA_IMG_UNDEFINED;
+    if (strcmp(tb_version(), "0.2.4") != 0 || !running ||
+        esp_ota_get_state_partition(running, &image_state) != ESP_OK ||
+        image_state != ESP_OTA_IMG_VALID) {
+        { httpd_resp_set_status(request, "409 Conflict"); return httpd_resp_sendstr(request, "Confirm CORE 0.2.4 OTA first (wait 15s), then discard local logs"); }
+    }
+    cJSON *body = NULL;
+    if (tb_http_read_json(request, 256, &body) != ESP_OK || !cJSON_IsObject(body)) {
+        cJSON_Delete(body);
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid JSON");
+    }
+    const cJSON *phrase = cJSON_GetObjectItemCaseSensitive(body, "confirm");
+    bool authorized = cJSON_IsString(phrase) &&
+        !strcmp(phrase->valuestring, "DESCARTAR_REGISTROS");
+    cJSON_Delete(body);
+    if (!authorized)
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "explicit confirmation required");
+    esp_err_t scheduled = tb_store_schedule_discard();
+    if (scheduled != ESP_OK)
+        { httpd_resp_set_status(request, "409 Conflict"); return httpd_resp_sendstr(request, "storage not ready"); }
+    cJSON *reply = cJSON_CreateObject();
+    if (!reply) return ESP_ERR_NO_MEM;
+    cJSON_AddBoolToObject(reply, "ok", true);
+    cJSON_AddStringToObject(reply, "action", "discard_local_telemetry_at_next_boot");
+    cJSON_AddStringToObject(reply, "scope", "storage_log_files_only");
+    cJSON_AddBoolToObject(reply, "ota_and_nvs_preserved", true);
+    tb_schedule_restart(1500);
+    return tb_http_send_json(request, reply);
+}
+
 static esp_err_t reset_handler(httpd_req_t *request)
 {
     if (!legacy_write_origin_ok(request)) return httpd_resp_send_err(request, HTTPD_403_FORBIDDEN, "cross-site write rejected");
@@ -552,6 +590,7 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
         { .uri = "/api/link/telemetry", .method = HTTP_POST, .handler = link_telemetry_handler },
         { .uri = "/api/gps", .method = HTTP_POST, .handler = gps_handler },
         { .uri = "/api/reset", .method = HTTP_POST, .handler = reset_handler },
+        { .uri = "/api/storage/discard", .method = HTTP_POST, .handler = discard_storage_handler },
     };
     for (unsigned i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         esp_err_t err = httpd_register_uri_handler(server, &routes[i]);

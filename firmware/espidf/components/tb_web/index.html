@@ -115,6 +115,12 @@
     <div id="config-message" class="banner message" role="status" aria-live="polite"></div>
   </section>
 
+  <section class="panel" id="storage-maintenance" hidden>
+    <h2>Manutenção do armazenamento</h2>
+    <p class="muted">Após confirmar a instalação da versão 0.2.4, descarte registros pendentes locais da flash. Isso NÃO apaga o histórico que já chegou à nuvem, o firmware anterior, as configurações ou os dados da viagem na NVS. Os registros ainda não enviados serão perdidos.</p>
+    <button type="button" id="discard-storage" disabled>Descartar registros locais e reiniciar</button>
+    <div id="discard-message" class="banner message" role="status" aria-live="polite"></div>
+  </section>
   <div class="split">
     <section class="panel" aria-labelledby="ota-title">
       <h2 id="ota-title">Atualização por Wi‑Fi</h2>
@@ -197,6 +203,8 @@
     role = normalized.includes('core') ? 'core' : normalized.includes('link') ? 'link' : '';
     text('stat-role', role === 'core' ? 'Core' : role === 'link' ? 'Link' : value);
     $('core-config').hidden = role !== 'core';
+    $('storage-maintenance').hidden = role !== 'core';
+    $('discard-storage').disabled = !token || role !== 'core';
     $('link-config').hidden = role !== 'link';
     $('modem-config').hidden = role !== 'link';
     $('forward-target').hidden = role !== 'core';
@@ -253,6 +261,7 @@
     $('config-fields').disabled = false;
     $('ota-fields').disabled = false;
     $('show-pair').disabled = role !== 'core';
+    $('discard-storage').disabled = role !== 'core';
   }
 
   function signOut() {
@@ -263,6 +272,7 @@
     $('config-fields').disabled = true;
     $('ota-fields').disabled = true;
     $('show-pair').disabled = true;
+    $('discard-storage').disabled = true;
     $('pair-data').hidden = true;
     $('pair-text').value = '';
     for (const name of secretNames) configControl(name).value = '';
@@ -289,6 +299,23 @@
   });
 
   $('logout').addEventListener('click', signOut);
+  $('discard-storage').addEventListener('click', async () => {
+    if (!token || role !== 'core' || uploadBusy) return;
+    const typed = prompt('Esta limpeza é definitiva para os registros locais ainda não enviados. Digite DESCARTAR para continuar:');
+    if (typed !== 'DESCARTAR') return;
+    if (!confirm('Confirmar descarte dos registros locais? A placa vai reiniciar.')) return;
+    $('discard-storage').disabled = true;
+    try {
+      const result = await request('/api/storage/discard', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({confirm:'DESCARTAR_REGISTROS'})
+      }, 15000);
+      message('discard-message', 'Solicitação aceita. A placa reiniciará, apagará apenas os arquivos de telemetria locais e conservará os firmwares e a NVS.', 'success');
+    } catch(error) {
+      message('discard-message', error.message, 'error');
+      $('discard-storage').disabled = false;
+    }
+  });
   configForm.addEventListener('input', event => { if (event.target.name) dirty.add(event.target.name); });
   configForm.addEventListener('change', event => { if (event.target.name) dirty.add(event.target.name); });
   $('open-wifi').addEventListener('change', () => {

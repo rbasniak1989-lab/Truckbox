@@ -102,6 +102,8 @@ typedef struct {
     uint64_t scheduling_yields;
     uint64_t buffered_during_recovery;
     volatile uint32_t recovery_segments;
+    bool purged_this_boot;
+    uint32_t purged_files;
     wl_handle_t flash_handle;
     sdmmc_card_t *sd_card;
 } store_state_t;
@@ -392,12 +394,51 @@ static bool mount_storage(void)
     }
     state.base_path = "/tbflash";
     state.medium = "flash";
-    state.maximum_segments = 24;
+    /* A full-size 8 MB layout may allocate a larger FAT storage partition.
+     * Preserve the 24-segment limit on the shipped 1.875 MiB partition,
+     * and expand only on a USB-migrated partition, keeping 512 KiB spare
+     * for FAT, wear levelling metadata and temporary file operations. */
+    size_t flash_max = 24;
+    if (partition->size > 0x1e0000u &&
+        partition->size > (512u * 1024u)) {
+        flash_max = (partition->size - (512u * 1024u)) / STORE_FLASH_SEGMENT_BYTES;
+        if (flash_max > STORE_SEGMENTS) flash_max = STORE_SEGMENTS;
+        if (flash_max < 24) flash_max = 24;
+    }
+    state.maximum_segments = flash_max;
     state.segment_bytes = STORE_FLASH_SEGMENT_BYTES;
     return true;
 }
 
 #endif
+
+/* Delete ONLY our named telemetry .LOG segments, never other files or FAT/NVS.
+ * Performed at boot, before recovery and before storage starts accepting data.
+ * The NVS marker survives a power failure; a subsequent boot resumes deletion.
+ * Sequence reservations remain unchanged so old cloud IDs are never reused. */
+static bool discard_log_files(void)
+{
+    DIR *directory = opendir(state.base_path);
+    if (!directory) { fail_store("discard: cannot enumerate storage"); return false; }
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL) {
+        uint32_t id;
+        if (!file_id(entry->d_name, &id)) continue;
+        char path[96];
+        segment_path(path, sizeof(path), id);
+        if (unlink(path) != 0 && errno != ENOENT) {
+            closedir(directory);
+            fail_store("discard: cannot delete telemetry segment; retry at next boot");
+            return false;
+        }
+        ++state.purged_files;
+    }
+    if (closedir(directory) != 0) {
+        fail_store("discard: cannot close storage directory");
+        return false;
+    }
+    return true;
+}
 
 static bool recover_records(void)
 {
@@ -689,6 +730,29 @@ static bool initialize_medium(void)
         ESP_LOGE(TAG, "%s", state.error);
         return false;
     }
+    /* Marker can only be written by the confirmed 0.2.4 admin endpoint.
+     * Keep it durable until every log is deleted, including after power loss. */
+    uint8_t discard_requested = 0;
+    esp_err_t request_err = nvs_get_u8(state.nvs, "discard_logs", &discard_requested);
+    if (request_err != ESP_OK && request_err != ESP_ERR_NVS_NOT_FOUND) {
+        fail_store("discard: cannot read NVS marker");
+        return false;
+    }
+    if (discard_requested) {
+        if (discard_requested != 1 || strcmp(state.medium, "flash") != 0) {
+            fail_store("discard: invalid marker or non-flash backend");
+            return false;
+        }
+        if (!discard_log_files()) return false;
+        if (nvs_set_u8(state.nvs, "discard_logs", 0) != ESP_OK ||
+            nvs_commit(state.nvs) != ESP_OK) {
+            fail_store("discard: cannot commit completion marker");
+            return false;
+        }
+        state.purged_this_boot = true;
+        ESP_LOGW(TAG, "Operator-authorized discard completed: %lu log files, NVS/OTA intact",
+                 (unsigned long)state.purged_files);
+    }
     if (!recover_records()) {
         return false;
     }
@@ -758,6 +822,22 @@ static void storage_task(void *argument)
             }
         }
     }
+}
+
+esp_err_t tb_store_schedule_discard(void)
+{
+    /* Called only by an authenticated admin endpoint after OTA confirmation.
+     * The active writer is never interrupted: deletion starts after reboot. */
+    if (!state.mutex || xSemaphoreTake(state.mutex, pdMS_TO_TICKS(2000)) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if (state.ready && !state.initializing && state.nvs_open &&
+        state.medium && strcmp(state.medium, "flash") == 0) {
+        result = nvs_set_u8(state.nvs, "discard_logs", 1);
+        if (result == ESP_OK) result = nvs_commit(state.nvs);
+    }
+    xSemaphoreGive(state.mutex);
+    return result;
 }
 
 esp_err_t tb_store_init(void)
@@ -1173,6 +1253,8 @@ void tb_store_add_json(cJSON *object)
     cJSON_AddNumberToObject(storage, "max_segments", (double)state.maximum_segments);
     cJSON_AddNumberToObject(storage, "segment_bytes", (double)state.segment_bytes);
     cJSON_AddNumberToObject(storage, "recovered_tail_bytes", (double)state.recovered_tail_bytes);
+    cJSON_AddBoolToObject(storage, "discard_completed_this_boot", state.purged_this_boot);
+    cJSON_AddNumberToObject(storage, "discarded_files", state.purged_files);
     cJSON_AddNumberToObject(storage, "corrupt_records", (double)state.corrupt_records);
     cJSON_AddNumberToObject(storage, "write_errors", (double)state.write_errors);
     cJSON_AddNumberToObject(storage, "queue_depth",

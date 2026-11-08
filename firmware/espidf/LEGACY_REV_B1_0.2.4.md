@@ -33,6 +33,27 @@ cache de sensores e OPERATIONAL a 1 Hz. Não modifica os drivers CAN/J1708.
 Estado de diagnóstico: `telemetry_profile` e `operational_interval_s`.
 Desabilitar novamente e reiniciar para voltar ao LEGACY.
 
+## Limpeza de registros locais depois da OTA
+- Só o CORE com versão 0.2.4 e imagem OTA em estado VALID aceita o comando.
+- No painel autenticado, seção **Manutenção do armazenamento**, solicitar
+  **Descartar registros locais e reiniciar** e confirmar digitando DESCARTAR.
+- Endpoint: POST /api/storage/discard, Bearer admin, JSON
+  `{"confirm":"DESCARTAR_REGISTROS"}`. Nunca usar sem consentimento.
+- O comando apenas grava a marca `discard_logs=1` em `tb_store` (NVS), depois
+  reinicia. Antes de recuperar a fila no boot, apaga somente arquivos de segmento
+  `XXXXXXXX.LOG` da partição FAT `storage`.
+- Os namespaces NVS, senhas, histórico na nuvem, checkpoints da viagem,
+  slots OTA e tabela de partições não são apagados.
+- A marca NVS só é zerada ao concluir todos os arquivos; corte de energia
+  deixa a marca e reinicia a limpeza no próximo boot.
+- O gerador de sequências preserva `reserved` e `ack`; não reutiliza IDs.
+- Confirmar em /api/state: `storage.discard_completed_this_boot=true`,
+  `storage.discarded_files`, `storage.pending_records`.
+- Não há ampliação dinâmica da partição Storage: apagar o slot OTA antigo
+  não lhe transfere capacidade e destruiria a proteção de rollback.
+- Limpeza irreversível dos registros locais não entregues; nenhuma gravação ou
+  eliminação acontece ao simplesmente instalar o novo firmware.
+
 ## Segurança e limites
 - A atualização OTA deve preservar NVS, filas existentes e partições.
   A mudança de perfil **não apaga nem compacta à força o backlog anterior**.
@@ -54,3 +75,20 @@ Desabilitar novamente e reiniciar para voltar ao LEGACY.
 4. Conferir tamanho de RAM, boots, CAN/J1708, uptime, frequência de amostras,
    ACK/flash e persistência de viagem em bancada antes de OTA.
 5. Link 0.2.3 permanece compatível; não é necessária atualização do Link.
+
+## Capacidade e reparticionamento futuro (USB; não é OTA)
+- O layout original 8 MiB usa dois slots OTA de 3 MiB e FAT storage 1.875 MiB.
+- O Core 0.2.3 .bin de testes ocupa 1.437.408 bytes. Uma alternativa para
+  avaliação é **dois slots OTA de 2 MiB** e **storage 3.875 MiB**.
+- Modelo somente de referência: `partitions_usb_2x2mb.csv`. NÃO trocar a
+  tabela de partições por OTA; precisa backup de NVS/credenciais, gravador USB,
+  imagem completa compatível e procedimento de recuperação/teste de energia.
+- O limite anterior de 24 segmentos x 48 KiB comportava apenas 1.125 MiB de
+  registros, mesmo com a partição 1.875 MiB. No layout atual continua 24;
+  em uma partição maior lida em runtime o limite sobe, reservando 512 KiB para
+  FAT e operações temporárias.
+- Como 3.875 MiB ainda é limitado sem internet, planejar perfil OFFLINE:
+  acumular consumo e distância em tempo real; guardar resumos menores e menos
+  frequentes quando backlog crescer, sem apagar histórico já confirmado.
+- Mantemos os dois slots OTA e rollback. Nenhuma gravação ou reparticionamento
+  foi realizado no hardware.

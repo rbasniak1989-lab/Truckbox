@@ -200,6 +200,31 @@ static void test_bounded_startup_buffer(void)
     cleanup_store();
 }
 
+static void test_operator_discard_preserves_nvs_sequence_and_nonlog_files(void)
+{
+    reset_store();
+    append_json("{\"sample_kind\":\"RAW_J1939\",\"raw\":\"AAAA\"}", 100);
+    append_json("{\"sample_kind\":\"RAW_J1708\",\"raw\":\"BBBB\"}", 200);
+    assert(state.pending_records == 2 && state.segment_count == 1);
+    uint64_t reserved = host_nvs_reserved, ack = host_nvs_ack;
+    unsigned commits = host_commit_calls;
+    char log_path[96], keep_path[96];
+    segment_path(log_path, sizeof(log_path), state.segments[0].id);
+    snprintf(keep_path, sizeof(keep_path), "%s/KEEP.TXT", host_directory);
+    FILE *file = fopen(keep_path, "wb");
+    assert(file && fputs("leave untouched", file) >= 0 && fclose(file) == 0);
+    assert(discard_log_files());
+    assert(state.purged_files == 1);
+    assert(access(log_path, F_OK) == -1 && access(keep_path, F_OK) == 0);
+    assert(host_nvs_reserved == reserved && host_nvs_ack == ack);
+    assert(host_commit_calls == commits);
+    assert(unlink(keep_path) == 0);
+    simulate_restart();
+    assert(state.pending_records == 0 && state.segment_count == 0);
+    assert(state.next_sequence == reserved + 1);
+    cleanup_store();
+}
+
 int main(void)
 {
     test_no_gps_reboot_ack_and_late_gps();
@@ -208,6 +233,7 @@ int main(void)
     test_complete_corruption_preserved();
     test_full_queue_retains_unacknowledged_files();
     test_bounded_startup_buffer();
+    test_operator_discard_preserves_nvs_sequence_and_nonlog_files();
     puts("Storage transactions: no GPS/offline/reboot, late GPS immutability, ACK gaps/idempotence/NVS fault, fsync fault, torn tail, corruption, capacity and startup queue passed");
     return 0;
 }
