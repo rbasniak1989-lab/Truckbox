@@ -328,6 +328,8 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
     memcpy(latest.raw, observation->raw, latest.raw_length);
     snprintf(latest.text, sizeof(latest.text), "%s", observation->text);
     update_latest(&latest);
+    const bool persist = tb_config()->full_decode_enabled;
+    if (persist) {
     cJSON *value = j1939_value(observation, signal->unit, validation, quality,
         observation->has_value, observation->value);
     if (!value) { bump(&s.serialization_errors); return; }
@@ -339,6 +341,7 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
     if (observation->reference_torque_nm > 0)
         cJSON_AddNumberToObject(value, "reference_torque_nm", observation->reference_torque_nm);
     append(worker, value);
+    }
     /* Components are separate bounded entries. A 30-byte torque curve must not
      * be dropped merely because all named components do not fit one SD row. */
     unsigned count = observation->component_count;
@@ -360,6 +363,7 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
         member.value = component->value;
         member.text[0] = 0;
         update_latest(&member);
+        if (!persist) continue;
         cJSON *entry = j1939_value(observation, component->unit, component_validation,
             component_quality, component->has_value, component->value);
         if (!entry) { bump(&s.serialization_errors); continue; }
@@ -389,6 +393,7 @@ static void j1587_observation(const tbx_j1587_observation_t *observation, void *
     memcpy(latest.raw, observation->raw, latest.raw_length);
     snprintf(latest.text, sizeof(latest.text), "%s", observation->passive.text);
     update_latest(&latest);
+    if (!tb_config()->full_decode_enabled) return; /* update PID cache without per-frame JSON */
     cJSON *value = cJSON_CreateObject();
     if (!value) { bump(&s.serialization_errors); return; }
     char raw[65];
@@ -460,8 +465,10 @@ static void transport_complete(const tbx_j1939_tp_message_t *message, void *cont
 {
     const packet_t *packet = context;
     worker_t worker = { .packet = packet, .transport = message, .part = 1 };
-    worker.record = new_record(packet, worker.part, message);
-    if (!worker.record) { bump(&s.serialization_errors); return; }
+    if (tb_config()->full_decode_enabled) {
+        worker.record = new_record(packet, worker.part, message);
+        if (!worker.record) { bump(&s.serialization_errors); return; }
+    }
     tbx_j1939_decode_payload(&s.j1939, message->pgn, message->sa,
         message->data, message->length, message->completed_ms, j1939_observation, &worker);
     flush(&worker);
@@ -470,8 +477,10 @@ static void transport_complete(const tbx_j1939_tp_message_t *message, void *cont
 static void process_packet(const packet_t *packet)
 {
     worker_t worker = { .packet = packet };
-    worker.record = new_record(packet, 0, NULL);
-    if (!worker.record) { bump(&s.serialization_errors); return; }
+    if (tb_config()->full_decode_enabled) {
+        worker.record = new_record(packet, 0, NULL);
+        if (!worker.record) { bump(&s.serialization_errors); return; }
+    }
     if (packet->can) {
         if (!packet->oversize) tbx_j1939_decode(&s.j1939, packet->id,
             packet->extended, packet->rtr, packet->bytes, packet->length,
@@ -489,7 +498,7 @@ static void process_packet(const packet_t *packet)
             ? TBX_J1587_FRAME_LENGTH_INVALID
             : tbx_j1587_bridge_decode(packet->bytes, packet->length,
                 packet->captured_us / 1000, NULL, NULL);
-        cJSON_AddStringToObject(worker.record, "j1587_result", packet->tx_echo
+        if (worker.record) cJSON_AddStringToObject(worker.record, "j1587_result", packet->tx_echo
             ? "TX_ECHO" : tbx_j1587_frame_result_name(result));
         if (!packet->tx_echo && result == TBX_J1587_FRAME_OK) tbx_j1587_bridge_decode(packet->bytes,
             packet->length, packet->captured_us / 1000, j1587_observation, &worker);
@@ -549,6 +558,8 @@ void tb_telemetry_add_json(cJSON *object)
     memcpy(transport_stats, s.transport_stats, sizeof(transport_stats));
     portEXIT_CRITICAL(&s_mux);
     cJSON_AddNumberToObject(telemetry, "schema_version", TELEMETRY_SCHEMA);
+    cJSON_AddBoolToObject(telemetry, "decoding_enabled", s.queue != NULL);
+    cJSON_AddBoolToObject(telemetry, "persist_raw_decoded", tb_config()->full_decode_enabled);
     cJSON_AddNumberToObject(telemetry, "captured_frames", (double)captured);
     cJSON_AddNumberToObject(telemetry, "processed_frames", (double)processed);
     cJSON_AddNumberToObject(telemetry, "scheduling_yields", (double)yields);

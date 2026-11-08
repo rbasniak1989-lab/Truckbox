@@ -89,6 +89,12 @@ static bool request_begin_tx(const uint8_t *bytes, size_t length, void *unused)
 static void request_event(const char *event, uint16_t pid, const char *detail, void *unused)
 {
     (void)unused;
+    /* An authorized 17-PID test must not fill flash with request/echo logs.
+     * Counters in /api/state still track each TX, RX and timeout. */
+    if (!tb_config()->full_decode_enabled &&
+        (!strcmp(event, "REQUEST") || !strcmp(event, "TX_ECHO") ||
+         !strcmp(event, "RESPONSE_CANDIDATE") || !strcmp(event, "TIMEOUT")))
+        return;
     cJSON *row = cJSON_CreateObject();
     if (!row) return;
     cJSON_AddStringToObject(row, "sample_kind", "J1708_REQUEST_EVENT");
@@ -235,8 +241,8 @@ static void can_task(void *unused)
         if (err != ESP_OK) { ++s.can_errors; vTaskDelay(pdMS_TO_TICKS(100)); continue; }
         ++s.can_frames;
         uint64_t captured_us = esp_timer_get_time();
-        if (tb_config()->full_decode_enabled)
-            tb_telemetry_can(frame.identifier, frame.extd, frame.rtr, frame.data_length_code, frame.data, captured_us);
+        /* Always decode PGNs, even when per-frame RAW persistence is off. */
+        tb_telemetry_can(frame.identifier, frame.extd, frame.rtr, frame.data_length_code, frame.data, captured_us);
         if (frame.rtr) ++s.can_rtr;
         /* Raw frames go to the bounded legacy TCP stream. Cloud samples are 1 Hz snapshots. */
         if (!frame.rtr) tb_live_can(frame.identifier, frame.extd, frame.data_length_code, frame.data);
@@ -290,7 +296,8 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
         if (tb_config()->full_decode_enabled) tb_telemetry_j1708_echo(frame, size, captured_us, oversize);
         return;
     }
-    if (tb_config()->full_decode_enabled) tb_telemetry_j1708(frame, size, captured_us, oversize);
+    /* Decode all passive and solicited J1587 PIDs regardless of storage policy. */
+    tb_telemetry_j1708(frame, size, captured_us, oversize);
     if (oversize || size > 21) {
         ++s.j1708_oversize;
         xSemaphoreTake(s.lock, portMAX_DELAY);
@@ -508,13 +515,11 @@ esp_err_t tb_capture_start(void)
     }
     tbx_trip_init(&s.trip, s.distance_trip, s.distance_trip_valid);
     if (s.distance_counter_valid) tbx_trip_restore_counter(&s.trip, s.distance_counter_sa, s.distance_counter_raw);
-    /* LEGACY does not allocate the full decode worker, its 128-frame queue,
-     * 10 KB stack; the statically reserved cache is left unused. Live capture
-     * and trip totals stay up. */
-    if (tb_config()->full_decode_enabled) {
-        esp_err_t telemetry_err = tb_telemetry_start();
-        if (telemetry_err != ESP_OK) return telemetry_err;
-    }
+    /* Decode selected J1939 and J1587 in both profiles. LEGACY disables
+     * per-frame RAW/DECODED persistence, not the decoder or sensor cache.
+     * Active J1708 requests stay explicitly authorized and parked-only. */
+    esp_err_t telemetry_err = tb_telemetry_start();
+    if (telemetry_err != ESP_OK) return telemetry_err;
     /* GPIO1 is deliberately never an output on the uncorrected B1 watchdog. */
     gpio_set_direction(GPIO_NUM_1, GPIO_MODE_INPUT);
     if (tb_config()->repaired_power_gates) {

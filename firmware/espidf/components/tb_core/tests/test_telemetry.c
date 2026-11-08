@@ -353,6 +353,34 @@ static void test_bam_grouped_components_and_latest_history(void)
     assert(retained && !s.serialization_errors);
 }
 
+static void test_legacy_decodes_without_persistent_raw(void)
+{
+    host_telemetry_config.full_decode_enabled = false;
+    packet_t can = { .can = true, .id = 0x18F00400, .extended = true,
+        .length = 8, .supplied_length = 8, .captured_us = 4000000,
+        .capture_id = 4000, .bytes = {0,125,175,0x40,0x1F,0,0,0} };
+    uint64_t processed_before = s.processed;
+    uint64_t stored_before = s.store_accepted;
+    reset_records();
+    process_packet(&can);
+    assert(host_record_count == 0);
+    assert(s.processed == processed_before + 1);
+    cJSON *live = tb_telemetry_sensors_json(0, 32);
+    assert(live);
+    assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(live, "readings")) > 0);
+    cJSON_Delete(live);
+
+    packet_t j1708 = { .capture_id = 4001, .captured_us = 4001000,
+        .length = 5, .bytes = {128,155,0xFD,0xCB,0} };
+    checksum(&j1708);
+    process_packet(&j1708);
+    assert(host_record_count == 0);
+    assert(s.store_accepted == stored_before);
+    assert(s.processed == processed_before + 2);
+    assert(!s.serialization_errors);
+    host_telemetry_config.full_decode_enabled = true;
+}
+
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -360,7 +388,8 @@ int main(void)
     test_full_gps_complex_j1587_and_j1939_split();
     test_invalid_raw_queue_pressure_and_latest();
     test_bam_grouped_components_and_latest_history();
+    test_legacy_decodes_without_persistent_raw();
     vQueueDelete(s.queue);
-    puts("OK: actual telemetry serialization, full-GPS chunks, no retrospective fix, invalid raw retention, bounded queue, latest cache");
+    puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;
 }

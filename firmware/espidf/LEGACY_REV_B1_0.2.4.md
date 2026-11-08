@@ -16,9 +16,10 @@ A 0.2.4 não depende desses circuitos nem muda a pinagem da 0.2.3.
 - CAN TWAI listen-only e J1708 receive-only intactos.
 - RPM, velocidade, combustível e distância permanecem processados em tempo
   real no caminho curto capture.c, mesmo sem internet ou flash disponível.
-- Não inicia o worker tb_decode nem aloca a fila e a stack; o cache estático
-  continua reservado no binário, porém sem atualização em LEGACY.
-  A telemetria RAW/DECODED não é gerada para gravação ou upload.
+- O worker `tb_decode` e sua fila continuam funcionando para decodificar todos
+  os PIDs/PGNs catalogados, inclusive respostas J1708 solicitadas.
+  Os últimos valores ficam no cache e no endpoint `/api/sensors`, mas o modo
+  LEGACY não gera registros persistentes RAW/DECODED por quadro.
 - Mantém RAW CAN no TCP/35000 somente com cliente Android conectado;
   sem cliente não formata HEX por quadro.
   O último quadro J1708 segue disponível no status local.
@@ -28,8 +29,8 @@ A 0.2.4 não depende desses circuitos nem muda a pinagem da 0.2.3.
 
 ## Modo COMPLETO (testes curtos, caminhão parado)
 No painel do CORE, habilitar `full_decode_enabled` e reiniciar.
-Restaura o comportamento integral da 0.2.3: tb_decode, RAW/DECODED,
-cache de sensores e OPERATIONAL a 1 Hz. Não modifica os drivers CAN/J1708.
+Restaura o comportamento persistente da 0.2.3: RAW/DECODED por quadro e
+OPERATIONAL a 1 Hz. Decoder e cache continuam em ambos os modos. Não modifica os drivers CAN/J1708.
 Estado de diagnóstico: `telemetry_profile` e `operational_interval_s`.
 Desabilitar novamente e reiniciar para voltar ao LEGACY.
 
@@ -64,8 +65,9 @@ Desabilitar novamente e reiniciar para voltar ao LEGACY.
 - O LEGACY não é o binário V0.4.4 antigo; usa pinagem e periféricos da Rev B1.
 - Se a CAN continuar zerada no LEGACY, investigar driver, transceptor U3,
   GPIO2 e alimentação sem atribuir automaticamente ao parser.
-- No LEGACY, leituras adicionais do endpoint `/api/sensors` não serão
-  produzidas pelo decoder completo; dados essenciais do painel permanecem.
+- No LEGACY, `/api/sensors` é alimentado pela decodificação completa.
+  Itens sem fórmula validada continuam identificados como indisponíveis, e
+  um PID recebido não é automaticamente uma resposta causada pelo pedido.
 - Não marcar firmware como validado em caminhão sem build ESP-IDF e teste real.
 
 ## Testes necessários
@@ -92,3 +94,29 @@ Desabilitar novamente e reiniciar para voltar ao LEGACY.
   frequentes quando backlog crescer, sem apagar histórico já confirmado.
 - Mantemos os dois slots OTA e rollback. Nenhuma gravação ou reparticionamento
   foi realizado no hardware.
+
+## Requisições ativas J1708 — os 17 PIDs selecionados
+- A recepção/decodificação J1708 e as requisições ativas são independentes do
+  destino dos dados. LEGACY desativa RAW por quadro, **não** a decodificação.
+- O agendador atual contém: 26, 33, 34, 37, 62, 68, 117, 118, 235, 236,
+  250, 31, 32, 63, 108, 158 e 160. Todos são *alvos de validação*, não
+  respostas causais homologadas pela captura NEXIQ.
+- O controlador TX `tbx_j1708_active.c` permanece desarmado no boot.
+  Não há MID local ou MIDs-alvo inventados. Habilitar transmissão requer
+  comprovar o circuito DE21 invertido, MID local livre, destino de cada PID,
+  `topology_confirmed`, `authorized` e `stationary`. A proteção já existente
+  impede envio inadvertido ao ligar ou enquanto a placa não estiver validada.
+- A autorização vale 60 s e é interrompida por movimento observado, OTA,
+  colisão/eco inválido e falhas repetidas; o teste é estacionado e deliberado.
+- Por padrão, o agendador mantém 1 pedido em aberto, espaçamento mínimo
+  250 ms e timeout 450 ms. Isso **não** garante 500 ms por PID (17 no total).
+  Precisamos medir a carga real e ajustar prioridades/cadência antes de produção.
+- Durante ensaio no LEGACY, REQUEST/TX_ECHO/RESPONSE_CANDIDATE/TIMEOUT são
+  contabilizados em `/api/state`, mas não gravados repetidamente na flash;
+  eventos de segurança/armar/parar continuam persistidos.
+- O PID 250 é um total de combustível da vida da ECU. O consumo da viagem
+  é calculado por diferença entre leituras confiáveis, nunca zerando a ECU.
+- **Pendente para a próxima etapa:** ampliar `HEALTH` para agregar os sensores
+  selecionados (mínimo/máximo/média), respeitando limite de 768 bytes por registro.
+  Nesta etapa, o Supabase ainda recebe resumos operacionais básicos e contadores
+  de CAN/J1708, não todos os sensores catalogados.

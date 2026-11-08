@@ -30,6 +30,9 @@ static bool host_have_gps, host_full_gps, host_fail_store;
 static uint64_t host_gps_received_us;
 static char host_records[256][TB_RECORD_MAX];
 static unsigned host_record_count;
+typedef struct { bool full_decode_enabled; } tb_config_t;
+static tb_config_t host_telemetry_config = { .full_decode_enabled = true };
+static const tb_config_t *tb_config(void) { return &host_telemetry_config; }
 static uint32_t tb_boot_id(void) { return 42; }
 static void vTaskDelay(unsigned ticks) { (void)ticks; }
 static int64_t esp_timer_get_time(void) { return (int64_t)host_now_us; }
