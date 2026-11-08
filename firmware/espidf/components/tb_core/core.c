@@ -38,7 +38,8 @@ typedef struct {
 static struct {
     QueueHandle_t live;
     SemaphoreHandle_t lock;
-    uint32_t live_dropped, live_sent, live_clients, live_rejected;
+    uint32_t live_dropped, live_sent, live_rejected;
+    volatile uint32_t live_clients; /* shared with capture task: fast empty-client check */
     uint32_t uplink_attempts, uplink_success;
     char uplink_error[80];
     uint64_t uplink_at, link_at;
@@ -90,7 +91,8 @@ bool tb_core_append_gps_at(cJSON *sample, uint64_t captured_us)
 
 void tb_live_can(uint32_t id, bool extended, uint8_t dlc, const uint8_t data[8])
 {
-    if (!s.live || !extended || dlc > 8) return;
+    /* Never format/queue a TCP RAW frame without an actual consumer. */
+    if (!s.live || !s.live_clients || !extended || dlc > 8) return;
     live_line_t line;
     char hex[17];
     for (unsigned i = 0; i < dlc; ++i) snprintf(hex + i * 2, 3, "%02X", data[i]);

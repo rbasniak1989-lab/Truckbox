@@ -464,7 +464,10 @@ esp_err_t tb_config_init(void)
                         upgrade |= cJSON_GetObjectItemCaseSensitive(json, STRING_FIELDS[i].name) == NULL;
                     }
                     for (size_t i = 0; i < sizeof(BOOL_FIELDS) / sizeof(BOOL_FIELDS[0]); ++i) {
-                        upgrade |= cJSON_GetObjectItemCaseSensitive(json, BOOL_FIELDS[i].name) == NULL;
+                        /* Missing opt-in flag means LEGACY; no extra NVS write
+                         * solely to introduce a field on an existing board. */
+                        if (strcmp(BOOL_FIELDS[i].name, "full_decode_enabled") != 0)
+                            upgrade |= cJSON_GetObjectItemCaseSensitive(json, BOOL_FIELDS[i].name) == NULL;
                     }
                     upgrade |= cJSON_GetObjectItemCaseSensitive(json, "can_baud") == NULL;
                     upgrade |= cJSON_GetObjectItemCaseSensitive(json, "gnss_baud") == NULL;

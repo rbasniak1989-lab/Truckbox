@@ -16,9 +16,11 @@ A 0.2.4 não depende desses circuitos nem muda a pinagem da 0.2.3.
 - CAN TWAI listen-only e J1708 receive-only intactos.
 - RPM, velocidade, combustível e distância permanecem processados em tempo
   real no caminho curto capture.c, mesmo sem internet ou flash disponível.
-- Desliga a alocação da fila, worker, stack e cache do decoder tb_decode.
+- Não inicia o worker tb_decode nem aloca a fila e a stack; o cache estático
+  continua reservado no binário, porém sem atualização em LEGACY.
   A telemetria RAW/DECODED não é gerada para gravação ou upload.
-- Mantém RAW CAN no TCP/35000 para consulta ao vivo no Android quando conectado.
+- Mantém RAW CAN no TCP/35000 somente com cliente Android conectado;
+  sem cliente não formata HEX por quadro.
   O último quadro J1708 segue disponível no status local.
 - OPERATIONAL com dados atuais: a cada 15 segundos; HEALTH: a cada 60 segundos.
 - Mantém checkpoints e flash interna limitada, com ACK/replay inalterados.

@@ -366,32 +366,32 @@ static void snapshot_task(void *unused)
             cJSON *sample = cJSON_CreateObject();
             if (sample) {
                 add_sample_identity(sample, "OPERATIONAL");
-        bool vehicle_data = false;
-        xSemaphoreTake(s.lock, portMAX_DELAY);
-        if (s.speed_at && now - s.speed_at <= 5000) {
-            cJSON_AddNumberToObject(sample, "speed_kmh", s.speed);
-            cJSON_AddStringToObject(sample, "speed_source", s.speed_j1587 ? "j1587" : "j1939");
-            vehicle_data = true;
-        }
-        if (s.rpm_at && now - s.rpm_at <= 5000) {
-            cJSON_AddNumberToObject(sample, "rpm", s.rpm);
-            cJSON_AddStringToObject(sample, "rpm_source", s.rpm_j1587 ? "j1587" : "j1939"); vehicle_data = true;
-        }
-        if (s.fuel_at && now - s.fuel_at <= 5000) {
-            cJSON_AddNumberToObject(sample, "fuel_rate_lph", s.fuel_rate);
-            cJSON_AddStringToObject(sample, "fuel_source", s.fuel_j1587 ? "j1587" : "j1939"); vehicle_data = true;
-        }
-        if (s.total_at && now - s.total_at <= 30000) { cJSON_AddNumberToObject(sample, "odometer_km", s.distance_total); vehicle_data = true; }
-        if (s.distance_trip_valid) cJSON_AddNumberToObject(sample, "trip_distance_km", s.distance_trip);
-        if (s.fuel_trip_valid) cJSON_AddNumberToObject(sample, "trip_fuel_l", s.fuel_trip);
-        if (s.fuel_derived) {
-            cJSON_AddBoolToObject(sample, "fuel_derived", true);
-            cJSON_AddStringToObject(sample, "fuel_model", "MASTER_V1_2643Nm_C0_0.9720031611625598");
-        }
-        xSemaphoreGive(s.lock);
-        if (tb_core_append_gps(sample)) vehicle_data = true;
-        else { cJSON_AddNullToObject(sample, "gps"); cJSON_AddStringToObject(sample, "gps_status", "NO_FIX"); cJSON_AddBoolToObject(sample, "has_fix", false); }
-        /* Do not replace operational cloud state with empty bench/diagnostic rows. */
+                bool vehicle_data = false;
+                xSemaphoreTake(s.lock, portMAX_DELAY);
+                if (s.speed_at && now - s.speed_at <= 5000) {
+                    cJSON_AddNumberToObject(sample, "speed_kmh", s.speed);
+                    cJSON_AddStringToObject(sample, "speed_source", s.speed_j1587 ? "j1587" : "j1939");
+                    vehicle_data = true;
+                }
+                if (s.rpm_at && now - s.rpm_at <= 5000) {
+                    cJSON_AddNumberToObject(sample, "rpm", s.rpm);
+                    cJSON_AddStringToObject(sample, "rpm_source", s.rpm_j1587 ? "j1587" : "j1939"); vehicle_data = true;
+                }
+                if (s.fuel_at && now - s.fuel_at <= 5000) {
+                    cJSON_AddNumberToObject(sample, "fuel_rate_lph", s.fuel_rate);
+                    cJSON_AddStringToObject(sample, "fuel_source", s.fuel_j1587 ? "j1587" : "j1939"); vehicle_data = true;
+                }
+                if (s.total_at && now - s.total_at <= 30000) { cJSON_AddNumberToObject(sample, "odometer_km", s.distance_total); vehicle_data = true; }
+                if (s.distance_trip_valid) cJSON_AddNumberToObject(sample, "trip_distance_km", s.distance_trip);
+                if (s.fuel_trip_valid) cJSON_AddNumberToObject(sample, "trip_fuel_l", s.fuel_trip);
+                if (s.fuel_derived) {
+                    cJSON_AddBoolToObject(sample, "fuel_derived", true);
+                    cJSON_AddStringToObject(sample, "fuel_model", "MASTER_V1_2643Nm_C0_0.9720031611625598");
+                }
+                xSemaphoreGive(s.lock);
+                if (tb_core_append_gps(sample)) vehicle_data = true;
+                else { cJSON_AddNullToObject(sample, "gps"); cJSON_AddStringToObject(sample, "gps_status", "NO_FIX"); cJSON_AddBoolToObject(sample, "has_fix", false); }
+                /* Do not replace operational cloud state with empty bench/diagnostic rows. */
                 if (vehicle_data) queue_sample(sample); else cJSON_Delete(sample);
             }
         }
@@ -509,7 +509,8 @@ esp_err_t tb_capture_start(void)
     tbx_trip_init(&s.trip, s.distance_trip, s.distance_trip_valid);
     if (s.distance_counter_valid) tbx_trip_restore_counter(&s.trip, s.distance_counter_sa, s.distance_counter_raw);
     /* LEGACY does not allocate the full decode worker, its 128-frame queue,
-     * 10 KB stack or 192-value cache. Live capture and trip totals stay up. */
+     * 10 KB stack; the statically reserved cache is left unused. Live capture
+     * and trip totals stay up. */
     if (tb_config()->full_decode_enabled) {
         esp_err_t telemetry_err = tb_telemetry_start();
         if (telemetry_err != ESP_OK) return telemetry_err;
