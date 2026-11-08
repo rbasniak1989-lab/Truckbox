@@ -1,0 +1,56 @@
+name: TruckBox CORE Rev B1 v0.2.4 OTA verification
+on:
+  push:
+    branches:
+      - feature/revb1-v024-legacy-decoder
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout the exact experimental firmware source
+        uses: actions/checkout@v4
+      - name: ESP-IDF v5.5.2 compile + host tests
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash -lc 'bash tools/build_v020.sh core && sh tests/run_all.sh'
+      - name: Validate OTA image identity, flash map and binary size
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/truckbox-b1-core-v024
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, struct
+          source = Path('firmware/espidf/build-core/truckbox_core.bin')
+          data = source.read_bytes()
+          assert len(data) > 512, 'empty firmware image'
+          assert len(data) < 0x300000, 'exceeds current 3 MiB OTA partition'
+          assert data[0] == 0xE9, 'not Espressif firmware'
+          assert (data[3] >> 4) == 3, 'expected 8MB flash header'
+          assert struct.unpack_from('<H', data, 12)[0] == 13, 'expected ESP32-C6'
+          assert struct.unpack_from('<I', data, 32)[0] == 0xABCD5432, 'missing app descriptor'
+          field = lambda start, end: data[start:end].split(b'\0', 1)[0].decode('ascii')
+          assert field(48, 80) == '0.2.4', 'wrong app version'
+          assert field(80, 112) == 'truckbox_core', 'wrong firmware role'
+          assert field(144, 176) == 'v5.5.2', 'wrong ESP-IDF version'
+          target = Path('/tmp/truckbox-b1-core-v024/truckbox_core_0.2.4_ota_TEST_ONLY.bin')
+          target.write_bytes(data)
+          checksum = hashlib.sha256(data).hexdigest()
+          Path('/tmp/truckbox-b1-core-v024/SHA256SUMS.txt').write_text(f'{checksum}  {target.name}\n')
+          print('CORE OTA VERIFIED:',target.name,'bytes=',len(data),'SHA-256=',checksum)
+          PY
+      - name: Upload TEST ONLY binary after successful tests and validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-v0.2.4-OTA-TEST-ONLY
+          path: /tmp/truckbox-b1-core-v024/
+          if-no-files-found: error
+          retention-days: 30
