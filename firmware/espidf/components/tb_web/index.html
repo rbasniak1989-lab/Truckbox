@@ -268,6 +268,7 @@
       updateJ1708Panel();
       const network = state.network || state.wifi || {};
       applyRole(state.role === undefined ? state.device_role : state.role);
+      updateJ1708Panel();
       text('stat-version', state.version || state.firmware_version || state.firmware);
       text('stat-ip', network.station_ip && network.station_ip !== '0.0.0.0' ? network.station_ip : network.ap_ip || location.hostname);
       const connected = network.station_connected === true || network.connected === true;
