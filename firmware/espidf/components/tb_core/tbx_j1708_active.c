@@ -75,6 +75,15 @@ bool tbx_j1708_active_enable_work(tbx_j1708_active_t *c, uint64_t now_us)
     c->work_mode=true;
     c->now_us=now_us;
     tbx_j1708_request_set_spacing(c->scheduler,TBX_J1708_WORK_MIN_SPACING_MS);
+    /* The last parked send scheduled the next slot using the 250 ms test
+     * spacing. Rebase that deadline so the FIRST road request also honors
+     * the stricter 500 ms work-mode limit. */
+    if (c->scheduler->next_tx_valid && c->scheduler->sent_total) {
+        unsigned prev=(c->scheduler->cursor+TBX_J1708_REQUEST_COUNT-1u) %
+            TBX_J1708_REQUEST_COUNT;
+        c->scheduler->next_tx_ms=c->scheduler->pids[prev].last_sent_ms+
+            TBX_J1708_WORK_MIN_SPACING_MS;
+    }
     c->lease_deadline_us=now_us+TBX_J1708_WORK_LEASE_US;
     event(c,"WORK_ENABLED",0,"3_ECHO_AND_RESPONSE_CANDIDATE_CONFIRMED");
     return true;
