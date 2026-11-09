@@ -118,3 +118,50 @@ físicos. Esses payloads foram **construídos a partir dos offsets e exemplos do
 Documento Mestre fornecido**; não representam replay dos logs-mãe completos,
 que não foram disponibilizados. O teste inclui valor indisponível após RPM
 válida, verificando que o histórico anterior permanece separado.
+
+
+## Snapshot J1587 enviado no HEALTH (candidato 0.2.5)
+
+No perfil LEGACY ou COMPLETO, o CORE continua emitindo OPERATIONAL a cada
+15 s (ou 1 s no COMPLETO) e HEALTH a cada 60 s. O HEALTH agora pode incluir
+`metrics.j1587_sensors` quando o cache contém observações numéricas J1587.
+A cloud grava a estrutura completa em `health_minute_samples.metrics`; não há
+envio de RAW/DECODED adicional, alteração de ACK ou solicitações ativas no barramento.
+
+Formato compacto: chaves são **PIDs J1587 em decimal**, valores são
+`[valor, idade_segundos, MID]`. Por exemplo, `"110":[46.1,2,128]`
+representa temperatura do arrefecimento de 46,1 °C observada há 2 s.
+`context.j1587_sensor_quality="EM_VALIDACAO"` aplica-se a **todos** os
+valores deste bloco: são decodificações provisórias, não medições validadas
+para alarmes ou manutenção. As unidades vêm do catálogo, por PID.
+
+Prioridade de inclusão: 110 água (°C), 175 óleo do motor (°C),
+100 pressão do óleo (bar; **escala a validar**), 102 turbo (bar relativo;
+**escala a validar**), 177 óleo da transmissão (°C), 105 admissão (°C),
+106 pressão do ar de admissão (kPa absoluto), 92 carga do motor (%),
+168 bateria (V), 98 nível do óleo (%), 96 nível do combustível (%),
+171 temperatura ambiente (°C), 174 temperatura do combustível (°C).
+O campo é **omitido** quando o PID não foi observado, não possui leitura
+numérica/qualidade admissível, ou sua última observação tem mais de 300 s.
+A idade nunca é escondida: a interface deve sinalizar como DESATUALIZADO
+qualquer sensor com idade acima da tolerância de seu sistema (5 s para
+leituras operacionais rápidas; valores lentos podem aceitar intervalo maior).
+Não reutilizar valores `last_valid` de observações indisponíveis.
+
+O serializador aceita cada leitura somente se o **HEALTH completo** couber
+no limite existente `TB_RECORD_MAX=768` bytes. A ordem privilegia sensores
+de motor e caixa, descartando entradas de menor prioridade se faltar espaço,
+sem descartar o HEALTH básico. Pode haver leituras ausentes por volume,
+não apenas por indisponibilidade física.
+
+**Ainda não há identificação confirmada da pressão hidráulica da I-Shift
+na J1708.** Não rotular PID 37 (catálogo inicial de testes) nem PID 46
+(pressão do reservatório de ar) como pressão de transmissão.
+Dados J1939 permanecem independentes; a falta de CAN não impede os
+snapshots J1587.
+
+Critérios antes de instalar no caminhão: compilar ESP-IDF 5.5.2,
+passar testes host de serialização/stale/no-data, validar que o ingest
+preserva `metrics.j1587_sensors`, depois testar OTA e rollback **com
+o caminhão parado**. Nenhuma instalação ou alteração em produção é
+executada apenas por este commit.
