@@ -46,8 +46,8 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *c, const tbx_j1708_active_co
 bool tbx_j1708_active_arm(tbx_j1708_active_t *c, bool authorized, bool stationary, uint64_t now_us)
 {
     if (!c || !c->scheduler) return false;
-    if (!authorized || !stationary) {
-        tbx_j1708_active_stop(c,"AUTHORIZATION_OR_PARKED_ATTESTATION_MISSING");
+    if (!authorized || !(stationary || c->work_mode)) {
+        tbx_j1708_active_stop(c,"AUTHORIZATION_OR_OPERATION_MODE_MISSING");
         return false;
     }
     if (!c->configured || c->scheduler->safety_stopped) {
@@ -58,9 +58,25 @@ bool tbx_j1708_active_arm(tbx_j1708_active_t *c, bool authorized, bool stationar
     tbx_j1708_request_permit_stationary_test(c->scheduler,true);
     if (!tbx_j1708_request_arm(c->scheduler)) return false;
     c->now_us=now_us;
-    c->lease_deadline_us=now_us+TBX_J1708_ACTIVE_LEASE_US;
+    c->lease_deadline_us=now_us+(c->work_mode ? TBX_J1708_WORK_LEASE_US : TBX_J1708_ACTIVE_LEASE_US);
     if (!was_armed) c->last_rx_us=now_us;
-    event(c,was_armed?"LEASE_RENEWED":"ARMED",0,"AUTHORIZED_PARKED_60_SECOND_LEASE");
+    event(c,was_armed?"LEASE_RENEWED":"ARMED",0,c->work_mode ? "AUTHORIZED_WORK_12_HOUR_LEASE" : "AUTHORIZED_PARKED_60_SECOND_LEASE");
+    return true;
+}
+
+bool tbx_j1708_active_enable_work(tbx_j1708_active_t *c, uint64_t now_us)
+{
+    /* Keep the first transmitter validation physically stationary; a passive
+     * matching MID/PID alone is not enough to establish working TX. */
+    if (!c || !c->scheduler || !c->configured || !c->scheduler->armed ||
+        c->scheduler->safety_stopped || c->work_mode || c->tx_active ||
+        now_us >= c->lease_deadline_us || c->echo_ok < 3u ||
+        c->scheduler->answered_total == 0u) return false;
+    c->work_mode=true;
+    c->now_us=now_us;
+    tbx_j1708_request_set_spacing(c->scheduler,TBX_J1708_WORK_MIN_SPACING_MS);
+    c->lease_deadline_us=now_us+TBX_J1708_WORK_LEASE_US;
+    event(c,"WORK_ENABLED",0,"3_ECHO_AND_RESPONSE_CANDIDATE_CONFIRMED");
     return true;
 }
 
@@ -68,7 +84,11 @@ void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
 {
     if (!c) return;
     release_tx(c);
-    if (c->scheduler) tbx_j1708_request_permit_stationary_test(c->scheduler,false);
+    c->work_mode=false;
+    if (c->scheduler) {
+        tbx_j1708_request_permit_stationary_test(c->scheduler,false);
+        tbx_j1708_request_set_spacing(c->scheduler,250);
+    }
     c->lease_deadline_us=0;
     event(c,"STOPPED",c->tx_pid,reason?reason:"OPERATOR_STOP");
 }
