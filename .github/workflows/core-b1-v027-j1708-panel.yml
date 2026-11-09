@@ -1,0 +1,74 @@
+name: TruckBox CORE Rev B1 v0.2.7 J1708 control panel
+on:
+  push:
+    branches:
+      - feature/revb1-v027-j1708-panel
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web-panel-syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check embedded JavaScript syntax and visible J1708 controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          page=Path('firmware/espidf/components/tb_web/index.html').read_text()
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',page,re.S)
+          assert len(scripts)==1, 'expected exactly one embedded application script'
+          Path('/tmp/truckbox-j1708-panel.js').write_text(scripts[0],encoding='utf-8')
+          ids=['j1708-panel','j1708-local-mid','j1708-topology','j1708-test',
+               'j1708-work','j1708-stop','j1708-observed-mids','j1708-message']
+          for element in ids: assert 'id="'+element+'"' in page, element
+          for call in ["j1708Command('arm')","j1708Command('enable_work')",
+                       "j1708Command('stop')","fh2013_capture_20261029"]:
+              assert call in page,call
+          assert 'Authorization' not in scripts[0] or "Bearer" in scripts[0], 'auth header expected'
+          print('Web J1708 panel markup and action wiring present')
+          PY
+          node --check /tmp/truckbox-j1708-panel.js
+
+  core-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile ESP32-C6 CORE and run all regression tests
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+      - name: Verify firmware identity and OTA partition size
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct
+          p=Path('firmware/espidf/build-core/truckbox_core.bin')
+          data=p.read_bytes()
+          assert 512<len(data)<0x300000, 'exceeds OTA slot'
+          assert data[0]==0xE9, 'not an Espressif image'
+          assert struct.unpack_from('<H',data,12)[0]==13, 'wrong chip, expected ESP32-C6'
+          version=data[48:80].split(b'\0',1)[0].decode('ascii')
+          role=data[80:112].split(b'\0',1)[0].decode('ascii')
+          assert (version,role)==('0.2.7','truckbox_core'),(version,role)
+          print('TEST ONLY:',version,role,'bytes=',len(data),'SHA256=',hashlib.sha256(data).hexdigest())
+          PY
+      - name: Upload test-only OTA binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-v0.2.7-J1708-PANEL-TEST-ONLY
+          path: firmware/espidf/build-core/truckbox_core.bin
+          if-no-files-found: error
+          retention-days: 30
