@@ -194,7 +194,8 @@ static void update_signals(const twai_message_t *frame)
         uint16_t raw = frame->data[1] | ((uint16_t)frame->data[2] << 8);
         if (raw <= 0xfaff) {
             double speed = raw / 256.0;
-            if (speed > 0.1 && s.requests.armed) tbx_j1708_active_stop(&s.active, "VEHICLE_MOVEMENT_J1939");
+            if (speed > 0.1 && s.requests.armed && !s.active.work_mode)
+                tbx_j1708_active_stop(&s.active, "VEHICLE_MOVEMENT_J1939");
             tbx_trip_result_t result = tbx_trip_speed(&s.trip, TBX_TRIP_J1939, frame->identifier & 255, speed, now);
             mirror_trip_locked();
             if (result != TBX_TRIP_SOURCE_IGNORED && result != TBX_TRIP_INVALID) {
@@ -260,7 +261,7 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
     if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL)
         (void)tbx_j1708_active_note_response(&s.active, value->mid, value->pid, now * 1000);
     if (value->quality != TBX_J1587_OBS_EM_VALIDACAO || !value->has_numeric || !isfinite(value->value)) return;
-    if (value->pid == 84 && value->value > 0.1 && s.requests.armed)
+    if (value->pid == 84 && value->value > 0.1 && s.requests.armed && !s.active.work_mode)
         tbx_j1708_active_stop(&s.active, "VEHICLE_MOVEMENT_J1587");
     if (value->pid == 84 && (!s.speed_can_at || now - s.speed_can_at > 5000)) {
         tbx_trip_result_t result = tbx_trip_speed(&s.trip, TBX_TRIP_J1587, value->mid, value->value, now);
@@ -677,7 +678,8 @@ bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
     bool accepted = true;
     if (arm) {
         bool movement = s.speed_at && (uint64_t)(esp_timer_get_time() / 1000) - s.speed_at <= 5000 && s.speed > 0.1;
-        accepted = s.j1708_ready && !tb_web_ota_busy() && !movement &&
+        accepted = s.j1708_ready && !tb_web_ota_busy() &&
+            (!movement || s.active.work_mode) &&
             tbx_j1708_active_arm(&s.active, authorized, stationary, esp_timer_get_time());
         s.emergency_stop = !accepted;
         if (!accepted) tbx_j1708_active_stop(&s.active, "ARM_INTERLOCK_REFUSED");
@@ -686,8 +688,26 @@ bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
     char event[384];
     snprintf(event, sizeof(event), "{\"sample_kind\":\"J1708_REQUEST_EVENT\",\"boot_id\":%" PRIu32 ",\"uptime_ms\":%" PRIu64 ",\"action\":\"%s\",\"accepted\":%s,\"reason\":\"%s\"}",
         tb_boot_id(), (uint64_t)(esp_timer_get_time() / 1000), arm ? "arm" : "stop", accepted ? "true" : "false",
-        arm ? (accepted ? "AUTHORIZED_PARKED_CONFIGURED" : "SAFETY_OR_CONFIGURATION_REQUIRED") : "operator_stop");
+        arm ? (accepted ? (s.active.work_mode ? "AUTHORIZED_WORK_MODE" : "AUTHORIZED_PARKED_CONFIGURED") : "SAFETY_OR_CONFIGURATION_REQUIRED") : "operator_stop");
     tb_store_submit(event);
+    return accepted;
+}
+
+
+bool tb_capture_request_enable_work(bool authorized, bool stationary)
+{
+    if (!s.lock || !authorized || !stationary || tb_web_ota_busy() ||
+        xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    const uint64_t now = (uint64_t)esp_timer_get_time();
+    const uint64_t now_ms = now / 1000u;
+    /* Speed 0 must be observed freshly in the vehicle, not merely asserted
+     * by the caller. A stopped vehicle can then operate with work-mode TX
+     * after passing the controller's 3-echo/response proof. */
+    const bool parked = s.speed_at && now_ms >= s.speed_at &&
+        now_ms - s.speed_at <= 5000u && s.speed <= 0.1;
+    const bool accepted = s.j1708_ready && parked &&
+        tbx_j1708_active_enable_work(&s.active, now);
+    xSemaphoreGive(s.lock);
     return accepted;
 }
 
@@ -715,23 +735,45 @@ bool tb_capture_request_configure(const cJSON *config, char *error, size_t error
         next.priority = priority;
     }
     const cJSON *targets = cJSON_GetObjectItemCaseSensitive(config, "targets");
-    if (!cJSON_IsArray(targets) || cJSON_GetArraySize(targets) != TBX_J1708_REQUEST_COUNT) {
-        snprintf(error, error_size, "targets deve informar MID para todos os 17 PIDs"); return false;
-    }
-    tbx_j1708_request_scheduler_t defaults;
-    tbx_j1708_request_init(&defaults);
-    const cJSON *target;
-    cJSON_ArrayForEach(target, targets) {
-        int pid, mid;
-        if (!request_integer(target, "pid", 0, 255, &pid) || !request_integer(target, "mid", 128, 255, &mid) || mid == local) {
-            snprintf(error, error_size, "PID/MID alvo invalido ou igual ao MID local"); return false;
+    const cJSON *preset = cJSON_GetObjectItemCaseSensitive(config, "preset");
+    if (cJSON_IsString(preset) &&
+        !strcmp(preset->valuestring, "fh2013_capture_20261029") && !targets) {
+        /* Evidence: Validator 29/10, 70,386 J1708 frames; MID/PID time
+         * correlations, NOT proof of causality or universal Volvo mapping.
+         * Order: 26,33,34,37,62,68,117,118,235,236,250,31,32,63,108,158,160.
+         * Local MID is NEVER inferred from these target MIDs. */
+        const uint8_t recorded_mids[TBX_J1708_REQUEST_COUNT] = {
+            128,130,130,130,144,128,140,140,128,128,128,130,130,130,128,128,130
+        };
+        memcpy(next.target_mid, recorded_mids, sizeof(recorded_mids));
+        for (unsigned i = 0; i < TBX_J1708_REQUEST_COUNT; ++i) {
+            if (next.target_mid[i] == next.local_mid) {
+                snprintf(error, error_size, "MID local conflita com preset de alvos");
+                return false;
+            }
         }
-        unsigned i;
-        for (i = 0; i < TBX_J1708_REQUEST_COUNT && defaults.pids[i].pid != pid; ++i) { }
-        if (i == TBX_J1708_REQUEST_COUNT || next.target_mid[i]) {
-            snprintf(error, error_size, "PID alvo desconhecido ou duplicado"); return false;
+    } else {
+        if (preset || !cJSON_IsArray(targets) ||
+            cJSON_GetArraySize(targets) != TBX_J1708_REQUEST_COUNT) {
+            snprintf(error, error_size, "informe 17 PIDs/MIDs ou preset historico explicito"); return false;
         }
-        next.target_mid[i] = mid;
+        tbx_j1708_request_scheduler_t defaults;
+        tbx_j1708_request_init(&defaults);
+        const cJSON *target;
+        cJSON_ArrayForEach(target, targets) {
+            int pid, mid;
+            if (!request_integer(target, "pid", 0, 255, &pid) ||
+                !request_integer(target, "mid", 128, 255, &mid) || mid == local) {
+                snprintf(error, error_size, "PID/MID alvo invalido ou igual ao MID local");
+                return false;
+            }
+            unsigned i;
+            for (i = 0; i < TBX_J1708_REQUEST_COUNT && defaults.pids[i].pid != pid; ++i) { }
+            if (i == TBX_J1708_REQUEST_COUNT || next.target_mid[i]) {
+                snprintf(error, error_size, "PID alvo desconhecido ou duplicado"); return false;
+            }
+            next.target_mid[i] = mid;
+        }
     }
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) {
         snprintf(error, error_size, "captura ocupada"); return false;
