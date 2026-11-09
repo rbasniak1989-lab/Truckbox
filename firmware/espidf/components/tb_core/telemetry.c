@@ -589,17 +589,20 @@ void tb_telemetry_add_json(cJSON *object)
 }
 
 
-/* Minute telemetry stays bounded for Rev.B1 without microSD. The NEXIQ
- * capture of 2026-10-29 provides 48 passive PID candidates. All are decoded
- * and kept in RAM by j1587_observation(); this periodically exports their
- * latest numeric or raw values without activating J1708 transmission.
+
+/* Rev.B1 HEALTH export — 48 passive + 17 active-request candidates seen
+ * with NEXIQ/Validator on 2026-10-29. TX remains completely independent
+ * and disabled by default; this function only exports RX already cached.
  *
- * Priority: coolant every minute, then one rotating non-critical PID,
- * then the remaining priority values, followed by additional rotating PIDs
- * while the existing 768-byte HEALTH record still fits.
+ * Data quality EM_VALIDACAO does not prove a response was caused by the
+ * TruckBox request. MID, capture age and original RAW remain traceable.
  *
- * This is observational evidence, NOT alert-grade manufacturer validation.
- * A missing value is never synthesized from an old capture. */
+ * Storage budget 768 bytes: always try water, then 3 rotated active PIDs,
+ * then remaining critical passive readings, then other active candidates
+ * and finally the remaining passive PIDs. The three promoted active PIDs
+ * rotate each minute so each of the 17 gets a high-priority slot within
+ * six HEALTH samples, provided the vehicle sends them.
+ */
 void tb_telemetry_append_j1587_health(cJSON *health)
 {
     if (!health) return;
@@ -609,27 +612,38 @@ void tb_telemetry_append_j1587_health(cJSON *health)
 
     static const uint16_t pids[] = {
         110, 175, 100, 102, 177, 105, 106, 92, 168, 98, 96, 171, 174,
+        26, 33, 34, 37, 62, 68, 117, 118, 235, 236, 250, 31, 32, 63, 108, 158, 160,
         36, 43, 44, 46, 49, 70, 71, 83, 84, 85, 86, 89, 91, 97, 111, 122, 128, 150, 151, 155, 162, 163, 183, 184, 185, 187, 188, 190, 194, 245, 247, 249, 251, 252, 440
     };
-    enum { PRIMARY_COUNT = 13, TOTAL_COUNT = sizeof(pids) / sizeof(pids[0]),
-           EXTRA_COUNT = TOTAL_COUNT - PRIMARY_COUNT };
-    _Static_assert(TOTAL_COUNT == 48 && EXTRA_COUNT == 35,
-                   "Passive catalog must contain 48 unique tested PIDs");
-
+    enum { PRIMARY_COUNT = 13, ACTIVE_COUNT = 17, PASSIVE_EXTRA_COUNT = 35,
+           TOTAL_COUNT = sizeof(pids) / sizeof(pids[0]) };
+    _Static_assert(TOTAL_COUNT == PRIMARY_COUNT + ACTIVE_COUNT + PASSIVE_EXTRA_COUNT,
+                   "J1587 catalog must contain 48 passive and 17 active targets");
     static uint32_t rotation_minute;
-    const unsigned rotation = (rotation_minute++) % EXTRA_COUNT;
+    const uint32_t minute = rotation_minute++;
+    const unsigned active_rotation = ((minute % ACTIVE_COUNT) * 3u) % ACTIVE_COUNT;
+    const unsigned passive_rotation = minute % PASSIVE_EXTRA_COUNT;
     const uint64_t now_us = (uint64_t)esp_timer_get_time();
     cJSON *numeric = NULL, *raw_values = NULL;
     char check[TB_RECORD_MAX];
     cJSON_AddStringToObject(context, "j1587_sensor_quality", "EM_VALIDACAO");
 
-    for (size_t n = 0; n < TOTAL_COUNT; ++n) {
+    for (size_t n = 0; n < TOTAL_COUNT + 3u; ++n) {
         size_t index;
-        if (n == 0u) index = 0u; /* water temperature first */
-        else if (n == 1u) index = PRIMARY_COUNT + rotation;
-        else if (n <= PRIMARY_COUNT) index = n - 1u;
-        else index = PRIMARY_COUNT +
-            ((rotation + n - PRIMARY_COUNT) % EXTRA_COUNT);
+        if (n == 0u) index = 0u;
+        else if (n <= 3u)
+            index = PRIMARY_COUNT + ((active_rotation + n - 1u) % ACTIVE_COUNT);
+        else if (n <= PRIMARY_COUNT + 2u)
+            index = n - 3u;
+        else if (n < PRIMARY_COUNT + 3u + ACTIVE_COUNT) {
+            const size_t active_order = n - (PRIMARY_COUNT + 3u);
+            if (active_order < 3u) continue; /* already promoted */
+            index = PRIMARY_COUNT + ((active_rotation + active_order) % ACTIVE_COUNT);
+        } else {
+            const size_t passive_order = n - (PRIMARY_COUNT + 3u + ACTIVE_COUNT);
+            index = PRIMARY_COUNT + ACTIVE_COUNT +
+                    ((passive_rotation + passive_order) % PASSIVE_EXTRA_COUNT);
+        }
         const uint16_t pid = pids[index];
 
         latest_t latest = {0};
@@ -646,8 +660,6 @@ void tb_telemetry_append_j1587_health(cJSON *health)
             now_us < latest.captured_us ||
             now_us - latest.captured_us > UINT64_C(300000000)) continue;
 
-        /* Every exported reading is tagged as provisional (MID + age kept).
-         * Invalid numerical interpretations retain raw bytes instead. */
         const bool usable = latest.has_value && isfinite(latest.value) &&
             latest.quality && strcmp(latest.quality, "EM_VALIDACAO") == 0;
         cJSON **target = usable ? &numeric : &raw_values;
@@ -659,7 +671,6 @@ void tb_telemetry_append_j1587_health(cJSON *health)
         snprintf(key, sizeof(key), "%u", (unsigned)pid);
         cJSON *entry = cJSON_AddArrayToObject(*target, key);
         if (!entry) break;
-
         if (usable) cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest.value));
         else {
             char bytes[sizeof(latest.raw) * 2u + 1u];
