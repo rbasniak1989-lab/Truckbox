@@ -365,6 +365,7 @@ static void snapshot_task(void *unused)
     TickType_t wake = xTaskGetTickCount();
     uint64_t window_start = esp_timer_get_time() / 1000;
     uint32_t old_can = 0, old_j1708 = 0, old_checksum = 0, old_overruns = 0;
+    uint32_t old_request_sent = 0, old_request_answered = 0, old_request_timeouts = 0;
     unsigned seconds = 0;
     for (;;) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(1000));
@@ -424,6 +425,15 @@ static void snapshot_task(void *unused)
         cJSON_AddStringToObject(context, "telemetry_profile",
             tb_config()->full_decode_enabled ? "COMPLETO" : "LEGACY");
         cJSON_AddStringToObject(context, "j1708_framing", "uart_idle_10bits");
+        cJSON_AddBoolToObject(context, "j1708_work_mode", s.active.work_mode);
+        cJSON_AddNumberToObject(metrics, "j1708_request_sent", s.requests.sent_total - old_request_sent);
+        cJSON_AddNumberToObject(metrics, "j1708_request_answered", s.requests.answered_total - old_request_answered);
+        cJSON_AddNumberToObject(metrics, "j1708_request_timeouts", s.requests.timeout_total - old_request_timeouts);
+        old_request_sent = s.requests.sent_total;
+        old_request_answered = s.requests.answered_total;
+        old_request_timeouts = s.requests.timeout_total;
+        /* Append optional sensors last so this routine removes readings when
+         * the complete HEALTH approaches the 768-byte storage limit. */
         tb_telemetry_append_j1587_health(health);
         old_can = s.can_frames; old_j1708 = s.j1708_frames;
         old_checksum = s.j1708_checksum_errors; old_overruns = s.uart_overruns;
@@ -633,13 +643,19 @@ void tb_capture_add_json(cJSON *object)
     cJSON_AddBoolToObject(requests, "armed", s.requests.armed);
     cJSON_AddBoolToObject(requests, "hardware_tx_available", s.j1708_ready);
     cJSON_AddBoolToObject(requests, "configured", s.active.configured);
+    cJSON_AddBoolToObject(requests, "work_mode", s.active.work_mode);
+    cJSON_AddBoolToObject(requests, "work_evidence_ready", s.active.echo_ok >= 3 && s.requests.answered_total > 0);
     cJSON_AddBoolToObject(requests, "safety_stopped", s.requests.safety_stopped);
     cJSON_AddStringToObject(requests, "validation", "EM_VALIDACAO");
     cJSON_AddNumberToObject(requests, "echo_ok", s.active.echo_ok);
     cJSON_AddNumberToObject(requests, "collisions", s.active.collisions);
     cJSON_AddNumberToObject(requests, "echo_timeouts", s.active.echo_timeouts);
     cJSON_AddNumberToObject(requests, "lease_expirations", s.active.lease_expirations);
-    cJSON_AddNumberToObject(requests, "authorization_lease_ms", TBX_J1708_ACTIVE_LEASE_US / 1000);
+    cJSON_AddNumberToObject(requests, "authorization_lease_ms",
+        s.active.work_mode ? TBX_J1708_WORK_LEASE_US / 1000 : TBX_J1708_ACTIVE_LEASE_US / 1000);
+    cJSON_AddNumberToObject(requests, "lease_remaining_ms", s.requests.armed &&
+        s.active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
+        (double)(s.active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
     cJSON_AddStringToObject(requests, "block_reason", s.active.configured ? "NONE_OR_SAFETY_INTERLOCK" : "EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED");
     cJSON_AddNumberToObject(requests, "min_spacing_ms", s.requests.min_spacing_ms);
     cJSON_AddNumberToObject(requests, "timeout_ms", s.requests.timeout_ms);
