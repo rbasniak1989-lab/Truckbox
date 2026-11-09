@@ -381,6 +381,92 @@ static void test_legacy_decodes_without_persistent_raw(void)
     host_telemetry_config.full_decode_enabled = true;
 }
 
+
+static cJSON *new_health_fixture(void)
+{
+    cJSON *health = cJSON_CreateObject();
+    cJSON_AddNumberToObject(health, "schema_version", 2);
+    cJSON_AddNumberToObject(health, "boot_id", 42);
+    cJSON_AddNumberToObject(health, "uptime_ms", 600000);
+    cJSON_AddStringToObject(health, "sample_kind", "HEALTH");
+    cJSON_AddStringToObject(health, "ts", "2026-11-09T10:00:00.000Z");
+    cJSON_AddStringToObject(health, "window_end", "2026-11-09T10:00:00.000Z");
+    cJSON_AddNumberToObject(health, "window_seconds", 60);
+    cJSON_AddNumberToObject(health, "window_start_uptime_ms", 540000);
+    cJSON_AddNumberToObject(health, "window_end_uptime_ms", 600000);
+    cJSON *metrics = cJSON_AddObjectToObject(health, "metrics");
+    cJSON_AddNumberToObject(metrics, "can_frames", 0);
+    cJSON_AddNumberToObject(metrics, "j1708_frames", 4000);
+    cJSON_AddNumberToObject(metrics, "j1708_checksum_errors", 2);
+    cJSON_AddNumberToObject(metrics, "uart_overruns", 0);
+    cJSON *context = cJSON_AddObjectToObject(health, "context");
+    cJSON_AddStringToObject(context, "role", "core");
+    cJSON_AddStringToObject(context, "firmware", "0.2.4");
+    cJSON_AddStringToObject(context, "telemetry_profile", "LEGACY");
+    cJSON_AddStringToObject(context, "j1708_framing", "uart_idle_10bits");
+    return health;
+}
+
+static void test_compact_j1587_health_from_cache(void)
+{
+    /* Real serializer, simulated observations: no fabricated catalog-only PIDs. */
+    s.latest_count = 0;
+    memset(s.latest, 0, sizeof(s.latest));
+    host_now_us = UINT64_C(600000000);
+    const uint16_t pids[] = {110,175,100,102,177,105,106,92,168,98,96,171,174};
+    for (size_t i = 0; i < sizeof(pids) / sizeof(pids[0]); ++i) {
+        latest_t observation = {
+            .used = true, .can = false, .signal = pids[i], .address = 128,
+            .captured_us = host_now_us - UINT64_C(10000000),
+            .capture_id = 8000 + i, .component_index = UINT8_MAX,
+            .has_value = true, .value = (double)(20 + i) / 3.0,
+            .quality = "EM_VALIDACAO", .validation = "EM_VALIDACAO"
+        };
+        update_latest(&observation);
+    }
+    cJSON *health = new_health_fixture();
+    tb_telemetry_append_j1587_health(health);
+    char serialized[TB_RECORD_MAX];
+    assert(cJSON_PrintPreallocated(health, serialized, sizeof(serialized), false));
+    assert(strlen(serialized) < TB_RECORD_MAX);
+    const cJSON *metrics = cJSON_GetObjectItemCaseSensitive(health, "metrics");
+    const cJSON *sensors = cJSON_GetObjectItemCaseSensitive(metrics, "j1587_sensors");
+    assert(cJSON_IsObject(sensors));
+    const cJSON *water = cJSON_GetObjectItemCaseSensitive(sensors, "110");
+    assert(cJSON_IsArray(water) && cJSON_GetArraySize(water) == 3);
+    assert(cJSON_GetArrayItem(water, 1)->valueint == 10);
+    assert(cJSON_GetArrayItem(water, 2)->valueint == 128);
+    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(health, "context"),
+        "j1587_sensor_quality")->valuestring, "EM_VALIDACAO"));
+    assert(!cJSON_GetObjectItemCaseSensitive(sensors, "37"));
+    cJSON_Delete(health);
+
+    /* Newer unavailable data must not revive cached last-valid readings. */
+    latest_t invalid = {
+        .used = true, .can = false, .signal = 110, .address = 128,
+        .captured_us = host_now_us - 1000000, .capture_id = 9000,
+        .component_index = UINT8_MAX, .quality = "INDISPONIVEL",
+        .validation = "EM_VALIDACAO", .has_value = false
+    };
+    update_latest(&invalid);
+    health = new_health_fixture();
+    tb_telemetry_append_j1587_health(health);
+    sensors = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(health, "metrics"), "j1587_sensors");
+    assert(cJSON_IsObject(sensors));
+    assert(!cJSON_GetObjectItemCaseSensitive(sensors, "110"));
+    cJSON_Delete(health);
+
+    /* A long disconnection does not turn a 5-minute-old value into live data. */
+    host_now_us += UINT64_C(310000000);
+    health = new_health_fixture();
+    tb_telemetry_append_j1587_health(health);
+    assert(!cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(health, "metrics"), "j1587_sensors"));
+    cJSON_Delete(health);
+}
+
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -389,6 +475,7 @@ int main(void)
     test_invalid_raw_queue_pressure_and_latest();
     test_bam_grouped_components_and_latest_history();
     test_legacy_decodes_without_persistent_raw();
+    test_compact_j1587_health_from_cache();
     vQueueDelete(s.queue);
     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;
