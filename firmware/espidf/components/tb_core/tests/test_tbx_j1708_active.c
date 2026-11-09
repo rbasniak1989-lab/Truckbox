@@ -265,6 +265,12 @@ static void test_work_mode_requires_actual_parked_echo_and_response(void)
     assert(tbx_j1708_active_arm(&f.active,true,false,authorized_at+1000));
     assert(f.active.work_mode);
     assert(f.active.lease_deadline_us==authorized_at+1000+TBX_J1708_WORK_LEASE_US);
+    const unsigned sent_before=f.sends;
+    const uint64_t last_sent=now-250000;
+    tbx_j1708_active_tick(&f.active,last_sent+499000);
+    assert(f.sends==sent_before); /* no 250 ms burst after promotion */
+    tbx_j1708_active_tick(&f.active,last_sent+500000);
+    assert(f.sends==sent_before+1);
     tbx_j1708_active_stop(&f.active,"OPERATOR_STOP");
     assert(!f.active.work_mode);
     assert(f.scheduler.min_spacing_ms==250);
