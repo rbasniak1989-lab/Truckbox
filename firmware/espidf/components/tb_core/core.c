@@ -554,7 +554,11 @@ static esp_err_t requests_handler(httpd_req_t *request)
     const cJSON *action = cJSON_GetObjectItemCaseSensitive(body, "action");
     bool stop = cJSON_IsString(action) && !strcmp(action->valuestring, "stop");
     bool arm = cJSON_IsString(action) && !strcmp(action->valuestring, "arm");
-    if (!stop && !arm) { cJSON_Delete(body); return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "action must be arm or stop"); }
+    bool enable_work = cJSON_IsString(action) && !strcmp(action->valuestring, "enable_work");
+    if (!stop && !arm && !enable_work) {
+        cJSON_Delete(body);
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "action must be arm, enable_work or stop");
+    }
     if (arm) {
         char error[160] = {0};
         if (!tb_capture_request_configure(body, error, sizeof(error))) {
@@ -566,15 +570,18 @@ static esp_err_t requests_handler(httpd_req_t *request)
             return tb_http_send_json(request, reply);
         }
     }
-    bool accepted = tb_capture_request_control(arm,
-        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "authorized")),
-        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "stationary")));
+    bool authorized = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "authorized"));
+    bool stationary = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "stationary"));
+    bool accepted = enable_work ? tb_capture_request_enable_work(authorized, stationary) :
+        tb_capture_request_control(arm, authorized, stationary);
     cJSON_Delete(body);
     cJSON *reply = cJSON_CreateObject();
     cJSON_AddBoolToObject(reply, "ok", accepted);
-    cJSON_AddBoolToObject(reply, "armed", arm && accepted);
+    cJSON_AddBoolToObject(reply, "armed", (arm || enable_work) && accepted);
     cJSON_AddBoolToObject(reply, "hardware_tx_available", true);
-    cJSON_AddStringToObject(reply, "reason", arm ? (accepted ? "stationary_test_authorized" : "configuration_or_safety_interlock") : "operator_stop");
+    cJSON_AddStringToObject(reply, "reason", enable_work ?
+        (accepted ? "work_mode_enabled_12h" : "need_3_echo_1_response_stopped_vehicle_and_authorization") :
+        (arm ? (accepted ? "requests_armed" : "configuration_or_safety_interlock") : "operator_stop"));
     if (!accepted) httpd_resp_set_status(request, "409 Conflict");
     return tb_http_send_json(request, reply);
 }
