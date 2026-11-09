@@ -17,3 +17,6 @@ void tb_telemetry_add_json(cJSON *object);
 /* Observed readings only. Catalog coverage is a separate decoder concern.
  * Pagination bounds both HTTP heap use and time inside the snapshot lock. */
 cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit);
+
+/* Add provisional J1587 snapshots to the existing minute HEALTH record. */
+void tb_telemetry_append_j1587_health(cJSON *health);

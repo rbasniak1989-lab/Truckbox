@@ -423,6 +423,7 @@ static void snapshot_task(void *unused)
         cJSON_AddStringToObject(context, "telemetry_profile",
             tb_config()->full_decode_enabled ? "COMPLETO" : "LEGACY");
         cJSON_AddStringToObject(context, "j1708_framing", "uart_idle_10bits");
+        tb_telemetry_append_j1587_health(health);
         old_can = s.can_frames; old_j1708 = s.j1708_frames;
         old_checksum = s.j1708_checksum_errors; old_overruns = s.uart_overruns;
         window_start = now;

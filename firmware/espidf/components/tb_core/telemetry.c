@@ -588,6 +588,62 @@ void tb_telemetry_add_json(cJSON *object)
     cJSON_AddNumberToObject(transport, "maximum_payload_bytes", TBX_J1939_TP_MAX_PAYLOAD);
 }
 
+/* Bounded minute-level J1587 readings from the existing RAM decoder cache.
+ * Per PID: [numeric value, observation age in seconds, source MID].
+ * All exported readings remain EM_VALIDACAO (not certified/alert-grade).
+ * No active requests or per-frame persistent records are introduced. */
+void tb_telemetry_append_j1587_health(cJSON *health)
+{
+    if (!health) return;
+    cJSON *metrics = cJSON_GetObjectItemCaseSensitive(health, "metrics");
+    cJSON *context = cJSON_GetObjectItemCaseSensitive(health, "context");
+    if (!cJSON_IsObject(metrics) || !cJSON_IsObject(context)) return;
+
+    /* Engine protection first, then gearbox/secondary measurements. */
+    static const uint16_t pids[] = {
+        110, 175, 100, 102, 177, 105, 106, 92, 168, 98, 96, 171, 174
+    };
+    enum { SENSOR_COUNT = sizeof(pids) / sizeof(pids[0]) };
+    latest_t observed[SENSOR_COUNT] = {0};
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    portENTER_CRITICAL(&s_mux);
+    for (size_t i = 0; i < s.latest_count; ++i) {
+        const latest_t *entry = &s.latest[i];
+        if (entry->can || entry->component_index != UINT8_MAX ||
+            !entry->has_value || !isfinite(entry->value) || !entry->quality ||
+            strcmp(entry->quality, "EM_VALIDACAO") != 0) continue;
+        for (size_t j = 0; j < SENSOR_COUNT; ++j) {
+            if (entry->signal == pids[j] &&
+                (!observed[j].used || entry->captured_us > observed[j].captured_us))
+                observed[j] = *entry;
+        }
+    }
+    portEXIT_CRITICAL(&s_mux);
+
+    cJSON *sensors = cJSON_AddObjectToObject(metrics, "j1587_sensors");
+    if (!sensors) return;
+    cJSON_AddStringToObject(context, "j1587_sensor_quality", "EM_VALIDACAO");
+    char check[TB_RECORD_MAX];
+    for (size_t i = 0; i < SENSOR_COUNT; ++i) {
+        const latest_t *reading = &observed[i];
+        if (!reading->used || !reading->captured_us || now_us < reading->captured_us ||
+            now_us - reading->captured_us > UINT64_C(300000000)) continue;
+        char key[6];
+        snprintf(key, sizeof(key), "%u", (unsigned)pids[i]);
+        cJSON *triple = cJSON_AddArrayToObject(sensors, key);
+        if (!triple) continue;
+        cJSON_AddItemToArray(triple, cJSON_CreateNumber(reading->value));
+        cJSON_AddItemToArray(triple, cJSON_CreateNumber((double)((now_us - reading->captured_us) / 1000000)));
+        cJSON_AddItemToArray(triple, cJSON_CreateNumber(reading->address));
+        if (!cJSON_PrintPreallocated(health, check, sizeof(check), false))
+            cJSON_DeleteItemFromObjectCaseSensitive(sensors, key);
+    }
+    if (!sensors->child) {
+        cJSON_DeleteItemFromObjectCaseSensitive(metrics, "j1587_sensors");
+        cJSON_DeleteItemFromObjectCaseSensitive(context, "j1587_sensor_quality");
+    }
+}
+
 cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit)
 {
     if (limit < 1) limit = 1;

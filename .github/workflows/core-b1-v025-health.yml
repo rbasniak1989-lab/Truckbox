@@ -1,0 +1,48 @@
+name: TruckBox CORE Rev B1 v0.2.5 J1708 health verification
+on:
+  push:
+    branches:
+      - feature/revb1-j1708-cloud-sensors
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout experimental source
+        uses: actions/checkout@v4
+      - name: Compile CORE and run host regressions (ESP-IDF 5.5.2)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+      - name: Check OTA identity and preserve dual slots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          binary = Path('firmware/espidf/build-core/truckbox_core.bin').read_bytes()
+          assert len(binary) > 512 and len(binary) < 0x300000
+          assert binary[0] == 0xE9
+          assert struct.unpack_from('<H', binary, 12)[0] == 13, 'expected ESP32-C6'
+          version = binary[48:80].split(b'\0', 1)[0].decode('ascii')
+          project = binary[80:112].split(b'\0', 1)[0].decode('ascii')
+          assert version == '0.2.5', version
+          assert project == 'truckbox_core', project
+          print('TEST-ONLY candidate checked:',version,project,'bytes:',len(binary))
+          PY
+      - name: Publish test-only OTA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-v0.2.5-J1708-HEALTH-TEST-ONLY
+          path: firmware/espidf/build-core/truckbox_core.bin
+          if-no-files-found: error
+          retention-days: 30
