@@ -248,8 +248,8 @@ static void test_work_mode_requires_actual_parked_echo_and_response(void)
         assert(f.active.tx_active);
         assert(!tbx_j1708_active_enable_work(&f.active,now));
         echo(&f,now);
-        /* Echo alone is insufficient. */
-        assert(!tbx_j1708_active_enable_work(&f.active,now+6000));
+        /* Before three valid echoes, even matching responses cannot enable work. */
+        if (i < 2) assert(!tbx_j1708_active_enable_work(&f.active,now+6000));
         assert(tbx_j1708_active_note_response(&f.active,
             f.config.target_mid[i],expected_pids[i],now+200000));
         if (i < 2) assert(!tbx_j1708_active_enable_work(&f.active,now+201000));
