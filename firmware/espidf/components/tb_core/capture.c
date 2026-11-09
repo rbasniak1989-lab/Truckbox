@@ -634,6 +634,14 @@ void tb_capture_add_json(cJSON *object)
     cJSON_AddNumberToObject(j1708, "checksum_errors", s.j1708_checksum_errors);
     cJSON_AddNumberToObject(j1708, "oversize_or_coalesced", s.j1708_oversize);
     cJSON_AddNumberToObject(j1708, "uart_overruns", s.uart_overruns);
+    /* MIDs actually observed during this boot, to help the operator choose
+     * a source address. Not observed != guaranteed free on the entire bus. */
+    cJSON *observed = cJSON_AddArrayToObject(j1708, "observed_mids");
+    if (observed) {
+        for (unsigned mid = 128; mid <= 255; ++mid)
+            if (s.observed_mid[mid >> 3] & (1u << (mid & 7u)))
+                cJSON_AddItemToArray(observed, cJSON_CreateNumber(mid));
+    }
     if (s.j1708_at) {
         cJSON_AddNumberToObject(j1708, "last_frame_age_ms", (double)(now - s.j1708_at));
         cJSON *last = cJSON_Parse(s.j1708_last);
