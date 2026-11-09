@@ -1,0 +1,49 @@
+name: TruckBox CORE Rev B1 v0.2.6 J1708 work-mode trial
+on:
+  push:
+    branches:
+      - feature/revb1-v026-j1708-work-requests
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-j1708-work:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout experimental work-mode source
+        uses: actions/checkout@v4
+      - name: ESP-IDF v5.5.2 CORE compile and regression tests
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+      - name: Validate test-only OTA image
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct
+          path=Path('firmware/espidf/build-core/truckbox_core.bin')
+          data=path.read_bytes()
+          assert len(data)>512 and len(data)<0x300000, 'exceeds existing 3MiB OTA slot'
+          assert data[0]==0xE9, 'not an ESP firmware image'
+          assert struct.unpack_from('<H',data,12)[0]==13, 'not ESP32-C6'
+          version=data[48:80].split(b'\0',1)[0].decode('ascii')
+          project=data[80:112].split(b'\0',1)[0].decode('ascii')
+          assert version=='0.2.6', version
+          assert project=='truckbox_core', project
+          print('EXPERIMENTAL test-only OTA',version,project,'bytes',len(data),'SHA256',hashlib.sha256(data).hexdigest())
+          PY
+      - name: Upload TEST-ONLY candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-v0.2.6-J1708-WORK-TEST-ONLY
+          path: firmware/espidf/build-core/truckbox_core.bin
+          if-no-files-found: error
+          retention-days: 30
