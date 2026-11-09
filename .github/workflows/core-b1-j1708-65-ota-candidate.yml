@@ -1,0 +1,55 @@
+name: TruckBox CORE 0.2.7 J1708 48+17 OTA candidate
+on:
+  push:
+    branches:
+      - feature/revb1-j1708-passivos-48-cloud
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/core-b1-j1708-65-ota-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-ota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+      - name: Build ESP32-C6 CORE and run regressions, ESP-IDF v5.5.2
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+      - name: Validate OTA role, version, chip and image size
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, struct
+          from pathlib import Path
+          path=Path('firmware/espidf/build-core/truckbox_core.bin')
+          data=path.read_bytes()
+          assert 512 < len(data) < 0x300000, f'OTA 3MiB partition overflow: {len(data)}'
+          assert data[0] == 0xe9, 'invalid Espressif header'
+          assert (data[3] >> 4) == 3, '8MB flash header required'
+          assert struct.unpack_from('<H',data,12)[0]==13, 'not ESP32-C6'
+          assert struct.unpack_from('<I',data,32)[0]==0xABCD5432, 'invalid app descriptor'
+          text=lambda a,b: data[a:b].split(b'\x00',1)[0].decode('ascii')
+          assert text(48,80)=='0.2.7', f'wrong version: {text(48,80)}'
+          assert text(80,112)=='truckbox_core', f'wrong role: {text(80,112)}'
+          assert text(144,176)=='v5.5.2', f'wrong toolchain: {text(144,176)}'
+          print('TruckBox CORE 0.2.7 Rev B1 J1708 48+17 OTA TEST-ONLY')
+          print('size=',len(data),'sha256=',hashlib.sha256(data).hexdigest())
+          PY
+      - name: Upload candidate TEST ONLY binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-v0.2.7-J1708-48passive-17active-TEST-ONLY
+          path: firmware/espidf/build-core/truckbox_core.bin
+          if-no-files-found: error
+          retention-days: 30
