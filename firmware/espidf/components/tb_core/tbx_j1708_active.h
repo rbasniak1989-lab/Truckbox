@@ -7,6 +7,9 @@
 
 #define TBX_J1708_ACTIVE_LEASE_US UINT64_C(60000000)
 #define TBX_J1708_ACTIVE_ECHO_TIMEOUT_US UINT64_C(20000)
+/* Deliberately non-persistent supervised road trial: expires after 12 h. */
+#define TBX_J1708_WORK_LEASE_US UINT64_C(43200000000)
+#define TBX_J1708_WORK_MIN_SPACING_MS 500u
 
 typedef struct {
     uint8_t local_mid;
@@ -29,7 +32,7 @@ typedef struct {
     tbx_j1708_active_config_t config;
     tbx_j1708_active_ops_t ops;
     void *context;
-    bool configured, tx_active;
+    bool configured, tx_active, work_mode;
     uint8_t echo_position;
     uint8_t tx_frame[5];
     uint16_t tx_pid;
@@ -44,6 +47,9 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *, const tbx_j1708_active_con
 /* Explicit authorization and parked attestation expire after60seconds.
  * Renewal does not reset scheduler spacing or its outstanding request. */
 bool tbx_j1708_active_arm(tbx_j1708_active_t *, bool authorized, bool stationary, uint64_t now_us);
+/* Promote a running stationary trial to work mode only after three valid TX
+ * echoes and at least one MID/PID response candidate on this boot. */
+bool tbx_j1708_active_enable_work(tbx_j1708_active_t *, uint64_t now_us);
 void tbx_j1708_active_stop(tbx_j1708_active_t *, const char *reason);
 void tbx_j1708_active_tick(tbx_j1708_active_t *, uint64_t now_us);
 /* Feed every received UART byte, before frame parsing; echo mismatch releases
