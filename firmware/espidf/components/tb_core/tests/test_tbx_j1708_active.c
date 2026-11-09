@@ -235,6 +235,68 @@ static void test_response_lower_bound_and_expired_lease(void)
     assert(!tbx_j1708_active_note_response(&f.active,f.config.target_mid[0],26,1100000));
     assert(!f.scheduler.armed && !f.active.tx_active);
 }
+
+static void test_work_mode_requires_actual_parked_echo_and_response(void)
+{
+    fixture_t f; initialize(&f);
+    assert(!tbx_j1708_active_enable_work(&f.active,1000000));
+    configure_and_arm(&f,1000000);
+    assert(!tbx_j1708_active_enable_work(&f.active,1000001));
+    uint64_t now=1005000;
+    for (unsigned i=0;i<3;i++) {
+        tbx_j1708_active_tick(&f.active,now);
+        assert(f.active.tx_active);
+        assert(!tbx_j1708_active_enable_work(&f.active,now));
+        echo(&f,now);
+        /* Before three valid echoes, even matching responses cannot enable work. */
+        if (i < 2) assert(!tbx_j1708_active_enable_work(&f.active,now+6000));
+        assert(tbx_j1708_active_note_response(&f.active,
+            f.config.target_mid[i],expected_pids[i],now+200000));
+        if (i < 2) assert(!tbx_j1708_active_enable_work(&f.active,now+201000));
+        now+=250000;
+    }
+    const uint64_t authorized_at=now+1000;
+    assert(tbx_j1708_active_enable_work(&f.active,authorized_at));
+    assert(f.active.work_mode);
+    assert(f.scheduler.armed && f.scheduler.min_spacing_ms>=TBX_J1708_WORK_MIN_SPACING_MS);
+    assert(f.active.lease_deadline_us==authorized_at+TBX_J1708_WORK_LEASE_US);
+    assert(!tbx_j1708_active_enable_work(&f.active,authorized_at));
+    /* Permission is now based on physical TX evidence, not vehicle speed. */
+    assert(tbx_j1708_active_arm(&f.active,true,false,authorized_at+1000));
+    assert(f.active.work_mode);
+    assert(f.active.lease_deadline_us==authorized_at+1000+TBX_J1708_WORK_LEASE_US);
+    const unsigned sent_before=f.sends;
+    const uint64_t last_sent=now-250000;
+    tbx_j1708_active_tick(&f.active,last_sent+499000);
+    assert(f.sends==sent_before); /* no 250 ms burst after promotion */
+    tbx_j1708_active_tick(&f.active,last_sent+500000);
+    assert(f.sends==sent_before+1);
+    tbx_j1708_active_stop(&f.active,"OPERATOR_STOP");
+    assert(!f.active.work_mode);
+    assert(f.scheduler.min_spacing_ms==250);
+    assert(!tbx_j1708_active_arm(&f.active,true,false,authorized_at+2000));
+}
+
+static void test_work_mode_auto_disarms_and_must_revalidate(void)
+{
+    fixture_t f; initialize(&f); configure_and_arm(&f,1000000);
+    /* Demonstrate a passed experimental trial, still with synthetic bus. */
+    uint64_t now=1005000;
+    for(unsigned i=0;i<3;i++) {
+        tbx_j1708_active_tick(&f.active,now);
+        echo(&f,now);
+        assert(tbx_j1708_active_note_response(&f.active,
+            f.config.target_mid[i],expected_pids[i],now+200000));
+        now+=250000;
+    }
+    assert(tbx_j1708_active_enable_work(&f.active,now+1000));
+    unsigned before=f.sends;
+    tbx_j1708_active_tick(&f.active,f.active.lease_deadline_us);
+    assert(!f.active.work_mode && !f.scheduler.armed && !f.active.tx_active);
+    tbx_j1708_active_tick(&f.active,now+TBX_J1708_WORK_LEASE_US+1000000);
+    assert(f.sends==before && !f.scheduler.armed);
+}
+
 int main(void)
 {
     test_no_tx_by_default_and_configuration_validation();
@@ -245,6 +307,8 @@ int main(void)
     test_response_timeouts_even_when_bus_busy();
     test_idle_deferral_and_millisecond_wrap();
     test_response_lower_bound_and_expired_lease();
+    test_work_mode_requires_actual_parked_echo_and_response();
+    test_work_mode_auto_disarms_and_must_revalidate();
     puts("J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed");
     return 0;
 }

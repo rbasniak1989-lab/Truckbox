@@ -48,3 +48,81 @@ corrigir a causa restaura o estado inicial desarmado.
 
 Teste físico somente com autorização, caminhão estacionado e monitoramento da
 recepção/erros. Esta implementação experimental não atua em motor, freios ou câmbio.
+
+
+## Candidato CORE 0.2.6 — requisições com o caminhão trabalhando
+
+O CORE pode entrar em **work mode** sem interromper as requisições quando a
+velocidade ultrapassar zero, mas **NUNCA ativa TX por padrão ou após reboot**.
+Este é um recurso em teste, não uma certificação de compatibilidade J1708.
+O motor, a I-Shift e os freios continuam sob controle exclusivo das suas ECUs;
+os pacotes são apenas PID128 solicitando leituras.
+
+### Preparação a partir da captura real (29/10/2026)
+
+O JSON do teste estacionado pode usar
+`"preset":"fh2013_capture_20261029"` em lugar do array de 17 alvos, com
+`topology_confirmed:true` e **um local_mid inteiro explicitamente escolhido,
+confirmadamente livre no barramento**. O preset somente preenche o **MID de
+destino**, nunca o MID do TruckBox:
+
+| PIDs | MID de destino observado |
+|---|---|
+| 26,68,108,158,235,236,250 | 128 (motor) |
+| 31,32,33,34,37,63,160 | 130 (transmissão) |
+| 117,118 | 140 (sistema de freios) |
+| 62 | 144 (retarder) |
+
+Esses MIDs foram correlacionados à captura NEXIQ/Validator, não validados
+como respostas causais em toda condição. Não assumir que o MID local 250
+dos testes unitários está livre: é **sintético**. Verifique os MIDs na
+instalação real. Erro de MID pode fazer o controlador parar após timeouts.
+
+### Fluxo de habilitação
+
+1. Antes do teste, conferir com instrumentação apropriada as formas de
+   onda RX20/DE21, nível físico J1708, polaridade e liberação do transceptor.
+   Não fazer a primeira transmissão em trânsito. Atestar explicitamente
+   `topology_confirmed:true` **somente após essa validação**.
+2. Com o veículo parado (velocidade J1587 recente = 0), enviar POST autenticado
+   em `/api/j1708/requests` com
+   `{"action":"arm","authorized":true,"stationary":true,"topology_confirmed":true,"preset":"fh2013_capture_20261029","priority":8,"local_mid":<MID_LIVRE_CONFIRMADO>}`.
+   O local MID deve ser um número real 128–255 livre; o texto entre
+   `<...>` é apenas um marcador explicativo, **não JSON válido**.
+3. Aguardar pelo menos três ecos completos `echo_ok>=3` e uma resposta
+   candidata de MID/PID `responses>=1`, sem colisões/falhas, mantendo a
+   velocidade zero e observando tráfego normal. Uma resposta candidata
+   continua não sendo prova de resposta causada pelo pedido.
+4. Enviar POST autenticado com
+   `{"action":"enable_work","authorized":true,"stationary":true}`.
+   O CORE só confirma se o caminhão está comprovadamente parado na amostra
+   de velocidade mais recente (até 5 s) e se passou nas verificações acima.
+5. Depois disso, a operação suporta o caminhão **em movimento**: não há
+   desarme automático apenas por velocidade positiva. O espaçamento passa
+   a pelo menos **500 ms** (até 2 solicitações/s; menor em barramento ocupado).
+   A permissão dura até **12 horas** e não sobrevive à reinicialização.
+   Renovação explícita pode usar `action=arm`, `stationary=false`,
+   preservando o preset/MID previamente configurados.
+6. `{"action":"stop"}` desarma imediatamente. Também desarmam: OTA,
+   colisão/eco incorreto, erros repetidos, oito timeouts consecutivos,
+   12 h sem renovação e conflitos de MID local. A recepção passiva continua
+   independente desses eventos.
+
+### Observabilidade e limites
+
+`/api/state`, em `j1708.requests`, traz `work_mode`,
+`work_evidence_ready`, `lease_remaining_ms`, `echo_ok`,
+`collisions`, `sent`, `responses` e `timeouts`.
+Na cloud, os HEALTH minuto recebem
+`context.j1708_work_mode` e os contadores por janela
+`metrics.j1708_request_sent`, `j1708_request_answered` e
+`j1708_request_timeouts`. Sensores J1587 permanecem provisórios até
+validação de fórmulas; especialmente pressão de óleo, turbo e pressão
+pneumática do câmbio (PID37). Não dirigir ajustando comandos no celular;
+fazer habilitação inicial estacionado e supervisionada.
+
+**Advertência de hardware**: o circuito Rev.B.1 liga DI=LOW e modula DE21
+com UART invertida; sem osciloscópio ou verificação equivalente, nem um
+build bem-sucedido nem testes unitários demonstram que o transceptor transmite
+sem perturbar o barramento físico. Essa verificação é necessária antes de
+ligar TX no veículo, mesmo para o modo de teste parado.

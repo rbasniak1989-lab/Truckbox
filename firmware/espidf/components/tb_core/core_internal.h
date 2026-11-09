@@ -12,5 +12,7 @@ bool tb_core_append_gps(cJSON *sample);
 
 bool tb_core_append_gps_at(cJSON *sample, uint64_t captured_us);
 bool tb_capture_request_control(bool arm, bool authorized, bool stationary);
+/* Enable continuous read-only requests after a verified stationary TX trial. */
+bool tb_capture_request_enable_work(bool authorized, bool stationary);
 
 bool tb_capture_request_configure(const cJSON *config, char *error, size_t error_size);
