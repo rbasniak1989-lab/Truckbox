@@ -115,6 +115,48 @@
     <div id="config-message" class="banner message" role="status" aria-live="polite"></div>
   </section>
 
+
+  <section class="panel" id="j1708-panel" aria-labelledby="j1708-title" hidden>
+    <div class="heading">
+      <div>
+        <h2 id="j1708-title">Requisições J1708</h2>
+        <p class="muted">Consultar os 17 sensores de motor, I-Shift, freios e VEB identificados no teste NEXIQ de 29/10.</p>
+      </div>
+      <span class="pill" id="j1708-mode">Aguardando estado</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Pedidos enviados</span><strong id="j1708-sent">—</strong></div>
+      <div class="stat"><span>Ecos confirmados</span><strong id="j1708-echo">—</strong></div>
+      <div class="stat"><span>Respostas candidatas</span><strong id="j1708-responses">—</strong></div>
+      <div class="stat"><span>Erros / timeouts</span><strong id="j1708-errors">—</strong></div>
+    </div>
+    <p class="hint">A recepção já funciona. O transmissor físico desta Rev B1 ainda não foi validado: a indicação "hardware disponível" no sistema significa apenas que a interface foi inicializada.</p>
+    <div class="grid spacer">
+      <label>MID de origem do TruckBox (128 a 255)
+        <input id="j1708-local-mid" type="number" inputmode="numeric" min="128" max="255" step="1" placeholder="Informe um MID comprovadamente livre">
+        <small>Os MIDs de destino vêm da captura NEXIQ: 128 (motor), 130 (I-Shift), 140 (freios), 144 (VEB). O MID do TruckBox deve ser outro, comprovadamente livre.</small>
+      </label>
+      <div>
+        <strong>MIDs identificados desde a partida</strong>
+        <p class="muted" id="j1708-observed-mids">Aguardando dados do barramento.</p>
+        <small>Um MID não aparecer nesta lista não garante que esteja livre em toda a rede.</small>
+      </div>
+    </div>
+    <label class="check spacer">
+      <input type="checkbox" id="j1708-topology">
+      <span>Confirmo que a saída elétrica J1708 da Rev B1 foi verificada e que o MID informado está livre.
+        <small>Não marque apenas porque a recepção funciona. Sem verificar a saída DE21/transceiver, não é seguro iniciar a primeira transmissão na rede do caminhão.</small>
+      </span>
+    </label>
+    <div class="actions spacer">
+      <button id="j1708-test" type="button" class="primary" disabled>Testar pedidos (parado)</button>
+      <button id="j1708-work" type="button" disabled>Ativar durante a viagem</button>
+      <button id="j1708-stop" type="button" disabled>Parar requisições</button>
+      <button id="j1708-refresh" type="button">Atualizar contadores</button>
+    </div>
+    <div id="j1708-message" class="banner message" role="status" aria-live="polite"></div>
+    <p class="hint spacer">Primeiro teste: caminhão parado, rede J1708 monitorada. O modo de viagem só é liberado depois de pelo menos 3 ecos e 1 resposta candidata. Erros de comunicação ou prazo vencido interrompem automaticamente a transmissão. Os valores ainda exigem validação de escala.</p>
+  </section>
   <section class="panel" id="storage-maintenance" hidden>
     <h2>Manutenção do armazenamento</h2>
     <p class="muted">Após confirmar a instalação da versão 0.2.4, descarte registros pendentes locais da flash. Isso NÃO apaga o histórico que já chegou à nuvem, o firmware anterior, as configurações ou os dados da viagem na NVS. Os registros ainda não enviados serão perdidos.</p>
@@ -161,6 +203,7 @@
   let lastState = null;
   let stateBusy = false;
   let uploadBusy = false;
+  let j1708Busy = false;
 
   function message(id, text, kind = '') {
     const element = $(id);
@@ -203,6 +246,7 @@
     role = normalized.includes('core') ? 'core' : normalized.includes('link') ? 'link' : '';
     text('stat-role', role === 'core' ? 'Core' : role === 'link' ? 'Link' : value);
     $('core-config').hidden = role !== 'core';
+    $('j1708-panel').hidden = role !== 'core';
     $('storage-maintenance').hidden = role !== 'core';
     $('discard-storage').disabled = !token || role !== 'core';
     $('link-config').hidden = role !== 'link';
@@ -221,6 +265,7 @@
     try {
       const state = await request('/api/state');
       lastState = state;
+      updateJ1708Panel();
       const network = state.network || state.wifi || {};
       applyRole(state.role === undefined ? state.device_role : state.role);
       text('stat-version', state.version || state.firmware_version || state.firmware);
@@ -275,6 +320,7 @@
     $('discard-storage').disabled = true;
     $('pair-data').hidden = true;
     $('pair-text').value = '';
+    updateJ1708Panel();
     for (const name of secretNames) configControl(name).value = '';
     text('auth-status', 'Somente leitura');
     message('auth-message', 'Acesso de administração encerrado.');
@@ -293,6 +339,7 @@
       $('login-form').hidden = true;
       $('logout').hidden = false;
       text('auth-status', 'Administrador');
+      updateJ1708Panel();
       message('auth-message', 'Acesso liberado para configuração e atualização.', 'success');
     } catch (error) { token = ''; message('auth-message', error.message, 'error'); }
     finally { $('login').disabled = false; }
@@ -442,6 +489,96 @@
     xhr.onabort = () => { message('ota-message', 'Envio interrompido. Consulte o estado da placa.', 'warning'); finish(); };
     xhr.send(file);
   });
+
+
+  // J1708 commands reuse the current admin Bearer token and existing CORE API.
+  // They do not save settings, change the truck trip or flash the board.
+  function updateJ1708Panel() {
+    const j1708 = lastState && lastState.j1708 || {};
+    const status = j1708.requests || {};
+    const numbers = v => Number.isFinite(Number(v)) ? String(v) : '—';
+    text('j1708-sent', numbers(status.sent));
+    text('j1708-echo', numbers(status.echo_ok));
+    text('j1708-responses', numbers(status.responses));
+    text('j1708-errors', numbers(status.collisions) + ' / ' +
+      numbers(status.echo_timeouts) + ' / ' + numbers(status.timeouts));
+    text('j1708-mode', status.work_mode ? 'Em operação' :
+      status.armed ? 'Teste em andamento' :
+      status.safety_stopped ? 'Parado por segurança' : 'Transmissão desligada');
+    const mids = j1708.observed_mids;
+    text('j1708-observed-mids', Array.isArray(mids) ?
+      (mids.length ? mids.join(', ') : 'Nenhum MID observado') :
+      'Atualização do firmware necessária para mostrar a lista.');
+    const n = Number($('j1708-local-mid').value);
+    const selected = $('j1708-local-mid').value.trim() !== '' &&
+      Number.isInteger(n) && n >= 128 && n <= 255;
+    const midInUse = Array.isArray(mids) && mids.includes(n);
+    const presetConflict = [128,130,140,144].includes(n);
+    const speed = lastState && lastState.speedKph;
+    const stopped = typeof speed === 'number' && Number.isFinite(speed) && speed <= 0.1;
+    const online = role === 'core' && !!token && !!lastState &&
+      j1708.ready === true && !lastState.ota_busy && !uploadBusy;
+    $('j1708-test').disabled = !online || j1708Busy || !!status.armed ||
+      !stopped || !selected || midInUse || presetConflict ||
+      !$('j1708-topology').checked || !!status.safety_stopped;
+    $('j1708-work').disabled = !online || j1708Busy || !stopped ||
+      !status.armed || !status.work_evidence_ready || !!status.work_mode ||
+      !!status.safety_stopped;
+    // Emergency stop stays clickable even if another request is pending.
+    $('j1708-stop').disabled = !online;
+    $('j1708-refresh').disabled = !!stateBusy;
+  }
+
+  async function j1708Command(action) {
+    if (!token || role !== 'core' || uploadBusy || !lastState) return;
+    if (action !== 'stop' && j1708Busy) return;
+    const payload = {action};
+    if (action === 'arm') {
+      updateJ1708Panel();
+      if ($('j1708-test').disabled) {
+        message('j1708-message','Confirme o MID livre, a verificação elétrica e a velocidade zero antes do teste.','warning');
+        return;
+      }
+      if (!confirm('Iniciar requisições J1708 REAIS na rede do caminhão? Verifique primeiro a saída elétrica do transceiver. Este teste transmitirá mensagens, não apenas fará leitura.')) return;
+      payload.authorized = true;
+      payload.stationary = true;
+      payload.topology_confirmed = true;
+      payload.local_mid = Number($('j1708-local-mid').value);
+      payload.priority = 8;
+      payload.preset = 'fh2013_capture_20261029';
+    } else if (action === 'enable_work') {
+      if ($('j1708-work').disabled) return;
+      if (!confirm('Habilitar requisições J1708 enquanto o caminhão se movimenta? Confirmar somente após o teste estacionado e avaliação dos ecos/erros.')) return;
+      payload.authorized = true;
+      payload.stationary = true;
+    }
+    if (action !== 'stop') j1708Busy = true;
+    updateJ1708Panel();
+    try {
+      const reply = await request('/api/j1708/requests', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      }, 8000);
+      message('j1708-message', action === 'arm' ?
+        'Teste autorizado. Aguarde os ecos e as respostas aparecerem nos contadores. Se houver falha, pressione Parar.' :
+        action === 'enable_work' ?
+        'Modo de viagem ativado. A transmissão continua limitada e possui desligamento por falhas.' :
+        'Parada solicitada e confirmada pelo CORE.', 'success');
+      await refreshState();
+    } catch (error) {
+      message('j1708-message', error.message + '. Consulte os contadores para confirmar o estado.', 'error');
+      await refreshState();
+    } finally {
+      j1708Busy = false;
+      updateJ1708Panel();
+    }
+  }
+  $('j1708-local-mid').addEventListener('input', updateJ1708Panel);
+  $('j1708-topology').addEventListener('change', updateJ1708Panel);
+  $('j1708-test').addEventListener('click', () => j1708Command('arm'));
+  $('j1708-work').addEventListener('click', () => j1708Command('enable_work'));
+  $('j1708-stop').addEventListener('click', () => j1708Command('stop'));
+  $('j1708-refresh').addEventListener('click', refreshState);
 
   $('refresh').addEventListener('click', refreshState);
   $('theme').addEventListener('click', () => {
