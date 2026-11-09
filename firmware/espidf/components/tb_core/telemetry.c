@@ -621,6 +621,7 @@ void tb_telemetry_append_j1587_health(cJSON *health)
     const uint64_t now_us = (uint64_t)esp_timer_get_time();
     cJSON *numeric = NULL, *raw_values = NULL;
     char check[TB_RECORD_MAX];
+    cJSON_AddStringToObject(context, "j1587_sensor_quality", "EM_VALIDACAO");
 
     for (size_t n = 0; n < TOTAL_COUNT; ++n) {
         size_t index;
@@ -674,12 +675,12 @@ void tb_telemetry_append_j1587_health(cJSON *health)
         if (!cJSON_PrintPreallocated(health, check, sizeof(check), false))
             cJSON_DeleteItemFromObjectCaseSensitive(*target, key);
     }
-    if (numeric && !numeric->child) cJSON_DeleteItemFromObjectCaseSensitive(metrics, "j1587_sensors");
-    if (raw_values && !raw_values->child) cJSON_DeleteItemFromObjectCaseSensitive(metrics, "j1587_raw");
-    if ((numeric && numeric->child) || (raw_values && raw_values->child)) {
-        cJSON_AddStringToObject(context, "j1587_sensor_quality", "EM_VALIDACAO");
-        cJSON_AddStringToObject(context, "j1587_catalog", "NEXIQ_PASSIVE_2026-10-29");
-    }
+    const bool has_numeric = numeric && numeric->child;
+    const bool has_raw = raw_values && raw_values->child;
+    if (!has_numeric && numeric) cJSON_DeleteItemFromObjectCaseSensitive(metrics, "j1587_sensors");
+    if (!has_raw && raw_values) cJSON_DeleteItemFromObjectCaseSensitive(metrics, "j1587_raw");
+    if (!has_numeric && !has_raw)
+        cJSON_DeleteItemFromObjectCaseSensitive(context, "j1587_sensor_quality");
 }
 
 cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit)
