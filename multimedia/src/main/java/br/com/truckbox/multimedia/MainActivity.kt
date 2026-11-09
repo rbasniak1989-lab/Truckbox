@@ -620,6 +620,14 @@ private fun instantConsumption(s: LiveState): Double? {
 }
 
 private class LiveRepository(private val configuredHost: String) {
+    /* The installed Core 0.2.6 already exposes decoded J1587 in /api/sensors.
+     * One page per two seconds avoids a burst of six HTTP requests and keeps
+     * the Core/flash workload limited. The 20s cache only holds fresh readings.
+     * Existing /api/state data remains preferred. */
+    private val passiveReadings = mutableMapOf<Int, Pair<Double, Long>>()
+    private var passiveOffset = 0
+    private var lastPassivePollMs = 0L
+
     private val cloudUrl = "https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-dashboard-data?key=tbx-public-ro-20260828-7f2c91"
 
     fun fetch(): LiveState? {
@@ -639,10 +647,58 @@ private class LiveRepository(private val configuredHost: String) {
         for (base in bases) {
             try {
                 val json = getJson("$base/api/state?nocache=${System.currentTimeMillis()}", 1200, 1800) ?: continue
-                return parse(json, "CORE")
+                pollPassivePage(base)
+                return withPassiveReadings(parse(json, "CORE"))
             } catch (_: Throwable) { }
         }
         return null
+    }
+
+    private fun pollPassivePage(base: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastPassivePollMs < 2_000L) return
+        lastPassivePollMs = now
+        try {
+            val j = getJson("$base/api/sensors?offset=$passiveOffset&limit=32", 800, 1200)
+                ?: return
+            if (!j.optBoolean("ok", false)) return
+            val readings = j.optJSONArray("readings") ?: return
+            for (i in 0 until readings.length()) {
+                val x = readings.optJSONObject(i) ?: continue
+                if (x.optString("source") != "j1587" ||
+                    x.optString("quality") != "EM_VALIDACAO" ||
+                    x.optBoolean("stale", true)) continue
+                val pid = x.optInt("pid", -1)
+                val value = x.optDouble("value", Double.NaN)
+                val age = x.optLong("age_ms", Long.MAX_VALUE)
+                if (pid < 0 || !value.isFinite() || age !in 0L..5_000L) continue
+                passiveReadings[pid] = value to (now - age)
+            }
+            val next = j.optInt("next_offset", 0)
+            val count = j.optInt("observed_count", 0)
+            passiveOffset = if (next > 0 && next < count) next else 0
+        } catch (_: Throwable) {
+            /* Sensor scan is best-effort. Never disrupt speed/RPM or trip data. */
+        }
+    }
+
+    private fun withPassiveReadings(state: LiveState): LiveState {
+        val now = System.currentTimeMillis()
+        fun reading(pid: Int): Double? = passiveReadings[pid]
+            ?.takeIf { now - it.second in 0L..20_000L }?.first
+        return state.copy(
+            coolantTempC = state.coolantTempC ?: reading(110),
+            oilTempC = state.oilTempC ?: reading(175),
+            gearboxTempC = state.gearboxTempC ?: reading(177),
+            oilPressureBar = state.oilPressureBar ?: reading(100),
+            boostBar = state.boostBar ?: reading(102),
+            intakeTempC = state.intakeTempC ?: reading(105),
+            airInletPressureKpa = state.airInletPressureKpa ?: reading(106),
+            ambientTempC = state.ambientTempC ?: reading(171),
+            fuelTempC = state.fuelTempC ?: reading(174),
+            oilLevelPct = state.oilLevelPct ?: reading(98),
+            coolantLevelPct = state.coolantLevelPct ?: reading(111),
+        )
     }
 
     private fun fetchCloud(): LiveState? = try {
