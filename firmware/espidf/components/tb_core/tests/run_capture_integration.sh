@@ -26,6 +26,9 @@ chunks = [source[state_start:state_end], *typedefs]
 # Host runner tests acquisition and signal arbitration; flash JSON serialization is
 # exercised by the ESP-IDF build and the separate storage tests.
 chunks += ['static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *v, uint64_t now) { (void)v; (void)now; }']
+# Startup test exercises NVS trip migration, not flash diagnostic serialization.
+# Full ESP-IDF build checks the actual record_boot_diagnostic implementation.
+chunks += ['static void record_boot_diagnostic(void) { }']
 chunks += [text for _, text in sorted(function(name) for name in names)]
 _, startup = function('tb_capture_start')
 body = startup[startup.index('{') + 1:]
