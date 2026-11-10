@@ -5,6 +5,9 @@ test_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 export ASAN_OPTIONS=detect_leaks=0
 cd "$test_root"
 sh components/tb_base/tests/run_host_tests.sh
+sh components/tb_base/tests/run_json_memory.sh
+sh components/tb_core/tests/run_diagnostic_memory.sh
+sh components/tb_web/tests/run_json_http.sh
 sh components/tb_base/tests/run_peer_address.sh
 sh components/tb_web/tests/run_policy_test.sh
 sh components/tb_core/tests/run.sh

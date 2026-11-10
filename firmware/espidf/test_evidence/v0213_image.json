@@ -1,0 +1,11 @@
+{
+  "role": "truckbox_core",
+  "version": "0.2.13",
+  "idf": "v5.5.2",
+  "chip_id": 13,
+  "flash_mb": 8,
+  "ota_bytes": 1474512,
+  "sha256": "65d6add35f09814af23c122052181f127f28fc8ddce3904bb17ba4035097f58b",
+  "partition_sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832",
+  "installed": false
+}

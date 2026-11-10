@@ -231,8 +231,32 @@ static void test_operator_discard_preserves_nvs_sequence_and_nonlog_files(void)
     cleanup_store();
 }
 
+
+static void test_diagnostic_mutex_busy_is_not_failed_storage(void)
+{
+    reset_store();state.recovery_complete=true;append_json("{\"sample_kind\":\"OPERATIONAL\"}",100);
+    host_mutex_busy=true;
+    cJSON *o=cJSON_CreateObject();tb_store_add_json(o);
+    cJSON *storage=cJSON_GetObjectItemCaseSensitive(o,"storage");
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(storage,"ready")));
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(storage,"busy")));
+    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(storage,"phase")->valuestring,"BUSY"));
+    assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(storage,"pending_known")));
+    assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(storage,"pending_records")));
+    cJSON_Delete(o);assert(state.pending_records==1 && state.ready);
+    host_mutex_busy=false;
+    o=cJSON_CreateObject();tb_store_add_json(o);storage=cJSON_GetObjectItemCaseSensitive(o,"storage");
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(storage,"ready")));
+    assert(cJSON_GetObjectItemCaseSensitive(storage,"pending_records")->valuedouble==1);cJSON_Delete(o);
+    state.mutex=NULL;o=cJSON_CreateObject();tb_store_add_json(o);storage=cJSON_GetObjectItemCaseSensitive(o,"storage");
+    assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(storage,"ready")));
+    assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(storage,"pending_records")));cJSON_Delete(o);
+    cleanup_store();
+}
+
 int main(void)
 {
+    test_diagnostic_mutex_busy_is_not_failed_storage();
     test_no_gps_reboot_ack_and_late_gps();
     test_interrupted_tail_preserves_confirmed_records();
     test_fsync_failure_never_offered_until_recovery();

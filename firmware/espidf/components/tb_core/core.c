@@ -193,8 +193,8 @@ static bool prepare_bridge_batch(cJSON *batch, bridge_batch_t *prepared)
         prepared->sequences[prepared->count++] = candidate;
     }
     valid = valid && prepared->count > 0 && count->valuedouble == (double)prepared->count;
-    if (valid) prepared->payload = cJSON_PrintUnformatted(batch);
-    cJSON_Delete(batch);
+    if(valid)prepared->payload=tb_json_print_owned(batch,BRIDGE_BATCH_BYTES);
+    else cJSON_Delete(batch);
     if (prepared->payload && strlen(prepared->payload) <= BRIDGE_BATCH_BYTES) return true;
     cJSON_free(prepared->payload);
     memset(prepared, 0, sizeof(*prepared));
@@ -523,9 +523,20 @@ static esp_err_t sensor_catalog_handler(httpd_req_t *request)
         cJSON_AddBoolToObject(row, "proprietary", spec->proprietary);
         cJSON_AddBoolToObject(row, "derived", spec->derived);
         cJSON_AddStringToObject(row, "evidence", spec->evidence);
-        cJSON_AddItemToArray(signals, row);
+        if(!tb_json_add_array(signals,row))break;
     }
     return tb_http_send_json(request, result);
+}
+
+static esp_err_t request_stats_handler(httpd_req_t *request)
+{
+    if(!tb_http_require_admin(request))return ESP_OK;
+    char query[80],value[16];unsigned offset=0,limit=8;
+    if(httpd_req_get_url_query_str(request,query,sizeof(query))==ESP_OK){
+        if(httpd_query_key_value(query,"offset",value,sizeof(value))==ESP_OK)offset=(unsigned)strtoul(value,NULL,10);
+        if(httpd_query_key_value(query,"limit",value,sizeof(value))==ESP_OK)limit=(unsigned)strtoul(value,NULL,10);
+    }
+    return tb_http_send_json(request,tb_capture_request_stats_json(offset,limit));
 }
 
 static esp_err_t requests_handler(httpd_req_t *request)
@@ -577,6 +588,7 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
     const httpd_uri_t routes[] = {
         { .uri = "/api/sensors", .method = HTTP_GET, .handler = sensors_handler },
         { .uri = "/api/sensors/catalog", .method = HTTP_GET, .handler = sensor_catalog_handler },
+        { .uri = "/api/j1708/requests", .method = HTTP_GET, .handler = request_stats_handler },
         { .uri = "/api/j1708/requests", .method = HTTP_POST, .handler = requests_handler },
         { .uri = "/api/gateway/batch", .method = HTTP_GET, .handler = batch_handler },
         { .uri = "/api/gateway/ack", .method = HTTP_POST, .handler = ack_handler },
@@ -607,9 +619,9 @@ esp_err_t tb_application_start(void)
     return ESP_OK;
 }
 
-void tb_application_add_json(cJSON *object)
+static void application_json_mode(cJSON *object,bool compact)
 {
-    tb_capture_add_json(object);
+    if(compact)tb_capture_add_json_compact(object);else tb_capture_add_json(object);
     tb_store_add_json(object);
     cJSON *live = cJSON_AddObjectToObject(object, "live_stream");
     cJSON_AddNumberToObject(live, "port", 35000);
@@ -625,10 +637,13 @@ void tb_application_add_json(cJSON *object)
     cJSON_AddNumberToObject(bridge, "successful_acks", s.uplink_success);
     cJSON_AddStringToObject(bridge, "error", s.uplink_error);
     if (s.link_at) cJSON_AddNumberToObject(bridge, "last_telemetry_age_ms", (esp_timer_get_time() - s.link_at) / 1000);
-    if (s.link_status) cJSON_AddItemToObject(object, "link", cJSON_Duplicate(s.link_status, true));
+    if(s.link_status)tb_json_add_object(object,"link",cJSON_Duplicate(s.link_status,true));
     xSemaphoreGive(s.lock);
     cJSON *gps = cJSON_AddObjectToObject(object, "gps");
     bool valid = tb_core_append_gps(gps);
     cJSON_AddBoolToObject(gps, "valid", valid);
     if (!valid) { cJSON_AddStringToObject(gps, "gps_status", "NO_FIX"); cJSON_AddBoolToObject(gps, "has_fix", false); }
 }
+
+void tb_application_add_json(cJSON *object){application_json_mode(object,false);}
+void tb_application_add_json_compact(cJSON *object){application_json_mode(object,true);}

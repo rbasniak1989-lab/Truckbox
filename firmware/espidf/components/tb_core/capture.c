@@ -868,7 +868,31 @@ static void add_signal_field(cJSON *object, const char *name, bool valid, double
     else cJSON_AddNullToObject(object, name);
 }
 
-void tb_capture_add_json(cJSON *object)
+static void request_stats_locked(cJSON *requests,unsigned offset,unsigned limit)
+{
+    cJSON *stats = cJSON_AddArrayToObject(requests, "stats");
+    if(!stats)return;
+    for(unsigned i=offset;i<TBX_J1708_REQUEST_COUNT && i<offset+limit;i++){
+        const tbx_j1708_request_stat_t *stat = &s.requests.pids[i];
+        cJSON *row = cJSON_CreateObject();
+        if(!row)break;
+        cJSON_AddNumberToObject(row, "pid", stat->pid);
+        cJSON_AddBoolToObject(row, "enabled", stat->enabled);
+        cJSON_AddNumberToObject(row,"target_mid",s.active.configured?s.active.config.target_mid[i]:tbx_j1708_policy()[i].mid);
+        cJSON_AddNumberToObject(row, "sent", stat->sent);
+        cJSON_AddNumberToObject(row, "response_candidates", stat->answered);
+        cJSON_AddNumberToObject(row, "timeouts", stat->timed_out);
+        cJSON_AddNumberToObject(row,"interval_ms",stat->period_ms);
+        uint32_t now_ms=(uint32_t)((uint64_t)esp_timer_get_time()/1000u);
+        if(stat->sent)cJSON_AddNumberToObject(row,"last_sent_age_ms",(uint32_t)(now_ms-stat->last_sent_ms));else cJSON_AddNullToObject(row,"last_sent_age_ms");
+        if(stat->answered)cJSON_AddNumberToObject(row,"last_response_age_ms",(uint32_t)(now_ms-stat->last_answered_ms));else cJSON_AddNullToObject(row,"last_response_age_ms");
+        cJSON_AddNumberToObject(row,"next_due_uptime_ms",stat->next_due_ms);
+        if(cJSON_GetArraySize(row)!=10){cJSON_Delete(row);break;}
+        if(!tb_json_add_array(stats,row))break;
+    }
+}
+
+static void capture_json_mode(cJSON *object,bool compact)
 {
     uint64_t now = esp_timer_get_time() / 1000;
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return;
@@ -918,12 +942,11 @@ void tb_capture_add_json(cJSON *object)
     if (observed) {
         for (unsigned mid = 128; mid <= 255; ++mid)
             if (s.observed_mid[mid >> 3] & (1u << (mid & 7u)))
-                cJSON_AddItemToArray(observed, cJSON_CreateNumber(mid));
+                if(!tb_json_add_array(observed,cJSON_CreateNumber(mid)))break;
     }
     if (s.j1708_at) {
         cJSON_AddNumberToObject(j1708, "last_frame_age_ms", (double)(now - s.j1708_at));
-        cJSON *last = cJSON_Parse(s.j1708_last);
-        if (last) cJSON_AddItemToObject(j1708, "last_frame", last);
+        if(!compact){cJSON *last=cJSON_Parse(s.j1708_last);if(last)tb_json_add_object(j1708,"last_frame",last);}
     }
     cJSON *requests = cJSON_AddObjectToObject(j1708, "requests");
     cJSON_AddBoolToObject(requests, "armed", s.requests.armed);
@@ -985,24 +1008,15 @@ void tb_capture_add_json(cJSON *object)
     cJSON_AddNumberToObject(requests, "responses", s.requests.answered_total);
     cJSON_AddNumberToObject(requests, "timeouts", s.requests.timeout_total);
     cJSON_AddNumberToObject(requests, "tx_errors", s.requests.tx_failure_total);
-    cJSON *pids = cJSON_AddArrayToObject(requests, "pids");
-    for (unsigned i = 0; i < TBX_J1708_REQUEST_COUNT; ++i) cJSON_AddItemToArray(pids, cJSON_CreateNumber(s.requests.pids[i].pid));
-    cJSON *stats = cJSON_AddArrayToObject(requests, "stats");
-    for (unsigned i = 0; i < TBX_J1708_REQUEST_COUNT; ++i) {
-        const tbx_j1708_request_stat_t *stat = &s.requests.pids[i];
-        cJSON *row = cJSON_CreateObject();
-        cJSON_AddNumberToObject(row, "pid", stat->pid);
-        cJSON_AddBoolToObject(row, "enabled", stat->enabled);
-        cJSON_AddNumberToObject(row,"target_mid",s.active.configured?s.active.config.target_mid[i]:tbx_j1708_policy()[i].mid);
-        cJSON_AddNumberToObject(row, "sent", stat->sent);
-        cJSON_AddNumberToObject(row, "response_candidates", stat->answered);
-        cJSON_AddNumberToObject(row, "timeouts", stat->timed_out);
-        cJSON_AddNumberToObject(row,"interval_ms",stat->period_ms);
-        uint32_t now_ms=(uint32_t)((uint64_t)esp_timer_get_time()/1000u);
-        if(stat->sent)cJSON_AddNumberToObject(row,"last_sent_age_ms",(uint32_t)(now_ms-stat->last_sent_ms));else cJSON_AddNullToObject(row,"last_sent_age_ms");
-        if(stat->answered)cJSON_AddNumberToObject(row,"last_response_age_ms",(uint32_t)(now_ms-stat->last_answered_ms));else cJSON_AddNullToObject(row,"last_response_age_ms");
-        cJSON_AddNumberToObject(row,"next_due_uptime_ms",stat->next_due_ms);
-        cJSON_AddItemToArray(stats, row);
+    if(!compact){
+        cJSON *pids=cJSON_AddArrayToObject(requests,"pids");
+        if(pids)for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
+            if(!tb_json_add_array(pids,cJSON_CreateNumber(s.requests.pids[i].pid)))break;
+    }
+    if(!compact){
+        request_stats_locked(requests,0,TBX_J1708_REQUEST_COUNT);
+        if(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(requests,"stats"))!=TBX_J1708_REQUEST_COUNT)
+            cJSON_AddBoolToObject(requests,"diagnostic_partial",true);
     }
     if (s.active.configured) cJSON_AddNumberToObject(requests, "local_mid", s.active.config.local_mid);
     cJSON_AddNumberToObject(requests, "idle_guard_us", s.active.idle_guard_us);
@@ -1012,6 +1026,25 @@ void tb_capture_add_json(cJSON *object)
     cJSON_AddNumberToObject(object, "operational_interval_s",
         tb_profile_raw(tb_config()->full_decode_enabled) ? 1 : TB_LEGACY_OPERATIONAL_SECONDS);
     tb_telemetry_add_json(object);
+}
+
+void tb_capture_add_json(cJSON *object){capture_json_mode(object,false);}
+void tb_capture_add_json_compact(cJSON *object){capture_json_mode(object,true);}
+cJSON *tb_capture_request_stats_json(unsigned offset,unsigned limit)
+{
+    cJSON *o=cJSON_CreateObject();if(!o)return NULL;
+    if(!s.lock || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE){cJSON_AddBoolToObject(o,"ok",false);cJSON_AddStringToObject(o,"error","capture_busy");return o;}
+    if(offset>TBX_J1708_REQUEST_COUNT)offset=TBX_J1708_REQUEST_COUNT;
+    if(!limit || limit>8)limit=8;
+    bool valid=cJSON_AddBoolToObject(o,"ok",true) && cJSON_AddNumberToObject(o,"offset",offset) &&
+        cJSON_AddNumberToObject(o,"total",TBX_J1708_REQUEST_COUNT);
+    if(valid)request_stats_locked(o,offset,limit);
+    unsigned count=(unsigned)cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(o,"stats"));
+    unsigned expected=TBX_J1708_REQUEST_COUNT-offset;if(expected>limit)expected=limit;
+    valid=valid && cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(o,"stats")) && count==expected && cJSON_AddNumberToObject(o,"count",count);
+    xSemaphoreGive(s.lock);
+    if(!valid){cJSON_Delete(o);return NULL;}
+    return o;
 }
 
 bool tb_capture_tx_ready(void) { return s.j1708_ready && s.edge_ready; }

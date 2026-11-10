@@ -5,6 +5,7 @@
 #include "tests/telemetry_host_stubs.h"
 #endif
 #include "protocols.h"
+#include "../tb_base/include/tb_json.h"
 #include "telemetry_profile.h"
 #include "tb_task_budget.h"
 #include "tbx_j1939.h"
@@ -669,45 +670,34 @@ static bool j1587_record_fits(cJSON *record)
     return record && cJSON_PrintPreallocated(record, json, sizeof(json), false);
 }
 
-static bool j1587_add_observation(cJSON *record, uint16_t pid, const latest_t *latest,
-                                  uint64_t now_us, bool preserve_raw)
+static bool j1587_add_observation(cJSON *record,uint16_t pid,const latest_t *latest,uint64_t now_us,bool preserve_raw)
 {
-    const bool numeric = latest->has_value && isfinite(latest->value);
-    const char *field = numeric ? "j1587_sensors" : "j1587_raw";
-    cJSON *bucket = cJSON_GetObjectItemCaseSensitive(record, field);
-    if (!bucket) bucket = cJSON_AddObjectToObject(record, field);
-    if (!bucket) return false;
-    char key[6];
-    snprintf(key, sizeof(key), "%u", (unsigned)pid);
-    cJSON *entry = cJSON_AddArrayToObject(bucket, key);
-    if (!entry) return false;
-    char bytes[sizeof(latest->raw) * 2u + 1u];
-    if (numeric) cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest->value));
-    else {
-        hex(bytes, latest->raw, latest->raw_length);
-        cJSON_AddItemToArray(entry, cJSON_CreateString(bytes));
-    }
-    /* The receiving Cloud can calculate the original observation time. */
-    cJSON_AddItemToArray(entry, cJSON_CreateNumber(
-        (double)((now_us - latest->captured_us) / UINT64_C(1000000))));
-    cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest->address));
-    if (numeric && preserve_raw) {
-        hex(bytes, latest->raw, latest->raw_length);
-        cJSON_AddItemToArray(entry, cJSON_CreateString(bytes));
-    }
+    const bool numeric=latest->has_value && isfinite(latest->value);
+    const char *field=numeric?"j1587_sensors":"j1587_raw";
+    cJSON *bucket=cJSON_GetObjectItemCaseSensitive(record,field);
+    if(!bucket)bucket=cJSON_AddObjectToObject(record,field);
+    if(!bucket)return false;
+    char key[6],bytes[sizeof(latest->raw)*2u+1u];snprintf(key,sizeof(key),"%u",(unsigned)pid);
+    cJSON *entry=cJSON_CreateArray();if(!entry)return false;
+    if(!numeric || preserve_raw)hex(bytes,latest->raw,latest->raw_length);
+    bool ok=tb_json_add_array(entry,numeric?cJSON_CreateNumber(latest->value):cJSON_CreateString(bytes));
+    ok=ok && tb_json_add_array(entry,cJSON_CreateNumber((double)((now_us-latest->captured_us)/UINT64_C(1000000))));
+    ok=ok && tb_json_add_array(entry,cJSON_CreateNumber(latest->address));
+    if(numeric && preserve_raw)ok=ok && tb_json_add_array(entry,cJSON_CreateString(bytes));
+    if(!ok){cJSON_Delete(entry);return false;} /* Never shift [value,age,MID] on allocation failure. */
+    if(!tb_json_add_object(bucket,key,entry))return false;
     cJSON *units=cJSON_GetObjectItemCaseSensitive(record,"j1587_units");
     if(!units)units=cJSON_AddObjectToObject(record,"j1587_units");
-    cJSON_AddStringToObject(units,key,latest->unit?latest->unit:"raw");
-    if(!cJSON_GetObjectItemCaseSensitive(record,"quality"))cJSON_AddStringToObject(record,"quality","EM_VALIDACAO");
+    ok=units && cJSON_AddStringToObject(units,key,latest->unit?latest->unit:"raw");
+    if(!cJSON_GetObjectItemCaseSensitive(record,"quality"))ok=ok && cJSON_AddStringToObject(record,"quality","EM_VALIDACAO");
     cJSON *quality=cJSON_GetObjectItemCaseSensitive(record,"j1587_quality");
     if(latest->quality && strcmp(latest->quality,"EM_VALIDACAO")){
         if(!quality)quality=cJSON_AddObjectToObject(record,"j1587_quality");
-        cJSON_AddStringToObject(quality,key,latest->quality);
+        ok=ok && quality && cJSON_AddStringToObject(quality,key,latest->quality);
     }
-    if (!j1587_record_fits(record)) {
-        cJSON_DeleteItemFromObjectCaseSensitive(bucket, key);
-        cJSON_DeleteItemFromObjectCaseSensitive(units,key);cJSON_DeleteItemFromObjectCaseSensitive(quality,key);
-        if (!bucket->child) cJSON_DeleteItemFromObjectCaseSensitive(record, field);
+    if(!ok || !j1587_record_fits(record)){
+        cJSON_DeleteItemFromObjectCaseSensitive(bucket,key);cJSON_DeleteItemFromObjectCaseSensitive(units,key);cJSON_DeleteItemFromObjectCaseSensitive(quality,key);
+        if(!bucket->child)cJSON_DeleteItemFromObjectCaseSensitive(record,field);
         return false;
     }
     return true;
@@ -828,17 +818,15 @@ void tb_telemetry_append_j1587_health(cJSON *health)
         if (!target) continue;
         char key[6], bytes[sizeof(latest.raw)*2u+1u];
         snprintf(key, sizeof(key), "%u", (unsigned)pid);
-        cJSON *entry = cJSON_AddArrayToObject(target, key);
-        if (!entry) continue;
-        if (numeric) cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest.value));
-        else {
-            hex(bytes, latest.raw, latest.raw_length);
-            cJSON_AddItemToArray(entry, cJSON_CreateString(bytes));
-        }
-        cJSON_AddItemToArray(entry, cJSON_CreateNumber(
-            (double)((now_us-latest.captured_us)/UINT64_C(1000000))));
-        cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest.address));
-        if (!numeric) cJSON_AddItemToArray(entry, cJSON_CreateString("EM_VALIDACAO"));
+        cJSON *entry=cJSON_CreateArray();
+        if(!entry)continue;
+        if(!numeric)hex(bytes,latest.raw,latest.raw_length);
+        bool complete=tb_json_add_array(entry,numeric?cJSON_CreateNumber(latest.value):cJSON_CreateString(bytes));
+        complete=complete && tb_json_add_array(entry,cJSON_CreateNumber((double)((now_us-latest.captured_us)/UINT64_C(1000000))));
+        complete=complete && tb_json_add_array(entry,cJSON_CreateNumber(latest.address));
+        if(!numeric)complete=complete && tb_json_add_array(entry,cJSON_CreateString("EM_VALIDACAO"));
+        if(!complete){cJSON_Delete(entry);continue;}
+        if(!tb_json_add_object(target,key,entry))continue;
         if (!j1587_record_fits(health)) {
             cJSON_DeleteItemFromObjectCaseSensitive(target, key);
             if (!target->child) cJSON_DeleteItemFromObjectCaseSensitive(metrics, field);
@@ -879,7 +867,7 @@ cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit)
     for (size_t i = 0; i < copied; ++i) {
         const latest_t *reading = &snapshot[i];
         cJSON *entry = cJSON_CreateObject();
-        cJSON_AddItemToArray(readings, entry);
+        if(!tb_json_add_array(readings,entry))break;
         cJSON_AddStringToObject(entry, "source", reading->can ? "j1939" : "j1587");
         cJSON_AddNumberToObject(entry, reading->can ? "sid" : "pid", reading->signal);
         cJSON_AddNumberToObject(entry, reading->can ? "sa" : "mid", reading->address);

@@ -1,0 +1,132 @@
+/* Production capture diagnostics and bridge preparation, synthetic bus state.
+ * Only RTOS/config/clock and telemetry module boundaries are stubs. */
+#include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include "tb_json.h"
+#include "../../tb_base/tests/json_heap.h"
+#include "tbx_j1708_active.h"
+#include "tbx_j1708_policy.h"
+#include "tbx_trip.h"
+#include "tbx_fuel.h"
+#include "accounting_json.h"
+#include "telemetry_profile.h"
+#define CONFIG_TB_J1708_ONLY 1
+#define TB_RECORD_MAX 768
+#define pdMS_TO_TICKS(ms) (ms)
+#define pdTRUE 1
+#define MAX_SAFE_SEQUENCE UINT64_C(9007199254740991)
+#define BRIDGE_BATCH_LIMIT 8u
+#define BRIDGE_BATCH_BYTES 8192u
+typedef void *SemaphoreHandle_t;
+typedef void *QueueHandle_t;
+typedef unsigned nvs_handle_t;
+static bool mutex_available=true;
+static int64_t esp_timer_get_time(void){return 600000000;}
+static bool xSemaphoreTake(void *lock,unsigned timeout){(void)lock;(void)timeout;return mutex_available;}
+static void xSemaphoreGive(void *lock){(void)lock;}
+static uint32_t tb_boot_id(void){return 42;}
+static const struct {bool capture_enabled,can_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated,full_decode_enabled;uint32_t can_baud;} config={true,false,true,false,false,false,250000};
+#define tb_config() (&config)
+static void tb_telemetry_add_json(cJSON *o)
+{
+    cJSON *v=cJSON_AddObjectToObject(o,"telemetry_v2");
+    cJSON_AddBoolToObject(v,"decoding_enabled",true);
+    cJSON_AddNumberToObject(v,"rx_queue_dropped",0);
+}
+#include "capture_diagnostic.h"
+#include "bridge_prepare.h"
+typedef struct{char bytes[24000];size_t used;}output_t;
+static bool output(const char *bytes,size_t n,void *context)
+{
+    output_t *out=context;assert(n<sizeof(out->bytes)-out->used);
+    memcpy(out->bytes+out->used,bytes,n);out->used+=n;out->bytes[out->used]=0;return true;
+}
+static void setup_capture(void)
+{
+    memset(&s,0,sizeof(s));s.lock=(void *)1;s.j1708_ready=s.edge_ready=true;
+    tbx_j1708_request_init(&s.requests);tbx_j1708_active_init(&s.active,&s.requests,NULL,NULL);
+    s.trip.quality="ESTIMADO_VELOCIDADE_J1587";s.fuel_account.quality="INTEGRADO_VAZAO_J1587_EM_VALIDACAO";
+    s.speed_at=s.rpm_at=s.total_at=s.j1708_at=600000;s.rpm=840;s.j1708_frames=37525;s.frames_last_minute=3900;
+    s.observed_mid[128>>3]|=1;s.observed_mid[130>>3]|=1<<(130&7);
+    snprintf(s.j1708_last,sizeof(s.j1708_last),"{\"source\":\"j1708\",\"mid\":128,\"raw\":\"80BE401A68\",\"checksum_valid\":true,\"parameters\":[{\"pid\":190,\"data\":\"401A\"}]}");
+}
+static cJSON *field(cJSON *o,const char *key){cJSON *v=cJSON_GetObjectItemCaseSensitive(o,key);assert(v);return v;}
+static size_t capture_allocation_calls(bool compact)
+{
+    heap_reset();cJSON *o=cJSON_CreateObject();
+    if(compact)tb_capture_add_json_compact(o);else tb_capture_add_json(o);
+    size_t calls=heap_calls;cJSON_Delete(o);assert(!heap_used);return calls;
+}
+static void fault_every_allocation(void)
+{
+    for(unsigned compact=0;compact<2;compact++){
+        size_t total=capture_allocation_calls(compact);
+        for(size_t fail=2;fail<=total;fail++){
+            heap_reset();cJSON *o=cJSON_CreateObject();assert(o);heap_fail_call=fail;
+            if(compact)tb_capture_add_json_compact(o);else tb_capture_add_json(o);
+            cJSON_Delete(o);assert(!heap_used);
+        }
+        printf("Production capture %s: %zu individual allocation failures leave no orphan nodes\n",compact?"compact":"full",total-1);
+    }
+    heap_reset();cJSON *o=tb_capture_request_stats_json(0,8);size_t total=heap_calls;cJSON_Delete(o);assert(!heap_used);
+    for(size_t fail=1;fail<=total;fail++){
+        heap_reset();heap_fail_call=fail;o=tb_capture_request_stats_json(0,8);cJSON_Delete(o);assert(!heap_used);
+    }
+}
+static void compact_and_pagination(void)
+{
+    heap_reset();cJSON *full=cJSON_CreateObject();tb_capture_add_json(full);
+    size_t full_bytes=heap_used;
+    cJSON *requests=field(field(full,"j1708"),"requests");assert(cJSON_GetArraySize(field(requests,"stats"))==17);
+    char *expected=cJSON_PrintUnformatted(full);assert(expected);
+    size_t normal_peak=heap_peak;cJSON_free(expected);
+    /* Reproduce pressure in the original state print; new path needs no spare cJSON buffer. */
+    heap_budget=heap_used+256;assert(!cJSON_PrintUnformatted(full));size_t calls=heap_calls;
+    output_t encoded={0};assert(tb_json_write_owned(full,output,&encoded));assert(calls==heap_calls && !heap_used);
+    heap_reset();cJSON *small=cJSON_CreateObject();tb_capture_add_json_compact(small);
+    size_t compact_bytes=heap_used;requests=field(field(small,"j1708"),"requests");
+    assert(!cJSON_GetObjectItemCaseSensitive(requests,"stats") && !cJSON_GetObjectItemCaseSensitive(requests,"pids"));
+    assert(cJSON_IsFalse(field(requests,"physical_validated")) && cJSON_IsFalse(field(requests,"work_mode")));
+    assert(!strcmp(field(small,"capture_profile")->valuestring,"J1708_ONLY"));
+    assert(compact_bytes<full_bytes*2/3);cJSON_Delete(small);assert(!heap_used);
+    unsigned seen=0;
+    for(unsigned offset=0;offset<17;offset+=8){
+        heap_reset();cJSON *page=tb_capture_request_stats_json(offset,8);assert(cJSON_IsTrue(field(page,"ok")));
+        cJSON *rows=field(page,"stats");assert(cJSON_GetArraySize(rows)<=8);
+        for(int i=0;i<cJSON_GetArraySize(rows);i++){
+            cJSON *row=cJSON_GetArrayItem(rows,i);assert(field(row,"pid")->valueint==s.requests.pids[seen].pid);
+            assert(field(row,"interval_ms")->valuedouble==s.requests.pids[seen].period_ms);seen++;
+        }
+        assert(heap_peak<full_bytes);cJSON_Delete(page);assert(!heap_used);
+    }
+    assert(seen==17);
+    heap_reset();cJSON *empty=tb_capture_request_stats_json(UINT32_MAX,UINT32_MAX);assert(field(empty,"count")->valueint==0);cJSON_Delete(empty);
+    mutex_available=false;empty=tb_capture_request_stats_json(0,8);assert(cJSON_IsFalse(field(empty,"ok")));cJSON_Delete(empty);mutex_available=true;assert(!heap_used);
+    printf("Production diagnostics native cJSON: full tree %zu bytes; old print peak %zu; compact tree %zu (%.1f%% smaller); 17 stats fetched in pages <=8\n",full_bytes,normal_peak,compact_bytes,100.0*(full_bytes-compact_bytes)/full_bytes);
+}
+static cJSON *batch(void)
+{
+    cJSON *o=cJSON_CreateObject();assert(cJSON_AddBoolToObject(o,"ok",true));assert(cJSON_AddNumberToObject(o,"count",8));
+    cJSON *samples=cJSON_AddArrayToObject(o,"samples");assert(samples);
+    for(unsigned i=0;i<8;i++){
+        cJSON *row=cJSON_CreateObject();assert(cJSON_AddNumberToObject(row,"seq",i+1));
+        assert(cJSON_AddStringToObject(row,"sample_kind","OPERATIONAL"));assert(cJSON_AddNumberToObject(row,"rpm",840));assert(tb_json_add_array(samples,row));
+    }return o;
+}
+static void bridge_memory(void)
+{
+    heap_reset();cJSON *o=batch();char *expected=cJSON_PrintUnformatted(o);assert(expected);bridge_batch_t result;
+    size_t calls=heap_calls;assert(prepare_bridge_batch(o,&result));assert(heap_calls==calls+1 && result.count==8);
+    assert(!strcmp(expected,result.payload));for(unsigned i=0;i<8;i++)assert(result.sequences[i]==i+1);
+    cJSON_free(expected);cJSON_free(result.payload);assert(!heap_used);
+    o=batch();heap_fail_call=heap_calls+1;assert(!prepare_bridge_batch(o,&result));assert(!heap_used && !result.count && !result.payload);heap_fail_call=0;
+    const char *invalid[]={"null","{}","{\"ok\":true}","{\"ok\":true,\"count\":1,\"samples\":[{\"seq\":0.5}]}","{\"ok\":true,\"count\":2,\"samples\":[{\"seq\":5},{\"seq\":4}]}","{\"ok\":true,\"count\":2,\"samples\":[{\"seq\":5},{\"seq\":5}]}"};
+    for(unsigned i=0;i<sizeof(invalid)/sizeof(*invalid);i++){assert(!prepare_bridge_batch(cJSON_Parse(invalid[i]),&result));assert(!heap_used && !result.count && !result.payload);}
+    puts("Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes");
+}
+int main(void)
+{
+    setup_capture();compact_and_pagination();fault_every_allocation();bridge_memory();return 0;
+}

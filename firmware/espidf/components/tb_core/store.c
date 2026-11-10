@@ -1086,7 +1086,7 @@ cJSON *tb_store_batch(size_t limit, size_t max_bytes)
         cJSON_Delete(samples);
         return NULL;
     }
-    cJSON_AddItemToObject(result, "samples", samples);
+    if(!cJSON_AddItemToObject(result,"samples",samples)){cJSON_Delete(samples);cJSON_Delete(result);return NULL;}
     cJSON_AddStringToObject(result, "device_uid",
                            tb_config()->cloud_device_uid[0]
                                ? tb_config()->cloud_device_uid : tb_device_uid());
@@ -1366,10 +1366,12 @@ void tb_store_add_json(cJSON *object)
         return;
     }
     if (!state.mutex || xSemaphoreTake(state.mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
-        cJSON_AddBoolToObject(storage, "ready", false);
+        cJSON_AddBoolToObject(storage,"ready",state.mutex && state.ready);
+        cJSON_AddBoolToObject(storage,"busy",state.mutex!=NULL);
+        cJSON_AddStringToObject(storage,"phase",state.mutex && state.ready?"BUSY":"RECOVERY_REQUIRED");
         cJSON_AddBoolToObject(storage,"pending_known",false);
         cJSON_AddNullToObject(storage,"pending_records");
-        cJSON_AddStringToObject(storage, "error", "storage_busy_or_uninitialized");
+        cJSON_AddStringToObject(storage,"error",state.mutex?"storage_busy":"storage_uninitialized");
         return;
     }
     cJSON_AddBoolToObject(storage, "ready", state.ready);

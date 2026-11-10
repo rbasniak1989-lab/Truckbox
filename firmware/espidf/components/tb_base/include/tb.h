@@ -6,6 +6,7 @@
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include "cJSON.h"
+#include "tb_json.h"
 
 #define TB_RECORD_MAX 768
 #define TB_LINK_IP "192.168.4.2"
@@ -87,6 +88,7 @@ bool tb_web_ota_busy(void);
 /* The selected role implements these entry points. Other-role files must not be linked. */
 esp_err_t tb_application_start(void);
 void tb_application_add_json(cJSON *object);
+void tb_application_add_json_compact(cJSON *object);
 esp_err_t tb_application_register_routes(httpd_handle_t server);
 
 /* Core storage. Submit valid JSON objects, never fabricated sample values. */

@@ -977,3 +977,5 @@ esp_err_t tb_application_start(void)
         return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
+
+void tb_application_add_json_compact(cJSON *object){tb_application_add_json(object);}

@@ -1,0 +1,31 @@
+{
+  "baseline_version": "0.2.12",
+  "candidate_version": "0.2.13",
+  "baseline": {
+    ".iram0.text": 127464,
+    ".iram0.data": 8,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 59360,
+    "ram_static_bytes": 201620
+  },
+  "candidate": {
+    ".iram0.text": 127464,
+    ".iram0.data": 8,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 59360,
+    "ram_static_bytes": 201620
+  },
+  "static_saved_bytes": 0,
+  "known_dynamic_queue_and_stack_delta_bytes": 0,
+  "native_capture_fixture": {
+    "full_tree_bytes": 22811,
+    "old_print_peak_bytes": 36600,
+    "compact_tree_bytes": 6805,
+    "physical_measurement": false
+  },
+  "physical_free_heap": "NOT_MEASURED_FOR_CANDIDATE"
+}

@@ -1,3 +1,5 @@
+Core **0.2.13 — CANDIDATA**: [correção de RAM do diagnóstico e instruções](REV_B1_0.2.13_CANDIDATA.md). Base 0.2.12 preservada; somente Core, Link instalado compatível. Não instalada automaticamente.
+
 Core **0.2.12 — CANDIDATA**, baseada na 0.2.11: [guia, testes, validação física e rollback](REV_B1_0.2.12_CANDIDATA.md). Não instalada automaticamente; Link mantido.
 
 Referência histórica: [correção J1708 da 0.2.9](J1708_FIX_v0.2.9.md). Para operação atual, prevalece o guia da candidata acima.
