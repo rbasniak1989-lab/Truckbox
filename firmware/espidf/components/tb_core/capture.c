@@ -91,7 +91,7 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
     (void)unused;
     /* An authorized 17-PID test must not fill flash with request/echo logs.
      * Counters in /api/state still track each TX, RX and timeout. */
-    if (!tb_config()->full_decode_enabled &&
+    if (!tb_config()->full_decode_enabled && !s.active.config.sequential_scan &&
         (!strcmp(event, "REQUEST") || !strcmp(event, "TX_ECHO") ||
          !strcmp(event, "RESPONSE_CANDIDATE") || !strcmp(event, "TIMEOUT")))
         return;
@@ -258,8 +258,45 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
 {
     (void)unused;
     uint64_t now = value->uptime_ms;
-    if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL)
-        (void)tbx_j1708_active_note_response(&s.active, value->mid, value->pid, now * 1000);
+    if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL) {
+        const bool matched=tbx_j1708_active_note_response(&s.active,value->mid,value->pid,now*1000);
+        if (matched && s.active.config.sequential_scan) {
+            /* Persist each matching MID/PID observation — not just summary
+             * counters. This is a response CANDIDATE, never causal proof. */
+            cJSON *row=cJSON_CreateObject();
+            if(row){
+                cJSON_AddStringToObject(row,"sample_kind","J1708_REQUEST_RESULT");
+                cJSON_AddNumberToObject(row,"schema_version",2);
+                cJSON_AddNumberToObject(row,"boot_id",tb_boot_id());
+                cJSON_AddNumberToObject(row,"uptime_ms",(double)now);
+                cJSON_AddBoolToObject(row,"time_valid",false);
+                cJSON_AddStringToObject(row,"time_source","boot_monotonic");
+                cJSON_AddStringToObject(row,"classification","RESPONSE_CANDIDATE");
+                cJSON_AddNumberToObject(row,"pid",value->pid);
+                cJSON_AddNumberToObject(row,"mid",value->mid);
+                cJSON_AddNumberToObject(row,"local_mid",s.active.config.local_mid);
+                cJSON_AddStringToObject(row,"quality",tbx_j1587_observation_quality_name(value->quality));
+                if(value->name)cJSON_AddStringToObject(row,"name",value->name);
+                if(value->unit)cJSON_AddStringToObject(row,"unit",value->unit);
+                if(value->has_numeric && isfinite(value->value))
+                    cJSON_AddNumberToObject(row,"value",value->value);
+                char rawhex[43]={0};
+                const size_t rawlen=value->raw_len<=21u?value->raw_len:21u;
+                for(size_t k=0;k<rawlen;k++)snprintf(rawhex+2u*k,3u,"%02X",value->raw[k]);
+                cJSON_AddStringToObject(row,"parameter_hex",rawhex);
+                for(unsigned k=0;k<TBX_J1708_REQUEST_COUNT;k++)
+                    if(s.requests.pids[k].pid==value->pid){
+                        cJSON_AddNumberToObject(row,"target_mid",s.active.config.target_mid[k]);
+                        const uint32_t sent_ms=s.requests.pids[k].last_sent_ms;
+                        if(now>=sent_ms)cJSON_AddNumberToObject(row,"latency_ms",(double)(now-sent_ms));
+                        break;
+                    }
+                char *json=cJSON_PrintUnformatted(row);
+                if(json && strlen(json)<TB_RECORD_MAX)(void)tb_store_submit(json);
+                free(json);cJSON_Delete(row);
+            }
+        }
+    }
     if (value->quality != TBX_J1587_OBS_EM_VALIDACAO || !value->has_numeric || !isfinite(value->value)) return;
     if (value->pid == 84 && value->value > 0.1 && s.requests.armed && !s.active.work_mode)
         tbx_j1708_active_stop(&s.active, "VEHICLE_MOVEMENT_J1587");
@@ -301,16 +338,13 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
     tb_telemetry_j1708(frame, size, captured_us, oversize);
     if (oversize || size > 21) {
         ++s.j1708_oversize;
-        xSemaphoreTake(s.lock, portMAX_DELAY);
-        tbx_j1708_active_note_link_error(&s.active, "INVALID_PASSIVE_FRAME");
-        xSemaphoreGive(s.lock);
+        /* Bad PASSIVE frames must not masquerade as TX/echo failure. */
         return;
     }
     if (!tb_protocol_j1708_checksum_valid(frame, size)) {
         ++s.j1708_checksum_errors;
-        xSemaphoreTake(s.lock, portMAX_DELAY);
-        tbx_j1708_active_note_link_error(&s.active, "INVALID_PASSIVE_FRAME");
-        xSemaphoreGive(s.lock);
+        /* Keep this in the passive checksum counter, not in TX collision
+         * protection. Confirmed UART/echo failures still stop immediately. */
         return;
     }
     char record[TB_RECORD_MAX];
@@ -665,6 +699,17 @@ void tb_capture_add_json(cJSON *object)
         s.active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
         (double)(s.active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
     cJSON_AddStringToObject(requests, "block_reason", s.active.configured ? "NONE_OR_SAFETY_INTERLOCK" : "EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED");
+    cJSON_AddBoolToObject(requests,"sequential_scan",s.active.config.sequential_scan);
+    if(s.active.config.sequential_scan){
+        cJSON_AddNumberToObject(requests,"start_pid",
+            s.active.config.start_pid?s.active.config.start_pid:s.requests.pids[0].pid);
+        cJSON_AddNumberToObject(requests,"scan_total",s.active.scan_budget);
+        cJSON_AddNumberToObject(requests,"scan_sent",
+            s.requests.sent_total>=s.active.scan_sent_baseline?
+              s.requests.sent_total-s.active.scan_sent_baseline:0);
+        if(s.requests.pending<TBX_J1708_REQUEST_COUNT)
+            cJSON_AddNumberToObject(requests,"pending_pid",s.requests.pids[s.requests.pending].pid);
+    }
     cJSON_AddNumberToObject(requests, "min_spacing_ms", s.requests.min_spacing_ms);
     cJSON_AddNumberToObject(requests, "timeout_ms", s.requests.timeout_ms);
     cJSON_AddNumberToObject(requests, "sent", s.requests.sent_total);
@@ -701,9 +746,13 @@ bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     bool accepted = true;
     if (arm) {
-        bool movement = s.speed_at && (uint64_t)(esp_timer_get_time() / 1000) - s.speed_at <= 5000 && s.speed > 0.1;
+        const uint64_t now_ms=(uint64_t)(esp_timer_get_time()/1000);
+        const bool speed_fresh=s.speed_at && now_ms>=s.speed_at && now_ms-s.speed_at<=5000u;
+        const bool movement=speed_fresh && s.speed>0.1;
+        const bool parked_verified=speed_fresh && s.speed<=0.1;
         accepted = s.j1708_ready && !tb_web_ota_busy() &&
             (!movement || s.active.work_mode) &&
+            (!s.active.config.sequential_scan || parked_verified) &&
             tbx_j1708_active_arm(&s.active, authorized, stationary, esp_timer_get_time());
         s.emergency_stop = !accepted;
         if (!accepted) tbx_j1708_active_stop(&s.active, "ARM_INTERLOCK_REFUSED");
@@ -752,6 +801,20 @@ bool tb_capture_request_configure(const cJSON *config, char *error, size_t error
         snprintf(error, error_size, "local_mid explicito e topology_confirmed=true obrigatorios"); return false;
     }
     next.local_mid = local; next.inverted_de21_attested = true;
+    /* Test firmware requires parked, automatic one-by-one scan. No
+     * unattended repeating scan or TX during vehicle operation. */
+    if (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(config,"sequential_scan"))) {
+        snprintf(error,error_size,"use sequential_scan=true, parked-only");return false;
+    }
+    next.sequential_scan=true;
+    const cJSON *start=cJSON_GetObjectItemCaseSensitive(config,"start_pid");
+    if(start){
+        int pid;
+        if(!request_integer(config,"start_pid",0,255,&pid)){
+            snprintf(error,error_size,"start_pid invalido");return false;
+        }
+        next.start_pid=(uint16_t)pid;
+    }
     if (cJSON_GetObjectItemCaseSensitive(config, "priority")) {
         if (!request_integer(config, "priority", 1, 8, &priority)) {
             snprintf(error, error_size, "priority deve ser inteiro 1..8"); return false;
