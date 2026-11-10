@@ -17,6 +17,9 @@ typedef struct {
     uint8_t target_mid[TBX_J1708_REQUEST_COUNT];
     uint8_t priority; /* 1..8; priority8 is the conservative test policy. */
     bool inverted_de21_attested;
+    /* Parked-only forensic test. Zero means legacy broad-scan tests only. */
+    bool one_shot;
+    uint16_t test_pid;
 } tbx_j1708_active_config_t;
 
 typedef struct {
@@ -39,6 +42,7 @@ typedef struct {
     uint64_t now_us, last_rx_us, tx_started_us, lease_deadline_us;
     uint32_t idle_guard_us;
     uint32_t echo_ok, collisions, echo_timeouts, lease_expirations;
+    uint32_t one_shot_sent_baseline, one_shot_failed_baseline;
 } tbx_j1708_active_t;
 
 void tbx_j1708_active_init(tbx_j1708_active_t *, tbx_j1708_request_scheduler_t *,
