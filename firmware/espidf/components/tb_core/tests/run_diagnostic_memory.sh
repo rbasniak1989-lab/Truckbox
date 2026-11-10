@@ -27,6 +27,6 @@ cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined -fno-o
   -I"$test_dir" -I"$test_dir/.." -I"$work_dir" -I"$test_dir/../../tb_base/include" \
   -I"$test_dir/../../../../j1708_17pid/src" -I"$IDF_PATH/components/json/cJSON" \
   "$test_dir/test_diagnostic_memory.c" "$test_dir/../../tb_base/tb_json.c" \
-  "$test_dir/../tbx_j1708_active.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \
+  "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \
   "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work_dir/test"
 ASAN_OPTIONS=detect_leaks=1 "$work_dir/test"

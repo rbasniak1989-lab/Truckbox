@@ -23,7 +23,7 @@ static struct {tbx_j1708_active_t active;tbx_j1708_request_scheduler_t requests;
 static bool tb_core_append_gps(cJSON *o){return tb_core_append_gps_at(o,host_now_us);}
 static unsigned esp_reset_reason(void){return 1;}
 static unsigned esp_get_minimum_free_heap_size(void){return 100000;}
-static const char *tb_version(void){return "0.2.13";}
+static const char *tb_version(void){return "0.2.14";}
 
 static int simulated_gettimeofday(struct timeval *tv,void *zone)
 {
@@ -65,7 +65,7 @@ static bool send_query(uint16_t pid,void *unused)
     tx[0]=242;tx[1]=128;tx[2]=(uint8_t)pid;tx[3]=tbx_j1708_policy()[i].mid;
     tx[4]=(uint8_t)(0u-tx[0]-tx[1]-tx[2]-tx[3]);
     request_event_t event={.uptime_us=host_now_us,.tx_start_us=host_now_us,
-        .pid=pid,.local_mid=242,.target_mid=tx[3],.work=true};
+        .pid=pid,.local_mid=242,.target_mid=tx[3],.work=true,.field=true,.field_started_us=1};
     memcpy(event.frame,tx,5);strcpy(event.event,"REQUEST");strcpy(event.detail,"PID128_TARGETED_REQUEST_QUEUED");
     request_store_event(&event);return true;
 }
@@ -97,6 +97,8 @@ int main(int argc,char **argv)
     tbx_j1708_request_set_spacing(&capture_fixture.requests,1200);
     tbx_j1708_request_start_periodic(&capture_fixture.requests,1000);
     capture_fixture.active.config.local_mid=242;
+    capture_fixture.active.field.started_us=1;capture_fixture.active.field.confirmed=true;
+    capture_fixture.active.field.phase=TBX_FIELD_CONFIRMED; /* Volume after a simulated completed validation. */
     for(unsigned i=0;i<17;i++)capture_fixture.active.config.target_mid[i]=tbx_j1708_policy()[i].mid;
     unsigned catalog_size;const tbx_j1587_passive_spec_t *catalog=tbx_j1587_passive_specs(&catalog_size);
     for(unsigned sec=1;sec<=7200;sec++){

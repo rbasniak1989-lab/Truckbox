@@ -550,12 +550,22 @@ static esp_err_t requests_handler(httpd_req_t *request)
     bool stop = cJSON_IsString(action) && !strcmp(action->valuestring, "stop");
     bool arm = cJSON_IsString(action) && !strcmp(action->valuestring, "arm");
     bool enable_work = cJSON_IsString(action) && !strcmp(action->valuestring, "enable_work");
+    bool start_field=cJSON_IsString(action) && !strcmp(action->valuestring,"start_field");
+    bool confirm_field=cJSON_IsString(action) && !strcmp(action->valuestring,"confirm_field");
     bool confirm_physical=cJSON_IsString(action) && !strcmp(action->valuestring,"confirm_physical");
-    if (!stop && !arm && !enable_work && !confirm_physical) {
+    if (!stop && !arm && !enable_work && !confirm_physical && !start_field && !confirm_field) {
         cJSON_Delete(body);
-        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "action must be arm, confirm_physical, enable_work or stop");
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid J1708 action");
     }
-    if (arm) {
+    bool authorized = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "authorized"));
+    bool stationary = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "stationary"));
+    if(start_field && (!authorized || !stationary)){
+        cJSON_Delete(body);httpd_resp_set_status(request,"409 Conflict");
+        cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",false);
+        cJSON_AddStringToObject(reply,"error","field test requires explicit parked authorization");
+        return tb_http_send_json(request,reply);
+    }
+    if (arm || start_field) {
         char error[160] = {0};
         if (!tb_capture_request_configure(body, error, sizeof(error))) {
             cJSON_Delete(body);
@@ -566,18 +576,17 @@ static esp_err_t requests_handler(httpd_req_t *request)
             return tb_http_send_json(request, reply);
         }
     }
-    bool authorized = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "authorized"));
-    bool stationary = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "stationary"));
-    bool accepted = confirm_physical?tb_capture_confirm_physical(body):enable_work ? tb_capture_request_enable_work(authorized, stationary) :
+
+    bool accepted = start_field?tb_capture_field_start(authorized,stationary):confirm_field?tb_capture_field_confirm(body):confirm_physical?tb_capture_confirm_physical(body):enable_work ? tb_capture_request_enable_work(authorized, stationary) :
         tb_capture_request_control(arm, authorized, stationary);
     cJSON_Delete(body);
     cJSON *reply = cJSON_CreateObject();
     cJSON_AddBoolToObject(reply, "ok", accepted);
-    cJSON_AddBoolToObject(reply, "armed", (arm || enable_work) && accepted);
+    cJSON_AddBoolToObject(reply, "armed", (arm || enable_work || start_field) && accepted);
     cJSON_AddBoolToObject(reply,"hardware_tx_available",tb_capture_tx_ready());
     cJSON_AddStringToObject(reply,"hardware_tx_validation","EM_VALIDACAO");
-    cJSON_AddStringToObject(reply, "reason", confirm_physical?(accepted?"external_capture_attested":"external_capture_mismatch_or_trial_not_successful"):enable_work ?
-        (accepted ? "work_mode_enabled_12h" : "need_external_physical_validation_stopped_vehicle_and_authorization") :
+    cJSON_AddStringToObject(reply,"reason",start_field?(accepted?"supervised_field_started_parked_10min_lease":"field_stationary_or_configuration_interlock"):confirm_field?(accepted?"operator_confirmed_indirect_only":"field_not_satisfactory_expired_or_nonce_mismatch"):confirm_physical?(accepted?"external_capture_attested":"external_capture_mismatch_or_trial_not_successful"):enable_work ?
+        (accepted ? "work_mode_enabled_12h" : "need_external_or_supervised_validation_stopped_vehicle_and_authorization") :
         (arm ? (accepted ? "requests_armed" : "configuration_or_safety_interlock") : "operator_stop"));
     if (!accepted) httpd_resp_set_status(request, "409 Conflict");
     return tb_http_send_json(request, reply);

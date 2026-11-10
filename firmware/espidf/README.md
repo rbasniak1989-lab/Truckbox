@@ -1,3 +1,5 @@
+Core **0.2.14 — CANDIDATA**: [Validação supervisionada em campo, critérios e instruções](REV_B1_0.2.14_CANDIDATA.md). Alternativa operacional indireta ao analisador simultâneo; mantém validação externa independente e a correção de RAM. Somente Core; instalação manual.
+
 Core **0.2.13 — CANDIDATA**: [correção de RAM do diagnóstico e instruções](REV_B1_0.2.13_CANDIDATA.md). Base 0.2.12 preservada; somente Core, Link instalado compatível. Não instalada automaticamente.
 
 Core **0.2.12 — CANDIDATA**, baseada na 0.2.11: [guia, testes, validação física e rollback](REV_B1_0.2.12_CANDIDATA.md). Não instalada automaticamente; Link mantido.

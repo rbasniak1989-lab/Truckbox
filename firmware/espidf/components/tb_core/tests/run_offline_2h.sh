@@ -9,8 +9,8 @@ python3 - "$core/capture.c" "$work/offline_capture_under_test.h" <<'PY'
 from pathlib import Path
 import re,sys
 s=Path(sys.argv[1]).read_text();chunks=[]
-m=re.search(r'typedef struct \{[^}]*\} request_event_t;',s,re.S);assert m
-chunks.append(m[0])
+end=s.index('} request_event_t;')+len('} request_event_t;');start=s.rfind('typedef struct {',0,end);assert start>=0
+chunks.append(s[start:end])
 for name in ['add_sample_identity','queue_sample','request_store_event','tb_j1708_store_matched_response']:
  m=re.search(r'^static void '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
  end=s.index('{',m.start())+1;depth=1

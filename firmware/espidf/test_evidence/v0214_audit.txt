@@ -1,0 +1,1 @@
+Actual field audit: 482-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS

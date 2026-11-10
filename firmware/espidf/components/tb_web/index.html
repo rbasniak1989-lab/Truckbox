@@ -137,7 +137,7 @@
       <div class="stat"><span>Respostas candidatas</span><strong id="j1708-responses">—</strong></div>
       <div class="stat"><span>Erros / timeouts</span><strong id="j1708-errors">—</strong></div>
     </div>
-    <p class="hint">A recepção já funciona. O transmissor físico desta Rev B1 ainda não foi validado: a indicação "hardware disponível" no sistema significa apenas que a interface foi inicializada.</p>
+    <p class="hint">A recepção já funciona. A indicação "hardware disponível" significa que a interface foi inicializada. A validação externa independente comprova observações externas. A validação supervisionada em campo fornece apenas evidência operacional indireta.</p>
     <div class="grid spacer">
       <label>MID de origem do TruckBox (128 a 255)
         <input id="j1708-local-mid" type="number" inputmode="numeric" min="128" max="255" step="1" placeholder="Informe um MID comprovadamente livre">
@@ -149,7 +149,7 @@
         <small>Um MID não aparecer nesta lista não garante que esteja livre em toda a rede.</small>
       </div>
     </div>
-    <label class="spacer">PID da única requisição de validação
+    <label class="spacer">PID da única requisição para validação externa
       <select id="j1708-start-pid">
           <option value="26">26 · Ventoinha</option>
           <option value="33">33 · Cilindro da embreagem</option>
@@ -173,10 +173,19 @@
     </label>
     <label class="check spacer">
       <input type="checkbox" id="j1708-topology">
-      <span>Confirmo que a saída elétrica J1708 da Rev B1 foi verificada e que o MID informado está livre.
-        <small>Não marque apenas porque a recepção funciona. Sem verificar a saída DE21/transceiver, não é seguro iniciar a primeira transmissão na rede do caminhão.</small>
+      <span>Conferi a pinagem e a ligação DE21/transceiver conforme a Rev B1 e verifiquei que o MID informado está livre.
+        <small>A recepção não comprova a transmissão. Esta conferência da instalação não substitui comprovação elétrica externa e não autoriza contornar limitações do circuito.</small>
       </span>
     </label>
+    <div class="spacer">
+      <h3>Validação supervisionada em campo</h3>
+      <p class="hint">Alternativa quando não é possível conectar um analisador junto com o TruckBox. Com o caminhão parado, mede 30 s passivos, três rodadas dos 17 PIDs com janelas sem transmissão e 30 s finais. Leva cerca de 3 minutos, com limite de 10 minutos. O teste pode ser inconclusivo; não certifica a transmissão elétrica nem a causalidade de cada resposta.</p>
+      <label class="check"><input id="j1708-field-authorize" type="checkbox"><span>Autorizo o teste supervisionado, estou acompanhando e o caminhão permanecerá estacionado.</span></label>
+      <button id="j1708-field-start" type="button" class="primary" disabled>Iniciar validação supervisionada em campo</button>
+      <p id="j1708-field-status" class="hint" role="status">Nenhuma sessão supervisionada medida.</p>
+      <label class="check"><input id="j1708-field-ack" type="checkbox"><span>Revisei as medições e aceito que o resultado é operacional indireto, sem comprovação elétrica externa. Confirmo que o MID local está livre.</span></label>
+      <button id="j1708-field-confirm" type="button" disabled>Confirmar resultado indireto satisfatório</button>
+    </div>
     <div class="actions spacer">
       <button id="j1708-test" type="button" class="primary" disabled>Enviar uma requisição (parado)</button>
       <button id="j1708-work" type="button" disabled>Ativar durante a viagem</button>
@@ -184,13 +193,14 @@
       <button id="j1708-refresh" type="button">Atualizar contadores</button>
     </div>
     <div id="j1708-message" class="banner message" role="status" aria-live="polite"></div>
+    <h3 class="spacer">Validação externa independente</h3>
     <div class="grid spacer">
       <label>Quadro TX visto no analisador externo (hex)<input id="j1708-tx-proof" autocomplete="off" maxlength="32" placeholder="Quadro de 5 bytes, incluindo checksum"></label>
       <label>Resposta vista no analisador externo (hex)<input id="j1708-rx-proof" autocomplete="off" maxlength="64" placeholder="Quadro completo, incluindo MID e checksum"></label>
     </div>
     <label class="check spacer"><input id="j1708-external-proof" type="checkbox"><span>Conferi externamente TX, resposta, temporização e ausência de conflito. O MID local está livre.</span></label>
     <button id="j1708-confirm" type="button" disabled>Registrar validação física deste teste</button>
-    <p class="hint spacer">Confirme a validação física e ative o modo de viagem ainda parado. Treze PIDs a cada minuto, dois a cada 5 minutos e dois a cada 15 minutos, distribuídos no tempo. Intervalo mínimo de 1,2 s, timeout inicial de 450 ms, uma requisição por vez. Três falhas consecutivas interrompem TX. A autorização dura até 12 horas e termina no reinício ou OTA. A recepção passiva continua. Resposta candidata não comprova causalidade.</p>
+    <p class="hint spacer">Confirme a validação externa ou o resultado supervisionado satisfatório e autorize o modo de viagem ainda parado. Treze PIDs a cada minuto, dois a cada 5 minutos e dois a cada 15 minutos, distribuídos no tempo. Intervalo mínimo de 1,2 s, timeout inicial de 450 ms, uma requisição por vez. Três falhas consecutivas interrompem TX. A autorização dura até 12 horas e termina no reinício ou OTA. A recepção passiva continua. Resposta candidata não comprova causalidade.</p>
     <p id="j1708-block" class="hint"></p>
     <div id="j1708-cadences" class="muted spacer"></div>
 
@@ -316,8 +326,8 @@
       if(token && state.role==='core'){
         try{
           const stats=[];
-          for(let offset=0;offset<17;offset+=8){
-            const page=await request('/api/j1708/requests?offset='+offset+'&limit=8');
+          for(let offset=0;offset<17;offset+=4){
+            const page=await request('/api/j1708/requests?offset='+offset+'&limit=4');
             if(Array.isArray(page.stats))stats.push(...page.stats);
           }
           if(state.j1708 && state.j1708.requests)state.j1708.requests.stats=stats;
@@ -570,6 +580,7 @@
   function updateJ1708Panel() {
     const j1708 = lastState && lastState.j1708 || {};
     const status = j1708.requests || {};
+    const field = status.field_validation || {};
     const numbers = v => Number.isFinite(Number(v)) ? String(v) : '—';
     text('j1708-sent', numbers(status.sent));
     text('j1708-echo', numbers(status.echo_ok));
@@ -594,15 +605,20 @@
     const stopped = typeof speed === 'number' && Number.isFinite(speed) && speed <= 0.1;
     const online = role === 'core' && !!token && !!lastState &&
       j1708.ready === true && !lastState.ota_busy && !uploadBusy;
-    $('j1708-test').disabled = !online || j1708Busy || !!status.armed ||
+    $('j1708-test').disabled = !online || j1708Busy || !!status.armed || !!field.running ||
       !stopped || !selected || midInUse || presetConflict ||
       !$('j1708-topology').checked || !!status.safety_stopped;
+    $('j1708-field-start').disabled = !online || j1708Busy || !!status.armed || !!field.running || !stopped || !selected || midInUse || presetConflict || !$('j1708-topology').checked || !$('j1708-field-authorize').checked || !!status.safety_stopped;
+    $('j1708-field-confirm').disabled = !online || j1708Busy || !!status.armed || !stopped || field.phase!=='SATISFACTORY_INDIRECT' || !$('j1708-field-ack').checked || !$('j1708-topology').checked;
+    const phases={IDLE:'Nenhuma sessão medida',PASSIVE_BEFORE:'Medindo tráfego passivo anterior',QUIET_CONTROL:'Observando janela sem transmissão',REQUEST:'Aguardando eco e resposta candidata',SPACING:'Aguardando intervalo',PASSIVE_AFTER:'Medindo tráfego passivo posterior',SATISFACTORY_INDIRECT:'Resultado operacional indireto satisfatório; aguarda confirmação',INCONCLUSIVE:'Inconclusivo: coincidências com tráfego passivo',FAILED:'Teste interrompido',OPERATOR_CONFIRMED_INDIRECT:'Resultado indireto confirmado pelo operador'};
+    const reasons={MEASURING_PASSIVE_BEFORE:'Observando antes de transmitir',OPERATIONAL_INDIRECT_OPERATOR_CONFIRMATION_REQUIRED:'Confirmação do operador pendente',RESPONSES_NOT_DISTINGUISHABLE_FROM_PASSIVE:'Sem contraste suficiente com mensagens espontâneas',OPERATOR_CONFIRMED_OPERATIONAL_INDIRECT_NOT_EXTERNAL:'Aceite operacional indireto registrado',PASSIVE_BUS_SILENCE:'Sem quadros válidos há dez segundos',FIELD_AUDIT_RECORD_LOST:'Falha ao registrar evidência; repita após recuperar o armazenamento',PASSIVE_BUS_ERROR_OR_RATE_ANOMALY:'Erros ou alteração anormal do tráfego',PASSIVE_BASELINE_INSUFFICIENT_OR_NOISY:'Poucos quadros válidos ou excesso de erros na referência',PASSIVE_BEFORE_AFTER_RATE_CHANGED:'Tráfego posterior difere da referência',LOCAL_MID_CONFLICT:'MID local em conflito',FIELD_REQUIRES_FRESH_STATIONARY_SPEED:'Caminhão em movimento ou velocidade sem atualização recente',VEHICLE_MOVEMENT_J1587:'Caminhão entrou em movimento',FIELD_RESPONSE_TIMEOUT:'Sem resposta no prazo',FIELD_TX_LINK_ERROR:'Falha de eco, colisão ou erro UART',FIELD_TX_BACKEND_REJECTED:'Transmissão recusada pelo driver',FIELD_INCOMPLETE_PID_COVERAGE:'Nem todos os PIDs concluíram as três rodadas',AUTHORIZATION_LEASE_EXPIRED:'Autorização expirou',OTA_BUSY:'Atualização em andamento',OPERATOR_STOP:'Parada solicitada pelo operador'};
+    text('j1708-field-status',(phases[field.phase] || 'Nenhuma sessão medida')+(field.session_id?' · '+field.completed_trials+'/'+field.total_trials+' ensaios · '+field.contrasting_pids+' PIDs com contraste · '+(reasons[field.reason] || field.reason || ''):'')+' · Sem comprovação elétrica externa');
     $('j1708-confirm').disabled = !online || j1708Busy || !stopped || !!status.armed || !status.single_shot || !status.echo_ok || !status.responses || !!status.physical_validated || !$('j1708-external-proof').checked || !$('j1708-tx-proof').value.trim() || !$('j1708-rx-proof').value.trim();
     text('j1708-block',(status.block_reason || '')+(status.last_response_pid?' · Última resposta candidata: MID '+status.last_response_mid+', PID '+status.last_response_pid+', '+Math.floor(status.last_response_age_ms/1000)+' s atrás':''));
     const stats=Array.isArray(status.stats)?status.stats:[];
-    $('j1708-cadences').textContent=stats.map(p=>'PID '+p.pid+' / MID '+p.target_mid+': '+(p.interval_ms/60000)+' min · envios '+p.sent+' · respostas candidatas '+p.response_candidates+' · timeouts '+p.timeouts).join(' | ');
+    $('j1708-cadences').textContent=stats.map(p=>'PID '+p.pid+' / MID '+p.target_mid+': '+(p.interval_ms/60000)+' min · envios '+p.sent+' · respostas candidatas '+p.response_candidates+' · timeouts '+p.timeouts+(p.field?' · teste: antes/depois '+p.field.before+'/'+p.field.after+', controles '+p.field.control_hits+'/'+p.field.controls+', eco/respostas '+p.field.echoes+'/'+p.field.replies+', latência '+(p.field.latency_min_us===null?'—':p.field.latency_min_us/1000)+'–'+(p.field.latency_max_us===null?'—':p.field.latency_max_us/1000)+' ms':'')).join(' | ');
     $('j1708-work').disabled = !online || j1708Busy || !stopped ||
-      !status.work_evidence_ready || !status.physical_validated || !!status.work_mode || !!status.safety_stopped ||
+      !status.work_evidence_ready || !(status.physical_validated || field.confirmed) || !!status.work_mode || !!status.safety_stopped ||
       !$('j1708-topology').checked;
     // Emergency stop stays clickable even if another request is pending.
     $('j1708-stop').disabled = role !== 'core' || !token || uploadBusy;
@@ -613,13 +629,13 @@
     if (!token || role !== 'core' || uploadBusy || (!lastState && action !== 'stop')) return;
     if (action !== 'stop' && j1708Busy) return;
     const payload = {action};
-    if (action === 'arm') {
+    if (action === 'arm' || action === 'start_field') {
       updateJ1708Panel();
-      if ($('j1708-test').disabled) {
+      if ($(action==='arm'?'j1708-test':'j1708-field-start').disabled) {
         message('j1708-message','Confirme o MID livre, a verificação elétrica e a velocidade zero antes do teste.','warning');
         return;
       }
-      if (!confirm('Enviar UMA requisição do PID '+$('j1708-start-pid').value+' com o caminhão parado? O analisador externo deve estar capturando a rede.')) return;
+      if (!confirm(action==='start_field'?'Autorizar três rodadas dos 17 PIDs com caminhão estacionado e acompanhamento? O resultado será indireto e pode ser inconclusivo.':'Enviar UMA requisição do PID '+$('j1708-start-pid').value+' com o caminhão parado? O analisador externo deve estar capturando a rede.')) return;
       payload.authorized = true;
       payload.stationary = true;
       payload.topology_confirmed = true;
@@ -628,6 +644,9 @@
       payload.preset = 'fh2013_capture_20261029';
       payload.sequential_scan = true;
       payload.start_pid = Number($('j1708-start-pid').value);
+    } else if(action==='confirm_field'){
+      if($('j1708-field-confirm').disabled)return;
+      Object.assign(payload,{authorized:true,stationary:true,indirect_validation_acknowledged:true,local_mid_free_verified:true,session_id:lastState.j1708.requests.field_validation.session_id});
     } else if (action === 'confirm_physical') {
       if ($('j1708-confirm').disabled) return;
       Object.assign(payload,{stationary:true, external_capture_verified:true,local_mid_free_verified:true,trial_id:lastState.j1708.requests.trial_id,tx_observed_hex:$('j1708-tx-proof').value,response_observed_hex:$('j1708-rx-proof').value});
@@ -644,7 +663,7 @@
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       }, 8000);
-      message('j1708-message', action === 'arm' ?
+      message('j1708-message', action==='start_field'?'Validação supervisionada iniciada. Mantenha o caminhão estacionado até o resultado.':action==='confirm_field'?'Resultado operacional indireto confirmado; sem comprovação elétrica externa. Autorize o modo de viagem ainda parado.':action === 'arm' ?
         'Uma requisição autorizada. Confira TX e resposta na captura externa e registre a validação.' :
         action === 'confirm_physical' ? 'Validação externa deste teste registrada. O modo de viagem pode ser autorizado ainda parado.' :
         action === 'enable_work' ?
@@ -660,6 +679,9 @@
     }
   }
   ['j1708-tx-proof','j1708-rx-proof','j1708-external-proof'].forEach(id=>$(id).addEventListener('input',updateJ1708Panel));
+  ['j1708-field-authorize','j1708-field-ack'].forEach(id=>$(id).addEventListener('change',updateJ1708Panel));
+  $('j1708-field-start').addEventListener('click',()=>j1708Command('start_field'));
+  $('j1708-field-confirm').addEventListener('click',()=>j1708Command('confirm_field'));
   $('j1708-confirm').addEventListener('click',()=>j1708Command('confirm_physical'));
   $('j1708-local-mid').addEventListener('input', updateJ1708Panel);
   $('j1708-start-pid').addEventListener('change', updateJ1708Panel);
