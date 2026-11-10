@@ -1,0 +1,24 @@
+{
+  "version": "0.2.14",
+  "state": "CANDIDATA_PARA_REVISAO",
+  "role": "core",
+  "source_commit": "d7957a2b9cc4bc3ba9408579a805a0425d6064ce",
+  "base_commit": "34f3c87536f9e10fa4608b3036036dd22511ccb2",
+  "automatic_installation": false,
+  "indirect_field_validation": "REQUIRES_NEW_PARKED_SESSION_AND_OPERATOR_CONFIRMATION",
+  "external_electrical_proof": "NOT_PROVIDED_BY_FIELD_PATH",
+  "files": {
+    "Truckbox_Core_B1_0.2.14_CANDIDATA.zip": {
+      "bytes": 7661484,
+      "sha256": "24a84cff802d9bf41aef2a278faec5f5f7b0e1dd0d8114bf86190635c9632e59"
+    },
+    "truckbox_core_0.2.14_ota.bin": {
+      "bytes": 1489872,
+      "sha256": "03c50991a48854254ef6d31a71fce8ba7895467913ad9bf5dbfae45893f9ca72"
+    },
+    "truckbox_firmware_source.zip": {
+      "bytes": 573976,
+      "sha256": "974e60561dc4a4a3a486c7bd4bc8cd46f663927be4def6ab85699e876b49fe89"
+    }
+  }
+}
