@@ -18,5 +18,8 @@ void tb_telemetry_add_json(cJSON *object);
  * Pagination bounds both HTTP heap use and time inside the snapshot lock. */
 cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit);
 
-/* Add provisional J1587 snapshots to the existing minute HEALTH record. */
+/* Provisional passive J1587 signals, never trigger an active J1708 request.
+ * Both routines respect TB_RECORD_MAX and return only observed values. */
+bool tb_telemetry_append_j1587_operational(cJSON *sample);
+size_t tb_telemetry_append_j1587_fast(cJSON *fast, size_t *cursor);
 void tb_telemetry_append_j1587_health(cJSON *health);
