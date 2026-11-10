@@ -91,9 +91,14 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
     (void)unused;
     /* An authorized 17-PID test must not fill flash with request/echo logs.
      * Counters in /api/state still track each TX, RX and timeout. */
-    if (!tb_config()->full_decode_enabled && !s.active.config.sequential_scan &&
-        (!strcmp(event, "REQUEST") || !strcmp(event, "TX_ECHO") ||
-         !strcmp(event, "RESPONSE_CANDIDATE") || !strcmp(event, "TIMEOUT")))
+    /* REQUEST is emitted while the 5-byte UART TX is still in flight.
+     * Do not fsync to flash under the RX/TX mutex during that deadline:
+     * persistent TX_ECHO after the bytes are received is stronger evidence
+     * and cannot falsely delay echo validation past 20ms. */
+    if ((!strcmp(event,"REQUEST") && !tb_config()->full_decode_enabled) ||
+        (!tb_config()->full_decode_enabled && !s.active.config.sequential_scan &&
+         (!strcmp(event,"TX_ECHO") || !strcmp(event,"RESPONSE_CANDIDATE") ||
+          !strcmp(event,"TIMEOUT"))))
         return;
     cJSON *row = cJSON_CreateObject();
     if (!row) return;
