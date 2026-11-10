@@ -1,0 +1,52 @@
+name: TruckBox CORE 0.2.10 reboot diagnostics and J1708 flash rate
+on:
+  push:
+    branches:
+      - fix/revb1-v0210-boot-health-j1708-flash
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/core-v0210-boot-cloud-j1708-flash.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-ota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout revision
+        uses: actions/checkout@v4
+      - name: Build Core and run complete regression suite
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+      - name: Validate OTA platform, version, size and role
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct
+          data=Path('firmware/espidf/build-core/truckbox_core.bin').read_bytes()
+          assert 512<len(data)<0x300000, f'OTA too big: {len(data)}'
+          assert data[0]==0xe9 and (data[3]>>4)==3
+          assert struct.unpack_from('<H',data,12)[0]==13
+          assert struct.unpack_from('<I',data,32)[0]==0xABCD5432
+          text=lambda a,b:data[a:b].split(b'\x00',1)[0].decode('ascii')
+          assert text(48,80)=='0.2.10'
+          assert text(80,112)=='truckbox_core'
+          assert text(144,176)=='v5.5.2'
+          print('CORE 0.2.10 bytes',len(data),'sha256',hashlib.sha256(data).hexdigest())
+          PY
+      - name: Store OTA candidate (not installed automatically)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-0.2.10-BOOT-DIAGNOSTIC-J1708-LOW-FLASH-TEST
+          path: firmware/espidf/build-core/truckbox_core.bin
+          if-no-files-found: error
+          retention-days: 30
