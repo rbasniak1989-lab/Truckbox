@@ -781,6 +781,7 @@ void tb_telemetry_append_j1587_health(cJSON *health)
         cJSON_AddItemToArray(entry, cJSON_CreateNumber(
             (double)((now_us-latest.captured_us)/UINT64_C(1000000))));
         cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest.address));
+        if (!numeric) cJSON_AddItemToArray(entry, cJSON_CreateString("EM_VALIDACAO"));
         if (!j1587_record_fits(health)) {
             cJSON_DeleteItemFromObjectCaseSensitive(target, key);
             if (!target->child) cJSON_DeleteItemFromObjectCaseSensitive(metrics, field);
