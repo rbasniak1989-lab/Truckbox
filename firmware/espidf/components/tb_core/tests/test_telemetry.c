@@ -2,6 +2,7 @@
 #include "../telemetry.c"
 #include <assert.h>
 #include <stdio.h>
+#include "../../tb_base/tests/json_heap.h"
 
 static cJSON *record(unsigned i)
 {
@@ -564,6 +565,49 @@ static void test_j1587_fast_dual_lane_and_boundaries(void)
     cJSON_Delete(stale);
 }
 
+
+static void test_compact_sensor_allocation_failures_are_atomic(void)
+{
+    latest_t latest={.has_value=true,.value=90.25,.captured_us=3000000,
+        .address=130,.unit="kPa",.quality="TEST_FIXTURE",.raw={42},.raw_length=1};
+    heap_reset();cJSON *o=cJSON_CreateObject();
+    assert(j1587_add_observation(o,37,&latest,5000000,true));
+    size_t calls=heap_calls;cJSON_Delete(o);assert(!heap_used);
+    for(size_t fail=2;fail<=calls;fail++){
+        heap_reset();o=cJSON_CreateObject();heap_fail_call=fail;
+        bool ok=j1587_add_observation(o,37,&latest,5000000,true);
+        cJSON *bucket=cJSON_GetObjectItemCaseSensitive(o,"j1587_sensors");
+        cJSON *entry=cJSON_GetObjectItemCaseSensitive(bucket,"37");
+        if(ok){
+            assert(cJSON_GetArraySize(entry)==4);
+            assert(cJSON_GetArrayItem(entry,0)->valuedouble==90.25);
+            assert(cJSON_GetArrayItem(entry,1)->valuedouble==2);
+            assert(cJSON_GetArrayItem(entry,2)->valueint==130);
+            assert(!strcmp(cJSON_GetArrayItem(entry,3)->valuestring,"2a"));
+        }else assert(!entry);
+        cJSON_Delete(o);assert(!heap_used);
+    }
+    heap_reset();s.latest_count=0;memset(s.latest,0,sizeof(s.latest));host_now_us=5000000;
+    latest.used=true;latest.can=false;latest.signal=106;latest.component_index=UINT8_MAX;update_latest(&latest);
+    o=new_health_fixture();tb_telemetry_append_j1587_health(o);calls=heap_calls;cJSON_Delete(o);assert(!heap_used);
+    /* HEALTH has a separate legacy tuple layout; it must also remain atomic. */
+    for(size_t fail=2;fail<=calls;fail++){
+        heap_reset();o=new_health_fixture();heap_fail_call=heap_calls+fail;
+        tb_telemetry_append_j1587_health(o);
+        cJSON *metrics=cJSON_GetObjectItemCaseSensitive(o,"metrics");
+        cJSON *entry=cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(metrics,"j1587_sensors"),"106");
+        if(entry){
+            assert(cJSON_GetArraySize(entry)==3);
+            assert(cJSON_GetArrayItem(entry,0)->valuedouble==90.25);
+            assert(cJSON_GetArrayItem(entry,1)->valueint==2);
+            assert(cJSON_GetArrayItem(entry,2)->valueint==130);
+        }
+        cJSON_Delete(o);assert(!heap_used);
+    }
+    heap_reset();cJSON_InitHooks(NULL);
+    puts("J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks");
+}
+
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -574,6 +618,7 @@ int main(void)
     test_legacy_decodes_without_persistent_raw();
     test_compact_j1587_health_from_cache();
     test_j1587_fast_dual_lane_and_boundaries();
+    test_compact_sensor_allocation_failures_are_atomic();
     vQueueDelete(s.queue);
     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;

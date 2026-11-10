@@ -41,6 +41,7 @@ static unsigned host_queue_length;
 static unsigned host_fsync_calls;
 static unsigned host_commit_calls;
 static bool host_allow_compression=true;
+static bool host_mutex_busy;
 static bool host_fail_fsync_once;
 static bool host_fail_commit_once;
 static uint64_t host_nvs_ack, host_nvs_reserved;
@@ -52,7 +53,7 @@ static inline const char *tb_device_uid(void) { return "TB-HOST-0123456789AB"; }
 static inline uint32_t tb_boot_id(void) { return 42; }
 static inline int64_t esp_timer_get_time(void) { return 1234567; }
 static inline bool xSemaphoreTake(void *lock, unsigned delay)
-{ (void)lock; (void)delay; return true; }
+{ (void)lock; (void)delay; return !host_mutex_busy; }
 static inline void xSemaphoreGive(void *lock) { (void)lock; }
 static inline void vTaskDelay(unsigned delay) { (void)delay; }
 static inline unsigned uxQueueMessagesWaiting(void *queue)

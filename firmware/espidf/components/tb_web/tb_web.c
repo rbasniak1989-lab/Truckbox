@@ -2,6 +2,8 @@
 #include "tb_image_policy.h"
 
 #include <limits.h>
+#include <inttypes.h>
+#include "esp_heap_caps.h"
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +13,7 @@
 #include "esp_app_desc.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
 
@@ -50,6 +53,22 @@ static void response_headers(httpd_req_t *request)
     httpd_resp_set_hdr(request, "Referrer-Policy", "no-referrer");
 }
 
+static esp_err_t health_reply(httpd_req_t *request,bool low_memory)
+{
+    /* No cJSON allocation: diagnostics remain possible after an allocation
+     * failure, and report largest block as well as total/minimum free RAM. */
+    char body[512];
+    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u}",
+        low_memory?"false":"true",low_memory?"Sem memoria RAM para diagnostico completo":"",tb_role_name(),tb_device_uid(),tb_version(),
+        (uint64_t)esp_timer_get_time()/1000u,(unsigned)esp_get_free_heap_size(),(unsigned)esp_get_minimum_free_heap_size(),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    if(n<=0 || (size_t)n>=sizeof(body))return ESP_FAIL;
+    if(low_memory)httpd_resp_set_status(request,"503 Service Unavailable");
+    response_headers(request);httpd_resp_set_type(request,"application/json; charset=utf-8");
+    return httpd_resp_send(request,body,n);
+}
+static esp_err_t health_handler(httpd_req_t *request){return health_reply(request,false);}
+
 static esp_err_t send_error(httpd_req_t *request, const char *status, const char *message)
 {
     httpd_resp_set_status(request, status);
@@ -57,7 +76,7 @@ static esp_err_t send_error(httpd_req_t *request, const char *status, const char
     if (!body) {
         response_headers(request);
         httpd_resp_set_type(request, "application/json; charset=utf-8");
-        return httpd_resp_sendstr(request, "{\"ok\":false,\"error\":\"Sem memória disponível.\"}");
+        return health_reply(request,true);
     }
     cJSON_AddBoolToObject(body, "ok", false);
     cJSON_AddStringToObject(body, "error", message);
@@ -70,27 +89,28 @@ static esp_err_t close_with_error(httpd_req_t *request, const char *status, cons
     return ESP_FAIL;
 }
 
-esp_err_t tb_http_send_json(httpd_req_t *request, cJSON *owned_json)
+typedef struct{httpd_req_t *request;char bytes[1024];size_t used;esp_err_t error;}json_http_t;
+static bool json_http_sink(const char *bytes,size_t n,void *context)
 {
-    if (!owned_json) {
-        httpd_resp_set_status(request, "500 Internal Server Error");
-        response_headers(request);
-        httpd_resp_set_type(request, "application/json; charset=utf-8");
-        return httpd_resp_sendstr(request, "{\"ok\":false,\"error\":\"Sem memória disponível.\"}");
+    json_http_t *w=context;
+    while(n){
+        size_t room=sizeof(w->bytes)-w->used,take=n<room?n:room;
+        memcpy(w->bytes+w->used,bytes,take);w->used+=take;bytes+=take;n-=take;
+        if(w->used==sizeof(w->bytes)){
+            w->error=httpd_resp_send_chunk(w->request,w->bytes,w->used);w->used=0;
+            if(w->error!=ESP_OK)return false;
+        }
     }
-    char *encoded = cJSON_PrintUnformatted(owned_json);
-    cJSON_Delete(owned_json);
-    if (!encoded) {
-        httpd_resp_set_status(request, "500 Internal Server Error");
-        response_headers(request);
-        httpd_resp_set_type(request, "application/json; charset=utf-8");
-        return httpd_resp_sendstr(request, "{\"ok\":false,\"error\":\"Sem memória disponível.\"}");
-    }
-    response_headers(request);
-    httpd_resp_set_type(request, "application/json; charset=utf-8");
-    esp_err_t result = httpd_resp_sendstr(request, encoded);
-    free(encoded);
-    return result;
+    return true;
+}
+esp_err_t tb_http_send_json(httpd_req_t *request,cJSON *owned_json)
+{
+    if(!owned_json || tb_json_measure(owned_json,SIZE_MAX)==SIZE_MAX){cJSON_Delete(owned_json);return health_reply(request,true);}
+    response_headers(request);httpd_resp_set_type(request,"application/json; charset=utf-8");
+    json_http_t writer={.request=request,.error=ESP_OK};
+    if(!tb_json_write_owned(owned_json,json_http_sink,&writer))return writer.error==ESP_OK?ESP_FAIL:writer.error;
+    if(writer.used){writer.error=httpd_resp_send_chunk(request,writer.bytes,writer.used);if(writer.error!=ESP_OK)return writer.error;}
+    return httpd_resp_send_chunk(request,NULL,0);
 }
 
 static bool request_authenticated(httpd_req_t *request, bool admin, bool pair)
@@ -229,14 +249,18 @@ static esp_err_t home_handler(httpd_req_t *request)
 static esp_err_t state_handler(httpd_req_t *request)
 {
     cJSON *body = cJSON_CreateObject();
-    if (!body) {
-        return send_error(request, "500 Internal Server Error", "Sem memória disponível.");
-    }
+    if (!body) return health_reply(request,true);
     cJSON_AddBoolToObject(body, "ok", true);
     tb_base_add_json(body);
     tb_network_add_json(body);
-    tb_application_add_json(body);
-    cJSON_AddBoolToObject(body, "ota_busy", tb_web_ota_busy());
+    char query[48],compact[4];
+    bool small=httpd_req_get_url_query_str(request,query,sizeof(query))==ESP_OK && httpd_query_key_value(query,"compact",compact,sizeof(compact))==ESP_OK && !strcmp(compact,"1");
+    if(small)tb_application_add_json_compact(body);else tb_application_add_json(body);
+    cJSON_AddBoolToObject(body,"diagnostic_compact",small);
+    cJSON_AddNumberToObject(body,"heap_largest_block",(double)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    if(!cJSON_AddBoolToObject(body,"ota_busy",tb_web_ota_busy())){
+        cJSON_Delete(body);return health_reply(request,true);
+    }
     return tb_http_send_json(request, body);
 }
 
@@ -625,6 +649,7 @@ esp_err_t tb_web_start(void)
     }
     const httpd_uri_t routes[] = {
         { .uri = "/", .method = HTTP_GET, .handler = home_handler },
+        { .uri = "/api/health", .method = HTTP_GET, .handler = health_handler },
         { .uri = "/api/state", .method = HTTP_GET, .handler = state_handler },
         { .uri = "/api/config", .method = HTTP_GET, .handler = config_get_handler },
         { .uri = "/api/config", .method = HTTP_POST, .handler = config_post_handler },

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "cJSON.h"
+#include "../../tb_base/include/tb_json.h"
 #include "protocols.h"
 #include "tbx_trip.h"
 #include "tbx_fuel.h"

@@ -4,6 +4,8 @@
 esp_err_t tb_store_init(void);
 esp_err_t tb_capture_start(void);
 void tb_capture_add_json(cJSON *object);
+void tb_capture_add_json_compact(cJSON *object);
+cJSON *tb_capture_request_stats_json(unsigned offset,unsigned limit);
 void tb_capture_reset_trip(void);
 void tb_live_can(uint32_t id, bool extended, uint8_t dlc, const uint8_t data[8]);
 uint64_t tb_clock_milliseconds(void);

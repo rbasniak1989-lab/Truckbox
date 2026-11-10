@@ -11,7 +11,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const html = fs.readFileSync(path.join(ROOT, 'components/tb_web/index.html'));
 const ADMIN = 'mock_admin_token_32_characters_ok';
 const requests = [], failures = [];
-let simulatedJ1708=null;
+let simulatedJ1708=null,diagnosticOOM=false;
 let deviceRole = 'core', otaFailure = false, otaDelay = 40, config = {};
 function reset(role) {
   deviceRole = role;
@@ -37,7 +37,9 @@ const server = http.createServer(async(req,res) => {
     return res.end(html);
   }
   if(req.url === '/favicon.ico') {res.writeHead(404);return res.end();}
-  if(req.url === '/api/state') return json(res,200,{ok:true,role:deviceRole,version:'MOCK-TEST-ONLY',
+  if(req.url === '/api/health') return json(res,200,{ok:true,diagnostic_partial:true,role:deviceRole,version:'MOCK-TEST-ONLY',uptime_ms:60000,heap_free:5000,heap_largest_block:256});
+  if(req.url === '/api/state?compact=1' && diagnosticOOM) return json(res,503,{ok:false,error:'Sem memoria RAM para diagnostico completo'});
+  if(req.url === '/api/state?compact=1') return json(res,200,{ok:true,role:deviceRole,version:'MOCK-TEST-ONLY',
     device_uid:'<img src=x onerror="window.__xss=true">',network:{station_connected:true,
     station_ip:'192.0.2.23',access_point_running:true,ap_ip:'192.168.4.1',ap_ssid:'Mock AP'},
     hardware_notice:'Mock diagnostics <script>window.__xss=true</script>',...(simulatedJ1708 || {})});
@@ -54,6 +56,11 @@ const server = http.createServer(async(req,res) => {
   }
   if(req.url === '/api/pairing') return json(res,200,{ssid:'Mock Core',
     password:'mock-fixture-password',pair_key:'a'.repeat(64),host:'192.168.4.2'});
+  if(req.url.startsWith('/api/j1708/requests?') && req.method==='GET'){
+    const q=new URL(req.url,'http://127.0.0.1').searchParams;
+    const offset=Number(q.get('offset')||0),limit=Number(q.get('limit')||8);
+    return json(res,200,{ok:true,total:17,stats:(simulatedJ1708?.j1708?.requests?.stats || []).slice(offset,offset+limit)});
+  }
   if(req.url==='/api/j1708/requests' && req.method==='POST'){
     const update=JSON.parse(body.toString()), status=simulatedJ1708.j1708.requests;
     if(update.action==='arm'){assert.equal(update.authorized,true);assert.equal(update.stationary,true);status.armed=true;status.single_shot=true;}
@@ -222,6 +229,28 @@ async function file(page,name,size=512,magic=0xe9){
       assert.match(await page.locator('#diag-can').textContent(),/Desativada no perfil J1708_ONLY/);
       await page.locator('#j1708-stop').click();await page.waitForFunction(()=>document.querySelector('#j1708-message').textContent.includes('Parada solicitada'));
     });
+    await check('compact diagnostics paginate all 17 PID statistics without the large full-state response',async()=>{
+      simulatedJ1708.j1708.requests.stats=Array.from({length:17},(_,i)=>({pid:i+1,target_mid:128,interval_ms:60000,sent:i,response_candidates:0,timeouts:0}));
+      const before=requests.length;
+      await page.locator('#refresh').click();await page.locator('#j1708-cadences').filter({hasText:'PID 17 / MID 128'}).waitFor();
+      assert(recent('GET','/api/state?compact=1'));
+      for(const offset of [0,8,16])assert(requests.slice(before).some(r=>r.url==='/api/j1708/requests?offset='+offset+'&limit=8'));
+      assert(!requests.slice(before).some(r=>r.url==='/api/state'));
+    });
+    await check('RAM failure shows partial health, preserves OTA access and stop, and never enables a stale active test',async()=>{
+      diagnosticOOM=true;await page.locator('#refresh').click();
+      await page.locator('#connection').filter({hasText:'Online · diagnóstico parcial'}).waitFor();
+      assert.match(await page.locator('#state-message').textContent(),/RAM/);
+      assert.match(await page.locator('#diag-store').textContent(),/temporariamente indisponível/);
+      assert.equal(await page.locator('#j1708-test').isDisabled(),true);
+      assert.equal(await page.locator('#j1708-work').isDisabled(),true);
+      assert.equal(await page.locator('#j1708-stop').isDisabled(),false);
+      assert.equal(await fieldsetDisabled(page,'#ota-fields'),false);
+      await page.locator('#j1708-stop').click();
+      await page.locator('#j1708-message').filter({hasText:'Parada solicitada'}).waitFor();
+      diagnosticOOM=false;await page.locator('#refresh').click();
+      await page.locator('#connection').filter({hasText:/^Online$/}).waitFor();
+    });
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:path.join(__dirname,'core-mobile.png'),fullPage:true});
     await check('mobile page has no horizontal overflow',async()=>{
@@ -232,7 +261,7 @@ async function file(page,name,size=512,magic=0xe9){
       assert.equal(await page.locator('#save-config').isDisabled(),true);
       assert.equal(await page.locator('#pair-text').inputValue(),'');assert.equal(await page.locator('#pair-data').isVisible(),false);
       await page.locator('#refresh').click();await page.waitForTimeout(100);
-      assert.equal(recent('GET','/api/state').headers.authorization,undefined);
+      assert.equal(recent('GET','/api/state?compact=1').headers.authorization,undefined);
     });
     assert.deepEqual(errors,[]);await context.close();
     reset('link');

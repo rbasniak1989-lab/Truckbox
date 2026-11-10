@@ -311,8 +311,18 @@
     stateBusy = true;
     $('refresh').disabled = true;
     try {
-      const state = await request('/api/state');
+      const state = await request('/api/state?compact=1');
       lastState = state;
+      if(token && state.role==='core'){
+        try{
+          const stats=[];
+          for(let offset=0;offset<17;offset+=8){
+            const page=await request('/api/j1708/requests?offset='+offset+'&limit=8');
+            if(Array.isArray(page.stats))stats.push(...page.stats);
+          }
+          if(state.j1708 && state.j1708.requests)state.j1708.requests.stats=stats;
+        }catch(error){message('j1708-message','Contadores detalhados temporariamente indisponíveis: '+error.message,'warning');}
+      }
       updateJ1708Panel();
       const network = state.network || state.wifi || {};
       applyRole(state.role === undefined ? state.device_role : state.role);
@@ -328,8 +338,20 @@
       updateDiagnostics(state);
       message('state-message', '');
     } catch (error) {
+      lastState = null;
+      updateJ1708Panel();
       text('connection', 'Sem resposta');
       message('state-message', error.message, 'warning');
+      try {
+        const health = await request('/api/health', {}, 2500);
+        applyRole(health.role);
+        text('connection', 'Online · diagnóstico parcial');
+        text('stat-version', health.version);
+        $('state-json').textContent = JSON.stringify(health, null, 2);
+        for(const id of ['diag-cloud','diag-store','diag-space','diag-pending','diag-recovery','diag-j1708','diag-can'])text(id,'Consulta temporariamente indisponível');
+        text('diag-core','Online · '+Math.floor((health.uptime_ms || 0)/1000)+' s · RAM livre '+health.heap_free+' bytes · maior bloco '+health.heap_largest_block+' bytes');
+        updateJ1708Panel();
+      } catch (_) { /* Preserve the original diagnostic error. */ }
     } finally { stateBusy = false; $('refresh').disabled = false; }
   }
 
@@ -535,11 +557,11 @@
     const reset={1:'alimentação',3:'software',4:'pânico',5:'watchdog interrupção',6:'watchdog tarefa',7:'watchdog',9:'brownout'};
     text('diag-core','Online · '+Math.floor((state.uptime_ms || 0)/1000)+' s · boot '+state.boot_id+' · '+(reset[state.reset_reason] || 'motivo '+state.reset_reason)+(number(state.last_reset_time_ms)?' · '+new Date(state.last_reset_time_ms).toLocaleString():''));
     text('diag-cloud','Envio '+age(bridge.last_send_attempt_age_ms)+' · confirmação '+age(bridge.last_cloud_ack_age_ms)+' · ACK '+(storage.last_ack_seq ?? '—'));
-    const phases={NORMAL:'Normal',FULL:'Cheio — aguardando ACK ou revisão das evidências',RECOVERING:'Recuperando',RECOVERY_REQUIRED:'Recuperação necessária',MAINTENANCE_PAUSED:'Gravação pausada para rollback'};
-    text('diag-store',(phases[storage.phase] || (storage.initializing?'Recuperando':'Indisponível'))+(storage.error?' · '+storage.error:''));
-    text('diag-space',number(storage.space_available_bytes)?(storage.space_available_bytes/1048576).toFixed(2)+' / '+(storage.space_total_bytes/1048576).toFixed(2)+' MB · '+(number(storage.offline_estimate_seconds)?Math.floor(storage.offline_estimate_seconds/60)+' min estimados':'calculando autonomia'):'Aguardando recuperação');
+    const phases={NORMAL:'Normal',BUSY:'Ocupado temporariamente com gravação ou sincronização',FULL:'Cheio — aguardando ACK ou revisão das evidências',RECOVERING:'Recuperando',RECOVERY_REQUIRED:'Recuperação necessária',MAINTENANCE_PAUSED:'Gravação pausada para rollback'};
+    text('diag-store',(phases[storage.phase] || (storage.initializing?'Recuperando':'Indisponível'))+(storage.error && !storage.busy?' · '+storage.error:''));
+    text('diag-space',number(storage.space_available_bytes)?(storage.space_available_bytes/1048576).toFixed(2)+' / '+(storage.space_total_bytes/1048576).toFixed(2)+' MB · '+(number(storage.offline_estimate_seconds)?Math.floor(storage.offline_estimate_seconds/60)+' min estimados':'calculando autonomia'):storage.busy?'Atualizando informações de espaço':'Aguardando recuperação');
     const oldest=storage.oldest_pending_ts || (number(storage.oldest_pending_uptime_ms)?'boot '+storage.oldest_pending_boot+', '+Math.floor(storage.oldest_pending_uptime_ms/1000)+' s':'—');
-    text('diag-pending',storage.pending_known?storage.pending_records+' registros válidos · mais antigo '+oldest:'Quantidade desconhecida durante recuperação');
+    text('diag-pending',storage.pending_known?storage.pending_records+' registros válidos · mais antigo '+oldest:storage.busy?'Fila sendo consultada':'Quantidade desconhecida durante recuperação');
     text('diag-recovery',(storage.recovered_records || 0)+' recuperados · '+(storage.corrupt_records || 0)+' ocorrências de corrupção · '+(storage.isolated_files || 0)+' arquivos com evidência preservada');
     text('diag-j1708',j.ready?(j.frames_per_minute || 0)+' quadros/min · '+((state.telemetry_v2 || {}).latest_readings || 0)+' sensores no cache':'Sem recepção inicializada');
     text('diag-can',state.capture_profile==='J1708_ONLY'?'Desativada no perfil J1708_ONLY':state.can && state.can.enabled?'Habilitada':'Desativada');
@@ -583,12 +605,12 @@
       !status.work_evidence_ready || !status.physical_validated || !!status.work_mode || !!status.safety_stopped ||
       !$('j1708-topology').checked;
     // Emergency stop stays clickable even if another request is pending.
-    $('j1708-stop').disabled = !online;
+    $('j1708-stop').disabled = role !== 'core' || !token || uploadBusy;
     $('j1708-refresh').disabled = !!stateBusy;
   }
 
   async function j1708Command(action) {
-    if (!token || role !== 'core' || uploadBusy || !lastState) return;
+    if (!token || role !== 'core' || uploadBusy || (!lastState && action !== 'stop')) return;
     if (action !== 'stop' && j1708Busy) return;
     const payload = {action};
     if (action === 'arm') {

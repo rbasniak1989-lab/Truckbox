@@ -1,0 +1,312 @@
+{
+  "scope": "Browser against local mock only; not physical OTA or production Supabase.",
+  "failed": [],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "/",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/config",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/config",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/config",
+      "bytes": 55
+    },
+    {
+      "method": "GET",
+      "url": "/api/config",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/config",
+      "bytes": 20
+    },
+    {
+      "method": "POST",
+      "url": "/api/config",
+      "bytes": 35
+    },
+    {
+      "method": "GET",
+      "url": "/api/pairing",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/ota",
+      "bytes": 512
+    },
+    {
+      "method": "POST",
+      "url": "/api/ota/link",
+      "bytes": 512
+    },
+    {
+      "method": "POST",
+      "url": "/api/config",
+      "bytes": 73
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/j1708/requests",
+      "bytes": 180
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/j1708/requests",
+      "bytes": 208
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/j1708/requests",
+      "bytes": 60
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/j1708/requests",
+      "bytes": 17
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/health",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/j1708/requests",
+      "bytes": 17
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=0&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=8&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/j1708/requests?offset=16&limit=8",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/state?compact=1",
+      "bytes": 0
+    },
+    {
+      "method": "GET",
+      "url": "/api/config",
+      "bytes": 0
+    },
+    {
+      "method": "POST",
+      "url": "/api/config",
+      "bytes": 311
+    },
+    {
+      "method": "POST",
+      "url": "/api/config",
+      "bytes": 48
+    }
+  ],
+  "browserErrors": []
+}

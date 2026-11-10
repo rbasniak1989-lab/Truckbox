@@ -23,7 +23,7 @@ static struct {tbx_j1708_active_t active;tbx_j1708_request_scheduler_t requests;
 static bool tb_core_append_gps(cJSON *o){return tb_core_append_gps_at(o,host_now_us);}
 static unsigned esp_reset_reason(void){return 1;}
 static unsigned esp_get_minimum_free_heap_size(void){return 100000;}
-static const char *tb_version(void){return "0.2.12";}
+static const char *tb_version(void){return "0.2.13";}
 
 static int simulated_gettimeofday(struct timeval *tv,void *zone)
 {
