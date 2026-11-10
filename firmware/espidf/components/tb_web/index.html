@@ -142,6 +142,28 @@
         <small>Um MID não aparecer nesta lista não garante que esteja livre em toda a rede.</small>
       </div>
     </div>
+    <label class="spacer">Retomar a varredura sequencial a partir de
+      <select id="j1708-start-pid">
+          <option value="26">26 · Ventoinha (17 restantes)</option>
+          <option value="33">33 · Cilindro da embreagem (16 restantes)</option>
+          <option value="34">34 · Atuadores da embreagem (15 restantes)</option>
+          <option value="37">37 · Ar da transmissão (14 restantes)</option>
+          <option value="62">62 · Retarder (13 restantes)</option>
+          <option value="68">68 · Limitação de torque (12 restantes)</option>
+          <option value="117" selected>117 · Ar primário dos freios (11 restantes)</option>
+          <option value="118">118 · Ar secundário dos freios (10 restantes)</option>
+          <option value="235">235 · Horas de marcha lenta (9 restantes)</option>
+          <option value="236">236 · Litros em marcha lenta (8 restantes)</option>
+          <option value="250">250 · Diesel total (7 restantes)</option>
+          <option value="31">31 · Range I-Shift (6 restantes)</option>
+          <option value="32">32 · Splitter I-Shift (5 restantes)</option>
+          <option value="63">63 · Estados I-Shift (4 restantes)</option>
+          <option value="108">108 · Pressão ambiente (3 restantes)</option>
+          <option value="158">158 · Tensão (2 restantes)</option>
+          <option value="160">160 · Eixo da caixa (1 restantes)</option>
+      </select>
+      <small>O Core envia somente um PID de cada vez: aguarda resposta ou timeout, grava o resultado e passa ao próximo. Um erro de transmissão interrompe imediatamente. O ponto de retomada não libera pedidos anteriores.</small>
+    </label>
     <label class="check spacer">
       <input type="checkbox" id="j1708-topology">
       <span>Confirmo que a saída elétrica J1708 da Rev B1 foi verificada e que o MID informado está livre.
@@ -149,13 +171,13 @@
       </span>
     </label>
     <div class="actions spacer">
-      <button id="j1708-test" type="button" class="primary" disabled>Testar pedidos (parado)</button>
-      <button id="j1708-work" type="button" disabled>Ativar durante a viagem</button>
+      <button id="j1708-test" type="button" class="primary" disabled>Varrer um PID por vez (parado)</button>
+      <button id="j1708-work" type="button" disabled>Modo viagem indisponível neste teste</button>
       <button id="j1708-stop" type="button" disabled>Parar requisições</button>
       <button id="j1708-refresh" type="button">Atualizar contadores</button>
     </div>
     <div id="j1708-message" class="banner message" role="status" aria-live="polite"></div>
-    <p class="hint spacer">Primeiro teste: caminhão parado, rede J1708 monitorada. O modo de viagem só é liberado depois de pelo menos 3 ecos e 1 resposta candidata. Erros de comunicação ou prazo vencido interrompem automaticamente a transmissão. Os valores ainda exigem validação de escala.</p>
+    <p class="hint spacer">Teste supervisionado: veículo parado, velocidade zero recebida recentemente. Transmissor físico e MID local devem ser confirmados. Intervalo mínimo de 1,2 segundo entre pedidos, um por vez, prazo de resposta de 450 ms. O modo de viagem fica desabilitado nesta versão; falha de TX encerra a varredura. Todos os valores devem ser validados.</p>
   </section>
   <section class="panel" id="storage-maintenance" hidden>
     <h2>Manutenção do armazenamento</h2>
@@ -503,7 +525,9 @@
     text('j1708-responses', numbers(status.responses));
     text('j1708-errors', numbers(status.collisions) + ' / ' +
       numbers(status.echo_timeouts) + ' / ' + numbers(status.timeouts));
-    text('j1708-mode', status.work_mode ? 'Em operação' :
+    text('j1708-mode', status.sequential_scan && status.armed ?
+      'Sequencial '+numbers(status.scan_sent)+'/'+numbers(status.scan_total) :
+      status.work_mode ? 'Em operação' :
       status.armed ? 'Teste em andamento' :
       status.safety_stopped ? 'Parado por segurança' : 'Transmissão desligada');
     const mids = j1708.observed_mids;
@@ -522,9 +546,8 @@
     $('j1708-test').disabled = !online || j1708Busy || !!status.armed ||
       !stopped || !selected || midInUse || presetConflict ||
       !$('j1708-topology').checked || !!status.safety_stopped;
-    $('j1708-work').disabled = !online || j1708Busy || !stopped ||
-      !status.armed || !status.work_evidence_ready || !!status.work_mode ||
-      !!status.safety_stopped;
+    /* Never offer road TX in this forensic scan firmware. */
+    $('j1708-work').disabled = true;
     // Emergency stop stays clickable even if another request is pending.
     $('j1708-stop').disabled = !online;
     $('j1708-refresh').disabled = !!stateBusy;
@@ -540,13 +563,15 @@
         message('j1708-message','Confirme o MID livre, a verificação elétrica e a velocidade zero antes do teste.','warning');
         return;
       }
-      if (!confirm('Iniciar requisições J1708 REAIS na rede do caminhão? Verifique primeiro a saída elétrica do transceiver. Este teste transmitirá mensagens, não apenas fará leitura.')) return;
+      if (!confirm('Transmitir PIDs sequencialmente, 1 por vez, começando no '+$('j1708-start-pid').value+'? Confirme a saída elétrica J1708 antes de continuar.')) return;
       payload.authorized = true;
       payload.stationary = true;
       payload.topology_confirmed = true;
       payload.local_mid = Number($('j1708-local-mid').value);
       payload.priority = 8;
       payload.preset = 'fh2013_capture_20261029';
+      payload.sequential_scan = true;
+      payload.start_pid = Number($('j1708-start-pid').value);
     } else if (action === 'enable_work') {
       if ($('j1708-work').disabled) return;
       if (!confirm('Habilitar requisições J1708 enquanto o caminhão se movimenta? Confirmar somente após o teste estacionado e avaliação dos ecos/erros.')) return;
@@ -561,7 +586,7 @@
         body:JSON.stringify(payload)
       }, 8000);
       message('j1708-message', action === 'arm' ?
-        'Teste autorizado. Aguarde os ecos e as respostas aparecerem nos contadores. Se houver falha, pressione Parar.' :
+        'Varredura sequencial iniciada: 1 PID por vez, com parada ao fim ou por erro. Acompanhe os contadores.' :
         action === 'enable_work' ?
         'Modo de viagem ativado. A transmissão continua limitada e possui desligamento por falhas.' :
         'Parada solicitada e confirmada pelo CORE.', 'success');
@@ -575,6 +600,7 @@
     }
   }
   $('j1708-local-mid').addEventListener('input', updateJ1708Panel);
+  $('j1708-start-pid').addEventListener('change', updateJ1708Panel);
   $('j1708-topology').addEventListener('change', updateJ1708Panel);
   $('j1708-test').addEventListener('click', () => j1708Command('arm'));
   $('j1708-work').addEventListener('click', () => j1708Command('enable_work'));

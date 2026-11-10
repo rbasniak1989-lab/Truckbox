@@ -297,6 +297,80 @@ static void test_work_mode_auto_disarms_and_must_revalidate(void)
     assert(f.sends==before && !f.scheduler.armed);
 }
 
+
+static void test_sequential_scan_resumes_and_finishes_without_repeating(void)
+{
+    fixture_t f; initialize(&f);
+    f.config.sequential_scan=true;
+    f.config.start_pid=117; /* Resume after the six real packets of boot126. */
+    configure_and_arm(&f,1000000);
+    assert(f.active.scan_budget==11 && f.active.scan_start_index==6);
+    assert(f.scheduler.cursor==6 && f.scheduler.min_spacing_ms>=1200);
+    assert(!tbx_j1708_active_enable_work(&f.active,1001000));
+    uint64_t now=1005000;
+    for (unsigned i=6;i<17;i++) {
+        tbx_j1708_active_tick(&f.active,now);
+        assert(f.sends==i-5 && f.scheduler.sent_total==i-5);
+        assert(f.scheduler.pending==i);
+        check_frame(&f,i);
+        tbx_j1708_active_tick(&f.active,now+500);
+        assert(f.sends==i-5); /* Never overlap before echo. */
+        echo(&f,now);
+        assert(!f.active.tx_active);
+        if((i&1u)==0) {
+            assert(tbx_j1708_active_note_response(&f.active,
+                f.config.target_mid[i],expected_pids[i],now+200000));
+            tbx_j1708_active_tick(&f.active,now+200001);
+        } else {
+            tbx_j1708_active_tick(&f.active,now+450001);
+            assert(f.scheduler.pids[i].timed_out==1);
+        }
+        assert(f.sends==i-5); /* No early second packet after one response. */
+        if(i!=16) {
+            assert(f.scheduler.armed);
+            tbx_j1708_active_tick(&f.active,now+1199999);
+            assert(f.sends==i-5); /* Enforce 1200ms between requests. */
+            now+=1200000;
+        }
+    }
+    assert(f.sends==11 && f.scheduler.sent_total==11);
+    assert(!f.scheduler.armed && !f.scheduler.safety_stopped);
+    assert(!f.active.work_mode && !f.active.tx_active);
+    assert(f.stops>=1 && !strcmp(f.last_detail,"SEQUENTIAL_SCAN_COMPLETE"));
+    for(unsigned i=0;i<6;i++) assert(f.scheduler.pids[i].sent==0);
+    for(unsigned i=6;i<17;i++) assert(f.scheduler.pids[i].sent==1);
+    tbx_j1708_active_tick(&f.active,now+5000000);
+    assert(f.sends==11); /* No wrap to PID26 or repeated scan. */
+}
+static void test_sequential_scan_blocks_first_echo_collision(void)
+{
+    fixture_t f; initialize(&f);
+    f.config.sequential_scan=true;
+    f.config.start_pid=117;
+    configure_and_arm(&f,1000000);
+    tbx_j1708_active_tick(&f.active,1005000);
+    assert(f.sends==1 && f.active.tx_active);
+    const uint8_t wrong=(uint8_t)(f.sent_frame[0]^1u);
+    tbx_j1708_active_note_rx(&f.active,&wrong,1,1006100);
+    assert(f.active.collisions==1);
+    assert(f.scheduler.safety_stopped && !f.scheduler.armed);
+    assert(!f.active.tx_active && f.disarms==1);
+    assert(!strcmp(f.last_detail,"SEQUENTIAL_TX_LINK_ERROR"));
+    tbx_j1708_active_tick(&f.active,2000000);
+    assert(f.sends==1);
+    assert(!tbx_j1708_active_arm(&f.active,true,true,2001000));
+}
+static void test_sequential_unknown_start_is_rejected(void)
+{
+    fixture_t f; initialize(&f);
+    f.config.sequential_scan=true;
+    f.config.start_pid=99;
+    assert(!tbx_j1708_active_configure(&f.active,&f.config));
+    f.config.start_pid=0;
+    assert(tbx_j1708_active_configure(&f.active,&f.config));
+    assert(f.active.scan_budget==17 && f.active.scan_start_index==0);
+}
+
 int main(void)
 {
     test_no_tx_by_default_and_configuration_validation();
@@ -309,6 +383,9 @@ int main(void)
     test_response_lower_bound_and_expired_lease();
     test_work_mode_requires_actual_parked_echo_and_response();
     test_work_mode_auto_disarms_and_must_revalidate();
+    test_sequential_scan_resumes_and_finishes_without_repeating();
+    test_sequential_scan_blocks_first_echo_collision();
+    test_sequential_unknown_start_is_rejected();
     puts("J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed");
     return 0;
 }
