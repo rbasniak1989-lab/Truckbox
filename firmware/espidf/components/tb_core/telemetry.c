@@ -786,7 +786,6 @@ void tb_telemetry_append_j1587_health(cJSON *health)
             if (!target->child) cJSON_DeleteItemFromObjectCaseSensitive(metrics, field);
         }
     }
-    cJSON_Delete(sensor_data);
     if (cJSON_GetObjectItemCaseSensitive(metrics, "j1587_sensors") ||
         cJSON_GetObjectItemCaseSensitive(metrics, "j1587_raw"))
         cJSON_AddStringToObject(context, "j1587_sensor_quality", "EM_VALIDACAO");
