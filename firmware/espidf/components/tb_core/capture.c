@@ -256,16 +256,8 @@ static void can_task(void *unused)
     }
 }
 
-/* Called with s.lock held after checksum and complete J1587 layout validation.
- * J1939 remains primary while fresh; both observations are retained by the
- * separate telemetry worker regardless of dashboard source preference. */
-static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, void *unused)
+static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *value, uint64_t now)
 {
-    (void)unused;
-    uint64_t now = value->uptime_ms;
-    if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL) {
-        const bool matched=tbx_j1708_active_note_response(&s.active,value->mid,value->pid,now*1000);
-        if (matched && s.active.config.sequential_scan) {
             /* Persist each matching MID/PID observation — not just summary
              * counters. This is a response CANDIDATE, never causal proof. */
             cJSON *row=cJSON_CreateObject();
@@ -300,7 +292,19 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
                 if(json && strlen(json)<TB_RECORD_MAX)(void)tb_store_submit(json);
                 free(json);cJSON_Delete(row);
             }
-        }
+}
+
+/* Called with s.lock held after checksum and complete J1587 layout validation.
+ * J1939 remains primary while fresh; both observations are retained by the
+ * separate telemetry worker regardless of dashboard source preference. */
+static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, void *unused)
+{
+    (void)unused;
+    uint64_t now = value->uptime_ms;
+    if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL) {
+        const bool matched=tbx_j1708_active_note_response(&s.active,value->mid,value->pid,now*1000);
+        if (matched && s.active.config.sequential_scan)
+            tb_j1708_store_matched_response(value,now);
     }
     if (value->quality != TBX_J1587_OBS_EM_VALIDACAO || !value->has_numeric || !isfinite(value->value)) return;
     if (value->pid == 84 && value->value > 0.1 && s.requests.armed && !s.active.work_mode)
