@@ -753,8 +753,6 @@ void tb_telemetry_append_j1587_health(cJSON *health)
     const uint64_t now_us = (uint64_t)esp_timer_get_time();
     static uint32_t rotation;
     const unsigned rotate = rotation++ % TB_J1587_REQUEST_COUNT;
-    cJSON *sensor_data = cJSON_CreateObject();
-    if (!sensor_data) return;
     for (size_t i = 0; i < TB_J1587_HEALTH_COUNT; ++i) {
         size_t index = i;
         if (i >= TB_J1587_SLOW_COUNT + TB_J1587_COMPAT_COUNT)
