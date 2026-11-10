@@ -19,6 +19,7 @@
 #include "hal/uart_ll.h"
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
@@ -130,9 +131,22 @@ typedef struct {
     char event[24],detail[112];
 } request_event_t;
 
+/* Work-mode traffic is represented by the one-minute HEALTH counters.
+ * Preserve diagnostics and all events from the finite parked scan, but do not
+ * write 3 normal records per requested PID to the Rev.B.1 flash indefinitely.
+ * Never hide TIMEOUT, TX_ERROR, LINK_ERROR, AUTO_DISARMED or STOPPED. */
+static bool request_event_should_persist(const char *name, bool work_mode)
+{
+    if (!name || !work_mode) return true;
+    return strcmp(name,"REQUEST") != 0 &&
+           strcmp(name,"TX_ECHO") != 0 &&
+           strcmp(name,"RESPONSE_CANDIDATE") != 0;
+}
+
 static void request_event(const char *event, uint16_t pid, const char *detail, void *unused)
 {
     (void)unused;
+    if (!request_event_should_persist(event,s.active.work_mode)) return;
     /* RX/TX callbacks only queue fixed-size evidence. JSON, storage and logging
      * run outside the RX/TX lock and never delay the byte echo deadline. */
     request_event_t item={.uptime_us=(uint64_t)esp_timer_get_time(),
@@ -452,6 +466,20 @@ static void queue_sample(cJSON *sample)
     free(json); cJSON_Delete(sample);
 }
 
+/* One small, durable boot diagnostic, even if another reset happens before
+ * the first minute's HEALTH snapshot. Storage is already initialized by core.c.
+ * This does not switch the J1708 transmitter on or modify CAN configuration. */
+static void record_boot_diagnostic(void)
+{
+    cJSON *sample=cJSON_CreateObject();
+    if(!sample)return;
+    add_sample_identity(sample,"BOOT_DIAGNOSTIC");
+    cJSON_AddNumberToObject(sample,"reset_reason",(double)esp_reset_reason());
+    cJSON_AddNumberToObject(sample,"heap_free",esp_get_free_heap_size());
+    cJSON_AddNumberToObject(sample,"heap_minimum",esp_get_minimum_free_heap_size());
+    queue_sample(sample);
+}
+
 static void snapshot_task(void *unused)
 {
     TickType_t wake = xTaskGetTickCount();
@@ -518,6 +546,9 @@ static void snapshot_task(void *unused)
             tb_config()->full_decode_enabled ? "COMPLETO" : "LEGACY");
         cJSON_AddStringToObject(context, "j1708_framing", "uart_idle_10bits");
         cJSON_AddBoolToObject(context, "j1708_work_mode", s.active.work_mode);
+        cJSON_AddNumberToObject(context,"reset_reason",(double)esp_reset_reason());
+        cJSON_AddNumberToObject(metrics,"heap_minimum",esp_get_minimum_free_heap_size());
+        cJSON_AddNumberToObject(metrics,"request_event_dropped",s.request_event_dropped);
         cJSON_AddNumberToObject(metrics, "j1708_request_sent", s.requests.sent_total - old_request_sent);
         cJSON_AddNumberToObject(metrics, "j1708_request_answered", s.requests.answered_total - old_request_answered);
         cJSON_AddNumberToObject(metrics, "j1708_request_timeouts", s.requests.timeout_total - old_request_timeouts);
@@ -651,6 +682,9 @@ esp_err_t tb_capture_start(void)
     }
     tbx_trip_init(&s.trip, s.distance_trip, s.distance_trip_valid);
     if (s.distance_counter_valid) tbx_trip_restore_counter(&s.trip, s.distance_counter_sa, s.distance_counter_raw);
+    /* Record the power/reset cause once at boot; per-minute HEALTH repeats
+     * it so the Cloud can distinguish a crash from an uplink backlog. */
+    record_boot_diagnostic();
     /* Decode selected J1939 and J1587 in both profiles. LEGACY disables
      * per-frame RAW/DECODED persistence, not the decoder or sensor cache.
      * Active J1708 requests stay explicitly authorized and parked-only. */
