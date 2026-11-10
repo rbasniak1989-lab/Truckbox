@@ -1,3 +1,7 @@
+Core 0.2.9 (TESTES): correção de acesso ao barramento J1708 e modo de viagem.
+Leia [J1708_FIX_v0.2.9.md](J1708_FIX_v0.2.9.md) e [ACTIVE_J1708.md](ACTIVE_J1708.md).
+Somente Core; teste elétrico/estacionado pendente, Link e microSD sem alteração.
+
 # TruckBox Rev.B.1 v0.2.3 — VERSÃO DE TESTES
 
 Core captura; Link envia à nuvem pela internet do Wi-Fi. A 0.2.3 corrige no Core

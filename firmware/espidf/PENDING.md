@@ -1,3 +1,7 @@
+Core 0.2.9 (TESTES): correção de acesso ao barramento J1708 e modo de viagem.
+Leia [J1708_FIX_v0.2.9.md](J1708_FIX_v0.2.9.md) e [ACTIVE_J1708.md](ACTIVE_J1708.md).
+Somente Core; teste elétrico/estacionado pendente, Link e microSD sem alteração.
+
 # Pendências da v0.2.3 de testes
 
 O diagnóstico físico da 0.2.2 confirmou J1708 e o bloqueio do endereço do Link;

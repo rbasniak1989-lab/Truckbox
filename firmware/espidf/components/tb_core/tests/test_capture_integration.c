@@ -225,8 +225,26 @@ static void test_invalid_checkpoint_rejected(void)
     boot_with_checkpoint(&invalid, sizeof(invalid));
     assert(!s.distance_trip_valid && !s.fuel_trip_valid);
 }
+static void test_movement_stops_parked_trial_but_keeps_authorized_work(void)
+{
+    trip_blob_v1_t initial={.version=1};
+    boot_with_checkpoint(&initial,sizeof(initial));
+    tbx_j1708_active_init(&s.active,&s.requests,NULL,NULL);
+    s.requests.armed=true;
+    j1587_numeric(84,128,40,1000);
+    assert(!s.requests.armed);
+    s.requests.armed=true;s.active.work_mode=true;
+    j1587_numeric(84,128,42,2000);
+    assert(s.requests.armed && s.active.work_mode);
+    twai_message_t frame={.extd=true,.identifier=0x18FEF111,.data_length_code=8};
+    frame.data[1]=0;frame.data[2]=50; /* 50km/h, canonical little-endian speed. */
+    update_signals(&frame);
+    assert(s.requests.armed && s.active.work_mode);
+}
+
 int main(void)
 {
+    test_movement_stops_parked_trial_but_keeps_authorized_work();
     test_v1_migration_and_v2_reboot();
     test_counter_gap_and_reset_no_double_count();
     test_j1939_preferred_then_passive_fallback();

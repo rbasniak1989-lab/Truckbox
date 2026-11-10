@@ -1,128 +1,87 @@
-# Ensaio ativo J1708/J1587 — todos17PIDs
+# J1708/J1587 ativo — Core 0.2.9, versão de testes
 
-Catálogo inicial:26,33,34,37,62,68,117,118,235,236,250,31,32,63,108,158,160.
-Todos estão habilitados no agendador. TX começa desarmado, sem endereços locais ou
-alvos inventados. RX20 continua independente do agendador.
+A especificação vigente e o relatório estão em [J1708_FIX_v0.2.9.md](J1708_FIX_v0.2.9.md).
+TX sempre inicia desarmado. Recepção passiva, Wi-Fi, ACK e coleta sem GPS continuam
+independentes do transmissor. Nenhuma alteração de GPIO ou alimentação foi feita.
 
-## Evidência da ligação
+## Fluxo pelo painel do Core
 
-A release funcional documenta RX20 e DE21 no Core WROOM Rev.B.1, /RE=0 e DI=0.
-A branch `hardware-revb-j1708-4g`, arquivo `hardware/reva/apply_revb_j1708.py`,
-explicita a topologia dominante/recessiva: UART TX invertido em DE, receptor ativo.
-Esse script antigo cita módulo MINI; sua numeração de GPIO não foi reutilizada.
-A implementação usa exclusivamente DE21/RX20 do fonte WROOM da release funcional.
-DI fixo não constitui, por si, impossibilidade física de TX. A forma de onda real
-continua pendente de medição na Rev.B.1.
+1. Caminhão parado, velocidade zero recebida há no máximo 5s. Entre com a chave
+   administrativa, informe MID local comprovadamente livre e confirme a topologia
+   elétrica. A lista de MIDs observados é uma ajuda, não prova que outro está livre.
+2. Selecione PID 26 para ensaiar os 17, ou ponto de retomada. Clique em
+   **Varrer um PID por vez (parado)**. O teste autorizado dura até 60 s.
+3. Após três ecos completos e uma resposta candidata do teste atual, clique em
+   **Ativar durante a viagem** ainda parado. Também é possível promover a varredura
+   concluída dentro do prazo original de 60 s. O modo viagem consulta todos os 17
+   PIDs, mesmo se o ensaio começou no117.
+4. Em modo viagem, velocidade positiva não desarma o transmissor. Há uma pendência
+   por vez, intervalo mínimo1.2s, timeout450ms e autorização de até 12 h neste boot.
+   Ausência de Android, internet, horário ou GPS não altera a autorização.
+5. **Parar requisições**, OTA, conflito de MID local, três erros consecutivos de TX
+   ou expiração da autorização liberam DE21 e desarmam. Reboot não retoma TX.
+   O latch de três falhas exige corrigir a causa e reiniciar; não basta clicar Armar.
 
-## API de controle
+## API existente
 
-`POST /api/j1708/requests`, autenticado com a chave admin já existente.
-O arquivo `j1708_request_config.template.json` inclui os17PIDs e MIDs nulos para
-preenchimento por evidência. Nulos são recusados pela API, não viram endereço0.
-Defina MID local livre confirmado e MID-alvo para cada PID; não copie endereços dos
-testes unitários como se fossem da sua ECU. O firmware recusa MID local já observado.
+`POST /api/j1708/requests`, Bearer da chave administrativa existente.
 
-Para armar, são obrigatórios `action="arm"`, MIDs inteiros128..255,
-`authorized=true`, `stationary=true` e `topology_confirmed=true`. Priority8 é a
-política conservadora inicial. Autorização/declaração de estacionamento expiram
-em60s; renovar o mesmo corpo renova o lease sem perder espaçamento/pedido pendente.
-Alterar endereços requer parar antes. A configuração não é persistida e reboot
-sempre retorna ao estado desarmado.
+Para `action=arm`, enviar authorized=true, stationary=true,
+ topology_confirmed=true, priority=8, local_mid escolhido explicitamente,
+ preset="fh2013_capture_20261029", sequential_scan=true e start_pid=26.
+Também aceita os 17 alvos explícitos em vez do preset. MID deve ser inteiro128..255,
+fora dos alvos e não observado na rede. Não copiar MID sintético dos testes.
 
-Parada manual imediata: enviar `{"action":"stop"}` ao mesmo endpoint. O pino DE é
-liberado antes de aguardar o mutex. OTA, movimento veicular detectado e lease vencido
-interrompem o teste. Após uma parada automática de segurança, inspecione os erros;
-o latch não é apagado por uma nova autorização. Reinicialização controlada após
-corrigir a causa restaura o estado inicial desarmado.
+Promoção: {"action":"enable_work","authorized":true,"stationary":true}.
+Parada: {"action":"stop"}. Configuração/MIDs não são persistidos para ativar TX.
 
-## Proteções e limitações
+Destinos do preset preservado da referência NEXIQ/Validator29/10:
 
-- Pedido direcionado documentado: MIDlocal,PID128,PIDpedido,MIDalvo,checksum.
-- Uma pendência;250ms de espaçamento mínimo; timeout450ms; máximo teórico4pedidos/s, reduzido por tráfego/latência.
-- Guarda de barramento ocioso de pelo menos5ms, RX pendente/FIFO e nívelRX verificados. É política conservadora de ensaio; não se afirma arbitragem real certificada ou ausência de colisões.
-- Eco byte a byte pelo RX sempre ativo; divergência libera DE. Deadline20ms do eco,3erros de link ou8timeouts consecutivos desarmam. Saída UART é desconectada da matriz e DE retorna LOW no aborto; TX FIFO anterior precisa terminar antes de reconectar.
-- Eco próprio é persistido como TX_ECHO, sem alimentar sensores. MID+PID+janela só gera RESPONSE_CANDIDATE; tráfego passivo coincidente não comprova causalidade. Resposta indisponível é resposta, sem valor numérico válido.
-- Eventos de configuração/armar/parar/pedido/eco/resposta candidata/timeout/erro são oferecidos ao armazenamento e expostos por contadores; falhas de armazenamento não são anunciadas como gravação bem-sucedida.
-- Estatísticas totais/porPID em `/api/state`, incluindo colisões, eco, timeouts e lease. RX passiva continua mesmo com o transmissor desarmado ou em falha.
--235/236/250 são contadores acumulados. O firmware não emite comando para zerá-los; utilitário de delta exige leituras válidas da mesma origem e reestabelece marco após redução/troca. Persistir checkpoints por MID/PID fica a cargo do consumidor de viagens; brutos/leituras são persistidos.
-
-Teste físico somente com autorização, caminhão estacionado e monitoramento da
-recepção/erros. Esta implementação experimental não atua em motor, freios ou câmbio.
-
-
-## Candidato CORE 0.2.6 — requisições com o caminhão trabalhando
-
-O CORE pode entrar em **work mode** sem interromper as requisições quando a
-velocidade ultrapassar zero, mas **NUNCA ativa TX por padrão ou após reboot**.
-Este é um recurso em teste, não uma certificação de compatibilidade J1708.
-O motor, a I-Shift e os freios continuam sob controle exclusivo das suas ECUs;
-os pacotes são apenas PID128 solicitando leituras.
-
-### Preparação a partir da captura real (29/10/2026)
-
-O JSON do teste estacionado pode usar
-`"preset":"fh2013_capture_20261029"` em lugar do array de 17 alvos, com
-`topology_confirmed:true` e **um local_mid inteiro explicitamente escolhido,
-confirmadamente livre no barramento**. O preset somente preenche o **MID de
-destino**, nunca o MID do TruckBox:
-
-| PIDs | MID de destino observado |
+| PIDs | MID |
 |---|---|
-| 26,68,108,158,235,236,250 | 128 (motor) |
-| 31,32,33,34,37,63,160 | 130 (transmissão) |
-| 117,118 | 140 (sistema de freios) |
-| 62 | 144 (retarder) |
+|26,68,108,158,235,236,250|128|
+|31,32,33,34,37,63,160|130|
+|117,118|140|
+|62|144|
 
-Esses MIDs foram correlacionados à captura NEXIQ/Validator, não validados
-como respostas causais em toda condição. Não assumir que o MID local 250
-dos testes unitários está livre: é **sintético**. Verifique os MIDs na
-instalação real. Erro de MID pode fazer o controlador parar após timeouts.
+São referências históricas, não prova de causalidade de toda leitura.
+235/236/250 continuam acumuladores: nunca são zerados pelo firmware.
 
-### Fluxo de habilitação
+## Topologia e acesso ao barramento
 
-1. Antes do teste, conferir com instrumentação apropriada as formas de
-   onda RX20/DE21, nível físico J1708, polaridade e liberação do transceptor.
-   Não fazer a primeira transmissão em trânsito. Atestar explicitamente
-   `topology_confirmed:true` **somente após essa validação**.
-2. Com o veículo parado (velocidade J1587 recente = 0), enviar POST autenticado
-   em `/api/j1708/requests` com
-   `{"action":"arm","authorized":true,"stationary":true,"topology_confirmed":true,"preset":"fh2013_capture_20261029","priority":8,"local_mid":<MID_LIVRE_CONFIRMADO>}`.
-   O local MID deve ser um número real 128–255 livre; o texto entre
-   `<...>` é apenas um marcador explicativo, **não JSON válido**.
-3. Aguardar pelo menos três ecos completos `echo_ok>=3` e uma resposta
-   candidata de MID/PID `responses>=1`, sem colisões/falhas, mantendo a
-   velocidade zero e observando tráfego normal. Uma resposta candidata
-   continua não sendo prova de resposta causada pelo pedido.
-4. Enviar POST autenticado com
-   `{"action":"enable_work","authorized":true,"stationary":true}`.
-   O CORE só confirma se o caminhão está comprovadamente parado na amostra
-   de velocidade mais recente (até 5 s) e se passou nas verificações acima.
-5. Depois disso, a operação suporta o caminhão **em movimento**: não há
-   desarme automático apenas por velocidade positiva. O espaçamento passa
-   a pelo menos **500 ms** (até 2 solicitações/s; menor em barramento ocupado).
-   A permissão dura até **12 horas** e não sobrevive à reinicialização.
-   Renovação explícita pode usar `action=arm`, `stationary=false`,
-   preservando o preset/MID previamente configurados.
-6. `{"action":"stop"}` desarma imediatamente. Também desarmam: OTA,
-   colisão/eco incorreto, erros repetidos, oito timeouts consecutivos,
-   12 h sem renovação e conflitos de MID local. A recepção passiva continua
-   independente desses eventos.
+SN65HVD1781, RX20, DE21 com UART invertida, DI=0 e /RE=0, conforme a base WROOM.
+Não ligar um TX convencional ao DI nem reutilizar pinagem MINI do gerador antigo.
+A saída usa o mesmo pedido direcionado: MIDlocal,128,PID,MIDalvo,checksum.
 
-### Observabilidade e limites
+Antes de transmitir: guarda de5ms, RXalto, nenhuma mensagem parcial/emprocessamento,
+nenhum evento pendente, ring buffer e FIFO física vazios. Bordas reais de RX20 são
+monitoradas por ISR IRAM somente quando armado. A verificação é repetida após
+configurar o roteamento. Barramento ocupado é adiado, sem apagar RX nem contar erro.
 
-`/api/state`, em `j1708.requests`, traz `work_mode`,
-`work_evidence_ready`, `lease_remaining_ms`, `echo_ok`,
-`collisions`, `sent`, `responses` e `timeouts`.
-Na cloud, os HEALTH minuto recebem
-`context.j1708_work_mode` e os contadores por janela
-`metrics.j1708_request_sent`, `j1708_request_answered` e
-`j1708_request_timeouts`. Sensores J1587 permanecem provisórios até
-validação de fórmulas; especialmente pressão de óleo, turbo e pressão
-pneumática do câmbio (PID37). Não dirigir ajustando comandos no celular;
-fazer habilitação inicial estacionado e supervisionada.
+Divergência de eco libera DE imediatamente. Há espera variável20..50ms mais a
+frequência mínima e nova guarda de silêncio para tentar o mesmoPID. Três falhas
+consecutivas desarmam; um eco completo reinicia esse contador. Um timeout de resposta
+com eco correto não é falha elétrica: o agendador passa ao próximoPID.
 
-**Advertência de hardware**: o circuito Rev.B.1 liga DI=LOW e modula DE21
-com UART invertida; sem osciloscópio ou verificação equivalente, nem um
-build bem-sucedido nem testes unitários demonstram que o transceptor transmite
-sem perturbar o barramento físico. Essa verificação é necessária antes de
-ligar TX no veículo, mesmo para o modo de teste parado.
+## Diagnóstico
+
+/api/state -> j1708.requests: sent, echo_ok, responses, timeouts, collisions,
+echo_timeouts, bus_deferrals, consecutive_tx_errors, rx_edge_monitor_ready,
+rx_edges, event_dropped, uart_start_faults, work_mode, lease_remaining_ms,
+scan_sent (progresso), scan_attempts (inclui repetições).
+
+hardware_tx_available apenas indica UART+monitor inicializados;
+hardware_tx_validation permanece EM_VALIDACAO. Eventos REQUEST, TX_ECHO,
+LINK_ERROR e TIMEOUT registram quadro TX, relógio monotônico e evidência de bordas.
+Respostas candidatas individuais usam evento RESPONSE_VALUE com MID/PID/valor/unidade,
+preservando compatibilidade do tipo J1708_REQUEST_EVENT no backend.
+JSON e armazenamento de eventos ocorrem fora do mutex RX/TX, em fila limitada16.
+Falhas de fila/persistência incrementam event_dropped.
+
+## Limite da validação
+
+Testes de host e compilação não demonstram o tempo elétrico de liberação do
+SN65HVD1781. A primeira habilitação desta versão exige ensaio estacionado e
+verificação da instalação. NEXIQ demonstrou consultas na rede do caminhão;
+não mede automaticamente o transmissor desta placa. A compatibilidade física
+com NEXIQ permanece dependente do hardware. Não há transmissão automática neste pacote.

@@ -578,7 +578,8 @@ static esp_err_t requests_handler(httpd_req_t *request)
     cJSON *reply = cJSON_CreateObject();
     cJSON_AddBoolToObject(reply, "ok", accepted);
     cJSON_AddBoolToObject(reply, "armed", (arm || enable_work) && accepted);
-    cJSON_AddBoolToObject(reply, "hardware_tx_available", true);
+    cJSON_AddBoolToObject(reply,"hardware_tx_available",tb_capture_tx_ready());
+    cJSON_AddStringToObject(reply,"hardware_tx_validation","EM_VALIDACAO");
     cJSON_AddStringToObject(reply, "reason", enable_work ?
         (accepted ? "work_mode_enabled_12h" : "need_3_echo_1_response_stopped_vehicle_and_authorization") :
         (arm ? (accepted ? "requests_armed" : "configuration_or_safety_interlock") : "operator_stop"));

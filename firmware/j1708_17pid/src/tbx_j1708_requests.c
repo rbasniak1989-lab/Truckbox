@@ -67,11 +67,9 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
         ++s->timeout_total;
         s->pending = TBX_J1708_NO_PENDING;
         if (s->consecutive_timeouts < UINT8_MAX) ++s->consecutive_timeouts;
-        if (s->consecutive_timeouts >= 8) {
-            s->safety_stopped = true;
-            tbx_j1708_request_stop(s);
-            return;
-        }
+        /* A silent/unsupported PID is not a failed transmitter. Continue the
+         * bounded scan; physical TX errors and the authorization lease retain
+         * independent cutoffs. Never let one absent ECU hide the other PIDs. */
     }
     /* A NULL sender permits timeout accounting while transmission is deferred
      * by the bus-access controller. No send or link error is then generated. */
@@ -80,7 +78,12 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
     for (uint8_t tries=0; tries<TBX_J1708_REQUEST_COUNT; tries++) {
         uint8_t i = (uint8_t)((s->cursor + tries) % TBX_J1708_REQUEST_COUNT);
         if (!s->pids[i].enabled) continue;
+        s->send_deferred = false;
         if (!send(s->pids[i].pid, ctx)) {
+            if (s->send_deferred) {
+                ++s->deferred_total;
+                return; /* No UART bytes accepted, no cursor/deadline change. */
+            }
             ++s->tx_failure_total;
             tbx_j1708_request_note_link_error(s);
             s->next_tx_ms = now + s->min_spacing_ms;

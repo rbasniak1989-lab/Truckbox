@@ -20,8 +20,7 @@ if [[ "$idf_version" != 'ESP-IDF v5.5.2' ]]; then
   exit 2
 fi
 for build_role in "${roles[@]}"; do
-  project_version=0.2.4
-  if [[ "$build_role" == "core" ]]; then project_version=0.2.8; fi
+  project_version=0.2.9
   idf.py -C "$project_root" -B "$project_root/build-$build_role" \
     -DTRUCKBOX_ROLE="$build_role" -DPROJECT_VER="$project_version" build
 done

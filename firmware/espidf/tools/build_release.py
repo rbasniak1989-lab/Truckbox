@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.4"
+VERSION = "0.2.9"
 EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
 REQUIRED_SOURCE = (
     "firmware/espidf/CMakeLists.txt",
@@ -167,8 +167,8 @@ def validate_build(project_root: Path, role: str) -> dict:
             "app": build / f"truckbox_{role}.bin", "build": build}
 
 
-def write_windows_tools(destination: Path) -> None:
-    for role in ("core", "link"):
+def write_windows_tools(destination: Path, roles=("core", "link")) -> None:
+    for role in roles:
         command = (
             '@echo off\r\ncd /d "%~dp0"\r\nif "%~1"=="" (\r\n'
             f'  echo Uso: flash_{role}.cmd COM3\r\n  pause\r\n  exit /b 2\r\n)\r\n'
@@ -183,14 +183,14 @@ def write_windows_tools(destination: Path) -> None:
     ).encode("ascii"))
 
 
-def package_release(project_root: Path, output_dir: Path, package_path: Path) -> dict:
+def package_release(project_root: Path, output_dir: Path, package_path: Path, roles=("core", "link")) -> dict:
     project_root, output_dir, package_path = project_root.resolve(), output_dir.resolve(), package_path.resolve()
     if output_dir.exists() and any(output_dir.iterdir()):
         raise ValueError(f"Output directory is not empty: {output_dir}; choose a fresh directory")
     if package_path == output_dir or output_dir in package_path.parents:
         raise ValueError("Package ZIP must be outside its release directory")
     entries = source_entries(project_root)
-    builds = {role: validate_build(project_root, role) for role in ("core", "link")}
+    builds = {role: validate_build(project_root, role) for role in roles}
     origin = provenance(project_root, builds)
     manifest = {"hardware_revision": "B1", "version": VERSION, "state": "VERSAO_DE_TESTES",
                 "validation": "PARTIAL", "physical_validation": "pending", "esp_idf": "v5.5.2",
@@ -233,7 +233,7 @@ def package_release(project_root: Path, output_dir: Path, package_path: Path) ->
         (staging / "tools").mkdir()
         for name in ("flash_device.py", "monitor_device.py"):
             shutil.copy2(project_root / "tools" / name, staging / "tools" / name)
-        write_windows_tools(staging)
+        write_windows_tools(staging, roles)
         write_json(staging / "SOURCE_PROVENANCE.json", origin)
         source_zip = staging / "truckbox_firmware_source.zip"
         with zipfile.ZipFile(source_zip, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -265,8 +265,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "release")
     parser.add_argument("--package", type=Path, default=ROOT / f"Truckbox_B1_firmware_{VERSION}_TESTES.zip")
+    parser.add_argument("--core-only", action="store_true", help="Package only Core; keep installed Link firmware")
     args = parser.parse_args()
-    print(json.dumps(package_release(ROOT, args.output_dir, args.package), ensure_ascii=False, indent=2))
+    print(json.dumps(package_release(ROOT, args.output_dir, args.package,
+        roles=("core",) if args.core_only else ("core", "link")), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,31 @@
+name: TruckBox Core 0.2.9 J1708 bus access and work mode
+on:
+  push:
+    branches: [firmware-revb1-v0.2.0-tests]
+    paths: ['firmware/**', '.github/workflows/core-b1-v029-j1708.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s firmware/espidf/tests -p test_j1708_panel.py -v
+  build-test-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh && python3 tools/build_release.py --core-only --output-dir release --package TruckBox_CORE_0.2.9_TESTES.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-0.2.9-J1708-TESTES
+          path: firmware/espidf/TruckBox_CORE_0.2.9_TESTES.zip
+          if-no-files-found: error
+          retention-days: 30

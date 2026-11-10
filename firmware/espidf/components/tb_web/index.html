@@ -144,13 +144,13 @@
     </div>
     <label class="spacer">Retomar a varredura sequencial a partir de
       <select id="j1708-start-pid">
-          <option value="26">26 · Ventoinha (17 restantes)</option>
+          <option value="26" selected>26 · Ventoinha (17 restantes)</option>
           <option value="33">33 · Cilindro da embreagem (16 restantes)</option>
           <option value="34">34 · Atuadores da embreagem (15 restantes)</option>
           <option value="37">37 · Ar da transmissão (14 restantes)</option>
           <option value="62">62 · Retarder (13 restantes)</option>
           <option value="68">68 · Limitação de torque (12 restantes)</option>
-          <option value="117" selected>117 · Ar primário dos freios (11 restantes)</option>
+          <option value="117">117 · Ar primário dos freios (11 restantes)</option>
           <option value="118">118 · Ar secundário dos freios (10 restantes)</option>
           <option value="235">235 · Horas de marcha lenta (9 restantes)</option>
           <option value="236">236 · Litros em marcha lenta (8 restantes)</option>
@@ -162,7 +162,7 @@
           <option value="158">158 · Tensão (2 restantes)</option>
           <option value="160">160 · Eixo da caixa (1 restantes)</option>
       </select>
-      <small>O Core envia somente um PID de cada vez: aguarda resposta ou timeout, grava o resultado e passa ao próximo. Um erro de transmissão interrompe imediatamente. O ponto de retomada não libera pedidos anteriores.</small>
+      <small>O Core envia somente um PID de cada vez: aguarda resposta ou timeout, grava o resultado e passa ao próximo. Uma colisão libera imediatamente a linha e permite nova tentativa limitada após silêncio. Três falhas consecutivas desarmam. O ponto de retomada não libera pedidos anteriores.</small>
     </label>
     <label class="check spacer">
       <input type="checkbox" id="j1708-topology">
@@ -172,12 +172,12 @@
     </label>
     <div class="actions spacer">
       <button id="j1708-test" type="button" class="primary" disabled>Varrer um PID por vez (parado)</button>
-      <button id="j1708-work" type="button" disabled>Modo viagem indisponível neste teste</button>
+      <button id="j1708-work" type="button" disabled>Ativar durante a viagem</button>
       <button id="j1708-stop" type="button" disabled>Parar requisições</button>
       <button id="j1708-refresh" type="button">Atualizar contadores</button>
     </div>
     <div id="j1708-message" class="banner message" role="status" aria-live="polite"></div>
-    <p class="hint spacer">Teste supervisionado: veículo parado, velocidade zero recebida recentemente. Transmissor físico e MID local devem ser confirmados. Intervalo mínimo de 1,2 segundo entre pedidos, um por vez, prazo de resposta de 450 ms. O modo de viagem fica desabilitado nesta versão; falha de TX encerra a varredura. Todos os valores devem ser validados.</p>
+    <p class="hint spacer">Teste supervisionado: veículo parado, velocidade zero recebida recentemente. Transmissor físico e MID local devem ser confirmados. Intervalo mínimo de 1,2 segundo entre pedidos, um por vez, prazo de resposta de 450 ms. Após pelo menos três ecos completos e uma resposta candidata neste teste, ative o modo de viagem ainda parado. O modo de viagem consulta todos os 17 PIDs, um a cada 1,2 segundo no máximo, por até 12 horas. Colisões liberam a linha; três falhas consecutivas interrompem a transmissão. Todos os valores devem ser validados.</p>
   </section>
   <section class="panel" id="storage-maintenance" hidden>
     <h2>Manutenção do armazenamento</h2>
@@ -546,8 +546,9 @@
     $('j1708-test').disabled = !online || j1708Busy || !!status.armed ||
       !stopped || !selected || midInUse || presetConflict ||
       !$('j1708-topology').checked || !!status.safety_stopped;
-    /* Never offer road TX in this forensic scan firmware. */
-    $('j1708-work').disabled = true;
+    $('j1708-work').disabled = !online || j1708Busy || !stopped ||
+      !status.work_evidence_ready || !!status.work_mode || !!status.safety_stopped ||
+      !$('j1708-topology').checked;
     // Emergency stop stays clickable even if another request is pending.
     $('j1708-stop').disabled = !online;
     $('j1708-refresh').disabled = !!stateBusy;
@@ -588,7 +589,7 @@
       message('j1708-message', action === 'arm' ?
         'Varredura sequencial iniciada: 1 PID por vez, com parada ao fim ou por erro. Acompanhe os contadores.' :
         action === 'enable_work' ?
-        'Modo de viagem ativado. A transmissão continua limitada e possui desligamento por falhas.' :
+        'Modo de viagem ativado por até 12 horas. Os 17 PIDs serão consultados com frequência limitada; Parar encerra imediatamente.' :
         'Parada solicitada e confirmada pelo CORE.', 'success');
       await refreshState();
     } catch (error) {

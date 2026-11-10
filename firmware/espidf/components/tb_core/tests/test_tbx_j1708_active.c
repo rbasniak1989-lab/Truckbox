@@ -10,18 +10,18 @@ typedef struct {
     tbx_j1708_active_t active;
     tbx_j1708_active_config_t config;
     unsigned sends, aborts, requests, responses, timeouts, disarms, stops, errors;
-    bool backend_reject;
+    bool backend_reject, backend_defer;
     uint8_t sent_frame[5];
     const char *last_event, *last_detail;
 } fixture_t;
 static const uint16_t expected_pids[17] = {26,33,34,37,62,68,117,118,235,236,250,31,32,63,108,158,160};
-static bool begin_tx(const uint8_t *frame, size_t length, void *context)
+static tbx_j1708_tx_result_t begin_tx(const uint8_t *frame, size_t length, void *context)
 {
     fixture_t *f = context;
     assert(length == sizeof(f->sent_frame));
     ++f->sends;
     memcpy(f->sent_frame, frame, length);
-    return !f->backend_reject;
+    return f->backend_defer?TBX_J1708_TX_DEFERRED:(f->backend_reject?TBX_J1708_TX_FAULT:TBX_J1708_TX_STARTED);
 }
 static void abort_tx(void *context) { ++((fixture_t *)context)->aborts; }
 static void event(const char *name, uint16_t pid, const char *detail, void *context)
@@ -204,8 +204,8 @@ static void test_response_timeouts_even_when_bus_busy(void)
         tbx_j1708_active_tick(&f.active,sent+450000);
         sent+=455000;
     }
-    assert(f.scheduler.timeout_total==8 && f.timeouts==8 && f.scheduler.safety_stopped && !f.scheduler.armed);
-    assert(f.scheduler.sent_total==8 && f.disarms==1 && !f.active.tx_active);
+    assert(f.scheduler.timeout_total==8 && f.timeouts==8 && !f.scheduler.safety_stopped && f.scheduler.armed);
+    assert(f.scheduler.sent_total==8 && f.disarms==0 && !f.active.tx_active);
 }
 static void test_idle_deferral_and_millisecond_wrap(void)
 {
@@ -267,9 +267,9 @@ static void test_work_mode_requires_actual_parked_echo_and_response(void)
     assert(f.active.lease_deadline_us==authorized_at+1000+TBX_J1708_WORK_LEASE_US);
     const unsigned sent_before=f.sends;
     const uint64_t last_sent=now-250000;
-    tbx_j1708_active_tick(&f.active,last_sent+499000);
+    tbx_j1708_active_tick(&f.active,last_sent+TBX_J1708_WORK_MIN_SPACING_MS*1000u-1000u);
     assert(f.sends==sent_before); /* no 250 ms burst after promotion */
-    tbx_j1708_active_tick(&f.active,last_sent+500000);
+    tbx_j1708_active_tick(&f.active,last_sent+TBX_J1708_WORK_MIN_SPACING_MS*1000u);
     assert(f.sends==sent_before+1);
     tbx_j1708_active_stop(&f.active,"OPERATOR_STOP");
     assert(!f.active.work_mode);
@@ -353,12 +353,16 @@ static void test_sequential_scan_blocks_first_echo_collision(void)
     const uint8_t wrong=(uint8_t)(f.sent_frame[0]^1u);
     tbx_j1708_active_note_rx(&f.active,&wrong,1,1006100);
     assert(f.active.collisions==1);
-    assert(f.scheduler.safety_stopped && !f.scheduler.armed);
-    assert(!f.active.tx_active && f.disarms==1);
-    assert(!strcmp(f.last_detail,"SEQUENTIAL_TX_LINK_ERROR"));
-    tbx_j1708_active_tick(&f.active,2000000);
-    assert(f.sends==1);
-    assert(!tbx_j1708_active_arm(&f.active,true,true,2001000));
+    assert(!f.scheduler.safety_stopped && f.scheduler.armed);
+    assert(!f.active.tx_active && f.disarms==0);
+    tbx_j1708_active_tick(&f.active,2000000);assert(f.sends==1);
+    tbx_j1708_active_tick(&f.active,2205000);assert(f.sends==2);
+    assert(f.sent_frame[2]==117); /* Retry same PID after spacing, not the next. */
+    echo(&f,2205000);
+    assert(f.active.echo_ok==1 && f.scheduler.link_error_count==0);
+    assert(tbx_j1708_active_note_response(&f.active,f.config.target_mid[6],117,2405000));
+    tbx_j1708_active_tick(&f.active,3405000);assert(f.sent_frame[2]==118);
+
 }
 static void test_sequential_unknown_start_is_rejected(void)
 {
@@ -371,8 +375,63 @@ static void test_sequential_unknown_start_is_rejected(void)
     assert(f.active.scan_budget==17 && f.active.scan_start_index==0);
 }
 
+static void test_busy_is_not_tx_failure(void)
+{
+    fixture_t f;initialize(&f);configure_and_arm(&f,1000000);
+    f.backend_defer=true;
+    for(unsigned i=0;i<40;i++)tbx_j1708_active_tick(&f.active,1005000+i*10000u);
+    assert(f.scheduler.armed && !f.active.tx_active);
+    assert(f.scheduler.deferred_total==40 && f.scheduler.sent_total==0);
+    assert(f.scheduler.tx_failure_total==0 && f.scheduler.link_error_count==0);
+    assert(f.scheduler.cursor==0 && f.requests==0);
+    f.backend_defer=false;tbx_j1708_active_tick(&f.active,1405000);
+    assert(f.scheduler.sent_total==1 && f.sent_frame[2]==26);
+}
+static void test_all_17_timeouts_finish_scan_and_cannot_enable_work(void)
+{
+    fixture_t f;initialize(&f);f.config.sequential_scan=true;
+    configure_and_arm(&f,1000000);
+    for(unsigned i=0;i<17;i++){
+        uint64_t now=1005000+i*1200000u;
+        tbx_j1708_active_tick(&f.active,now);assert(f.sent_frame[2]==expected_pids[i]);
+        echo(&f,now);tbx_j1708_active_tick(&f.active,now+450000);
+        assert(f.scheduler.timeout_total==i+1);
+    }
+    assert(!f.scheduler.armed && !f.scheduler.safety_stopped && f.scheduler.sent_total==17);
+    assert(!tbx_j1708_active_enable_work(&f.active,22000000));
+}
+static void test_finished_scan_promotes_to_all17_and_no_boot_permission(void)
+{
+    fixture_t f;initialize(&f);f.config.sequential_scan=true;f.config.start_pid=117;
+    configure_and_arm(&f,1000000);
+    uint64_t now=1005000;
+    for(unsigned i=6;i<17;i++){
+        tbx_j1708_active_tick(&f.active,now);echo(&f,now);
+        assert(tbx_j1708_active_note_response(&f.active,f.config.target_mid[i],expected_pids[i],now+200000));
+        tbx_j1708_active_tick(&f.active,now+200001);now+=1200000;
+    }
+    assert(!f.scheduler.armed && f.active.promotion_deadline_us);
+    assert(tbx_j1708_active_enable_work(&f.active,now-900000));
+    /* Promotion happened only 300ms after last TX: must still defer to1.2s. */
+    tbx_j1708_active_tick(&f.active,now-1);assert(f.scheduler.sent_total==11);
+    for(unsigned i=0;i<34;i++){
+        tbx_j1708_active_tick(&f.active,now);
+        assert(f.sent_frame[2]==expected_pids[i%17]);
+        echo(&f,now);
+        assert(tbx_j1708_active_note_response(&f.active,f.config.target_mid[i%17],expected_pids[i%17],now+200000));
+        now+=1200000;
+    }
+    assert(f.scheduler.sent_total==45 && f.active.work_mode && f.scheduler.armed);
+    tbx_j1708_active_stop(&f.active,"OPERATOR_STOP");
+    assert(!tbx_j1708_active_enable_work(&f.active,now));
+    initialize(&f);assert(!f.scheduler.armed && !f.active.work_mode);
+}
+
 int main(void)
 {
+    test_busy_is_not_tx_failure();
+    test_all_17_timeouts_finish_scan_and_cannot_enable_work();
+    test_finished_scan_promotes_to_all17_and_no_boot_permission();
     test_no_tx_by_default_and_configuration_validation();
     test_all_17_framing_echo_matching_spacing();
     test_lease_renewal_expiry_and_stop_release();

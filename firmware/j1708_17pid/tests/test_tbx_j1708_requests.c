@@ -33,11 +33,11 @@ static void test_timeouts(void) {
     count=0;
     tbx_j1708_request_permit_stationary_test(&s,true);
     assert(tbx_j1708_request_arm(&s));
-    for(unsigned i=0;i<8;i++) {
+    for(unsigned i=0;i<17;i++) {
         tbx_j1708_request_tick(&s,i*500,mock_send,NULL);
-        tbx_j1708_request_tick(&s,i*500+451,mock_send,NULL);
+        tbx_j1708_request_tick(&s,i*500+451,NULL,NULL);
     }
-    assert(s.safety_stopped && !s.armed && s.timeout_total==8);
+    assert(!s.safety_stopped && s.armed && s.timeout_total==17 && s.sent_total==17);
 }
 static void test_delayed_brake_reply(void) {
     tbx_j1708_request_scheduler_t s;

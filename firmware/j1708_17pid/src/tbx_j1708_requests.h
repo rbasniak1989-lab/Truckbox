@@ -13,9 +13,9 @@ typedef bool (*tbx_j1708_send_request_fn)(uint16_t pid, void *context);
 typedef struct {
     tbx_j1708_request_stat_t pids[TBX_J1708_REQUEST_COUNT];
     uint8_t cursor, pending;
-    bool test_permitted, armed, safety_stopped, next_tx_valid;
+    bool test_permitted, armed, safety_stopped, next_tx_valid, send_deferred;
     uint32_t min_spacing_ms, timeout_ms, next_tx_ms, pending_since_ms;
-    uint32_t sent_total, answered_total, timeout_total, tx_failure_total;
+    uint32_t sent_total, answered_total, timeout_total, tx_failure_total, deferred_total;
     uint8_t consecutive_timeouts, link_error_count;
 } tbx_j1708_request_scheduler_t;
 void tbx_j1708_request_init(tbx_j1708_request_scheduler_t *scheduler);

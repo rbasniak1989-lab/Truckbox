@@ -24,6 +24,7 @@ sh components/tb_core/tests/run_capture_integration.sh
 sh components/tb_core/tests/run_core_gps.sh
 sh components/tb_core/tests/run_telemetry.sh
 sh components/tb_core/tests/run_j1708_active.sh
+sh components/tb_core/tests/run_j1708_uart.sh
 sh components/tb_link/tests/run_wifi_uplink.sh
 test_binary=$(mktemp /tmp/tb-link-test.XXXXXX)
 trap 'rm -f "$test_binary"' EXIT HUP INT TERM

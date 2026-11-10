@@ -62,6 +62,14 @@ class ReleasePackageTests(unittest.TestCase):
     def make_package(self):
         return package.package_release(self.project, self.output, self.archive)
 
+    def test_core_only_keeps_link_untouched(self):
+        shutil.rmtree(self.project / "build-link")
+        result=package.package_release(self.project,self.output,self.archive,roles=("core",))
+        self.assertEqual(set(result["images"]),{"core"})
+        with zipfile.ZipFile(self.archive) as archive:
+            self.assertIn("flash_core.cmd",archive.namelist())
+            self.assertNotIn("flash_link.cmd",archive.namelist())
+
     def test_archive_contains_compilable_sibling_sources_and_integrity_manifest(self):
         result = self.make_package()
         self.assertEqual(result["version"], package.VERSION)
