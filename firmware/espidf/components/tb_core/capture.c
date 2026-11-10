@@ -490,7 +490,7 @@ static void snapshot_task(void *unused)
     for (;;) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(1000));
         uint64_t now = esp_timer_get_time() / 1000;
-        /* Snapshot at 15 s in LEGACY. The 60 s health clock remains active. */
+        /* OPERATIONAL at 10 s in LEGACY; HEALTH remains at 60 s. */
         if (tb_operational_due(tb_config()->full_decode_enabled, seconds)) {
             cJSON *sample = cJSON_CreateObject();
             if (sample) {
@@ -520,8 +520,28 @@ static void snapshot_task(void *unused)
                 xSemaphoreGive(s.lock);
                 if (tb_core_append_gps(sample)) vehicle_data = true;
                 else { cJSON_AddNullToObject(sample, "gps"); cJSON_AddStringToObject(sample, "gps_status", "NO_FIX"); cJSON_AddBoolToObject(sample, "has_fix", false); }
+                /* Add provisional J1587 scalar aliases only when the original
+                 * record has space and the J1939 field is not already present. */
+                if (tb_telemetry_append_j1587_operational(sample))
+                    vehicle_data = true;
                 /* Do not replace operational cloud state with empty bench/diagnostic rows. */
                 if (vehicle_data) queue_sample(sample); else cJSON_Delete(sample);
+            }
+        }
+        /* One J1708_FAST snapshot every 10 seconds, including when the full
+         * decoder is enabled. The 27 passive PIDs are split into small flash
+         * records only when necessary; NO per-frame RAW logging is enabled. */
+        if ((seconds + 1U) % 10U == 0U) {
+            size_t next_pid = 0;
+            for (unsigned part = 0; next_pid < 27U && part < 3U; ++part) {
+                cJSON *fast = cJSON_CreateObject();
+                if (!fast) break;
+                add_sample_identity(fast, "J1708_FAST");
+                cJSON_AddStringToObject(fast, "source", "j1708");
+                cJSON_AddStringToObject(fast, "origin", "PASSIVE_RX");
+                size_t seen = tb_telemetry_append_j1587_fast(fast, &next_pid);
+                if (seen) queue_sample(fast);
+                else cJSON_Delete(fast);
             }
         }
         if (++seconds < 60) continue;
