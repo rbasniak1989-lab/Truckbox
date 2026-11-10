@@ -5,6 +5,7 @@
 #include "tests/telemetry_host_stubs.h"
 #endif
 #include "protocols.h"
+#include "telemetry_profile.h"
 #include "tb_task_budget.h"
 #include "tbx_j1939.h"
 #include "tbx_j1939_tp.h"
@@ -24,9 +25,14 @@
 #include "freertos/task.h"
 #endif
 
+#ifdef CONFIG_TB_J1708_ONLY
+#define TELEMETRY_QUEUE 64u
+#define TELEMETRY_LATEST 128u
+#else
 #define TELEMETRY_QUEUE 128u
-#define TELEMETRY_FRAME_MAX 64u
 #define TELEMETRY_LATEST 192u
+#endif
+#define TELEMETRY_FRAME_MAX 64u
 #define TELEMETRY_STALE_MS 5000u
 #define TELEMETRY_SCHEMA 2u
 
@@ -54,8 +60,10 @@ typedef struct {
 
 static struct {
     QueueHandle_t queue;
+#ifndef CONFIG_TB_J1708_ONLY
     tbx_j1939_t j1939;
     tbx_j1939_tp_t transport;
+#endif
     uint32_t transport_stats[11];
     latest_t latest[TELEMETRY_LATEST];
     size_t latest_count;
@@ -99,6 +107,9 @@ static bool enqueue(packet_t *packet)
 bool tb_telemetry_can(uint32_t id, bool extended, bool rtr, uint8_t dlc,
                        const uint8_t *data, uint64_t captured_us)
 {
+#ifdef CONFIG_TB_J1708_ONLY
+    (void)id;(void)extended;(void)rtr;(void)dlc;(void)data;(void)captured_us;return false;
+#endif
     if (!rtr && dlc && !data) { bump(&s.queue_dropped); return false; }
     packet_t packet = { .can = true, .id = id, .extended = extended,
         .rtr = rtr, .supplied_length = dlc, .captured_us = captured_us };
@@ -292,6 +303,12 @@ static void update_latest(const latest_t *reading)
     portEXIT_CRITICAL(&s_mux);
 }
 
+static void number_array(cJSON *array, double number)
+{
+    cJSON_AddItemToArray(array, cJSON_CreateNumber(number));
+}
+
+#ifndef CONFIG_TB_J1708_ONLY
 static cJSON *j1939_value(const tbx_j1939_observation_t *observation,
                            const char *unit, const char *validation,
                            const char *quality, bool has_value, double number)
@@ -328,7 +345,7 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
     memcpy(latest.raw, observation->raw, latest.raw_length);
     snprintf(latest.text, sizeof(latest.text), "%s", observation->text);
     update_latest(&latest);
-    const bool persist = tb_config()->full_decode_enabled;
+    const bool persist = tb_profile_raw(tb_config()->full_decode_enabled);
     if (persist) {
     cJSON *value = j1939_value(observation, signal->unit, validation, quality,
         observation->has_value, observation->value);
@@ -374,10 +391,9 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
     }
 }
 
-static void number_array(cJSON *array, double number)
-{
-    cJSON_AddItemToArray(array, cJSON_CreateNumber(number));
-}
+
+
+#endif
 
 static void j1587_observation(const tbx_j1587_observation_t *observation, void *context)
 {
@@ -393,7 +409,7 @@ static void j1587_observation(const tbx_j1587_observation_t *observation, void *
     memcpy(latest.raw, observation->raw, latest.raw_length);
     snprintf(latest.text, sizeof(latest.text), "%s", observation->passive.text);
     update_latest(&latest);
-    if (!tb_config()->full_decode_enabled) return; /* update PID cache without per-frame JSON */
+    if (!tb_profile_raw(tb_config()->full_decode_enabled)) return; /* update PID cache without per-frame JSON */
     cJSON *value = cJSON_CreateObject();
     if (!value) { bump(&s.serialization_errors); return; }
     char raw[65];
@@ -447,6 +463,7 @@ static void j1587_observation(const tbx_j1587_observation_t *observation, void *
     append(worker, value);
 }
 
+#ifndef CONFIG_TB_J1708_ONLY
 static void transport_snapshot(void)
 {
     const tbx_j1939_tp_t *transport = &s.transport;
@@ -465,7 +482,7 @@ static void transport_complete(const tbx_j1939_tp_message_t *message, void *cont
 {
     const packet_t *packet = context;
     worker_t worker = { .packet = packet, .transport = message, .part = 1 };
-    if (tb_config()->full_decode_enabled) {
+    if (tb_profile_raw(tb_config()->full_decode_enabled)) {
         worker.record = new_record(packet, worker.part, message);
         if (!worker.record) { bump(&s.serialization_errors); return; }
     }
@@ -474,14 +491,17 @@ static void transport_complete(const tbx_j1939_tp_message_t *message, void *cont
     flush(&worker);
 }
 
+#endif
+
 static void process_packet(const packet_t *packet)
 {
     worker_t worker = { .packet = packet };
-    if (tb_config()->full_decode_enabled) {
+    if (tb_profile_raw(tb_config()->full_decode_enabled)) {
         worker.record = new_record(packet, 0, NULL);
         if (!worker.record) { bump(&s.serialization_errors); return; }
     }
     if (packet->can) {
+#ifndef CONFIG_TB_J1708_ONLY
         if (!packet->oversize) tbx_j1939_decode(&s.j1939, packet->id,
             packet->extended, packet->rtr, packet->bytes, packet->length,
             packet->captured_us / 1000, j1939_observation, &worker);
@@ -493,6 +513,7 @@ static void process_packet(const packet_t *packet)
             packet->extended, packet->rtr, packet->bytes, packet->length,
             packet->captured_us / 1000, packet->capture_id, transport_complete, (void *)packet);
         transport_snapshot();
+#endif
     } else {
         tbx_j1587_frame_result_t result = packet->oversize
             ? TBX_J1587_FRAME_LENGTH_INVALID
@@ -522,8 +543,10 @@ static void worker_task(void *unused)
                 tb_task_budget_reset(&budget, esp_timer_get_time());
             }
         } else {
+#ifndef CONFIG_TB_J1708_ONLY
             tbx_j1939_tp_expire(&s.transport, esp_timer_get_time() / 1000);
             transport_snapshot();
+#endif
             tb_task_budget_reset(&budget, esp_timer_get_time());
         }
     }
@@ -532,8 +555,10 @@ static void worker_task(void *unused)
 esp_err_t tb_telemetry_start(void)
 {
     if (s.queue) return ESP_ERR_INVALID_STATE;
+#ifndef CONFIG_TB_J1708_ONLY
     tbx_j1939_init(&s.j1939);
     tbx_j1939_tp_init(&s.transport);
+#endif
     s.queue = xQueueCreate(TELEMETRY_QUEUE, sizeof(packet_t));
     if (!s.queue) return ESP_ERR_NO_MEM;
     /* Below RX and storage priority. Logging cannot starve the SD writer. */
@@ -559,7 +584,7 @@ void tb_telemetry_add_json(cJSON *object)
     portEXIT_CRITICAL(&s_mux);
     cJSON_AddNumberToObject(telemetry, "schema_version", TELEMETRY_SCHEMA);
     cJSON_AddBoolToObject(telemetry, "decoding_enabled", s.queue != NULL);
-    cJSON_AddBoolToObject(telemetry, "persist_raw_decoded", tb_config()->full_decode_enabled);
+    cJSON_AddBoolToObject(telemetry, "persist_raw_decoded", tb_profile_raw(tb_config()->full_decode_enabled));
     cJSON_AddNumberToObject(telemetry, "captured_frames", (double)captured);
     cJSON_AddNumberToObject(telemetry, "processed_frames", (double)processed);
     cJSON_AddNumberToObject(telemetry, "scheduling_yields", (double)yields);
@@ -670,8 +695,18 @@ static bool j1587_add_observation(cJSON *record, uint16_t pid, const latest_t *l
         hex(bytes, latest->raw, latest->raw_length);
         cJSON_AddItemToArray(entry, cJSON_CreateString(bytes));
     }
+    cJSON *units=cJSON_GetObjectItemCaseSensitive(record,"j1587_units");
+    if(!units)units=cJSON_AddObjectToObject(record,"j1587_units");
+    cJSON_AddStringToObject(units,key,latest->unit?latest->unit:"raw");
+    if(!cJSON_GetObjectItemCaseSensitive(record,"quality"))cJSON_AddStringToObject(record,"quality","EM_VALIDACAO");
+    cJSON *quality=cJSON_GetObjectItemCaseSensitive(record,"j1587_quality");
+    if(latest->quality && strcmp(latest->quality,"EM_VALIDACAO")){
+        if(!quality)quality=cJSON_AddObjectToObject(record,"j1587_quality");
+        cJSON_AddStringToObject(quality,key,latest->quality);
+    }
     if (!j1587_record_fits(record)) {
         cJSON_DeleteItemFromObjectCaseSensitive(bucket, key);
+        cJSON_DeleteItemFromObjectCaseSensitive(units,key);cJSON_DeleteItemFromObjectCaseSensitive(quality,key);
         if (!bucket->child) cJSON_DeleteItemFromObjectCaseSensitive(record, field);
         return false;
     }
@@ -737,6 +772,28 @@ size_t tb_telemetry_append_j1587_fast(cJSON *fast, size_t *cursor)
         }
         ++*cursor;
         ++count;
+    }
+    return count;
+}
+
+/* Preserve every additional primary J1587 observation, including unavailable
+ * values and secondary MIDs. Split before a duplicate PID key in a chunk. */
+size_t tb_telemetry_append_j1587_slow(cJSON *record,size_t *cursor)
+{
+    uint64_t now=(uint64_t)esp_timer_get_time();size_t count=0;
+    while(*cursor<s.latest_count){
+        latest_t latest;
+        portENTER_CRITICAL(&s_mux);latest=s.latest[*cursor];portEXIT_CRITICAL(&s_mux);
+        if(!latest.used || latest.can || latest.component_index!=UINT8_MAX ||
+           !latest.captured_us || now<latest.captured_us || now-latest.captured_us>UINT64_C(300000000)){++*cursor;continue;}
+        bool fast=false;latest_t selected={0};
+        for(unsigned i=0;i<TB_J1587_FAST_COUNT;i++)if(s_j1587_fast_pids[i]==latest.signal)fast=true;
+        if(fast && j1587_cached(latest.signal,now,UINT64_C(40000000),&selected) && selected.address==latest.address){++*cursor;continue;}
+        char key[8];snprintf(key,sizeof(key),"%u",latest.signal);
+        cJSON *values=cJSON_GetObjectItemCaseSensitive(record,latest.has_value?"j1587_sensors":"j1587_raw");
+        if(values && cJSON_GetObjectItemCaseSensitive(values,key))break;
+        if(!j1587_add_observation(record,latest.signal,&latest,now,true)){if(count)break;++*cursor;continue;}
+        ++*cursor;++count;
     }
     return count;
 }

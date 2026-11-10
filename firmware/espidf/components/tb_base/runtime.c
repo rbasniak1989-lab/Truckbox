@@ -77,7 +77,10 @@ void tb_base_add_json(cJSON *object)
     cJSON_AddNumberToObject(object, "heap_free", esp_get_free_heap_size());
     cJSON_AddNumberToObject(object, "heap_minimum", esp_get_minimum_free_heap_size());
     cJSON_AddNumberToObject(object, "reset_reason", esp_reset_reason());
-    cJSON_AddBoolToObject(object, "clock_synced", time(NULL) >= 1704067200);
+    time_t wall=time(NULL);
+    cJSON_AddBoolToObject(object,"clock_synced",wall>=1704067200);
+    if(wall>=1704067200)cJSON_AddNumberToObject(object,"last_reset_time_ms",(double)wall*1000.0-(double)esp_timer_get_time()/1000.0);
+    else cJSON_AddNullToObject(object,"last_reset_time_ms");
     cJSON *ota = cJSON_AddObjectToObject(object, "ota");
     if (ota) {
         cJSON_AddStringToObject(ota, "running_partition", running ? running->label : "unknown");

@@ -11,6 +11,9 @@ sh components/tb_core/tests/run.sh
 sh components/tb_core/tests/run_store_format.sh
 sh components/tb_core/tests/run_fram.sh
 sh components/tb_core/tests/run_store_transactions.sh
+sh components/tb_core/tests/run_store_codec.sh
+sh components/tb_core/tests/run_store_recovery.sh
+sh components/tb_core/tests/run_store_worker.sh
 sh components/tb_core/tests/run_worker_fairness.sh
 sh components/tb_core/tests/run_legacy_profile.sh
 sh components/tb_core/tests/run_j1939.sh
@@ -20,6 +23,7 @@ python3 ../j1939/tests/test_reference_equivalence.py
 sh ../j1708_17pid/tests/run_all.sh
 sh components/tb_core/tests/run_j1587_bridge.sh
 sh components/tb_core/tests/run_trip.sh
+sh components/tb_core/tests/run_accounting.sh
 sh components/tb_core/tests/run_capture_integration.sh
 sh components/tb_core/tests/run_core_gps.sh
 sh components/tb_core/tests/run_telemetry.sh
@@ -40,4 +44,5 @@ cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror \
     components/tb_link/tests/test_gps_outbox.c -o "$test_binary"
 "$test_binary"
 python3 -m unittest discover -s tests -p 'test_*.py' -v
+sh components/tb_core/tests/run_offline_2h.sh
 printf '%s\n' 'Host tests passed; ESP32 physical tests remain pending.'

@@ -2,11 +2,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "cJSON.h"
+#include "protocols.h"
 #include "tbx_trip.h"
 #include "tbx_fuel.h"
+#include "trip_checkpoint.h"
 #include "tbx_j1587_bridge.h"
 #include "tbx_j1708_active.h"
 #define TB_RECORD_MAX 768
@@ -36,3 +40,14 @@ static esp_err_t nvs_open(const char *, int, nvs_handle_t *);
 static esp_err_t nvs_get_blob(nvs_handle_t, const char *, void *, size_t *);
 static esp_err_t nvs_set_blob(nvs_handle_t, const char *, const void *, size_t);
 static esp_err_t nvs_commit(nvs_handle_t);
+
+static struct { bool j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated;uint8_t j1587_odometer_mid,j1587_fuel250_mid; } host_capture_config;
+#define tb_config() (&host_capture_config)
+
+#define pdTRUE 1
+#define pdMS_TO_TICKS(ms) (ms)
+static uint32_t tb_boot_id(void){return 42;}
+
+#define GPIO_NUM_20 20
+#define gpio_intr_enable(pin) ((void)(pin),ESP_OK)
+#define tb_web_ota_busy() false

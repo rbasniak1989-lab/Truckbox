@@ -2,6 +2,7 @@
 #include "tb.h"
 #endif
 #include "store_internal.h"
+#include "store_codec.h"
 #include "tb_task_budget.h"
 #include "fram.h"
 
@@ -26,6 +27,7 @@
 #include "driver/sdspi_host.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
@@ -53,6 +55,7 @@ typedef struct {
     size_t bytes;
     size_t records;
     size_t pending_offset;
+    bool quarantined;
 } segment_t;
 
 typedef struct {
@@ -68,7 +71,7 @@ typedef struct {
     bool medium_clean;
     volatile bool ready;
     volatile bool initializing;
-    bool spi_ready;
+    bool spi_ready,medium_initialized;
     const char *base_path;
     const char *medium;
     char error[96];
@@ -94,6 +97,15 @@ typedef struct {
     uint64_t committed_this_boot;
     uint64_t recovered_tail_bytes;
     uint64_t corrupt_records;
+    uint64_t isolated_bytes, isolated_files, recovered_records;
+    bool recovery_complete,capacity_blocked;
+    volatile bool rollback_paused,rollback_drained;
+    uint64_t total_bytes, available_bytes, oldest_pending_uptime_us, archived_bytes;
+    uint64_t oldest_pending_sequence;
+    uint32_t oldest_pending_boot;
+    char oldest_pending_ts[32];
+    bool oldest_pending_known;
+    uint64_t last_ack_us, last_append_us, stored_bytes_this_boot;
     uint64_t write_errors;
     uint64_t dropped_queue;
     uint64_t dropped_unavailable;
@@ -169,6 +181,22 @@ static int compare_segments(const void *left, const void *right)
     return a->id < b->id ? -1 : a->id > b->id;
 }
 
+static void oldest_metadata(const cJSON *data,uint64_t seq)
+{
+    uint64_t u=0,boot=0;
+    const cJSON *stamp=cJSON_GetObjectItemCaseSensitive(data,"ts");
+    state.oldest_pending_sequence=seq;
+    /* get_u64_json is defined below; valid generated samples use numbers. */
+    const cJSON *uptime=cJSON_GetObjectItemCaseSensitive(data,"uptime_ms");
+    const cJSON *id=cJSON_GetObjectItemCaseSensitive(data,"boot_id");
+    bool valid=cJSON_IsNumber(uptime) && isfinite(uptime->valuedouble) && uptime->valuedouble>=0 && uptime->valuedouble<=(double)STORE_MAX_SEQUENCE/1000.0 &&
+        cJSON_IsNumber(id) && id->valuedouble>=0 && id->valuedouble<=UINT32_MAX;
+    if(valid){u=(uint64_t)uptime->valuedouble;boot=(uint64_t)id->valuedouble;}
+    state.oldest_pending_uptime_us=u*1000u;state.oldest_pending_boot=(uint32_t)boot;
+    state.oldest_pending_known=valid;
+    snprintf(state.oldest_pending_ts,sizeof(state.oldest_pending_ts),"%s",cJSON_IsString(stamp)?stamp->valuestring:"");
+}
+
 static bool get_u64_json(const cJSON *object, const char *name, uint64_t *value)
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
@@ -189,6 +217,28 @@ static bool get_u64_json(const cJSON *object, const char *name, uint64_t *value)
  * floating point numbers, preserving compatibility across cJSON upgrades. */
 static cJSON *read_record(const char *line, size_t length, uint64_t *sequence)
 {
+    /* Compact format2: the CRC covers the encoded bytes and numeric metadata.
+     * Expand back to the v1 in-memory shape before any uploader sees it. */
+    const char *first_comma=length>7?memchr(line+7,',',length-7):NULL;
+    if(first_comma && !strncmp(first_comma,",\"c\":",5)){
+        uint64_t seq=0;uint32_t crc=0;int start=0;
+        if(sscanf(line,"{\"seq\":%" SCNu64 ",\"c\":%" SCNu32 ",\"z2\":\"%n",&seq,&crc,&start)!=2 || start<=0 || !seq || seq>STORE_MAX_SEQUENCE)return NULL;
+        size_t offset=(size_t)start;
+        if(length<offset+3)return NULL;
+        const char *end=strchr(line+offset,'"');
+        if(!end || strcmp(end,"\"}\n") || (size_t)(end-line-offset)>=TB_RECORD_MAX)return NULL;
+        char packed[TB_RECORD_MAX],raw[TB_RECORD_MAX];size_t n=(size_t)(end-line)-offset;
+        memcpy(packed,line+offset,n);packed[n]=0;
+        if((tb_store_record_crc(seq,0,packed,n)^UINT32_C(0xa21c5e37))!=crc || !tb_store_unpack(packed,raw,sizeof(raw)))return NULL;
+        cJSON *data=cJSON_ParseWithOpts(raw,NULL,true);if(!data){errno=ENOMEM;return NULL;}
+        uint64_t uptime=0,boot=0;
+        if(!cJSON_IsObject(data) || !get_u64_json(data,"uptime_ms",&uptime) || !get_u64_json(data,"boot_id",&boot) || uptime>STORE_MAX_SEQUENCE/1000u){cJSON_Delete(data);return NULL;}
+        cJSON *record=cJSON_CreateObject();
+        if(!record || !cJSON_AddNumberToObject(record,"seq",(double)seq) || !cJSON_AddNumberToObject(record,"uptime_us",(double)uptime*1000.0) || !cJSON_AddItemToObject(record,"data",data)){
+            cJSON_Delete(data);cJSON_Delete(record);errno=ENOMEM;return NULL;
+        }
+        *sequence=seq;return record;
+    }
     const char *data = NULL;
     size_t payload_length = 0;
     if (length >= STORE_LINE_MAX ||
@@ -198,7 +248,16 @@ static cJSON *read_record(const char *line, size_t length, uint64_t *sequence)
     if (!payload_length || payload_length >= TB_RECORD_MAX) {
         return NULL;
     }
+    uint64_t meta_seq=0,meta_time=0;uint32_t meta_crc=0;
+    if(sscanf(line,"{\"seq\":%" SCNu64 ",\"uptime_us\":%" SCNu64 ",\"crc32\":%" SCNu32,
+              &meta_seq,&meta_time,&meta_crc)!=3)return NULL;
+    bool compact=strstr(line,",\"v\":2,\"data\":") &&
+        strstr(line,",\"v\":2,\"data\":")<data;
+    uint32_t expected=tb_store_record_crc(meta_seq,meta_time,data,payload_length);
+    if(compact)expected^=UINT32_C(0xa21c5e37);
+    if(expected!=meta_crc)return NULL;
     cJSON *object = cJSON_ParseWithOpts(line, NULL, true);
+    if(!object){errno=ENOMEM;return NULL;}
     uint64_t crc = 0;
     uint64_t uptime = 0;
     bool valid = cJSON_IsObject(object) &&
@@ -206,13 +265,68 @@ static cJSON *read_record(const char *line, size_t length, uint64_t *sequence)
                  get_u64_json(object, "uptime_us", &uptime) &&
                  get_u64_json(object, "crc32", &crc) && crc <= UINT32_MAX &&
                  cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(object, "data")) &&
-                 tb_store_record_crc(*sequence, uptime, data, payload_length) ==
-                     (uint32_t)crc;
+                 (tb_store_record_crc(*sequence, uptime, data, payload_length)^
+                     (compact?UINT32_C(0xa21c5e37):0))==(uint32_t)crc;
     if (!valid) {
         cJSON_Delete(object);
         return NULL;
     }
+    if(compact){
+        const cJSON *z=cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(object,"data"),"z");
+        char raw[TB_RECORD_MAX];
+        if(!cJSON_IsString(z) || !tb_store_unpack(z->valuestring,raw,sizeof(raw))){cJSON_Delete(object);return NULL;}
+        cJSON *expanded=cJSON_ParseWithOpts(raw,NULL,true);
+        if(!expanded){cJSON_Delete(object);errno=ENOMEM;return NULL;}
+        if(!cJSON_IsObject(expanded)){cJSON_Delete(expanded);cJSON_Delete(object);return NULL;}
+        cJSON_ReplaceItemInObjectCaseSensitive(object,"data",expanded);
+    }
     return object;
+}
+
+/* Read-only salvage. Original files are never truncated or rewritten. A complete
+ * CRC-valid wrapper can survive a missing newline, even in a non-final segment.
+ * Malformed prefixes are resynchronized to the next bounded wrapper. */
+typedef struct { long start,end;size_t bytes;bool skipped; } record_span_t;
+static cJSON *next_record(FILE *file,uint64_t *sequence,record_span_t *span)
+{
+    static const char prefix[]={123,34,115,101,113,34,58,0};
+    bool skipped=false;unsigned matched=0;size_t searched=0;
+    int ch;
+    while((ch=fgetc(file))!=EOF){
+        if(++searched%4096==0)vTaskDelay(1);
+        if(ch==(unsigned char)prefix[matched])++matched;
+        else {skipped=true;matched=ch=='{'?1u:0u;}
+        if(matched!=sizeof(prefix)-1)continue;
+        long start=ftell(file)-(long)(sizeof(prefix)-1);
+        char line[STORE_LINE_MAX];size_t used=sizeof(prefix)-1;
+        memcpy(line,prefix,used);unsigned depth=1;bool quoted=false,escaped=false;
+        while(used+2<sizeof(line) && depth && (ch=fgetc(file))!=EOF){
+            line[used++]=(char)ch;
+            if(quoted){if(escaped)escaped=false;else if(ch=='\\')escaped=true;else if(ch=='"')quoted=false;}
+            else if(ch=='"')quoted=true;
+            else if(ch=='{' || ch=='[')++depth;
+            else if(ch=='}' || ch==']')--depth;
+        }
+        long end=ftell(file);
+        if(!depth){
+            ch=fgetc(file);
+            if(ch=='\n')end=ftell(file);else if(ch!=EOF)ungetc(ch,file);
+            line[used++]='\n';line[used]=0;errno=0;
+            cJSON *record=read_record(line,used,sequence);
+            if(record){*span=(record_span_t){.start=start,.end=end,.bytes=(size_t)(end-start),.skipped=skipped};return record;}
+            if(errno==ENOMEM)return NULL;
+        }else line[used]=0;
+        skipped=true;
+        /* A torn write followed by a new complete record need not have a
+         * newline. Preserve the bad bytes, retry any nested wrapper prefix. */
+        const char *nested=strstr(line+1,prefix);
+        long resume=nested?start+(long)(nested-line):ftell(file);
+        if(depth && !nested && used>=sizeof(prefix))resume=start+(long)used-(long)sizeof(prefix)+1;
+        clearerr(file);
+        if(fseek(file,resume,SEEK_SET)!=0)return NULL;
+        matched=0;
+    }
+    span->skipped=skipped;return NULL;
 }
 
 #ifndef TB_STORE_HOST_TEST
@@ -394,17 +508,13 @@ static bool mount_storage(void)
     }
     state.base_path = "/tbflash";
     state.medium = "flash";
-    /* A full-size 8 MB layout may allocate a larger FAT storage partition.
-     * Preserve the 24-segment limit on the shipped 1.875 MiB partition,
-     * and expand only on a USB-migrated partition, keeping 512 KiB spare
-     * for FAT, wear levelling metadata and temporary file operations. */
-    size_t flash_max = 24;
-    if (partition->size > 0x1e0000u &&
-        partition->size > (512u * 1024u)) {
-        flash_max = (partition->size - (512u * 1024u)) / STORE_FLASH_SEGMENT_BYTES;
-        if (flash_max > STORE_SEGMENTS) flash_max = STORE_SEGMENTS;
-        if (flash_max < 24) flash_max = 24;
-    }
+    /* Use the existing partition only. Keep128 KiB for FAT/WL metadata,
+     * cluster rounding and filesystem headroom; never migrate partitions OTA. */
+    size_t reserve=128u*1024u;
+    size_t flash_max=partition->size>reserve?(partition->size-reserve)/STORE_FLASH_SEGMENT_BYTES:24;
+    if(flash_max>STORE_SEGMENTS)flash_max=STORE_SEGMENTS;
+    if(flash_max<24)flash_max=24;
+    (void)esp_vfs_fat_info(state.base_path,&state.total_bytes,&state.available_bytes);
     state.maximum_segments = flash_max;
     state.segment_bytes = STORE_FLASH_SEGMENT_BYTES;
     return true;
@@ -416,7 +526,7 @@ static bool mount_storage(void)
  * Performed at boot, before recovery and before storage starts accepting data.
  * The NVS marker survives a power failure; a subsequent boot resumes deletion.
  * Sequence reservations remain unchanged so old cloud IDs are never reused. */
-static bool discard_log_files(void)
+static bool __attribute__((unused)) discard_log_files(void)
 {
     DIR *directory = opendir(state.base_path);
     if (!directory) { fail_store("discard: cannot enumerate storage"); return false; }
@@ -442,124 +552,77 @@ static bool discard_log_files(void)
 
 static bool recover_records(void)
 {
-    DIR *directory = opendir(state.base_path);
-    if (!directory) {
-        fail_store("cannot enumerate storage");
-        return false;
-    }
-    struct dirent *entry;
-    while ((entry = readdir(directory)) != NULL) {
-        uint32_t id;
-        if (!file_id(entry->d_name, &id)) {
+    state.recovery_complete=false;
+    state.segment_count=state.pending_bytes=state.pending_records=0;
+    state.oldest_pending_uptime_us=0;state.oldest_pending_boot=0;state.oldest_pending_known=false;
+    state.oldest_pending_sequence=0;state.oldest_pending_ts[0]=0;
+    state.corrupt_records=state.isolated_bytes=state.isolated_files=state.recovered_records=state.archived_bytes=0;
+    state.highest_offered=0;
+    memset(state.segments,0,sizeof(state.segments));
+    DIR *directory=opendir(state.base_path);
+    if(!directory){fail_store("cannot enumerate storage");return false;}
+    uint32_t largest_id=0;struct dirent *entry;
+    while((entry=readdir(directory))){
+        if(strlen(entry->d_name)!=12)continue; /* Preserve unrelated/backup files without treating a prefix as a LOG. */
+        uint32_t id;char name[13];snprintf(name,sizeof(name),"%.12s",entry->d_name);
+        bool bad=strlen(name)==12 && !strcasecmp(name+8,".BAD");
+        if(bad)memcpy(name+8,".LOG",5);
+        if(!file_id(name,&id))continue;
+        if(id>largest_id)largest_id=id;
+        if(bad){
+            char path[128];struct stat info;snprintf(path,sizeof(path),"%.64s/%.12s",state.base_path,entry->d_name);
+            if(stat(path,&info)==0){++state.isolated_files;state.isolated_bytes+=(uint64_t)info.st_size;state.archived_bytes+=(uint64_t)info.st_size;}
             continue;
         }
-        if (state.segment_count >= state.maximum_segments) {
-            closedir(directory);
-            fail_store("too many record segments; data preserved");
-            return false;
-        }
-        state.segments[state.segment_count++].id = id;
+        if(state.segment_count>=STORE_SEGMENTS){closedir(directory);fail_store("too many segments; pending count unknown");return false;}
+        state.segments[state.segment_count++].id=id;
     }
     closedir(directory);
-    qsort(state.segments, state.segment_count, sizeof(state.segments[0]),
-          compare_segments);
+    qsort(state.segments,state.segment_count,sizeof(state.segments[0]),compare_segments);
+    uint64_t previous=0;
+    for(size_t i=0;i<state.segment_count;i++){
+        segment_t *segment=&state.segments[i];char path[96];segment_path(path,sizeof(path),segment->id);
+        FILE *file=fopen(path,"rb");struct stat info;
+        if(!file || fstat(fileno(file),&info)!=0){if(file)fclose(file);fail_store("cannot read existing segment");return false;}
+        segment->bytes=(size_t)info.st_size;
+        uint64_t seq;size_t valid_bytes=0;bool damaged=false;record_span_t span={0};
+        cJSON *record;errno=0;
+        while((record=next_record(file,&seq,&span))){
+            if(seq<=previous){damaged=true;++state.corrupt_records;cJSON_Delete(record);continue;}
+            if(span.skipped){damaged=true;++state.corrupt_records;}
 
-    uint64_t previous = 0;
-    for (size_t index = 0; index < state.segment_count; ++index) {
-        segment_t *segment = &state.segments[index];
-        char path[64];
-        segment_path(path, sizeof(path), segment->id);
-        FILE *file = fopen(path, "r+b");
-        if (!file) {
-            fail_store("cannot recover record segment");
-            return false;
-        }
-        char line[STORE_LINE_MAX];
-        long good_end = 0;
-        while (fgets(line, sizeof(line), file)) {
-            size_t length = strlen(line);
-            if (!length || line[length - 1] != '\n') {
-                /* Only an interrupted final record of the last segment may be
-                 * removed. A long/full line or older corruption is preserved. */
-                if (index + 1 == state.segment_count && feof(file) &&
-                    length < sizeof(line) - 1) {
-                    long end = ftell(file);
-                    if (end < good_end || ftruncate(fileno(file), good_end) != 0 ||
-                        fsync(fileno(file)) != 0) {
-                        fclose(file);
-                        fail_store("cannot trim interrupted final record");
-                        return false;
-                    }
-                    state.recovered_tail_bytes += (uint64_t)(end - good_end);
-                    break;
+            previous=seq;valid_bytes+=span.bytes;
+            if(!segment->records)segment->minimum=seq;
+            if(seq>state.ack_sequence){
+                if(!state.pending_records){
+                    oldest_metadata(cJSON_GetObjectItemCaseSensitive(record,"data"),seq);
                 }
-                fclose(file);
-                ++state.corrupt_records;
-                fail_store("non-final or oversized incomplete record; data preserved");
-                return false;
+                if(segment->maximum<=state.ack_sequence)segment->pending_offset=(size_t)span.start;
+                ++state.pending_records;state.pending_bytes+=span.bytes;
             }
-            uint64_t sequence = 0;
-            cJSON *record = read_record(line, length, &sequence);
-            if (!record || sequence <= previous) {
-                cJSON_Delete(record);
-                fclose(file);
-                ++state.corrupt_records;
-                fail_store("record CRC or sequence invalid; data preserved");
-                return false;
-            }
-            cJSON_Delete(record);
-            previous = sequence;
-            if (!segment->records) {
-                segment->minimum = sequence;
-            }
-            if (sequence > state.ack_sequence &&
-                segment->maximum <= state.ack_sequence) {
-                segment->pending_offset = segment->bytes;
-            }
-            segment->maximum = sequence;
-            segment->bytes += length;
-            ++segment->records;
-            if (sequence > state.ack_sequence) {
-                state.pending_bytes += length;
-                ++state.pending_records;
-            }
-            good_end = ftell(file);
-            if ((segment->records & 63U) == 0) {
-                vTaskDelay(1);
-            }
+            segment->maximum=seq;++segment->records;cJSON_Delete(record);
+            if((segment->records&63u)==0)vTaskDelay(1);
+            errno=0;
         }
-        bool read_error = ferror(file) != 0;
+        bool error=ferror(file)!=0 || errno==ENOMEM;
         fclose(file);
-        if (read_error) {
-            fail_store("error reading record segment");
-            return false;
-        }
-        if (segment->maximum <= state.ack_sequence) {
-            segment->pending_offset = segment->bytes;
-        }
-        state.recovery_segments = (uint32_t)(index + 1);
-        vTaskDelay(1);
+        if(error){fail_store("recovery read/allocation failed; pending count unknown");return false;}
+        if(valid_bytes<segment->bytes){damaged=true;state.isolated_bytes+=segment->bytes-valid_bytes;}
+        if(span.skipped || (!segment->records && segment->bytes)){++state.corrupt_records;damaged=true;}
+        if(damaged){segment->quarantined=true;++state.isolated_files;state.recovered_records+=segment->records;}
+        if(segment->maximum<=state.ack_sequence)segment->pending_offset=segment->bytes;
+        state.recovery_segments=(uint32_t)(i+1);vTaskDelay(1);
     }
-    state.highest_committed = previous > state.ack_sequence ? previous : state.ack_sequence;
-    state.next_segment_id = state.segment_count
-        ? state.segments[state.segment_count - 1].id + 1 : 1;
-    if (!state.next_segment_id) {
-        fail_store("segment identifier exhausted");
-        return false;
+    state.highest_committed=previous>state.ack_sequence?previous:state.ack_sequence;
+    state.next_segment_id=largest_id+1;
+    if(!state.next_segment_id){fail_store("segment identifier exhausted");return false;}
+    if(state.highest_committed>state.reserved_end){
+        state.reserved_end=state.highest_committed;
+        if(nvs_set_u64(state.nvs,"reserved",state.reserved_end)!=ESP_OK || nvs_commit(state.nvs)!=ESP_OK){fail_store("cannot reserve recovered sequences");return false;}
     }
-    if (state.highest_committed > state.reserved_end) {
-        state.reserved_end = state.highest_committed;
-        if (nvs_set_u64(state.nvs, "reserved", state.reserved_end) != ESP_OK ||
-            nvs_commit(state.nvs) != ESP_OK) {
-            fail_store("cannot reserve recovered sequence range");
-            return false;
-        }
-    }
-    state.next_sequence = state.reserved_end + 1;
-    if (tb_config()->sequence_floor > state.next_sequence) {
-        state.next_sequence = tb_config()->sequence_floor;
-    }
-    return true;
+    state.next_sequence=state.reserved_end+1;
+    if(tb_config()->sequence_floor>state.next_sequence)state.next_sequence=tb_config()->sequence_floor;
+    state.recovery_complete=true;state.error[0]=0;return true;
 }
 
 /* Called only under state.mutex, and only after the ack has been committed. */
@@ -573,10 +636,19 @@ static void prune_segments(void)
         }
         char path[64];
         segment_path(path, sizeof(path), segment->id);
-        if (unlink(path) != 0 && errno != ENOENT) {
+        char bad[96];snprintf(bad,sizeof(bad),"%s/%08" PRIX32 ".BAD",state.base_path,segment->id);
+        /* Older firmware can reuse a LOG id after rollback. Never overwrite
+         * an existing forensic archive when upgrading again. */
+        while(segment->quarantined && access(bad,F_OK)==0){
+            if(!state.next_segment_id){snprintf(state.error,sizeof(state.error),"archive identifier exhausted");return;}
+            snprintf(bad,sizeof(bad),"%s/%08" PRIX32 ".BAD",state.base_path,state.next_segment_id++);
+        }
+        int result=segment->quarantined?rename(path,bad):unlink(path);
+        if (result != 0 && errno != ENOENT) {
             snprintf(state.error, sizeof(state.error), "cannot prune acknowledged segment");
             break;
         }
+        if(segment->quarantined)state.archived_bytes+=segment->bytes;
         ++removed;
     }
     if (removed) {
@@ -611,6 +683,19 @@ static esp_err_t reserve_sequence(uint64_t *sequence)
     return ESP_OK;
 }
 
+static bool compression_allowed(void)
+{
+#ifndef TB_STORE_HOST_TEST
+    const esp_partition_t *p=esp_ota_get_running_partition();esp_ota_img_states_t image;
+    if(!p)return false;
+    esp_err_t err=esp_ota_get_state_partition(p,&image);
+    if(err==ESP_ERR_NOT_FOUND)return true; /* First USB image: no rollback entry. */
+    return err==ESP_OK && image!=ESP_OTA_IMG_NEW && image!=ESP_OTA_IMG_PENDING_VERIFY;
+#else
+    return host_allow_compression;
+#endif
+}
+
 static void append_record(const queued_record_t *item)
 {
     if (!state.ready) {
@@ -618,22 +703,40 @@ static void append_record(const queued_record_t *item)
         return;
     }
     uint64_t sequence = state.next_sequence;
-    char line[STORE_LINE_MAX];
-    int written = snprintf(line, sizeof(line),
-        "{\"seq\":%" PRIu64 ",\"uptime_us\":%" PRIu64 ",\"crc32\":%" PRIu32
-        ",\"data\":%s}\n", sequence, item->uptime_us,
-        tb_store_record_crc(sequence, item->uptime_us, item->json, strlen(item->json)),
-        item->json);
+    char line[STORE_LINE_MAX],encoded[TB_RECORD_MAX];
+    size_t packed=compression_allowed() && strstr(item->json,"\"uptime_ms\":") && strstr(item->json,"\"boot_id\":")?tb_store_pack(item->json,strlen(item->json),encoded,sizeof(encoded)):0;
+    const char *data=item->json;
+    if(packed)data=encoded;
+    uint32_t crc=tb_store_record_crc(sequence,packed?0:item->uptime_us,data,strlen(data));
+    if(packed)crc^=UINT32_C(0xa21c5e37);
+    int written=packed?snprintf(line,sizeof(line),"{\"seq\":%" PRIu64 ",\"c\":%" PRIu32 ",\"z2\":\"%s\"}\n",sequence,crc,data):snprintf(line,sizeof(line),
+        "{\"seq\":%" PRIu64 ",\"uptime_us\":%" PRIu64 ",\"crc32\":%" PRIu32 "%s,\"data\":%s}\n",
+        sequence,item->uptime_us,crc,packed?",\"v\":2":"",data);
     if (written <= 0 || (size_t)written >= sizeof(line)) {
         increment(&state.invalid_input);
         return;
     }
     size_t length = (size_t)written;
+    /* Archives are never recycled. Leave filesystem/WL headroom, and stop
+     * accepting new rows explicitly when evidence occupies the outbox budget. */
+    uint64_t occupied=state.archived_bytes;
+    for(size_t i=0;i<state.segment_count;i++)occupied+=state.segments[i].bytes;
+    if(occupied+length+1>state.maximum_segments*state.segment_bytes){
+        prune_segments();occupied=state.archived_bytes;
+        for(size_t i=0;i<state.segment_count;i++)occupied+=state.segments[i].bytes;
+        if(occupied+length+1>state.maximum_segments*state.segment_bytes){state.capacity_blocked=true;snprintf(state.error,sizeof(state.error),"outbox full; pending and isolated files preserved");increment(&state.dropped_full);return;}
+    }
+#ifndef TB_STORE_HOST_TEST
+    if(state.base_path && esp_vfs_fat_info(state.base_path,&state.total_bytes,&state.available_bytes)==ESP_OK && state.available_bytes<length+4096u){
+        state.capacity_blocked=true;increment(&state.dropped_full);snprintf(state.error,sizeof(state.error),"filesystem full; pending and isolated files preserved");return;
+    }
+#endif
     segment_t *segment = state.segment_count
         ? &state.segments[state.segment_count - 1] : NULL;
-    if (!segment || segment->bytes + length > state.segment_bytes) {
+    if (!segment || segment->bytes + length + 1 > state.segment_bytes) {
         prune_segments();
         if (state.segment_count >= state.maximum_segments || !state.next_segment_id) {
+            state.capacity_blocked=true;snprintf(state.error,sizeof(state.error),"segment capacity full; pending files preserved");
             increment(&state.dropped_full);
             return;
         }
@@ -660,7 +763,13 @@ static void append_record(const queued_record_t *item)
     }
     char path[64];
     segment_path(path, sizeof(path), segment->id);
-    FILE *file = fopen(path, "ab");
+    FILE *file = fopen(path, "a+b");
+    size_t separator=0;
+    if(file && segment->quarantined && segment->bytes && fseek(file,-1,SEEK_END)==0){
+        int last=fgetc(file);
+        if(fseek(file,0,SEEK_END)!=0){fclose(file);file=NULL;}
+        else if(last!='\n'){if(fputc('\n',file)==EOF){fclose(file);file=NULL;}else separator=1;}
+    }
     bool ok = file && fwrite(line, 1, length, file) == length &&
               fflush(file) == 0 && fsync(fileno(file)) == 0;
     if (file && fclose(file) != 0) {
@@ -671,14 +780,18 @@ static void append_record(const queued_record_t *item)
         fail_store("record write failed; stopped to preserve data");
         return;
     }
+    if(state.capacity_blocked){state.capacity_blocked=false;state.error[0]=0;}
     if (!segment->records) {
         segment->minimum = sequence;
     }
     segment->maximum = sequence;
-    segment->bytes += length;
+    segment->bytes += length+separator;
+    state.isolated_bytes+=separator;
     ++segment->records;
     ++state.pending_records;
     state.pending_bytes += length;
+    state.stored_bytes_this_boot+=length;state.last_append_us=(uint64_t)esp_timer_get_time();
+    if(state.pending_records==1){cJSON *sample=cJSON_Parse(item->json);oldest_metadata(sample,sequence);cJSON_Delete(sample);}
     ++state.committed_this_boot;
     state.highest_committed = sequence;
 }
@@ -726,7 +839,7 @@ static bool initialize_fram(void)
 
 static bool initialize_medium(void)
 {
-    if (!initialize_fram() || !mount_storage()) {
+    if (!state.base_path && (!initialize_fram() || !mount_storage())) {
         ESP_LOGE(TAG, "%s", state.error);
         return false;
     }
@@ -738,20 +851,9 @@ static bool initialize_medium(void)
         fail_store("discard: cannot read NVS marker");
         return false;
     }
-    if (discard_requested) {
-        if (discard_requested != 1 || strcmp(state.medium, "flash") != 0) {
-            fail_store("discard: invalid marker or non-flash backend");
-            return false;
-        }
-        if (!discard_log_files()) return false;
-        if (nvs_set_u8(state.nvs, "discard_logs", 0) != ESP_OK ||
-            nvs_commit(state.nvs) != ESP_OK) {
-            fail_store("discard: cannot commit completion marker");
-            return false;
-        }
-        state.purged_this_boot = true;
-        ESP_LOGW(TAG, "Operator-authorized discard completed: %lu log files, NVS/OTA intact",
-                 (unsigned long)state.purged_files);
+    if(discard_requested){
+        /* Cancel old deferred deletion; an OTA rollback must not resurrect it. */
+        if(nvs_set_u8(state.nvs,"discard_logs",0)!=ESP_OK || nvs_commit(state.nvs)!=ESP_OK){fail_store("cannot cancel legacy deferred discard");return false;}
     }
     if (!recover_records()) {
         return false;
@@ -779,12 +881,12 @@ static bool initialize_medium(void)
         return false;
     }
     state.medium_clean = false;
-    if (!state.pending_records &&
+    if (!state.pending_records && !state.isolated_files &&
         nvs_set_u8(state.nvs, "clean", 1) == ESP_OK &&
         nvs_commit(state.nvs) == ESP_OK) {
         state.medium_clean = true;
     }
-    state.ready = true;
+    state.ready = true;state.medium_initialized=true;
     ESP_LOGI(TAG, "Storage %s: %u pending records, %" PRIu64 " last ack",
              state.medium, (unsigned)state.pending_records, state.ack_sequence);
     return true;
@@ -798,19 +900,36 @@ static void storage_task(void *argument)
     state.initializing = false;
     xSemaphoreGive(state.mutex);
     queued_record_t item;
+    bool retained=false;
+    uint64_t retained_sequence=0;
     tb_task_budget_t budget;
     tb_task_budget_reset(&budget, esp_timer_get_time());
     for (;;) {
-        /* Preserve the bounded volatile backlog after an I/O failure. Reading
-         * and discarding it would erase the only remaining copy. Reboot is
-         * required to recover the failed medium; no unsafe automatic remount. */
+        /* Retry a mounted medium read-only; never format or erase it. Keep
+         * the in-flight row, and requeue only if recovery did not find its
+         * CRC-valid sequence. This prevents duplicates after ambiguous fsync. */
         if (!state.ready) {
-            vTaskDelay(pdMS_TO_TICKS(250));
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            xSemaphoreTake(state.mutex,portMAX_DELAY);
+            state.initializing=true;
+            if(!state.base_path || !state.medium_initialized){initialize_medium();}
+            else if(recover_records()){
+                state.ready=true;prune_segments();
+                if(retained && state.highest_committed>=retained_sequence)retained=false;
+            }
+            state.initializing=false;
+            xSemaphoreGive(state.mutex);
             continue;
         }
-        if (xQueueReceive(state.queue, &item, portMAX_DELAY) == pdTRUE) {
+        if(state.rollback_paused && !retained && !uxQueueMessagesWaiting(state.queue)){
+            xSemaphoreTake(state.mutex,portMAX_DELAY);state.rollback_drained=true;xSemaphoreGive(state.mutex);
+            vTaskDelay(pdMS_TO_TICKS(100));continue;
+        }
+        if (retained || xQueueReceive(state.queue, &item, pdMS_TO_TICKS(250)) == pdTRUE) {
             xSemaphoreTake(state.mutex, portMAX_DELAY);
+            retained_sequence=state.next_sequence;
             append_record(&item);
+            retained=!state.ready;
             xSemaphoreGive(state.mutex);
             /* Yield outside the media lock, including a full-medium fast
              * rejection loop. The decoder and writer must both leave time
@@ -826,18 +945,8 @@ static void storage_task(void *argument)
 
 esp_err_t tb_store_schedule_discard(void)
 {
-    /* Called only by an authenticated admin endpoint after OTA confirmation.
-     * The active writer is never interrupted: deletion starts after reboot. */
-    if (!state.mutex || xSemaphoreTake(state.mutex, pdMS_TO_TICKS(2000)) != pdTRUE)
-        return ESP_ERR_TIMEOUT;
-    esp_err_t result = ESP_ERR_INVALID_STATE;
-    if (state.ready && !state.initializing && state.nvs_open &&
-        state.medium && strcmp(state.medium, "flash") == 0) {
-        result = nvs_set_u8(state.nvs, "discard_logs", 1);
-        if (result == ESP_OK) result = nvs_commit(state.nvs);
-    }
-    xSemaphoreGive(state.mutex);
-    return result;
+    /* Rev0.2.12 recovery never authorizes a wipe. ACK-only recycling remains. */
+    return ESP_ERR_INVALID_STATE;
 }
 
 esp_err_t tb_store_init(void)
@@ -904,7 +1013,7 @@ esp_err_t tb_store_init(void)
         return ESP_ERR_INVALID_STATE;
     }
     state.initializing = true;
-    if (xTaskCreate(storage_task, "tb_store", 7168, NULL, 4, NULL) != pdPASS) {
+    if (xTaskCreate(storage_task, "tb_store", 9216, NULL, 4, NULL) != pdPASS) {
         state.initializing = false;
         fail_store("storage worker allocation failed");
         return ESP_ERR_NO_MEM;
@@ -914,14 +1023,22 @@ esp_err_t tb_store_init(void)
 
 #endif
 
+esp_err_t tb_store_prepare_rollback(void)
+{
+    if(!state.mutex)return ESP_ERR_INVALID_STATE;
+    portENTER_CRITICAL(&counter_lock);state.rollback_paused=true;portEXIT_CRITICAL(&counter_lock);
+    return ESP_OK;
+}
+
 esp_err_t tb_store_submit(const char *record_json)
 {
     /* Capture starts while media recovery is asynchronous. Buffer that window
      * in the same bounded queue; ESP_OK still means enqueued, not durable. */
-    if (!record_json || !state.queue || (!state.ready && !state.initializing)) {
+    if (!record_json || !state.queue || (!state.ready && !state.initializing && !state.base_path)) {
         increment(&state.dropped_unavailable);
         return ESP_ERR_INVALID_STATE;
     }
+    if(state.rollback_paused)return ESP_ERR_INVALID_STATE;
     size_t length = strnlen(record_json, TB_RECORD_MAX);
     if (!length || length >= TB_RECORD_MAX) {
         increment(&state.invalid_input);
@@ -947,7 +1064,12 @@ esp_err_t tb_store_submit(const char *record_json)
     queued_record_t item = {.uptime_us = (uint64_t)esp_timer_get_time()};
     memcpy(item.json, canonical, length + 1);
     cJSON_free(canonical);
-    if (xQueueSend(state.queue, &item, 0) != pdTRUE) {
+    portENTER_CRITICAL(&counter_lock);
+    bool paused=state.rollback_paused;
+    bool accepted=!paused && xQueueSend(state.queue,&item,0)==pdTRUE;
+    portEXIT_CRITICAL(&counter_lock);
+    if(paused)return ESP_ERR_INVALID_STATE;
+    if (!accepted) {
         increment(&state.dropped_queue);
         return ESP_ERR_NO_MEM;
     }
@@ -1003,9 +1125,9 @@ cJSON *tb_store_batch(size_t limit, size_t max_bytes)
     if (max_bytes > 24576) max_bytes = 24576;
     size_t wire_bytes = 512;
     size_t count = 0;
-    uint64_t maximum = 0;
-    bool failed = false;
-    for (size_t index = 0; index < state.segment_count && count < limit && !failed; ++index) {
+    uint64_t maximum = 0, previous=state.ack_sequence;
+    bool failed = false, full=false;
+    for (size_t index = 0; index < state.segment_count && count < limit && !failed && !full; ++index) {
         if (state.segments[index].maximum <= state.ack_sequence) {
             continue;
         }
@@ -1021,24 +1143,20 @@ cJSON *tb_store_batch(size_t limit, size_t max_bytes)
             failed = true;
             break;
         }
-        char line[STORE_LINE_MAX];
-        while (count < limit && fgets(line, sizeof(line), file)) {
-            size_t length = strlen(line);
-            uint64_t sequence = 0;
-            cJSON *record = read_record(line, length, &sequence);
-            if (!record) {
-                failed = true;
-                break;
-            }
-            if (sequence <= state.ack_sequence) {
+        uint64_t sequence=0;record_span_t span={0};cJSON *record;
+        errno=0;
+        while(count<limit && (record=next_record(file,&sequence,&span))){
+            if(span.skipped && !state.segments[index].quarantined){cJSON_Delete(record);state.ready=false;failed=true;break;}
+            if (sequence <= previous) {
                 cJSON_Delete(record);
                 continue;
             }
-            if (wire_bytes + length + 32 > max_bytes) {
+            if (wire_bytes + TB_RECORD_MAX + 32 > max_bytes) {
                 cJSON_Delete(record);
-                index = state.segment_count;
+                full=true;
                 break;
             }
+            previous=sequence;
             /* The Cloud ingest contract expects flat samples. The on-disk
              * CRC wrapper is an implementation detail, not the upload shape.
              * Preserve the sample's original boot_id/uptime_ms across reboot. */
@@ -1056,18 +1174,18 @@ cJSON *tb_store_batch(size_t limit, size_t max_bytes)
                 failed = true;
                 break;
             }
-            wire_bytes += length + 32;
+            wire_bytes += TB_RECORD_MAX + 32;
             maximum = sequence;
             ++count;
         }
-        if (ferror(file)) {
-            failed = true;
-        }
+        if(ferror(file) || errno==ENOMEM)failed=true;
+        if(span.skipped && !state.segments[index].quarantined){state.ready=false;failed=true;}
         fclose(file);
     }
+    if(!count && state.pending_records && !failed){state.ready=false;failed=true;}
     if (failed) {
-        ++state.corrupt_records;
-        fail_store("cannot verify stored batch; data preserved");
+        if(!state.ready)state.recovery_complete=false;
+        snprintf(state.error,sizeof(state.error),"batch read/allocation unavailable; data preserved");
         cJSON_DeleteItemFromObjectCaseSensitive(result, "samples");
         cJSON_AddArrayToObject(result, "samples");
         count = 0;
@@ -1096,6 +1214,7 @@ static bool count_acknowledged(uint64_t previous, uint64_t target,
     *records = 0;
     *bytes = 0;
     *target_found = false;
+    uint64_t scan_previous=previous;
     for (size_t index = 0; index < state.segment_count; ++index) {
         pending_offsets[index] = state.segments[index].pending_offset;
         if (state.segments[index].maximum <= previous ||
@@ -1112,16 +1231,15 @@ static bool count_acknowledged(uint64_t previous, uint64_t target,
             fclose(file);
             return false;
         }
-        char line[STORE_LINE_MAX];
-        while (fgets(line, sizeof(line), file)) {
-            size_t length = strlen(line);
-            uint64_t sequence;
-            cJSON *record = read_record(line, length, &sequence);
-            if (!record) {
-                fclose(file);
-                return false;
-            }
+        uint64_t sequence=0;record_span_t span={0};cJSON *record;errno=0;
+        while((record=next_record(file,&sequence,&span))){
+            size_t length=span.bytes;
             cJSON_Delete(record);
+            if(span.skipped && !state.segments[index].quarantined){
+                state.ready=false;state.recovery_complete=false;fclose(file);return false;
+            }
+            if(sequence<=scan_previous)continue;
+            scan_previous=sequence;
             if (sequence == target) *target_found = true;
             if (sequence > previous && sequence <= target) {
                 ++*records;
@@ -1136,13 +1254,31 @@ static bool count_acknowledged(uint64_t previous, uint64_t target,
                 break;
             }
         }
-        bool error = ferror(file) != 0;
+        bool error = ferror(file) != 0 || errno==ENOMEM;
         fclose(file);
         if (error) {
             return false;
         }
     }
     return true;
+}
+
+static void refresh_oldest(void)
+{
+    state.oldest_pending_known=false;state.oldest_pending_sequence=0;state.oldest_pending_ts[0]=0;
+    if(!state.pending_records)return;
+    for(size_t i=0;i<state.segment_count;i++){
+        if(state.segments[i].maximum<=state.ack_sequence)continue;
+        char path[96];segment_path(path,sizeof(path),state.segments[i].id);
+        FILE *f=fopen(path,"rb");if(!f)return;
+        if(fseek(f,(long)state.segments[i].pending_offset,SEEK_SET)!=0){fclose(f);return;}
+        uint64_t seq=0;record_span_t span={0};cJSON *row;
+        while((row=next_record(f,&seq,&span))){
+            if(seq>state.ack_sequence){oldest_metadata(cJSON_GetObjectItemCaseSensitive(row,"data"),seq);cJSON_Delete(row);fclose(f);return;}
+            cJSON_Delete(row);
+        }
+        fclose(f);
+    }
 }
 
 esp_err_t tb_store_ack(uint64_t sequence)
@@ -1179,7 +1315,7 @@ esp_err_t tb_store_ack(uint64_t sequence)
                 error = nvs_commit(state.nvs);
             }
             if (error == ESP_OK) {
-                state.ack_sequence = sequence;
+                state.ack_sequence = sequence;state.last_ack_us=(uint64_t)esp_timer_get_time();
                 state.pending_records -= records;
                 state.pending_bytes -= bytes;
                 for (size_t i = 0; i < state.segment_count; ++i) {
@@ -1188,12 +1324,12 @@ esp_err_t tb_store_ack(uint64_t sequence)
                 if (state.fram_attempted) {
                     tb_fram_checkpoint(state.reserved_end, state.ack_sequence);
                 }
-                prune_segments();
+                prune_segments();refresh_oldest();
                 /* ACK must already be durable before clean becomes durable.
                  * A crash between these commits leaves a conservative dirty
                  * flag, never a clean flag with a stale acknowledgement. */
                 state.medium_clean = false;
-                if (!state.pending_records &&
+                if (!state.pending_records && !state.isolated_files &&
                     nvs_set_u8(state.nvs, "clean", 1) == ESP_OK &&
                     nvs_commit(state.nvs) == ESP_OK) {
                     state.medium_clean = true;
@@ -1214,6 +1350,10 @@ void tb_store_add_json(cJSON *object)
     if (state.initializing) {
         cJSON_AddBoolToObject(storage, "ready", false);
         cJSON_AddBoolToObject(storage, "initializing", true);
+        cJSON_AddStringToObject(storage,"phase","RECOVERING");
+        cJSON_AddBoolToObject(storage,"pending_known",false);
+        cJSON_AddNullToObject(storage,"pending_records");
+        cJSON_AddNullToObject(storage,"pending_bytes");
         cJSON_AddNumberToObject(storage, "recovered_segments", state.recovery_segments);
         cJSON_AddNumberToObject(storage, "queue_capacity", STORE_QUEUE);
         cJSON_AddNumberToObject(storage, "queue_depth",
@@ -1227,6 +1367,8 @@ void tb_store_add_json(cJSON *object)
     }
     if (!state.mutex || xSemaphoreTake(state.mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         cJSON_AddBoolToObject(storage, "ready", false);
+        cJSON_AddBoolToObject(storage,"pending_known",false);
+        cJSON_AddNullToObject(storage,"pending_records");
         cJSON_AddStringToObject(storage, "error", "storage_busy_or_uninitialized");
         return;
     }
@@ -1244,8 +1386,49 @@ void tb_store_add_json(cJSON *object)
     cJSON_AddNumberToObject(storage, "record_capacity", TB_RECORD_MAX - 1);
     cJSON_AddNumberToObject(storage, "buffered_during_recovery",
                            (double)counter_value(&state.buffered_during_recovery));
-    cJSON_AddNumberToObject(storage, "pending_records", (double)state.pending_records);
-    cJSON_AddNumberToObject(storage, "pending_bytes", (double)state.pending_bytes);
+    if(state.ready && state.recovery_complete){
+        cJSON_AddNumberToObject(storage,"pending_records",(double)state.pending_records);
+        cJSON_AddNumberToObject(storage,"pending_bytes",(double)state.pending_bytes);
+    }else{cJSON_AddNullToObject(storage,"pending_records");cJSON_AddNullToObject(storage,"pending_bytes");}
+    cJSON_AddBoolToObject(storage,"pending_known",state.ready && state.recovery_complete);
+    cJSON_AddBoolToObject(storage,"rollback_paused",state.rollback_paused);
+    cJSON_AddBoolToObject(storage,"rollback_ready",state.rollback_paused && state.rollback_drained && state.ready && state.recovery_complete && !state.pending_records && !uxQueueMessagesWaiting(state.queue));
+    cJSON_AddStringToObject(storage,"phase",state.rollback_paused?"MAINTENANCE_PAUSED":state.ready && state.capacity_blocked?"FULL":state.ready?"NORMAL":state.initializing?"RECOVERING":"RECOVERY_REQUIRED");
+    uint64_t used=state.archived_bytes;
+    for(size_t i=0;i<state.segment_count;i++)used+=state.segments[i].bytes;
+    uint64_t budget=state.maximum_segments*state.segment_bytes;
+    uint64_t available=used<budget?budget-used:0;
+    uint64_t appendable=state.segment_count<state.maximum_segments?(state.maximum_segments-state.segment_count)*state.segment_bytes:0;
+    if(state.segment_count && state.segments[state.segment_count-1].bytes<state.segment_bytes)
+        appendable+=state.segment_bytes-state.segments[state.segment_count-1].bytes;
+    if(available>appendable)available=appendable;
+#ifndef TB_STORE_HOST_TEST
+    if(state.base_path && esp_vfs_fat_info(state.base_path,&state.total_bytes,&state.available_bytes)==ESP_OK && available>state.available_bytes)
+        available=state.available_bytes;
+#endif
+    cJSON_AddNumberToObject(storage,"space_total_bytes",(double)(state.total_bytes?state.total_bytes:budget));
+    cJSON_AddNumberToObject(storage,"outbox_budget_bytes",(double)budget);
+    cJSON_AddNumberToObject(storage,"space_available_bytes",(double)available);
+    uint64_t now=(uint64_t)esp_timer_get_time();
+    if(now>=UINT64_C(60000000) && state.stored_bytes_this_boot){
+        cJSON_AddNumberToObject(storage,"offline_estimate_seconds",(double)available*((double)now/1000000.0)/(double)state.stored_bytes_this_boot);
+        cJSON_AddStringToObject(storage,"offline_estimate_quality","WRITE_RATE_THIS_BOOT");
+    }else{cJSON_AddNullToObject(storage,"offline_estimate_seconds");cJSON_AddStringToObject(storage,"offline_estimate_quality","LEARNING");}
+    cJSON_AddNumberToObject(storage,"isolated_files",(double)state.isolated_files);
+    cJSON_AddNumberToObject(storage,"isolated_bytes",(double)state.isolated_bytes);
+    cJSON_AddNumberToObject(storage,"recovered_records",(double)state.recovered_records);
+    cJSON_AddNullToObject(storage,"unrecoverable_records");
+    cJSON_AddStringToObject(storage,"isolated_evidence_status","PRESERVED_NOT_ACKED_CORRUPT_RECORD_COUNT_UNKNOWN");
+    cJSON_AddNumberToObject(storage,"dropped_before_durability",(double)(counter_value(&state.dropped_queue)+counter_value(&state.dropped_full)+counter_value(&state.dropped_unavailable)));
+    cJSON_AddBoolToObject(storage,"oldest_pending_known",state.oldest_pending_known);
+    if(state.pending_records && state.oldest_pending_known){
+        cJSON_AddNumberToObject(storage,"oldest_pending_seq",(double)state.oldest_pending_sequence);
+        if(state.oldest_pending_ts[0])cJSON_AddStringToObject(storage,"oldest_pending_ts",state.oldest_pending_ts);
+        cJSON_AddNumberToObject(storage,"oldest_pending_boot",state.oldest_pending_boot);
+        cJSON_AddNumberToObject(storage,"oldest_pending_uptime_ms",(double)state.oldest_pending_uptime_us/1000.0);
+    }else cJSON_AddNullToObject(storage,"oldest_pending_uptime_ms");
+    if(state.last_ack_us)cJSON_AddNumberToObject(storage,"last_ack_age_ms",(double)(now-state.last_ack_us)/1000.0);
+    else cJSON_AddNullToObject(storage,"last_ack_age_ms");
     cJSON_AddNumberToObject(storage, "last_ack_seq", (double)state.ack_sequence);
     cJSON_AddNumberToObject(storage, "max_seq", (double)state.highest_committed);
     cJSON_AddNumberToObject(storage, "committed_this_boot", (double)state.committed_this_boot);

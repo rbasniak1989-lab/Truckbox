@@ -6,8 +6,10 @@
 static int64_t host_now_us;
 static uint8_t host_nvs[256];
 static size_t host_nvs_size;
+static unsigned char slot_a[512],slot_b[512];
+static size_t slot_sizes[2];
 static unsigned host_commits, host_mutexes;
-static unsigned host_held;
+static unsigned host_held,host_audits;
 #include "capture_under_test.h"
 
 static SemaphoreHandle_t xSemaphoreCreateMutex(void)
@@ -31,7 +33,12 @@ static esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 { (void)mode; assert(!strcmp(name, "tb_trip")); *handle = 1; return ESP_OK; }
 static esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *buffer, size_t *size)
 {
-    (void)handle; assert(!strcmp(key, "trip"));
+    (void)handle;
+    if(strcmp(key,"trip")){
+        unsigned i=!strcmp(key,"trip3a")?0:1;assert(!strcmp(key,i?"trip3b":"trip3a"));
+        if(!slot_sizes[i])return ESP_ERR_NVS_NOT_FOUND;
+        assert(*size>=slot_sizes[i]);*size=slot_sizes[i];memcpy(buffer,i?slot_b:slot_a,*size);return ESP_OK;
+    }
     if (!host_nvs_size) return ESP_ERR_NVS_NOT_FOUND;
     if (*size < host_nvs_size) { *size = host_nvs_size; return ESP_ERR_NVS_INVALID_LENGTH; }
     *size = host_nvs_size;
@@ -40,7 +47,13 @@ static esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *buffer
 }
 static esp_err_t nvs_set_blob(nvs_handle_t handle, const char *key, const void *buffer, size_t size)
 {
-    (void)handle; assert(!strcmp(key, "trip") && size <= sizeof(host_nvs));
+    (void)handle;
+    if(strcmp(key,"trip")){
+        unsigned i=!strcmp(key,"trip3a")?0:1;assert(!strcmp(key,i?"trip3b":"trip3a") && size<=512);
+        assert(!(host_held & (unsigned)(uintptr_t)s.lock));
+        memcpy(i?slot_b:slot_a,buffer,size);slot_sizes[i]=size;return ESP_OK;
+    }
+    assert(size <= sizeof(host_nvs));
     /* NVS/flash work must not hold the acquisition mutex. */
     assert(!(host_held & (unsigned)(uintptr_t)s.lock));
     memcpy(host_nvs, buffer, size); host_nvs_size = size;
@@ -60,6 +73,7 @@ static void boot_with_checkpoint(const void *blob, size_t size)
     memset(&s, 0, sizeof(s));
     host_mutexes = host_commits = 0;
     host_now_us = 0;
+    memset(slot_sizes,0,sizeof(slot_sizes));
     host_nvs_size = size;
     if (size) memcpy(host_nvs, blob, size);
     assert(host_start_restore() == ESP_OK);
@@ -95,7 +109,7 @@ static void test_v1_migration_and_v2_reboot(void)
     close_to(s.distance_trip, 123.5); close_to(s.fuel_trip, 45.25);
     assert(s.distance_trip_valid && s.fuel_trip_valid && !s.trip.counter_valid);
     persist_trip();
-    assert(host_commits == 1 && host_nvs_size == sizeof(trip_blob_t));
+    assert(host_commits == 2 && host_nvs_size == sizeof(trip_blob_t));
     trip_blob_t migrated;
     memcpy(&migrated, host_nvs, sizeof(migrated));
     assert(migrated.version == 2);
@@ -127,7 +141,7 @@ static void test_counter_gap_and_reset_no_double_count(void)
     close_to(s.distance_trip, .035);
     tb_capture_reset_trip();
     close_to(s.distance_trip, 0); close_to(s.fuel_trip, 0);
-    assert(!s.trip.counter_valid && s.speed_at == 0 && s.fuel_at == 0 && host_commits == 1);
+    assert(!s.trip.counter_valid && s.speed_at == 0 && s.fuel_at == 0 && host_commits == 2);
     can_u32(65217, 0, 0, 123456, 41000);
     close_to(s.distance_trip, 0);
 }
@@ -242,8 +256,85 @@ static void test_movement_stops_parked_trial_but_keeps_authorized_work(void)
     assert(s.requests.armed && s.active.work_mode);
 }
 
+static tbx_j1708_tx_result_t proof_begin(const uint8_t *f,size_t n,void *unused){(void)f;(void)n;(void)unused;return TBX_J1708_TX_STARTED;}
+static void proof_abort(void *unused){(void)unused;}
+static void test_external_evidence_owner(void)
+{
+    boot_with_checkpoint(NULL,0);
+    tbx_j1708_active_ops_t ops={.begin_tx=proof_begin,.abort_tx=proof_abort};
+    tbx_j1708_active_init(&s.active,&s.requests,&ops,NULL);
+    tbx_j1708_active_config_t config={.local_mid=242,.priority=8,.inverted_de21_attested=true,.single_shot=true};
+    for(unsigned i=0;i<17;i++)config.target_mid[i]=128;
+    assert(tbx_j1708_active_configure(&s.active,&config));
+    assert(tbx_j1708_active_arm(&s.active,true,true,1000000));
+    tbx_j1708_active_tick(&s.active,1005000);
+    tbx_j1708_active_note_rx(&s.active,s.active.tx_frame,5,1011000);
+    assert(tbx_j1708_active_note_response(&s.active,128,26,1205000));
+    tbx_j1708_active_tick(&s.active,1205001);assert(!s.requests.armed);
+    uint8_t reply[]={128,26,1,101};memcpy(s.trial_reply,reply,sizeof(reply));s.trial_reply_size=4;
+    host_now_us=1210000;s.speed_at=1200;s.speed=0;
+    cJSON *body=cJSON_Parse("{\"stationary\":true,\"external_capture_verified\":true,\"local_mid_free_verified\":true,\"trial_id\":\"42:1005000\",\"tx_observed_hex\":\"F2 80 1A 80 F4\",\"response_observed_hex\":\"80 1A 01 65\"}");assert(body);
+    /* TX checksum of F2 80 1A 80 isF4; no proof from echo alone. */
+    assert(!tbx_j1708_active_work_ready(&s.active,host_now_us));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"trial_id",cJSON_CreateString("41:1005000"));assert(!tb_capture_confirm_physical(body));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"trial_id",cJSON_CreateString("42:1005000"));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"external_capture_verified",cJSON_CreateFalse());assert(!tb_capture_confirm_physical(body));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"external_capture_verified",cJSON_CreateTrue());
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"response_observed_hex",cJSON_CreateString("81 1A 01 64"));assert(!tb_capture_confirm_physical(body));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"response_observed_hex",cJSON_CreateString("80 1A 01 64"));assert(!tb_capture_confirm_physical(body));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"response_observed_hex",cJSON_CreateString("80 1A 01 65"));
+    s.speed=30;assert(!tb_capture_confirm_physical(body));s.speed=0;
+    assert(tb_capture_confirm_physical(body) && host_audits==1 && s.active.physical_validated);
+    s.edge_ready=s.j1708_ready=true;
+    s.observed_mid[242>>3]|=(uint8_t)(1u<<(242&7));
+    assert(!tb_capture_request_enable_work(true,true)); /* Newly observed conflict after trial. */
+    s.observed_mid[242>>3]=0;
+    assert(tb_capture_request_enable_work(true,true));
+    cJSON_Delete(body);assert(!host_held);
+}
+
+static void test_reupgrade_imports_legacy_trip_advanced_after_rollback(void)
+{
+    trip_blob_t base={.version=2,.distance=10,.fuel=2,.distance_valid=true,.fuel_valid=true};
+    boot_with_checkpoint(&base,sizeof(base));persist_trip();assert(slot_sizes[0]);
+    /* Simulate old firmware running after rollback: it writes only trip. */
+    trip_blob_t advanced={.version=2,.distance=11.5,.fuel=2.7,.distance_valid=true,.fuel_valid=true};
+    memcpy(host_nvs,&advanced,sizeof(advanced));host_nvs_size=sizeof(advanced);
+    memset(&s,0,sizeof(s));host_mutexes=host_held=0;assert(host_start_restore()==ESP_OK);
+    close_to(s.distance_trip,11.5);close_to(s.fuel_trip,2.7);
+    assert(!s.trip.odo_valid && !s.fuel_account.direct_valid);
+    assert(!strcmp(s.trip.quality,"RECUPERADO_CHECKPOINT_LEGADO_ALTERADO"));
+}
+
+static void verified_counter_observation(uint16_t pid,uint8_t mid,uint32_t raw,uint64_t ms)
+{
+    uint8_t data[4];for(unsigned i=0;i<4;i++)data[i]=(uint8_t)(raw>>(8*i));
+    tbx_j1587_observation_t o={.pid=pid,.mid=mid,.uptime_ms=ms,.raw=data,.raw_len=4,.quality=TBX_J1587_OBS_EM_VALIDACAO,.has_numeric=true,
+        .value=raw*(pid==245?.1609344:.473176473)};
+    host_now_us=(int64_t)ms*1000;xSemaphoreTake(s.lock,portMAX_DELAY);update_j1587_signal_locked(&o,NULL);xSemaphoreGive(s.lock);
+}
+static void test_validated_counter_mids_and_real_checkpoint_restore(void)
+{
+    trip_blob_t b={.version=2,.distance=10,.fuel=2,.distance_valid=true,.fuel_valid=true};boot_with_checkpoint(&b,sizeof(b));
+    host_capture_config.j1708_enabled=true;host_capture_config.j1587_odometer_validated=host_capture_config.j1587_fuel250_validated=true;
+    host_capture_config.j1587_odometer_mid=host_capture_config.j1587_fuel250_mid=128;
+    verified_counter_observation(245,130,1000,1000);assert(!s.trip.odo_valid);
+    verified_counter_observation(245,128,1000,2000);verified_counter_observation(245,128,1001,5000);close_to(s.distance_trip,10.1609344);
+    verified_counter_observation(250,130,1000,5001);assert(!s.fuel_account.direct_valid);
+    verified_counter_observation(250,128,1000,5100);verified_counter_observation(250,128,1002,65000);close_to(s.fuel_trip,2+2*.473176473);
+    persist_trip();memset(&s,0,sizeof(s));host_mutexes=host_held=0;assert(host_start_restore()==ESP_OK);
+    assert(s.trip.odo_restored && s.fuel_account.direct_valid);
+    verified_counter_observation(245,128,1002,1000);close_to(s.distance_trip,10.3218688);
+    verified_counter_observation(250,128,1003,1100);close_to(s.fuel_trip,2+3*.473176473);
+    verified_counter_observation(250,128,1003,1200);close_to(s.fuel_trip,2+3*.473176473);
+    memset(&host_capture_config,0,sizeof(host_capture_config));
+}
+
 int main(void)
 {
+    test_validated_counter_mids_and_real_checkpoint_restore();
+    test_external_evidence_owner();
+    test_reupgrade_imports_legacy_trip_advanced_after_rollback();
     test_movement_stops_parked_trial_but_keeps_authorized_work();
     test_v1_migration_and_v2_reboot();
     test_counter_gap_and_reset_no_double_count();

@@ -1,0 +1,24 @@
+{
+  "baseline": {
+    ".iram0.text": 128956,
+    ".iram0.data": 4,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 75104,
+    "ram_static_bytes": 218852
+  },
+  "candidate": {
+    ".iram0.text": 127464,
+    ".iram0.data": 8,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 59360,
+    "ram_static_bytes": 201620
+  },
+  "static_saved_bytes": 17232,
+  "dynamic_known_saved_bytes": 10240,
+  "dynamic_basis": "RX queue64*104, TWAI queue128*20, CAN task5120 removed; storage and bridge stacks each+2048. Excludes allocator/TCB overhead.",
+  "physical_free_heap": "NOT_MEASURED"
+}

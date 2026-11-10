@@ -1,5 +1,6 @@
 #include "tbx_j1708_requests.h"
 #include <string.h>
+#include "tbx_j1708_policy.h"
 /* Owner's chosen 17 J1587 PIDs. Every entry is enabled from initialization. */
 static const uint16_t selected_pids[TBX_J1708_REQUEST_COUNT] = {
     26, 33, 34, 37, 62, 68, 117, 118, 235,
@@ -7,6 +8,18 @@ static const uint16_t selected_pids[TBX_J1708_REQUEST_COUNT] = {
 };
 static bool time_due(uint32_t now, uint32_t deadline) {
     return (int32_t)(now - deadline) >= 0;
+}
+uint32_t tbx_j1708_request_default_period(uint16_t pid)
+{
+    for(unsigned i=0;i<17;i++)if(tbx_j1708_policy()[i].pid==pid)return tbx_j1708_policy()[i].period_ms;
+    return 0;
+}
+void tbx_j1708_request_start_periodic(tbx_j1708_request_scheduler_t *s,uint32_t now)
+{
+    if(!s)return;
+    s->periodic=true;s->cursor=0;
+    for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
+        s->pids[i].next_due_ms=now+(uint32_t)(i*60000u/TBX_J1708_REQUEST_COUNT);
 }
 void tbx_j1708_request_init(tbx_j1708_request_scheduler_t *s) {
     if (!s) return;
@@ -17,6 +30,7 @@ void tbx_j1708_request_init(tbx_j1708_request_scheduler_t *s) {
     for (uint8_t i=0; i<TBX_J1708_REQUEST_COUNT; ++i) {
         s->pids[i].pid = selected_pids[i];
         s->pids[i].enabled = true;
+        s->pids[i].period_ms=tbx_j1708_request_default_period(selected_pids[i]);
     }
 }
 void tbx_j1708_request_stop(tbx_j1708_request_scheduler_t *s) {
@@ -78,6 +92,7 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
     for (uint8_t tries=0; tries<TBX_J1708_REQUEST_COUNT; tries++) {
         uint8_t i = (uint8_t)((s->cursor + tries) % TBX_J1708_REQUEST_COUNT);
         if (!s->pids[i].enabled) continue;
+        if(s->periodic && !time_due(now,s->pids[i].next_due_ms))continue;
         s->send_deferred = false;
         if (!send(s->pids[i].pid, ctx)) {
             if (s->send_deferred) {
@@ -91,6 +106,12 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
             return;
         }
         ++s->pids[i].sent;
+        if(s->periodic){
+            uint32_t period=s->pids[i].period_ms;
+            if(period<1200)period=1200;
+            uint32_t late=now-s->pids[i].next_due_ms;
+            s->pids[i].next_due_ms=now+period-late%period;
+        }
         s->pids[i].last_sent_ms = now;
         ++s->sent_total;
         s->pending = i;

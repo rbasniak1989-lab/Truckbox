@@ -1,0 +1,32 @@
+Executing action: all (aliases: build)
+Running ninja in directory /workspace/work/Truckbox-v0212/firmware/espidf/build-core
+Executing "ninja all"...
+[1/12] Performing build step for 'bootloader'
+[1/1] cd /workspace/work/Truckbox-v0212/firmware/espidf/build-core/bootloader/esp-idf/esptool_py && /workspace/work/idf-tools/python_env/idf5.5_py3.12_env/bin/python /workspace/work/esp-idf-v5.5.2/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /workspace/work/Truckbox-v0212/firmware/espidf/build-core/bootloader/bootloader.bin
+Bootloader binary size 0x3990 bytes. 0x4670 bytes (55%) free.
+[2/12] No install step for 'bootloader'
+[3/12] Completed 'bootloader'
+[4/12] Generating ../../index.html.S
+[5/12] Building ASM object esp-idf/tb_web/CMakeFiles/__idf_tb_web.dir/__/__/index.html.S.obj
+[6/12] Linking C static library esp-idf/tb_web/libtb_web.a
+[7/12] Building C object esp-idf/tb_core/CMakeFiles/__idf_tb_core.dir/store.c.obj
+[8/12] Linking C static library esp-idf/tb_core/libtb_core.a
+[9/12] Generating esp-idf/esp_system/ld/sections.ld
+[10/12] Linking CXX executable truckbox_core.elf
+[11/12] Generating binary image from built executable
+esptool.py v4.13.0
+Creating esp32c6 image...
+Merged 1 ELF section
+Successfully created esp32c6 image.
+Generated /workspace/work/Truckbox-v0212/firmware/espidf/build-core/truckbox_core.bin
+[12/12] cd /workspace/work/Truckbox-v0212/firmware/espidf/build-core/esp-idf/esptool_py && /workspace/work/idf-tools/python_env/idf5.5_py3.12_env/bin/python /workspace/work/esp-idf-v5.5.2/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /workspace/work/Truckbox-v0212/firmware/espidf/build-core/partition_table/partition-table.bin /workspace/work/Truckbox-v0212/firmware/espidf/build-core/truckbox_core.bin
+truckbox_core.bin binary size 0x166a60 bytes. Smallest app partition is 0x300000 bytes. 0x1995a0 bytes (53%) free.
+
+Project build complete. To flash, run:
+ idf.py flash
+or
+ idf.py -p PORT flash
+or
+ python -m esptool --chip esp32c6 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 8MB --flash_freq 80m 0x0 firmware/espidf/build-core/bootloader/bootloader.bin 0x8000 firmware/espidf/build-core/partition_table/partition-table.bin 0xf000 firmware/espidf/build-core/ota_data_initial.bin 0x20000 firmware/espidf/build-core/truckbox_core.bin
+or from the "/workspace/work/Truckbox-v0212/firmware/espidf/build-core" directory
+ python -m esptool --chip esp32c6 -b 460800 --before default_reset --after hard_reset write_flash "@flash_args"

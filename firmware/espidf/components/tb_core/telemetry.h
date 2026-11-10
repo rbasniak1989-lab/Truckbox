@@ -23,3 +23,5 @@ cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit);
 bool tb_telemetry_append_j1587_operational(cJSON *sample);
 size_t tb_telemetry_append_j1587_fast(cJSON *fast, size_t *cursor);
 void tb_telemetry_append_j1587_health(cJSON *health);
+
+size_t tb_telemetry_append_j1587_slow(cJSON *record,size_t *cursor);

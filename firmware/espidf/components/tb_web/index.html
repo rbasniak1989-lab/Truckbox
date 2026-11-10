@@ -72,8 +72,15 @@
           <div class="grid">
             <label>Velocidade CAN<select name="can_baud"><option value="250000">250 kbit/s</option><option value="500000">500 kbit/s</option></select><small>A coleta CAN desta placa é somente recepção.</small></label>
             <div class="config-group">
-              <label class="check"><input name="capture_enabled" type="checkbox"><span>Ativar coleta CAN e J1708</span></label>
-               <label class="check"><input name="full_decode_enabled" type="checkbox"><span>Gravar RAW e DECODED continuamente (modo COMPLETO)<small>Desmarcado (LEGACY): continua decodificando todos os PIDs/PGNs catalogados em RAM, mantém J1708 ativa sob autorização e grava apenas resumos de 15 s e saúde de 60 s.</small></span></label>
+              <label class="check"><input name="capture_enabled" type="checkbox"><span>Ativar coleta (controle geral)</span></label>
+               <label class="check"><input name="j1708_enabled" type="checkbox"><span>Recepção J1708</span></label>
+               <label class="check"><input name="can_enabled" type="checkbox"><span>Recepção J1939 (indisponível em J1708_ONLY)</span></label>
+               <label class="check"><input name="j1587_odometer_validated" type="checkbox"><span>PID 245 conferido fisicamente com o odômetro<small>Habilita deltas do contador para retomar a distância após reinício. Valide valor, escala e MID antes de marcar.</small></span></label>
+               <label class="check"><input name="j1587_fuel250_validated" type="checkbox"><span>PID 250 validado com a ECU<small>Habilita reconciliação de combustível por contador acumulado. Não zera o contador do caminhão.</small></span></label>
+               <label>MID validado do odômetro (PID 245)<input name="j1587_odometer_mid" type="number" min="128" max="255" step="1"></label>
+               <label>MID validado do combustível (PID 250)<input name="j1587_fuel250_mid" type="number" min="128" max="255" step="1"></label>
+               <label>Timeout J1708 (ms)<input name="j1708_timeout_ms" type="number" min="100" max="5000" step="1"></label>
+               <label class="check"><input name="full_decode_enabled" type="checkbox"><span>Gravar RAW e DECODED continuamente (modo COMPLETO)<small>Em J1708_ONLY, o armazenamento bruto contínuo permanece desativado. Leitura operacional e sensores essenciais a cada 10 s; saúde a cada 60 s.</small></span></label>
               <label class="check"><input name="fram_enabled" type="checkbox"><span>Usar FRAM</span></label>
               <label class="check"><input name="sd_enabled" type="checkbox"><span>Usar cartão microSD</span></label>
             </div>
@@ -142,27 +149,27 @@
         <small>Um MID não aparecer nesta lista não garante que esteja livre em toda a rede.</small>
       </div>
     </div>
-    <label class="spacer">Retomar a varredura sequencial a partir de
+    <label class="spacer">PID da única requisição de validação
       <select id="j1708-start-pid">
-          <option value="26" selected>26 · Ventoinha (17 restantes)</option>
-          <option value="33">33 · Cilindro da embreagem (16 restantes)</option>
-          <option value="34">34 · Atuadores da embreagem (15 restantes)</option>
-          <option value="37">37 · Ar da transmissão (14 restantes)</option>
-          <option value="62">62 · Retarder (13 restantes)</option>
-          <option value="68">68 · Limitação de torque (12 restantes)</option>
-          <option value="117">117 · Ar primário dos freios (11 restantes)</option>
-          <option value="118">118 · Ar secundário dos freios (10 restantes)</option>
-          <option value="235">235 · Horas de marcha lenta (9 restantes)</option>
-          <option value="236">236 · Litros em marcha lenta (8 restantes)</option>
-          <option value="250">250 · Diesel total (7 restantes)</option>
-          <option value="31">31 · Range I-Shift (6 restantes)</option>
-          <option value="32">32 · Splitter I-Shift (5 restantes)</option>
-          <option value="63">63 · Estados I-Shift (4 restantes)</option>
-          <option value="108">108 · Pressão ambiente (3 restantes)</option>
-          <option value="158">158 · Tensão (2 restantes)</option>
-          <option value="160">160 · Eixo da caixa (1 restantes)</option>
+          <option value="26">26 · Ventoinha</option>
+          <option value="33">33 · Cilindro da embreagem</option>
+          <option value="34">34 · Atuadores da embreagem</option>
+          <option value="37">37 · Ar da transmissão</option>
+          <option value="62">62 · Retarder</option>
+          <option value="68">68 · Limitação de torque</option>
+          <option value="117" selected>117 · Ar primário dos freios</option>
+          <option value="118">118 · Ar secundário dos freios</option>
+          <option value="235">235 · Horas de marcha lenta</option>
+          <option value="236">236 · Litros em marcha lenta</option>
+          <option value="250">250 · Diesel total</option>
+          <option value="31">31 · Range I-Shift</option>
+          <option value="32">32 · Splitter I-Shift</option>
+          <option value="63">63 · Estados I-Shift</option>
+          <option value="108">108 · Pressão ambiente</option>
+          <option value="158">158 · Tensão</option>
+          <option value="160">160 · Eixo da caixa</option>
       </select>
-      <small>O Core envia somente um PID de cada vez: aguarda resposta ou timeout, grava o resultado e passa ao próximo. Uma colisão libera imediatamente a linha e permite nova tentativa limitada após silêncio. Três falhas consecutivas desarmam. O ponto de retomada não libera pedidos anteriores.</small>
+      <small>O primeiro teste transmite uma única requisição. Confira o quadro e sua resposta com NEXIQ ou analisador externo antes de liberar o modo de viagem.</small>
     </label>
     <label class="check spacer">
       <input type="checkbox" id="j1708-topology">
@@ -171,18 +178,37 @@
       </span>
     </label>
     <div class="actions spacer">
-      <button id="j1708-test" type="button" class="primary" disabled>Varrer um PID por vez (parado)</button>
+      <button id="j1708-test" type="button" class="primary" disabled>Enviar uma requisição (parado)</button>
       <button id="j1708-work" type="button" disabled>Ativar durante a viagem</button>
       <button id="j1708-stop" type="button" disabled>Parar requisições</button>
       <button id="j1708-refresh" type="button">Atualizar contadores</button>
     </div>
     <div id="j1708-message" class="banner message" role="status" aria-live="polite"></div>
-    <p class="hint spacer">Teste supervisionado: veículo parado, velocidade zero recebida recentemente. Transmissor físico e MID local devem ser confirmados. Intervalo mínimo de 1,2 segundo entre pedidos, um por vez, prazo de resposta de 450 ms. Após pelo menos três ecos completos e uma resposta candidata neste teste, ative o modo de viagem ainda parado. O modo de viagem consulta todos os 17 PIDs, um a cada 1,2 segundo no máximo, por até 12 horas. Colisões liberam a linha; três falhas consecutivas interrompem a transmissão. Todos os valores devem ser validados.</p>
+    <div class="grid spacer">
+      <label>Quadro TX visto no analisador externo (hex)<input id="j1708-tx-proof" autocomplete="off" maxlength="32" placeholder="Quadro de 5 bytes, incluindo checksum"></label>
+      <label>Resposta vista no analisador externo (hex)<input id="j1708-rx-proof" autocomplete="off" maxlength="64" placeholder="Quadro completo, incluindo MID e checksum"></label>
+    </div>
+    <label class="check spacer"><input id="j1708-external-proof" type="checkbox"><span>Conferi externamente TX, resposta, temporização e ausência de conflito. O MID local está livre.</span></label>
+    <button id="j1708-confirm" type="button" disabled>Registrar validação física deste teste</button>
+    <p class="hint spacer">Confirme a validação física e ative o modo de viagem ainda parado. Treze PIDs a cada minuto, dois a cada 5 minutos e dois a cada 15 minutos, distribuídos no tempo. Intervalo mínimo de 1,2 s, timeout inicial de 450 ms, uma requisição por vez. Três falhas consecutivas interrompem TX. A autorização dura até 12 horas e termina no reinício ou OTA. A recepção passiva continua. Resposta candidata não comprova causalidade.</p>
+    <p id="j1708-block" class="hint"></p>
+    <div id="j1708-cadences" class="muted spacer"></div>
+
   </section>
   <section class="panel" id="storage-maintenance" hidden>
-    <h2>Manutenção do armazenamento</h2>
-    <p class="muted">Após confirmar a instalação da versão 0.2.4, descarte registros pendentes locais da flash. Isso NÃO apaga o histórico que já chegou à nuvem, o firmware anterior, as configurações ou os dados da viagem na NVS. Os registros ainda não enviados serão perdidos.</p>
-    <button type="button" id="discard-storage" disabled>Descartar registros locais e reiniciar</button>
+    <h2>Coleta e armazenamento</h2>
+    <div class="stats">
+      <div class="stat"><span>Core / último reinício</span><strong id="diag-core">—</strong></div>
+      <div class="stat"><span>Cloud / último ACK confirmado</span><strong id="diag-cloud">—</strong></div>
+      <div class="stat"><span>Armazenamento</span><strong id="diag-store">—</strong></div>
+      <div class="stat"><span>Espaço / autonomia restante</span><strong id="diag-space">—</strong></div>
+      <div class="stat"><span>Fila / registro mais antigo</span><strong id="diag-pending">—</strong></div>
+      <div class="stat"><span>Recuperação de arquivos</span><strong id="diag-recovery">—</strong></div>
+      <div class="stat"><span>J1708 passiva</span><strong id="diag-j1708">—</strong></div>
+      <div class="stat"><span>J1939</span><strong id="diag-can">—</strong></div>
+    </div>
+    <p class="hint">Somente segmentos confirmados pela Cloud são reaproveitados. Arquivos com corrupção permanecem preservados. A autonomia é estimada pela taxa real de gravação deste boot; indisponível antes de um minuto.</p>
+    <button type="button" id="discard-storage" hidden disabled>Descarte indisponível nesta versão</button>
     <div id="discard-message" class="banner message" role="status" aria-live="polite"></div>
   </section>
   <div class="split">
@@ -270,7 +296,7 @@
     $('core-config').hidden = role !== 'core';
     $('j1708-panel').hidden = role !== 'core';
     $('storage-maintenance').hidden = role !== 'core';
-    $('discard-storage').disabled = !token || role !== 'core';
+    $('discard-storage').disabled = true;
     $('link-config').hidden = role !== 'link';
     $('modem-config').hidden = role !== 'link';
     $('forward-target').hidden = role !== 'core';
@@ -299,6 +325,7 @@
       text('footer-id', state.device_uid || state.uid || 'Truckbox Rev B1');
       $('state-json').textContent = JSON.stringify(state, null, 2);
       text('connection', 'Online');
+      updateDiagnostics(state);
       message('state-message', '');
     } catch (error) {
       text('connection', 'Sem resposta');
@@ -317,6 +344,7 @@
       if (element.type === 'checkbox') element.checked = config[element.name] === true;
       else element.value = config[element.name] === null ? '' : String(config[element.name]);
     }
+    if(config.capture_profile==='J1708_ONLY'){configControl('can_enabled').disabled=true;configControl('full_decode_enabled').disabled=true;}
     $('open-wifi').checked = false;
     configControl('wifi_password').disabled = false;
     dirty.clear();
@@ -329,7 +357,7 @@
     $('config-fields').disabled = false;
     $('ota-fields').disabled = false;
     $('show-pair').disabled = role !== 'core';
-    $('discard-storage').disabled = role !== 'core';
+    $('discard-storage').disabled = true;
   }
 
   function signOut() {
@@ -369,23 +397,7 @@
   });
 
   $('logout').addEventListener('click', signOut);
-  $('discard-storage').addEventListener('click', async () => {
-    if (!token || role !== 'core' || uploadBusy) return;
-    const typed = prompt('Esta limpeza é definitiva para os registros locais ainda não enviados. Digite DESCARTAR para continuar:');
-    if (typed !== 'DESCARTAR') return;
-    if (!confirm('Confirmar descarte dos registros locais? A placa vai reiniciar.')) return;
-    $('discard-storage').disabled = true;
-    try {
-      const result = await request('/api/storage/discard', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({confirm:'DESCARTAR_REGISTROS'})
-      }, 15000);
-      message('discard-message', 'Solicitação aceita. A placa reiniciará, apagará apenas os arquivos de telemetria locais e conservará os firmwares e a NVS.', 'success');
-    } catch(error) {
-      message('discard-message', error.message, 'error');
-      $('discard-storage').disabled = false;
-    }
-  });
+  $('discard-storage').addEventListener('click',()=>message('discard-message','Descarte indisponível: a recuperação preserva os arquivos.','warning'));
   configForm.addEventListener('input', event => { if (event.target.name) dirty.add(event.target.name); });
   configForm.addEventListener('change', event => { if (event.target.name) dirty.add(event.target.name); });
   $('open-wifi').addEventListener('change', () => {
@@ -413,7 +425,7 @@
         const sequence = Number(element.value);
         if (!Number.isSafeInteger(sequence) || sequence < 0) { message('config-message', 'A primeira sequência livre deve ser um inteiro de 0 a 9007199254740991.', 'error'); return; }
         payload[name] = sequence;
-      } else payload[name] = element.type === 'checkbox' ? element.checked : element.tagName === 'SELECT' ? Number(element.value) : element.value;
+      } else payload[name] = element.type === 'checkbox' ? element.checked : (element.tagName === 'SELECT' || element.type === 'number') ? Number(element.value) : element.value;
     }
     if (!Object.keys(payload).length) { message('config-message', 'Nenhuma alteração para salvar.'); return; }
     if (payload.repaired_power_gates === true && !confirm('Os circuitos de alimentação da Rev B1 já foram retrabalhados e medidos? Esta opção permite acionar essas saídas.')) return;
@@ -516,6 +528,23 @@
 
   // J1708 commands reuse the current admin Bearer token and existing CORE API.
   // They do not save settings, change the truck trip or flash the board.
+  function updateDiagnostics(state) {
+    const storage=state.storage || {}, j=state.j1708 || {}, bridge=state.bridge || {};
+    const number=v=>typeof v==='number' && Number.isFinite(v);
+    const age=v=>number(v)?Math.floor(v/1000)+' s atrás':'aguardando neste boot';
+    const reset={1:'alimentação',3:'software',4:'pânico',5:'watchdog interrupção',6:'watchdog tarefa',7:'watchdog',9:'brownout'};
+    text('diag-core','Online · '+Math.floor((state.uptime_ms || 0)/1000)+' s · boot '+state.boot_id+' · '+(reset[state.reset_reason] || 'motivo '+state.reset_reason)+(number(state.last_reset_time_ms)?' · '+new Date(state.last_reset_time_ms).toLocaleString():''));
+    text('diag-cloud','Envio '+age(bridge.last_send_attempt_age_ms)+' · confirmação '+age(bridge.last_cloud_ack_age_ms)+' · ACK '+(storage.last_ack_seq ?? '—'));
+    const phases={NORMAL:'Normal',FULL:'Cheio — aguardando ACK ou revisão das evidências',RECOVERING:'Recuperando',RECOVERY_REQUIRED:'Recuperação necessária',MAINTENANCE_PAUSED:'Gravação pausada para rollback'};
+    text('diag-store',(phases[storage.phase] || (storage.initializing?'Recuperando':'Indisponível'))+(storage.error?' · '+storage.error:''));
+    text('diag-space',number(storage.space_available_bytes)?(storage.space_available_bytes/1048576).toFixed(2)+' / '+(storage.space_total_bytes/1048576).toFixed(2)+' MB · '+(number(storage.offline_estimate_seconds)?Math.floor(storage.offline_estimate_seconds/60)+' min estimados':'calculando autonomia'):'Aguardando recuperação');
+    const oldest=storage.oldest_pending_ts || (number(storage.oldest_pending_uptime_ms)?'boot '+storage.oldest_pending_boot+', '+Math.floor(storage.oldest_pending_uptime_ms/1000)+' s':'—');
+    text('diag-pending',storage.pending_known?storage.pending_records+' registros válidos · mais antigo '+oldest:'Quantidade desconhecida durante recuperação');
+    text('diag-recovery',(storage.recovered_records || 0)+' recuperados · '+(storage.corrupt_records || 0)+' ocorrências de corrupção · '+(storage.isolated_files || 0)+' arquivos com evidência preservada');
+    text('diag-j1708',j.ready?(j.frames_per_minute || 0)+' quadros/min · '+((state.telemetry_v2 || {}).latest_readings || 0)+' sensores no cache':'Sem recepção inicializada');
+    text('diag-can',state.capture_profile==='J1708_ONLY'?'Desativada no perfil J1708_ONLY':state.can && state.can.enabled?'Habilitada':'Desativada');
+  }
+
   function updateJ1708Panel() {
     const j1708 = lastState && lastState.j1708 || {};
     const status = j1708.requests || {};
@@ -546,8 +575,12 @@
     $('j1708-test').disabled = !online || j1708Busy || !!status.armed ||
       !stopped || !selected || midInUse || presetConflict ||
       !$('j1708-topology').checked || !!status.safety_stopped;
+    $('j1708-confirm').disabled = !online || j1708Busy || !stopped || !!status.armed || !status.single_shot || !status.echo_ok || !status.responses || !!status.physical_validated || !$('j1708-external-proof').checked || !$('j1708-tx-proof').value.trim() || !$('j1708-rx-proof').value.trim();
+    text('j1708-block',(status.block_reason || '')+(status.last_response_pid?' · Última resposta candidata: MID '+status.last_response_mid+', PID '+status.last_response_pid+', '+Math.floor(status.last_response_age_ms/1000)+' s atrás':''));
+    const stats=Array.isArray(status.stats)?status.stats:[];
+    $('j1708-cadences').textContent=stats.map(p=>'PID '+p.pid+' / MID '+p.target_mid+': '+(p.interval_ms/60000)+' min · envios '+p.sent+' · respostas candidatas '+p.response_candidates+' · timeouts '+p.timeouts).join(' | ');
     $('j1708-work').disabled = !online || j1708Busy || !stopped ||
-      !status.work_evidence_ready || !!status.work_mode || !!status.safety_stopped ||
+      !status.work_evidence_ready || !status.physical_validated || !!status.work_mode || !!status.safety_stopped ||
       !$('j1708-topology').checked;
     // Emergency stop stays clickable even if another request is pending.
     $('j1708-stop').disabled = !online;
@@ -564,7 +597,7 @@
         message('j1708-message','Confirme o MID livre, a verificação elétrica e a velocidade zero antes do teste.','warning');
         return;
       }
-      if (!confirm('Transmitir PIDs sequencialmente, 1 por vez, começando no '+$('j1708-start-pid').value+'? Confirme a saída elétrica J1708 antes de continuar.')) return;
+      if (!confirm('Enviar UMA requisição do PID '+$('j1708-start-pid').value+' com o caminhão parado? O analisador externo deve estar capturando a rede.')) return;
       payload.authorized = true;
       payload.stationary = true;
       payload.topology_confirmed = true;
@@ -573,9 +606,12 @@
       payload.preset = 'fh2013_capture_20261029';
       payload.sequential_scan = true;
       payload.start_pid = Number($('j1708-start-pid').value);
+    } else if (action === 'confirm_physical') {
+      if ($('j1708-confirm').disabled) return;
+      Object.assign(payload,{stationary:true, external_capture_verified:true,local_mid_free_verified:true,trial_id:lastState.j1708.requests.trial_id,tx_observed_hex:$('j1708-tx-proof').value,response_observed_hex:$('j1708-rx-proof').value});
     } else if (action === 'enable_work') {
       if ($('j1708-work').disabled) return;
-      if (!confirm('Habilitar requisições J1708 enquanto o caminhão se movimenta? Confirmar somente após o teste estacionado e avaliação dos ecos/erros.')) return;
+      if (!confirm('Habilitar requisições J1708 enquanto o caminhão se movimenta? Confirmar somente após validar TX e resposta em captura externa, ainda parado.')) return;
       payload.authorized = true;
       payload.stationary = true;
     }
@@ -587,7 +623,8 @@
         body:JSON.stringify(payload)
       }, 8000);
       message('j1708-message', action === 'arm' ?
-        'Varredura sequencial iniciada: 1 PID por vez, com parada ao fim ou por erro. Acompanhe os contadores.' :
+        'Uma requisição autorizada. Confira TX e resposta na captura externa e registre a validação.' :
+        action === 'confirm_physical' ? 'Validação externa deste teste registrada. O modo de viagem pode ser autorizado ainda parado.' :
         action === 'enable_work' ?
         'Modo de viagem ativado por até 12 horas. Os 17 PIDs serão consultados com frequência limitada; Parar encerra imediatamente.' :
         'Parada solicitada e confirmada pelo CORE.', 'success');
@@ -600,6 +637,8 @@
       updateJ1708Panel();
     }
   }
+  ['j1708-tx-proof','j1708-rx-proof','j1708-external-proof'].forEach(id=>$(id).addEventListener('input',updateJ1708Panel));
+  $('j1708-confirm').addEventListener('click',()=>j1708Command('confirm_physical'));
   $('j1708-local-mid').addEventListener('input', updateJ1708Panel);
   $('j1708-start-pid').addEventListener('change', updateJ1708Panel);
   $('j1708-topology').addEventListener('change', updateJ1708Panel);

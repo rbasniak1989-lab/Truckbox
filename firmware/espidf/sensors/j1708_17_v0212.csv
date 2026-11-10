@@ -1,0 +1,18 @@
+pid,informacao,mid_destino,intervalo_ms,fase_inicial_ms,validacao
+26,Acionamento da ventoinha,128,60000,0,EM_VALIDACAO
+33,Posição do cilindro da embreagem,130,60000,3529,EM_VALIDACAO
+34,Estado do atuador da embreagem,130,60000,7058,EM_VALIDACAO
+37,Pressão pneumática da transmissão,130,60000,10588,EM_VALIDACAO
+62,Estado de inibição do retardador,144,60000,14117,EM_VALIDACAO
+68,Limitação de torque do motor,128,60000,17647,EM_VALIDACAO
+117,Pressão do circuito primário de ar,140,60000,21176,EM_VALIDACAO
+118,Pressão do circuito secundário de ar,140,60000,24705,EM_VALIDACAO
+235,Horas acumuladas em marcha lenta,128,900000,28235,EM_VALIDACAO
+236,Combustível acumulado em marcha lenta,128,900000,31764,EM_VALIDACAO
+250,Combustível total acumulado da ECU,128,300000,35294,EM_VALIDACAO
+31,Posição da faixa da transmissão,130,60000,38823,EM_VALIDACAO
+32,Posição do splitter,130,60000,42352,EM_VALIDACAO
+63,Estado dos atuadores da transmissão,130,60000,45882,EM_VALIDACAO
+108,Pressão atmosférica,128,300000,49411,EM_VALIDACAO
+158,Tensão elétrica com ignição ligada,128,60000,52941,EM_VALIDACAO
+160,Rotação do eixo principal da transmissão,130,60000,56470,EM_VALIDACAO

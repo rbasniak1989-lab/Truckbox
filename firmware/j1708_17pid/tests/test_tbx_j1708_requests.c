@@ -1,5 +1,6 @@
 #include "../src/tbx_j1708_requests.h"
 #include <assert.h>
+#include <string.h>
 #include <stdio.h>
 static uint16_t observed[100];
 static unsigned count=0;
@@ -106,7 +107,41 @@ static void test_uptime_wrap(void) {
     tbx_j1708_request_tick(&s,now+700u,mock_send,NULL);
     assert(s.timeout_total==1);
 }
+static uint32_t cadence_now,last_transmit;static unsigned cadence_count,by_pid[17];
+static bool cadence_send(uint16_t pid,void *context)
+{
+    tbx_j1708_request_scheduler_t *s=context;unsigned i=0;while(i<17 && s->pids[i].pid!=pid)++i;assert(i<17);
+    if(cadence_count)assert((uint32_t)(cadence_now-last_transmit)>=1200);
+    ++cadence_count;++by_pid[i];last_transmit=cadence_now;return true;
+}
+static void test_individual_cadence_configurable_and_wrap(void)
+{
+    tbx_j1708_request_scheduler_t s;tbx_j1708_request_init(&s);
+    for(unsigned i=0;i<17;i++){
+        uint16_t pid=s.pids[i].pid;
+        uint32_t period=pid==235 || pid==236?900000:pid==108 || pid==250?300000:60000;
+        assert(s.pids[i].period_ms==period);
+    }
+    s.pids[0].period_ms=120000; /* A persisted per-PID override. */
+    tbx_j1708_request_permit_stationary_test(&s,true);assert(tbx_j1708_request_arm(&s));
+    tbx_j1708_request_set_spacing(&s,1200);
+    uint32_t start=UINT32_MAX-10000;tbx_j1708_request_start_periodic(&s,start);
+    cadence_count=0;memset(by_pid,0,sizeof(by_pid));
+    for(uint32_t elapsed=0;elapsed<180000;elapsed+=100){
+        cadence_now=start+elapsed;tbx_j1708_request_tick(&s,cadence_now,cadence_send,&s);
+        if(s.pending<17)assert(tbx_j1708_request_note_response(&s,s.pids[s.pending].pid,cadence_now+1));
+    }
+    for(unsigned i=0;i<17;i++){
+        uint32_t phase=i*60000u/17u;
+        unsigned expected=(180000u-1-phase)/s.pids[i].period_ms+1;
+        assert(by_pid[i]==expected);
+    }
+    tbx_j1708_request_stop(&s);unsigned before=cadence_count;
+    tbx_j1708_request_tick(&s,start+200000,cadence_send,&s);assert(cadence_count==before);
+}
+
 int main(void) {
+    test_individual_cadence_configurable_and_wrap();
     test_order_and_replies();
     test_timeouts();
     test_link_cutoff();

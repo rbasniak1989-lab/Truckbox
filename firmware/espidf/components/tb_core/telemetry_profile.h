@@ -8,3 +8,12 @@ static inline bool tb_operational_due(bool full_decode_enabled, uint32_t seconds
     return full_decode_enabled ||
            ((seconds_elapsed + 1U) % TB_LEGACY_OPERATIONAL_SECONDS) == 0U;
 }
+
+static inline bool tb_profile_raw(bool requested)
+{
+#ifdef CONFIG_TB_J1708_ONLY
+    (void)requested;return false;
+#else
+    return requested;
+#endif
+}

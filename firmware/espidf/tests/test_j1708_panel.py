@@ -29,6 +29,8 @@ $('j1708-local-mid').value='172';$('j1708-topology').checked=true;
         cases = """
 updateJ1708Panel();assert.equal($('j1708-work').disabled,true);
 lastState.j1708.requests.work_evidence_ready=true;
+updateJ1708Panel();assert.equal($('j1708-work').disabled,true); // Echo alone never validates hardware.
+lastState.j1708.requests.physical_validated=true;
 updateJ1708Panel();assert.equal($('j1708-work').disabled,false);
 lastState.j1708.requests.armed=false; // Finished parked scan can be promoted.
 updateJ1708Panel();assert.equal($('j1708-work').disabled,false);

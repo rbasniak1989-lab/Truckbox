@@ -25,6 +25,40 @@ void tbx_trip_reset(tbx_trip_t *t)
     if(!t)return;
     tbx_trip_init(t,0,false);
 }
+void tbx_trip_restore_odometer(tbx_trip_t *t,uint8_t mid,uint32_t raw,double anchor)
+{
+    if(!t || raw==UINT32_MAX || !isfinite(anchor) || anchor<0)return;
+    t->odo_valid=true;t->odo_restored=true;t->odo_mid=mid;t->odo_raw=raw;t->odo_anchor_km=anchor;
+}
+tbx_trip_result_t tbx_trip_odometer(tbx_trip_t *t,uint8_t mid,uint32_t raw,uint64_t now)
+{
+    if(!t || raw==UINT32_MAX)return TBX_TRIP_INVALID;
+    tbx_trip_result_t result=TBX_TRIP_BASELINE;
+    if(t->odo_valid && mid!=t->odo_mid){
+        if(!t->odo_restored && elapsed_within(now,t->odo_at_ms,TBX_TRIP_COUNTER_FRESH_MS))return TBX_TRIP_SOURCE_IGNORED;
+        ++t->source_changes;++t->gaps;result=TBX_TRIP_SOURCE_REBASELINE;
+    }else if(t->odo_valid){
+        if(raw<t->odo_raw){++t->resets;result=TBX_TRIP_RESET_REBASELINE;}
+        else{
+            double delta=(raw-t->odo_raw)*0.1609344;
+            /* Reboot loses elapsed monotonic time. Accept only a bounded
+             * validated ECU delta; report that its interval is unknown. */
+            double allowed=t->odo_restored?2500.0:
+                (now>=t->odo_at_ms?250.0*(double)(now-t->odo_at_ms)/3600000.0+0.322:0);
+            if(delta>allowed || !isfinite(t->odo_anchor_km+delta)){
+                ++t->implausible;result=TBX_TRIP_RANGE_REBASELINE;
+            }else{
+                if(t->odo_restored || now-t->odo_at_ms>TBX_TRIP_COUNTER_FRESH_MS)++t->gaps;
+                t->total_km=t->odo_anchor_km+delta;t->has_distance=true;
+                t->quality=t->odo_restored?"DELTA_ODO_J1587_RECUPERADO_INTERVALO_DESCONHECIDO":"DELTA_ODO_J1587_VALIDADO";
+                result=TBX_TRIP_COUNTER_ADDED;
+            }
+        }
+    }
+    t->odo_valid=true;t->odo_restored=false;t->odo_raw=raw;t->odo_mid=mid;
+    t->odo_at_ms=now;t->odo_anchor_km=t->total_km;t->fallback_since_counter=false;
+    return result;
+}
 static tbx_trip_result_t baseline(tbx_trip_t *t,uint8_t sa,uint32_t raw,
                                    uint64_t now,tbx_trip_result_t result)
 {
@@ -84,8 +118,10 @@ tbx_trip_result_t tbx_trip_speed(tbx_trip_t *t,tbx_trip_network_t network,
         elapsed_within(now,t->speed_at_ms,TBX_TRIP_SPEED_WINDOW_MS);
     const bool counter_fresh=t->counter_valid &&
         elapsed_within(now,t->counter_at_ms,TBX_TRIP_COUNTER_FRESH_MS);
+    const bool odometer_fresh=t->odo_valid && !t->odo_restored &&
+        elapsed_within(now,t->odo_at_ms,TBX_TRIP_COUNTER_FRESH_MS);
     tbx_trip_result_t result=TBX_TRIP_BASELINE;
-    if(counter_fresh)result=TBX_TRIP_COUNTER_FRESH;
+    if(counter_fresh || odometer_fresh)result=TBX_TRIP_COUNTER_FRESH;
     else if(interval_ok) {
         double delta=(t->speed_kmh+kmh)*0.5*(double)(now-t->speed_at_ms)/3600000.0;
         if(!isfinite(t->total_km+delta))return TBX_TRIP_INVALID;

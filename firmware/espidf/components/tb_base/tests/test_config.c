@@ -10,6 +10,7 @@
 
 static char *persisted;
 static char *pending;
+static char *extension_saved,*extension_pending;
 static esp_err_t flash_error;
 static esp_err_t write_error;
 static unsigned writes;
@@ -63,7 +64,13 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
-    assert(handle == 1 && strcmp(key, "config") == 0);
+    assert(handle == 1);
+    if(!strcmp(key,"v212")){
+        if(!extension_saved)return ESP_ERR_NVS_NOT_FOUND;
+        size_t n=strlen(extension_saved)+1;
+        if(value){assert(*size>=n);memcpy(value,extension_saved,n);}*size=n;return ESP_OK;
+    }
+    assert(!strcmp(key,"config"));
     if (persisted == NULL) {
         return ESP_ERR_NVS_NOT_FOUND;
     }
@@ -78,7 +85,9 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
-    assert(handle == 1 && strcmp(key, "config") == 0);
+    assert(handle == 1);
+    if(!strcmp(key,"v212")){if(write_error!=ESP_OK)return write_error;free(extension_pending);extension_pending=strdup(value);assert(extension_pending);return ESP_OK;}
+    assert(!strcmp(key,"config"));
     if (write_error != ESP_OK) {
         return write_error;
     }
@@ -91,6 +100,7 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if(extension_pending){free(extension_saved);extension_saved=extension_pending;extension_pending=NULL;}
     free(persisted);
     persisted = pending;
     pending = NULL;
@@ -113,7 +123,7 @@ static void reboot(void)
 static void clear_storage(void)
 {
     free(persisted);
-    free(pending);
+    free(pending);free(extension_saved);free(extension_pending);extension_saved=extension_pending=NULL;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;
     writes = 0;
@@ -250,8 +260,35 @@ static void test_storage_corruption_and_upgrade(void)
     assert(tb_config_init() == ESP_FAIL && writes == previous_writes);
 }
 
+static void test_v212_extension_rollback_compatibility(void)
+{
+    clear_storage();assert(tb_config_init()==ESP_OK);
+    assert(!tb_config()->can_enabled && tb_config()->j1708_enabled);
+    assert(tb_config()->j1587_odometer_mid==128 && tb_config()->j1587_fuel250_mid==128);
+    assert(tb_config()->j1708_timeout_ms==450);
+    for(unsigned i=0;i<17;i++)assert(tb_config()->j1708_intervals_ms[i]==tbx_j1708_policy()[i].period_ms);
+    char credentials[33];strcpy(credentials,tb_config()->admin_token);
+    assert(apply("{\"j1708_intervals_ms\":{\"26\":120000},\"j1708_timeout_ms\":700,\"j1587_odometer_validated\":true}")==ESP_OK);
+    cJSON *legacy=cJSON_Parse(persisted);const cJSON *field;
+    cJSON_ArrayForEach(field,legacy){assert(!v212_key(field->string));}
+    cJSON_Delete(legacy);
+    assert(extension_saved && strstr(extension_saved,"120000"));reboot();assert(tb_config_init()==ESP_OK);
+    assert(!strcmp(credentials,tb_config()->admin_token) && tb_config()->j1708_intervals_ms[0]==120000 && tb_config()->j1708_timeout_ms==700);
+    assert(tb_config()->j1587_odometer_validated);
+    assert(apply("{\"j1708_intervals_ms\":{\"26\":1000}}")==ESP_ERR_INVALID_ARG);
+    assert(apply("{\"j1708_intervals_ms\":{\"999\":60000}}")==ESP_ERR_INVALID_ARG);
+    assert(apply("{\"j1708_timeout_ms\":99}")==ESP_ERR_INVALID_ARG);
+#ifdef CONFIG_TB_J1708_ONLY
+    assert(apply("{\"can_enabled\":true}")==ESP_ERR_INVALID_ARG);
+#endif
+    free(extension_saved);extension_saved=strdup("{bad-extension");reboot();assert(tb_config_init()==ESP_OK);
+    assert(!strcmp(credentials,tb_config()->admin_token) && !tb_config()->can_enabled && tb_config()->j1708_enabled);
+    assert(tb_config()->j1708_timeout_ms==450); /* Corrupt optional extension cannot block passive collection. */
+}
+
 int main(void)
 {
+    test_v212_extension_rollback_compatibility();
     test_first_boot_and_public_data();
     test_save_reboot_and_partial_updates();
     test_invalid_inputs_never_persist();

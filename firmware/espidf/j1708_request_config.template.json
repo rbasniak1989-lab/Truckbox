@@ -3,76 +3,8 @@
   "authorized": false,
   "stationary": false,
   "topology_confirmed": false,
-  "priority": 8,
   "local_mid": null,
-  "targets": [
-    {
-      "pid": 26,
-      "mid": null
-    },
-    {
-      "pid": 33,
-      "mid": null
-    },
-    {
-      "pid": 34,
-      "mid": null
-    },
-    {
-      "pid": 37,
-      "mid": null
-    },
-    {
-      "pid": 62,
-      "mid": null
-    },
-    {
-      "pid": 68,
-      "mid": null
-    },
-    {
-      "pid": 117,
-      "mid": null
-    },
-    {
-      "pid": 118,
-      "mid": null
-    },
-    {
-      "pid": 235,
-      "mid": null
-    },
-    {
-      "pid": 236,
-      "mid": null
-    },
-    {
-      "pid": 250,
-      "mid": null
-    },
-    {
-      "pid": 31,
-      "mid": null
-    },
-    {
-      "pid": 32,
-      "mid": null
-    },
-    {
-      "pid": 63,
-      "mid": null
-    },
-    {
-      "pid": 108,
-      "mid": null
-    },
-    {
-      "pid": 158,
-      "mid": null
-    },
-    {
-      "pid": 160,
-      "mid": null
-    }
-  ]
+  "priority": 8,
+  "preset": "fh2013_capture_20261029",
+  "start_pid": 117
 }

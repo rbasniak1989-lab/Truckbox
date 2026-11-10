@@ -1,3 +1,5 @@
+Para a candidata **0.2.12**, consultar [guia e relatório atuais](REV_B1_0.2.12_CANDIDATA.md), incluindo a sincronização obrigatória antes de rollback manual. O conteúdo abaixo registra as versões anteriores.
+
 # Atualização por Wi‑Fi
 
 Após a primeira gravação USB e o vínculo, a página do Core permite atualizar **Core ou Link** pela rede local. Use o arquivo de aplicação correspondente a cada módulo.

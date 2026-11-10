@@ -24,7 +24,7 @@ static void reset_store(void)
     state.segment_bytes = 1024;
     state.next_segment_id = 1;
     state.next_sequence = 1;
-    state.ready = true;
+    state.ready = true;host_allow_compression=true;
     state.mutex = state.queue = (void *)1;
 }
 
@@ -35,7 +35,10 @@ static void cleanup_store(void)
     struct dirent *entry;
     while ((entry = readdir(directory))) {
         uint32_t id;
-        if (!file_id(entry->d_name, &id)) continue;
+        if (!file_id(entry->d_name, &id)) {
+            if(strlen(entry->d_name)==12 && !strcmp(entry->d_name+8,".BAD")){char path[96];snprintf(path,sizeof(path),"%.64s/%.12s",host_directory,entry->d_name);assert(unlink(path)==0);}
+            continue;
+        }
         char path[96];
         segment_path(path, sizeof(path), id);
         assert(unlink(path) == 0);
@@ -118,7 +121,7 @@ static void test_interrupted_tail_preserves_confirmed_records(void)
     assert(fclose(file) == 0);
     simulate_restart();
     assert(state.pending_records == 1 && state.highest_committed == 1);
-    assert(state.recovered_tail_bytes == strlen(torn));
+    assert(state.isolated_bytes == strlen(torn) && state.corrupt_records>0);
     cJSON *batch = tb_store_batch(8, 12000);
     assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(batch, "samples")) == 1);
     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(sample_at(batch, 0), "raw")->valuestring, "18F00400"));
@@ -162,7 +165,8 @@ static void test_complete_corruption_preserved(void)
     assert(stat(path, &before) == 0);
     state.segment_count = state.pending_records = state.pending_bytes = 0;
     memset(state.segments, 0, sizeof(state.segments));
-    assert(!recover_records() && state.corrupt_records == 1);
+    assert(recover_records() && state.corrupt_records >= 1);
+    assert(state.pending_records==0 && state.isolated_bytes>0);
     assert(stat(path, &after) == 0 && before.st_size == after.st_size);
     cleanup_store();
 }
@@ -195,7 +199,9 @@ static void test_bounded_startup_buffer(void)
     assert(tb_store_submit("{\"raw\":\"CCDD\"}") == ESP_ERR_NO_MEM);
     assert(state.dropped_queue == 1 && state.highest_committed == 0);
     state.initializing = false;
-    assert(tb_store_submit("{\"raw\":\"EEFF\"}") == ESP_ERR_INVALID_STATE);
+    assert(tb_store_submit("{\"raw\":\"EEFF\"}") == ESP_ERR_NO_MEM);
+    const char *saved=state.base_path;state.base_path=NULL;
+    assert(tb_store_submit("{\"raw\":\"EEFF\"}")==ESP_ERR_INVALID_STATE);state.base_path=saved;
     assert(state.dropped_unavailable == 1 && host_queue_length == STORE_QUEUE);
     cleanup_store();
 }
