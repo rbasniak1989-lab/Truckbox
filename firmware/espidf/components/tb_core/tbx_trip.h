@@ -30,11 +30,20 @@ typedef struct {
     double speed_kmh;
     uint64_t speed_at_ms, can_speed_at_ms;
     uint32_t gaps, resets, implausible, source_changes;
+    /* Validated PID245 counter anchor. Speed estimates between observations
+     * are replaced by its delta, rather than added a second time. */
+    bool odo_valid, odo_restored;
+    uint8_t odo_mid;
+    uint32_t odo_raw;
+    uint64_t odo_at_ms;
+    double odo_anchor_km;
     const char *quality;
 } tbx_trip_t;
 void tbx_trip_init(tbx_trip_t *trip, double restored_km, bool restored_valid);
 void tbx_trip_restore_counter(tbx_trip_t *trip, uint8_t source_address, uint32_t raw);
 void tbx_trip_reset(tbx_trip_t *trip);
+void tbx_trip_restore_odometer(tbx_trip_t *, uint8_t mid, uint32_t raw, double anchor_km);
+tbx_trip_result_t tbx_trip_odometer(tbx_trip_t *, uint8_t mid, uint32_t raw, uint64_t now_ms);
 tbx_trip_result_t tbx_trip_counter(tbx_trip_t *trip, uint8_t source_address,
                                    uint32_t raw, uint64_t now_ms);
 tbx_trip_result_t tbx_trip_speed(tbx_trip_t *trip, tbx_trip_network_t network,

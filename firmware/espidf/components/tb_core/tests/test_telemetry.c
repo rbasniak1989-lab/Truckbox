@@ -538,7 +538,7 @@ static void test_j1587_fast_dual_lane_and_boundaries(void)
             }
         }
         ++chunks;
-        assert(chunks <= 3);
+        assert(chunks <= 8); /* Explicit units/quality add metadata; all27 still fit one10s cycle. */
         cJSON_Delete(record);
     }
     assert(observed == TB_J1587_FAST_COUNT);

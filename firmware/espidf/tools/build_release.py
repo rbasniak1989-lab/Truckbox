@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.9"
+VERSION = "0.2.12"
 EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
 REQUIRED_SOURCE = (
     "firmware/espidf/CMakeLists.txt",
@@ -123,8 +123,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
         "branch": git_value(project_root, "branch", "--show-current"),
         "commit": git_value(project_root, "rev-parse", "HEAD"),
         "dirty": bool(git_value(project_root, "status", "--porcelain")),
-        "integration_base_branch": "feature/revb1-j1708-17-pids",
-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "origin/feature/revb1-j1708-17-pids"),
+        "integration_base_branch": "feature/revb1-v0211-j1708-10s-dual-lane",
+        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "8ee91d4"),
         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
     }
     result["builds"] = {}
@@ -215,6 +215,17 @@ def package_release(project_root: Path, output_dir: Path, package_path: Path, ro
                 "project": f"truckbox_{role}", "flash_size": "8MB", "flash_mode": "dio", "flash_freq": "80m",
                 "usb_files": files, "ota_file": ota.name, "ota_sha256": digest(ota), "ota_size": ota.stat().st_size,
             }
+            # Preserve symbols for decoding watchdog/backtrace addresses of
+            # this exact OTA build. They are never part of a USB flash list.
+            symbols=[]
+            for suffix in ("elf","map"):
+                compiled=build["build"] / f"truckbox_{role}.{suffix}"
+                if compiled.is_file():
+                    symbol_dir=staging / "symbols" / role
+                    symbol_dir.mkdir(parents=True,exist_ok=True)
+                    target=symbol_dir / compiled.name;shutil.copy2(compiled,target)
+                    symbols.append({"file":target.relative_to(staging).as_posix(),"sha256":digest(target)})
+            manifest["images"][role]["debug_symbols"]=symbols
             # Reproducible build inputs and actual offsets, no absolute local paths.
             metadata_dir = staging / "build_metadata" / role
             metadata_dir.mkdir(parents=True)

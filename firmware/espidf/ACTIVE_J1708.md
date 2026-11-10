@@ -1,3 +1,5 @@
+Para a candidata **0.2.12**, consultar [guia e relatório atuais](REV_B1_0.2.12_CANDIDATA.md), incluindo a sincronização obrigatória antes de rollback manual. O conteúdo abaixo registra as versões anteriores.
+
 # J1708/J1587 ativo — Core 0.2.9, versão de testes
 
 A especificação vigente e o relatório estão em [J1708_FIX_v0.2.9.md](J1708_FIX_v0.2.9.md).

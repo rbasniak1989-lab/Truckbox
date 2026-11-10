@@ -25,6 +25,7 @@ typedef struct {
     bool inverted_de21_attested;
     /* Parked-only, one outstanding PID at a time; 0 start_pid means first PID. */
     bool sequential_scan;
+    bool single_shot;
     uint16_t start_pid;
 } tbx_j1708_active_config_t;
 
@@ -52,6 +53,11 @@ typedef struct {
     uint8_t scan_start_index, scan_budget, scan_completed;
     uint32_t trial_echo_base, trial_answer_base;
     uint64_t retry_after_us, promotion_deadline_us;
+    bool physical_validated;
+    uint8_t consecutive_failures;
+    uint16_t last_response_pid;
+    uint8_t last_response_mid;
+    uint64_t last_response_us;
 } tbx_j1708_active_t;
 
 void tbx_j1708_active_init(tbx_j1708_active_t *, tbx_j1708_request_scheduler_t *,
@@ -64,6 +70,8 @@ bool tbx_j1708_active_arm(tbx_j1708_active_t *, bool authorized, bool stationary
  * echoes and at least one MID/PID response candidate on this boot. */
 bool tbx_j1708_active_enable_work(tbx_j1708_active_t *, uint64_t now_us);
 bool tbx_j1708_active_work_ready(const tbx_j1708_active_t *, uint64_t now_us);
+bool tbx_j1708_active_attest_physical(tbx_j1708_active_t *, bool external_tx,
+    bool external_reply, uint64_t now_us);
 void tbx_j1708_active_stop(tbx_j1708_active_t *, const char *reason);
 void tbx_j1708_active_tick(tbx_j1708_active_t *, uint64_t now_us);
 /* Feed every received UART byte, before frame parsing; echo mismatch releases

@@ -7,4 +7,8 @@ config TB_ROLE_CORE
 config TB_ROLE_LINK
     bool "Link"
 endchoice
+config TB_J1708_ONLY
+    bool "Rev.B.1 J1708_ONLY (no CAN acquisition resources)"
+    depends on TB_ROLE_CORE
+    default y
 endmenu

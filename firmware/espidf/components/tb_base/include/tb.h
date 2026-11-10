@@ -33,8 +33,12 @@ typedef struct {
     char apn_password[65];
     uint32_t can_baud;
     uint32_t gnss_baud;
+    uint32_t j1708_timeout_ms, j1708_intervals_ms[17];
+    bool j1587_odometer_validated, j1587_fuel250_validated;
+    uint8_t j1587_odometer_mid,j1587_fuel250_mid;
     uint64_t sequence_floor;
     bool capture_enabled;
+    bool can_enabled, j1708_enabled;
     bool full_decode_enabled; /* opt-in; LEGACY telemetry is the default */
     bool sd_enabled;
     bool fram_enabled;
@@ -89,8 +93,9 @@ esp_err_t tb_application_register_routes(httpd_handle_t server);
 esp_err_t tb_store_submit(const char *record_json);
 cJSON *tb_store_batch(size_t limit, size_t max_bytes);
 esp_err_t tb_store_ack(uint64_t sequence);
-/* Explicitly discard local telemetry logs on the next boot. Never erase NVS/OTA. */
+/* Legacy discard API is retained but disabled in0.2.12. */
 esp_err_t tb_store_schedule_discard(void);
+esp_err_t tb_store_prepare_rollback(void);
 void tb_store_add_json(cJSON *object);
 
 /* Link accepts batches from Core and returns an explicit ack_seq after HTTPS acceptance. */

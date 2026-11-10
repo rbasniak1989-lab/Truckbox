@@ -159,7 +159,7 @@ static void test_collision_release_and_three_error_stop(void)
         unsigned aborts=f.aborts;
         uint8_t wrong=(uint8_t)(f.sent_frame[0]^1u);
         tbx_j1708_active_note_rx(&f.active,&wrong,1,sent+1100);
-        assert(f.aborts==aborts+1 && !f.active.tx_active && f.active.collisions==i+1);
+        assert(f.aborts>=aborts+1 && f.aborts<=aborts+2 && !f.active.tx_active && f.active.collisions==i+1); /* Final disarm may deassert DE again. */
         assert(f.scheduler.pending==TBX_J1708_NO_PENDING);
         sent+=250000;
     }
@@ -256,6 +256,8 @@ static void test_work_mode_requires_actual_parked_echo_and_response(void)
         now+=250000;
     }
     const uint64_t authorized_at=now+1000;
+    assert(!tbx_j1708_active_work_ready(&f.active,authorized_at));
+    assert(tbx_j1708_active_attest_physical(&f.active,true,true,authorized_at));
     assert(tbx_j1708_active_enable_work(&f.active,authorized_at));
     assert(f.active.work_mode);
     assert(f.scheduler.armed && f.scheduler.min_spacing_ms>=TBX_J1708_WORK_MIN_SPACING_MS);
@@ -289,6 +291,7 @@ static void test_work_mode_auto_disarms_and_must_revalidate(void)
             f.config.target_mid[i],expected_pids[i],now+200000));
         now+=250000;
     }
+    assert(tbx_j1708_active_attest_physical(&f.active,true,true,now+1000));
     assert(tbx_j1708_active_enable_work(&f.active,now+1000));
     unsigned before=f.sends;
     tbx_j1708_active_tick(&f.active,f.active.lease_deadline_us);
@@ -411,24 +414,60 @@ static void test_finished_scan_promotes_to_all17_and_no_boot_permission(void)
         tbx_j1708_active_tick(&f.active,now+200001);now+=1200000;
     }
     assert(!f.scheduler.armed && f.active.promotion_deadline_us);
+    assert(tbx_j1708_active_attest_physical(&f.active,true,true,now-900000));
     assert(tbx_j1708_active_enable_work(&f.active,now-900000));
     /* Promotion happened only 300ms after last TX: must still defer to1.2s. */
     tbx_j1708_active_tick(&f.active,now-1);assert(f.scheduler.sent_total==11);
-    for(unsigned i=0;i<34;i++){
-        tbx_j1708_active_tick(&f.active,now);
-        assert(f.sent_frame[2]==expected_pids[i%17]);
-        echo(&f,now);
-        assert(tbx_j1708_active_note_response(&f.active,f.config.target_mid[i%17],expected_pids[i%17],now+200000));
-        now+=1200000;
+    /* Individual cadence: each of17 gets one phase in the first minute.
+     * No second round every1.2 seconds, unlike0.2.11. */
+    for(unsigned i=0;i<17;i++){
+        uint64_t due=now-900000+(uint64_t)(i*60000u/17u)*1000;
+        if(due<now)due=now;
+        tbx_j1708_active_tick(&f.active,due);
+        assert(f.sent_frame[2]==expected_pids[i]);echo(&f,due);
+        assert(tbx_j1708_active_note_response(&f.active,f.config.target_mid[i],expected_pids[i],due+200000));
     }
-    assert(f.scheduler.sent_total==45 && f.active.work_mode && f.scheduler.armed);
+    assert(f.scheduler.sent_total==28 && f.active.work_mode && f.scheduler.armed);
     tbx_j1708_active_stop(&f.active,"OPERATOR_STOP");
     assert(!tbx_j1708_active_enable_work(&f.active,now));
     initialize(&f);assert(!f.scheduler.armed && !f.active.work_mode);
 }
 
+static void test_single_trial_then_travel_timeout_cutoff(void)
+{
+    fixture_t f;initialize(&f);f.config.single_shot=true;f.config.start_pid=117;
+    configure_and_arm(&f,1000000);assert(f.active.scan_budget==1 && f.scheduler.cursor==6);
+    uint64_t now=1005000;tbx_j1708_active_tick(&f.active,now);assert(f.sends==1);echo(&f,now);
+    assert(!tbx_j1708_active_note_response(&f.active,128,117,now+200000)); /* Wrong destination. */
+    assert(tbx_j1708_active_note_response(&f.active,f.config.target_mid[6],117,now+201000));
+    tbx_j1708_active_tick(&f.active,now+202000);assert(!f.scheduler.armed && f.sends==1);
+    tbx_j1708_active_tick(&f.active,now+2000000);assert(f.sends==1);
+    assert(!tbx_j1708_active_attest_physical(&f.active,false,true,now+2000000));
+    assert(!tbx_j1708_active_attest_physical(&f.active,true,false,now+2000000));
+    assert(!tbx_j1708_active_enable_work(&f.active,now+2000000));
+    assert(tbx_j1708_active_attest_physical(&f.active,true,true,now+2000000));
+    assert(tbx_j1708_active_enable_work(&f.active,now+2000000));
+    now+=2000000;
+    /* Complete echoes without responses: release passive RX and stop on the
+     * third consecutive timeout, rather than cycling forever. */
+    for(unsigned i=0;i<3;i++){
+        uint64_t due=now+(uint64_t)(i*60000u/17u)*1000;
+        tbx_j1708_active_tick(&f.active,due);assert(f.sends==i+2);echo(&f,due);
+        tbx_j1708_active_tick(&f.active,due+450000);
+    }
+    assert(f.scheduler.safety_stopped && !f.scheduler.armed && !f.active.tx_active && !f.active.work_mode);
+    assert(f.scheduler.timeout_total==3 && f.active.consecutive_failures==3);
+    tbx_j1708_active_tick(&f.active,now+60000000);assert(f.sends==4);
+    initialize(&f);assert(!f.active.physical_validated && !f.scheduler.armed);
+    /* A failed first physical echo cannot lead to another automatic trial. */
+    f.config.single_shot=true;configure_and_arm(&f,1000000);tbx_j1708_active_tick(&f.active,1005000);
+    uint8_t wrong=(uint8_t)(f.sent_frame[0]^1);tbx_j1708_active_note_rx(&f.active,&wrong,1,1006100);
+    tbx_j1708_active_tick(&f.active,10000000);assert(f.sends==1 && !f.scheduler.armed);
+}
+
 int main(void)
 {
+    test_single_trial_then_travel_timeout_cutoff();
     test_busy_is_not_tx_failure();
     test_all_17_timeouts_finish_scan_and_cannot_enable_work();
     test_finished_scan_promotes_to_all17_and_no_boot_permission();

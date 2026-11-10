@@ -11,6 +11,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const html = fs.readFileSync(path.join(ROOT, 'components/tb_web/index.html'));
 const ADMIN = 'mock_admin_token_32_characters_ok';
 const requests = [], failures = [];
+let simulatedJ1708=null;
 let deviceRole = 'core', otaFailure = false, otaDelay = 40, config = {};
 function reset(role) {
   deviceRole = role;
@@ -39,7 +40,7 @@ const server = http.createServer(async(req,res) => {
   if(req.url === '/api/state') return json(res,200,{ok:true,role:deviceRole,version:'MOCK-TEST-ONLY',
     device_uid:'<img src=x onerror="window.__xss=true">',network:{station_connected:true,
     station_ip:'192.0.2.23',access_point_running:true,ap_ip:'192.168.4.1',ap_ssid:'Mock AP'},
-    hardware_notice:'Mock diagnostics <script>window.__xss=true</script>'});
+    hardware_notice:'Mock diagnostics <script>window.__xss=true</script>',...(simulatedJ1708 || {})});
   if(req.headers.authorization !== 'Bearer ' + ADMIN) return json(res,401,{ok:false,error:'Mock unauthorized'});
   if(req.url === '/api/config' && req.method === 'GET') return json(res,200,config);
   if(req.url === '/api/config' && req.method === 'POST') {
@@ -53,6 +54,17 @@ const server = http.createServer(async(req,res) => {
   }
   if(req.url === '/api/pairing') return json(res,200,{ssid:'Mock Core',
     password:'mock-fixture-password',pair_key:'a'.repeat(64),host:'192.168.4.2'});
+  if(req.url==='/api/j1708/requests' && req.method==='POST'){
+    const update=JSON.parse(body.toString()), status=simulatedJ1708.j1708.requests;
+    if(update.action==='arm'){assert.equal(update.authorized,true);assert.equal(update.stationary,true);status.armed=true;status.single_shot=true;}
+    if(update.action==='confirm_physical'){
+      assert.equal(update.external_capture_verified,true);assert.equal(update.local_mid_free_verified,true);assert.equal(update.trial_id,'42:1005000');
+      assert.equal(update.tx_observed_hex,'F2 80 1A 80 F4');assert.equal(update.response_observed_hex,'80 1A 01 65');status.physical_validated=true;status.work_evidence_ready=true;
+    }
+    if(update.action==='enable_work'){assert.equal(status.physical_validated,true);status.work_mode=true;status.armed=true;}
+    if(update.action==='stop'){status.work_mode=false;status.armed=false;}
+    return json(res,200,{ok:true});
+  }
   if(req.url === '/api/ota' || req.url === '/api/ota/link') {
     await new Promise(resolve=>setTimeout(resolve,otaDelay));
     return otaFailure ? json(res,400,{ok:false,error:'Mock image role rejected'})
@@ -90,7 +102,7 @@ async function file(page,name,size=512,magic=0xe9){
   reset('core');
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const origin='http://127.0.0.1:'+server.address().port;
-  const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+  const browser=await chromium.launch({executablePath:process.env.TB_CHROMIUM_PATH || (fs.existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined),headless:true,args:['--no-sandbox']});
   try{
     const context=await browser.newContext({viewport:{width:1120,height:900}});
     await context.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());
@@ -184,6 +196,31 @@ async function file(page,name,size=512,magic=0xe9){
       await page.locator('#ota-message').filter({hasText:'Mock OTA accepted'}).waitFor();
       assert.equal(recent('POST','/api/ota/link').body.length,512);
       assert.equal(await page.locator('#upload-progress').getAttribute('value'),'100');otaDelay=40;
+    });
+    await check('J1708 timeout and validated source MIDs submit numeric configuration',async()=>{
+      const sent=await acceptedConfig(page,async()=>{
+        await page.locator('[name=j1708_timeout_ms]').fill('700');
+        await page.locator('[name=j1587_odometer_mid]').fill('128');
+        await page.locator('[name=j1587_fuel250_mid]').fill('128');
+      });
+      assert.equal(sent.j1708_timeout_ms,700);assert.equal(sent.j1587_odometer_mid,128);assert.equal(sent.j1587_fuel250_mid,128);
+    });
+    await check('J1708 one-shot, external evidence gate, explicit travel activation and stop',async()=>{
+      simulatedJ1708={speedKph:0,uptime_ms:65000,boot_id:42,reset_reason:1,capture_profile:'J1708_ONLY',can:{enabled:false},
+        storage:{ready:true,phase:'NORMAL',pending_known:true,pending_records:150,space_total_bytes:1966080,space_available_bytes:1000000,offline_estimate_seconds:7200,last_ack_seq:7,recovered_records:3,isolated_files:1,corrupt_records:1},
+        bridge:{last_cloud_ack_age_ms:3000},telemetry_v2:{latest_readings:65},
+        j1708:{ready:true,frames_per_minute:3600,observed_mids:[128,130,140,144],requests:{sent:0,echo_ok:0,responses:0,single_shot:false,armed:false,physical_validated:false,stats:[]}}};
+      await page.locator('#refresh').click();await page.waitForTimeout(150);
+      await page.locator('#j1708-start-pid').selectOption('26');await page.locator('#j1708-local-mid').fill('242');await page.locator('#j1708-topology').check();assert.equal(await page.locator('#j1708-work').isDisabled(),true);
+      await page.locator('#j1708-test').click();
+      await page.waitForFunction(()=>document.querySelector('#j1708-message').textContent.includes('Uma requisição autorizada'));
+      Object.assign(simulatedJ1708.j1708.requests,{armed:false,sent:1,echo_ok:1,responses:1,trial_id:'42:1005000'});
+      await page.locator('#refresh').click();await page.waitForTimeout(150);assert.equal(await page.locator('#j1708-work').isDisabled(),true);
+      await page.locator('#j1708-tx-proof').fill('F2 80 1A 80 F4');await page.locator('#j1708-rx-proof').fill('80 1A 01 65');await page.locator('#j1708-external-proof').check();
+      await page.locator('#j1708-confirm').click();await page.waitForFunction(()=>document.querySelector('#j1708-message').textContent.includes('Validação externa'));
+      await page.locator('#j1708-work').click();await page.waitForFunction(()=>document.querySelector('#j1708-message').textContent.includes('Modo de viagem ativado'));
+      assert.match(await page.locator('#diag-can').textContent(),/Desativada no perfil J1708_ONLY/);
+      await page.locator('#j1708-stop').click();await page.waitForFunction(()=>document.querySelector('#j1708-message').textContent.includes('Parada solicitada'));
     });
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:path.join(__dirname,'core-mobile.png'),fullPage:true});

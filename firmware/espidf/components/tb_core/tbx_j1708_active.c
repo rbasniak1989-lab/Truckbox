@@ -40,9 +40,9 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *c, const tbx_j1708_active_co
             scan_start_index = (uint8_t)i;
         }
     }
-    if (cfg->sequential_scan && !start_pid_known) return false;
-    c->scan_start_index = cfg->sequential_scan ? scan_start_index : 0;
-    c->scan_budget = cfg->sequential_scan ? (uint8_t)(TBX_J1708_REQUEST_COUNT - scan_start_index) : 0;
+    if ((cfg->sequential_scan || cfg->single_shot) && !start_pid_known) return false;
+    c->scan_start_index = (cfg->sequential_scan || cfg->single_shot) ? scan_start_index : 0;
+    c->scan_budget = cfg->single_shot?1:cfg->sequential_scan ? (uint8_t)(TBX_J1708_REQUEST_COUNT - scan_start_index) : 0;
     c->config=*cfg;
     /* Conservative test policy: never reduce the idle guard below5ms.
      * (10+2*priority) bit times implements a priority-dependent minimum;
@@ -50,6 +50,8 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *c, const tbx_j1708_active_co
     uint32_t priority_guard=((10u+2u*cfg->priority)*1000000u+9599u)/9600u;
     c->idle_guard_us=priority_guard>5000u?priority_guard:5000u;
     c->configured=true;
+    c->physical_validated=false;c->last_response_us=0;c->consecutive_failures=0;
+    c->scheduler->periodic=false;
     c->trial_echo_base=c->echo_ok;
     c->trial_answer_base=c->scheduler->answered_total;
     c->promotion_deadline_us=0;
@@ -78,7 +80,7 @@ bool tbx_j1708_active_arm(tbx_j1708_active_t *c, bool authorized, bool stationar
         c->last_rx_us=now_us;
         c->scan_sent_baseline=c->scheduler->sent_total;
         c->scan_completed=0;
-        if(c->config.sequential_scan){
+        if(c->config.sequential_scan || c->config.single_shot){
             c->scheduler->cursor=c->scan_start_index;
             /* Max one in flight. Each next PID waits for response or timeout,
              * plus >=1200ms between successful request transmissions. */
@@ -94,11 +96,22 @@ bool tbx_j1708_active_work_ready(const tbx_j1708_active_t *c, uint64_t now_us)
     /* Keep the first transmitter validation physically stationary; a passive
      * matching MID/PID alone is not enough to establish working TX. */
     if (!c || !c->scheduler || !c->configured ||
-        c->scheduler->safety_stopped || c->work_mode || c->tx_active ||
+        c->scheduler->safety_stopped || c->work_mode || c->tx_active || !c->physical_validated ||
         c->scheduler->link_error_count ||
         now_us >= (c->scheduler->armed ? c->lease_deadline_us : c->promotion_deadline_us) ||
-        c->echo_ok-c->trial_echo_base < 3u ||
+        c->echo_ok-c->trial_echo_base < 1u ||
         c->scheduler->answered_total-c->trial_answer_base == 0u) return false;
+    return true;
+}
+
+bool tbx_j1708_active_attest_physical(tbx_j1708_active_t *c,bool external_tx,bool external_reply,uint64_t now)
+{
+    if(!c || !c->configured || !external_tx || !external_reply || c->tx_active ||
+       c->scheduler->safety_stopped || c->scheduler->link_error_count ||
+       !c->last_response_us || now<c->last_response_us || now-c->last_response_us>UINT64_C(900000000) ||
+       c->last_response_pid!=c->tx_pid || c->echo_ok==c->trial_echo_base)return false;
+    c->physical_validated=true;
+    event(c,"PHYSICAL_VALIDATION",c->tx_pid,"OPERATOR_CONFIRMED_EXTERNAL_TX_AND_REPLY");
     return true;
 }
 
@@ -107,7 +120,7 @@ bool tbx_j1708_active_enable_work(tbx_j1708_active_t *c, uint64_t now_us)
     if(!tbx_j1708_active_work_ready(c,now_us))return false;
     c->work_mode=true;
     c->now_us=now_us;
-    c->config.sequential_scan=false;
+    c->config.sequential_scan=false;c->config.single_shot=false;
     tbx_j1708_request_permit_stationary_test(c->scheduler,true);
     (void)tbx_j1708_request_arm(c->scheduler);
     tbx_j1708_request_set_spacing(c->scheduler,TBX_J1708_WORK_MIN_SPACING_MS);
@@ -119,17 +132,17 @@ bool tbx_j1708_active_enable_work(tbx_j1708_active_t *c, uint64_t now_us)
         c->scheduler->next_tx_valid=true;
     }
     /* A resumed parked scan may start at PID117; road polling covers all17. */
-    c->scheduler->cursor=0;
+    tbx_j1708_request_start_periodic(c->scheduler,(uint32_t)(now_us/1000u));
     c->lease_deadline_us=now_us+TBX_J1708_WORK_LEASE_US;
-    event(c,"WORK_ENABLED",0,"3_ECHO_AND_RESPONSE_CANDIDATE_CONFIRMED");
+    event(c,"WORK_ENABLED",0,"EXTERNAL_CAPTURE_ATTESTED_AND_MATCHING_RESPONSE");
     return true;
 }
 
 void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
 {
     if (!c) return;
-    c->promotion_deadline_us=(reason && !strcmp(reason,"SEQUENTIAL_SCAN_COMPLETE"))?
-        c->lease_deadline_us:0;
+    c->promotion_deadline_us=(reason && (!strcmp(reason,"SEQUENTIAL_SCAN_COMPLETE") || !strcmp(reason,"PHYSICAL_TRIAL_COMPLETE")))?
+        c->now_us+UINT64_C(900000000):0;
     release_tx(c);
     c->work_mode=false;
     if (c->scheduler) {
@@ -149,14 +162,19 @@ void tbx_j1708_active_note_link_error(tbx_j1708_active_t *c, const char *reason)
     /* Retry the disputed PID only after a new idle guard AND existing spacing.
      * Do not wrap away from a failed request or transmit into the same burst. */
     for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
-        if(c->scheduler->pids[i].pid==c->tx_pid)c->scheduler->cursor=(uint8_t)i;
+        if(c->scheduler->pids[i].pid==c->tx_pid){c->scheduler->cursor=(uint8_t)i;
+            if(c->scheduler->periodic)c->scheduler->pids[i].next_due_ms=(uint32_t)(c->now_us/1000u);}
     c->retry_after_us=c->now_us+20000u+
         ((c->config.local_mid*37u+c->collisions*97u)%31u)*1000u;
     bool stopped=c->scheduler->safety_stopped;
     tbx_j1708_request_note_link_error(c->scheduler);
+    if(c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
+    if(c->consecutive_failures>=3){c->scheduler->safety_stopped=true;tbx_j1708_request_stop(c->scheduler);}
     event(c,"LINK_ERROR",c->tx_pid,reason?reason:"UNSPECIFIED_LINK_ERROR");
     if (!stopped && c->scheduler->safety_stopped)
         event(c,"AUTO_DISARMED",c->tx_pid,"THREE_LINK_ERRORS");
+    if(c->scheduler->safety_stopped)tbx_j1708_active_stop(c,"THREE_CONSECUTIVE_REQUEST_FAILURES");
+    else if(c->config.single_shot)tbx_j1708_active_stop(c,"PHYSICAL_TRIAL_TX_FAILED");
 }
 
 static bool send_request(uint16_t pid, void *context)
@@ -185,6 +203,8 @@ static bool send_request(uint16_t pid, void *context)
     if (result!=TBX_J1708_TX_STARTED) {
         release_tx(c);
         event(c,"TX_ERROR",pid,"BACKEND_REJECTED_REQUEST");
+        if(c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
+        if(c->config.single_shot)tbx_j1708_active_stop(c,"PHYSICAL_TRIAL_BACKEND_FAILED");
         /* The scheduler counts the failed callback as a link error. */
         return false;
     }
@@ -215,10 +235,20 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
     tbx_j1708_request_tick(c->scheduler,(uint32_t)(now_us/1000u),NULL,NULL);
     if (c->scheduler->timeout_total!=previous_timeouts) {
         if(c->config.sequential_scan)++c->scan_completed;
-        event(c,"TIMEOUT",pending_pid,"NO_MATCHING_MID_PID_WITHIN_450MS");
+        event(c,"TIMEOUT",pending_pid,"NO_MATCHING_MID_PID_WITHIN_CONFIGURED_TIMEOUT");
+        if(c->work_mode && c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
+        if(c->work_mode && c->consecutive_failures>=3){
+            c->scheduler->safety_stopped=true;event(c,"AUTO_DISARMED",pending_pid,"THREE_CONSECUTIVE_REQUEST_FAILURES");
+            tbx_j1708_active_stop(c,"THREE_CONSECUTIVE_REQUEST_FAILURES");
+        }
     }
     if (!c->scheduler->armed) {
         release_tx(c);
+        return;
+    }
+    if(c->config.single_shot && c->scheduler->sent_total>c->scan_sent_baseline){
+        if(!c->tx_active && c->scheduler->pending==TBX_J1708_NO_PENDING)
+            tbx_j1708_active_stop(c,"PHYSICAL_TRIAL_COMPLETE");
         return;
     }
     if (c->config.sequential_scan) {
@@ -234,9 +264,11 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
     if (c->tx_active || now_us<c->retry_after_us || now_us<c->last_rx_us || now_us-c->last_rx_us<c->idle_guard_us) return;
     bool was_stopped=c->scheduler->safety_stopped;
     tbx_j1708_request_tick(c->scheduler,(uint32_t)(now_us/1000u),send_request,c);
+    if(c->consecutive_failures>=3){c->scheduler->safety_stopped=true;tbx_j1708_request_stop(c->scheduler);}
     if (!was_stopped && c->scheduler->safety_stopped) {
         release_tx(c);
         event(c,"AUTO_DISARMED",c->tx_pid,"THREE_LINK_ERRORS");
+        tbx_j1708_active_stop(c,"THREE_CONSECUTIVE_REQUEST_FAILURES");
     }
 }
 
@@ -258,7 +290,7 @@ void tbx_j1708_active_note_rx(tbx_j1708_active_t *c, const uint8_t *bytes, size_
         }
         if (++c->echo_position==sizeof(c->tx_frame)) {
             ++c->echo_ok;
-            c->scheduler->link_error_count=0; /* Consecutive TX failures only. */
+            if(!c->work_mode)c->scheduler->link_error_count=0; /* Travel resets after matching reply. */
             release_tx(c);
             event(c,"TX_ECHO",c->tx_pid,"COMPLETE_MATCHING_BUS_ECHO");
         }
@@ -280,6 +312,8 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
     if (!tbx_j1708_request_note_response(c->scheduler,pid,(uint32_t)(now_us/1000u))) return false;
     if(c->config.sequential_scan)++c->scan_completed;
     c->now_us=now_us;
+    c->consecutive_failures=0;c->scheduler->link_error_count=0;
+    c->last_response_pid=pid;c->last_response_mid=mid;c->last_response_us=now_us;
     event(c,"RESPONSE_CANDIDATE",pid,"MID_PID_TIME_MATCH_IS_NOT_CAUSAL_PROOF");
     return true;
 }

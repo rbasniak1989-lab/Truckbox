@@ -1,0 +1,13 @@
+test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
+test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
+test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
+test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
+test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
+test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
+test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
+test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 2.305s
+
+OK

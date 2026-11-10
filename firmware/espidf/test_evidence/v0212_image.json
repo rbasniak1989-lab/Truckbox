@@ -1,0 +1,8 @@
+{
+  "version": "0.2.12",
+  "project": "truckbox_core",
+  "esp_idf": "v5.5.2",
+  "bytes": 1469024,
+  "sha256": "9c0d53a7c43f7ac049a81a071f22078010a945f2a55ae036397deb135feb9d85",
+  "automatically_installed": false
+}

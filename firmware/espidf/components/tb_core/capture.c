@@ -4,8 +4,12 @@
 #include "telemetry_profile.h"
 #include "tbx_j1587_bridge.h"
 #include "tbx_j1708_active.h"
+#include "tbx_j1708_policy.h"
 #include "tbx_trip.h"
 #include "tbx_fuel.h"
+#include "tbx_fuel_account.h"
+#include "trip_checkpoint.h"
+#include "accounting_json.h"
 #include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
@@ -44,8 +48,12 @@ static struct {
     tbx_j1708_request_scheduler_t requests;
     tbx_j1708_active_t active;
     uint8_t observed_mid[32];
+    uint8_t trial_reply[21],trial_reply_size;
+    uint32_t frames_last_minute;
     volatile bool emergency_stop;
     tbx_trip_t trip;
+    tbx_fuel_account_t fuel_account;
+    uint32_t checkpoint_generation;
     double speed, rpm, fuel_rate, distance_total;
     double distance_trip, fuel_trip;
     bool distance_trip_valid, fuel_trip_valid;
@@ -129,17 +137,16 @@ typedef struct {
     uint16_t pid;
     uint8_t local_mid,target_mid,frame[5];
     char event[24],detail[112];
+    bool work;
 } request_event_t;
 
-/* Work-mode traffic is represented by the one-minute HEALTH counters.
- * Preserve diagnostics and all events from the finite parked scan, but do not
- * write 3 normal records per requested PID to the Rev.B.1 flash indefinitely.
+/* Persist each request and its value result; aggregate routine echo/candidate
+ * events in HEALTH counters instead of writing redundant extra records.
  * Never hide TIMEOUT, TX_ERROR, LINK_ERROR, AUTO_DISARMED or STOPPED. */
 static bool request_event_should_persist(const char *name, bool work_mode)
 {
     if (!name || !work_mode) return true;
-    return strcmp(name,"REQUEST") != 0 &&
-           strcmp(name,"TX_ECHO") != 0 &&
+    return strcmp(name,"TX_ECHO") != 0 &&
            strcmp(name,"RESPONSE_CANDIDATE") != 0;
 }
 
@@ -149,7 +156,8 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
     if (!request_event_should_persist(event,s.active.work_mode)) return;
     /* RX/TX callbacks only queue fixed-size evidence. JSON, storage and logging
      * run outside the RX/TX lock and never delay the byte echo deadline. */
-    request_event_t item={.uptime_us=(uint64_t)esp_timer_get_time(),
+    if(s.active.work_mode && (!strcmp(event,"TX_ECHO") || !strcmp(event,"RESPONSE_CANDIDATE")))return;
+    request_event_t item={.work=s.active.work_mode,.uptime_us=(uint64_t)esp_timer_get_time(),
         .tx_start_us=s.last_tx_uart_us,.edges=s.rx_edges,.pid=pid};
     snprintf(item.event,sizeof(item.event),"%s",event);
     snprintf(item.detail,sizeof(item.detail),"%s",detail?detail:"");
@@ -171,11 +179,11 @@ static void request_store_event(const request_event_t *item)
     cJSON_AddNumberToObject(row, "boot_id", tb_boot_id());
     cJSON_AddNumberToObject(row, "uptime_ms", item->uptime_us / 1000);
     cJSON_AddNumberToObject(row,"tx_start_us",(double)item->tx_start_us);
-    cJSON_AddNumberToObject(row,"rx_edges",item->edges);
+    if(!item->work)cJSON_AddNumberToObject(row,"rx_edges",item->edges);
     cJSON_AddBoolToObject(row, "time_valid", false);
     cJSON_AddStringToObject(row, "time_source", "boot_monotonic");
     cJSON_AddStringToObject(row, "event", item->event);
-    cJSON_AddStringToObject(row, "detail", item->detail);
+    if(!item->work || strcmp(item->event,"REQUEST"))cJSON_AddStringToObject(row,"detail",item->detail);
     cJSON_AddNumberToObject(row, "pid", item->pid);
     cJSON_AddNumberToObject(row,"local_mid",item->local_mid);
     cJSON_AddNumberToObject(row,"target_mid",item->target_mid);
@@ -216,14 +224,26 @@ static void persist_trip(void)
 {
     if (!s.nvs_open || !s.trip_persist_lock) return;
     xSemaphoreTake(s.trip_persist_lock, portMAX_DELAY);
+    trip_blob_t previous={0};size_t previous_size=sizeof(previous);
+    uint32_t before_crc=nvs_get_blob(s.nvs,"trip",&previous,&previous_size)==ESP_OK?tb_store_crc32(&previous,previous_size):0;
     xSemaphoreTake(s.lock, portMAX_DELAY);
-    trip_blob_t blob = { .version = 2, .distance = s.distance_trip, .fuel = s.fuel_trip,
-        .distance_valid = s.distance_trip_valid, .fuel_valid = s.fuel_trip_valid,
-        .counter_valid = s.distance_counter_valid, .counter_sa = s.distance_counter_sa, .counter_raw = s.distance_counter_raw };
+    /* Keep the legacy scalar key for explicit rollback to 0.2.11. */
+    if(!tb_config()->j1708_enabled || !s.fuel_j1587){
+        s.fuel_account.observed_l=s.fuel_trip;s.fuel_account.valid=s.fuel_trip_valid;
+    }
+    tb_trip_checkpoint_t checkpoint;
+    tb_trip_checkpoint_make(&checkpoint,++s.checkpoint_generation,&s.trip,&s.fuel_account);
+    trip_blob_t blob = { .version = 2, .distance=s.distance_trip, .fuel=s.fuel_trip,
+        .distance_valid=s.distance_trip_valid,.fuel_valid=s.fuel_trip_valid,
+        .counter_valid=s.distance_counter_valid,.counter_sa=s.distance_counter_sa,.counter_raw=s.distance_counter_raw };
+    checkpoint.legacy_before_crc=before_crc;checkpoint.legacy_after_crc=tb_store_crc32(&blob,sizeof(blob));
+    checkpoint.crc=tb_store_crc32(&checkpoint,offsetof(tb_trip_checkpoint_t,crc));
     xSemaphoreGive(s.lock);
-    esp_err_t err = nvs_set_blob(s.nvs, "trip", &blob, sizeof(blob));
-    if (err == ESP_OK) err = nvs_commit(s.nvs);
-    if (err != ESP_OK) ESP_LOGW(TAG, "Trip checkpoint: %s", esp_err_to_name(err));
+    esp_err_t err=nvs_set_blob(s.nvs,(checkpoint.generation&1)?"trip3a":"trip3b",&checkpoint,sizeof(checkpoint));
+    if(err==ESP_OK)err=nvs_commit(s.nvs);
+    if(err==ESP_OK)err=nvs_set_blob(s.nvs,"trip",&blob,sizeof(blob));
+    if(err==ESP_OK)err=nvs_commit(s.nvs);
+    if(err!=ESP_OK)ESP_LOGW(TAG,"Trip checkpoint: %s",esp_err_to_name(err));
     xSemaphoreGive(s.trip_persist_lock);
 }
 
@@ -234,6 +254,7 @@ static void mirror_trip_locked(void)
     s.distance_counter_raw = s.trip.counter_raw; s.distance_counter_at = s.trip.counter_at_ms;
 }
 
+#ifndef CONFIG_TB_J1708_ONLY
 static uint32_t pgn_of(uint32_t id)
 {
     uint32_t pgn = (id >> 8) & 0x3ffff;
@@ -318,6 +339,8 @@ static void can_task(void *unused)
     }
 }
 
+#endif
+
 static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *value, uint64_t now)
 {
             /* Persist each matching MID/PID observation — not just summary
@@ -332,11 +355,13 @@ static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *value
                 cJSON_AddBoolToObject(row,"time_valid",false);
                 cJSON_AddStringToObject(row,"time_source","boot_monotonic");
                 cJSON_AddStringToObject(row,"classification","RESPONSE_CANDIDATE");
+                char tx[11];for(unsigned j=0;j<5;j++)snprintf(tx+2*j,3,"%02X",s.active.tx_frame[j]);
+                cJSON_AddStringToObject(row,"tx_frame",tx);
                 cJSON_AddNumberToObject(row,"pid",value->pid);
                 cJSON_AddNumberToObject(row,"mid",value->mid);
                 cJSON_AddNumberToObject(row,"local_mid",s.active.config.local_mid);
                 cJSON_AddStringToObject(row,"quality",tbx_j1587_observation_quality_name(value->quality));
-                if(value->name)cJSON_AddStringToObject(row,"name",value->name);
+
                 if(value->unit)cJSON_AddStringToObject(row,"unit",value->unit);
                 if(value->has_numeric && isfinite(value->value))
                     cJSON_AddNumberToObject(row,"value",value->value);
@@ -366,7 +391,7 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
     uint64_t now = value->uptime_ms;
     if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL) {
         const bool matched=tbx_j1708_active_note_response(&s.active,value->mid,value->pid,now*1000);
-        if (matched && s.active.config.sequential_scan)
+        if (matched)
             tb_j1708_store_matched_response(value,now);
     }
     if (value->quality != TBX_J1587_OBS_EM_VALIDACAO || !value->has_numeric || !isfinite(value->value)) return;
@@ -380,11 +405,25 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
     } else if (value->pid == 190 && (!s.rpm_can_at || now - s.rpm_can_at > 5000)) {
         s.rpm = value->value; s.rpm_at = now; s.rpm_j1587 = true;
     } else if (value->pid == 183 && (!s.fuel_can_at || now - s.fuel_can_at > 5000)) {
-        if (s.fuel_at && s.fuel_j1587 && s.fuel_address == value->mid && now > s.fuel_at && now - s.fuel_at <= 3000)
-            s.fuel_trip += (s.fuel_rate + value->value) * 0.5 * (now - s.fuel_at) / 3600000.0;
-        s.fuel_trip_valid = true; s.fuel_rate = value->value; s.fuel_at = now; s.fuel_j1587 = true; s.fuel_address = value->mid; s.fuel_derived = false;
-    } else if (value->pid == 245 && (!s.total_can_at || now - s.total_can_at > 30000)) {
-        s.distance_total = value->value; s.total_at = now; s.total_j1587 = true;
+        if(!s.fuel_j1587){s.fuel_account.observed_l=s.fuel_trip;s.fuel_account.valid=s.fuel_trip_valid;s.fuel_account.rate_valid=false;}
+        tbx_fuel_account_rate(&s.fuel_account,value->mid,value->value,
+            s.speed_at && now>=s.speed_at && now-s.speed_at<=5000?s.speed:NAN,now);
+        s.fuel_trip=s.fuel_account.observed_l;s.fuel_trip_valid=s.fuel_account.valid;
+        s.fuel_rate=value->value;s.fuel_at=now;s.fuel_j1587=true;s.fuel_address=value->mid;s.fuel_derived=false;
+    } else if (value->pid == 245 && (!s.total_can_at || now - s.total_can_at > 30000) &&
+        (!tb_config()->j1587_odometer_validated || value->mid==tb_config()->j1587_odometer_mid)) {
+        s.distance_total=value->value;s.total_at=now;s.total_j1587=true;
+        if(tb_config()->j1587_odometer_validated && value->raw_len==4){
+            uint32_t raw=(uint32_t)value->raw[0]|(uint32_t)value->raw[1]<<8|(uint32_t)value->raw[2]<<16|(uint32_t)value->raw[3]<<24;
+            tbx_trip_result_t result=tbx_trip_odometer(&s.trip,value->mid,raw,now);mirror_trip_locked();
+            if(result==TBX_TRIP_COUNTER_ADDED || result==TBX_TRIP_BASELINE)
+                tbx_fuel_account_distance(&s.fuel_account,s.distance_trip);
+        }
+    } else if(value->pid==250 && tb_config()->j1587_fuel250_validated && value->mid==tb_config()->j1587_fuel250_mid && value->raw_len==4){
+        uint32_t raw=(uint32_t)value->raw[0]|(uint32_t)value->raw[1]<<8|(uint32_t)value->raw[2]<<16|(uint32_t)value->raw[3]<<24;
+        (void)tbx_fuel_account_counter(&s.fuel_account,value->mid,raw,now);
+        s.fuel_trip=s.fuel_account.observed_l;s.fuel_trip_valid=s.fuel_account.valid;
+
     }
 }
 
@@ -396,9 +435,9 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
     bool echo = !oversize && tbx_j1708_active_is_tx_echo(&s.active, frame, size, captured_us);
     if (!echo && !oversize && size <= 21 && tb_protocol_j1708_checksum_valid(frame, size) && frame[0] >= 128) {
         s.observed_mid[frame[0] >> 3] |= (uint8_t)(1u << (frame[0] & 7u));
-        if (s.requests.armed && s.active.configured && frame[0] == s.active.config.local_mid) {
+        if (s.active.configured && frame[0] == s.active.config.local_mid) {
             tbx_j1708_active_stop(&s.active, "LOCAL_MID_CONFLICT");
-            s.requests.safety_stopped = true;
+            s.requests.safety_stopped = true;s.active.physical_validated=false;
         }
     }
     xSemaphoreGive(s.lock);
@@ -426,7 +465,9 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
         xSemaphoreTake(s.lock, portMAX_DELAY);
         snprintf(s.j1708_last, sizeof(s.j1708_last), "%s", record);
         s.j1708_at = now;
+        uint32_t before=s.requests.answered_total;
         (void)tbx_j1587_bridge_decode(frame, size, now, update_j1587_signal_locked, NULL);
+        if(s.requests.answered_total>before){memcpy(s.trial_reply,frame,size);s.trial_reply_size=(uint8_t)size;}
         xSemaphoreGive(s.lock);
     }
 }
@@ -491,7 +532,7 @@ static void snapshot_task(void *unused)
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(1000));
         uint64_t now = esp_timer_get_time() / 1000;
         /* OPERATIONAL at 10 s in LEGACY; HEALTH remains at 60 s. */
-        if (tb_operational_due(tb_config()->full_decode_enabled, seconds)) {
+        if (tb_operational_due(tb_profile_raw(tb_config()->full_decode_enabled), seconds)) {
             cJSON *sample = cJSON_CreateObject();
             if (sample) {
                 add_sample_identity(sample, "OPERATIONAL");
@@ -513,6 +554,8 @@ static void snapshot_task(void *unused)
                 if (s.total_at && now - s.total_at <= 30000) { cJSON_AddNumberToObject(sample, "odometer_km", s.distance_total); vehicle_data = true; }
                 if (s.distance_trip_valid) cJSON_AddNumberToObject(sample, "trip_distance_km", s.distance_trip);
                 if (s.fuel_trip_valid) cJSON_AddNumberToObject(sample, "trip_fuel_l", s.fuel_trip);
+                cJSON_AddStringToObject(sample,"distance_quality",s.trip.quality);
+                tb_accounting_json(sample,&s.fuel_account);
                 if (s.fuel_derived) {
                     cJSON_AddBoolToObject(sample, "fuel_derived", true);
                     cJSON_AddStringToObject(sample, "fuel_model", "MASTER_V1_2643Nm_C0_0.9720031611625598");
@@ -533,7 +576,7 @@ static void snapshot_task(void *unused)
          * records only when necessary; NO per-frame RAW logging is enabled. */
         if ((seconds + 1U) % 10U == 0U) {
             size_t next_pid = 0;
-            for (unsigned part = 0; next_pid < 27U && part < 3U; ++part) {
+            for (unsigned part = 0; next_pid < 27U && part < 8U; ++part) {
                 cJSON *fast = cJSON_CreateObject();
                 if (!fast) break;
                 add_sample_identity(fast, "J1708_FAST");
@@ -563,7 +606,7 @@ static void snapshot_task(void *unused)
         cJSON_AddStringToObject(context, "role", "core");
         cJSON_AddStringToObject(context, "firmware", tb_version());
         cJSON_AddStringToObject(context, "telemetry_profile",
-            tb_config()->full_decode_enabled ? "COMPLETO" : "LEGACY");
+            tb_profile_raw(tb_config()->full_decode_enabled) ? "COMPLETO" : "LEGACY");
         cJSON_AddStringToObject(context, "j1708_framing", "uart_idle_10bits");
         cJSON_AddBoolToObject(context, "j1708_work_mode", s.active.work_mode);
         cJSON_AddNumberToObject(context,"reset_reason",(double)esp_reset_reason());
@@ -577,7 +620,17 @@ static void snapshot_task(void *unused)
         old_request_timeouts = s.requests.timeout_total;
         /* Append optional sensors last so this routine removes readings when
          * the complete HEALTH approaches the 768-byte storage limit. */
-        tb_telemetry_append_j1587_health(health);
+        size_t slow_cursor=0;
+        for(unsigned part=0;part<64U;part++){
+            cJSON *slow=cJSON_CreateObject();if(!slow)break;
+            add_sample_identity(slow,"J1708_FAST");
+            cJSON_AddStringToObject(slow,"source","j1708");
+            cJSON_AddStringToObject(slow,"origin","PASSIVE_RX");
+            cJSON_AddNumberToObject(slow,"interval_s",60);
+            size_t seen=tb_telemetry_append_j1587_slow(slow,&slow_cursor);
+            if(seen)queue_sample(slow);else{cJSON_Delete(slow);break;}
+        }
+        s.frames_last_minute=s.j1708_frames-old_j1708;
         old_can = s.can_frames; old_j1708 = s.j1708_frames;
         old_checksum = s.j1708_checksum_errors; old_overruns = s.uart_overruns;
         window_start = now;
@@ -671,7 +724,7 @@ static void j1708_task(void *unused)
 static void trip_checkpoint_task(void *unused)
 {
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(30000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
         if (tb_web_ota_busy()) continue;
         persist_trip();
     }
@@ -688,12 +741,14 @@ esp_err_t tb_capture_start(void)
     s.request_events=xQueueCreate(16,sizeof(request_event_t));
     if (!s.lock || !s.trip_persist_lock || !s.request_events) return ESP_ERR_NO_MEM;
     s.nvs_open = nvs_open("tb_trip", NVS_READWRITE, &s.nvs) == ESP_OK;
+    uint32_t legacy_crc=0;
     if (s.nvs_open) {
         trip_blob_t blob = {0};
         size_t size = sizeof(blob);
         if (nvs_get_blob(s.nvs, "trip", &blob, &size) == ESP_OK &&
             ((size == sizeof(trip_blob_v1_t) && blob.version == 1) || (size == sizeof(blob) && blob.version == 2)) &&
             isfinite(blob.distance) && blob.distance >= 0 && isfinite(blob.fuel) && blob.fuel >= 0) {
+            legacy_crc=tb_store_crc32(&blob,size);
             s.distance_trip = blob.distance; s.fuel_trip = blob.fuel;
             s.distance_trip_valid = blob.distance_valid; s.fuel_trip_valid = blob.fuel_valid;
             if (blob.version == 2) { s.distance_counter_valid = blob.counter_valid;
@@ -702,6 +757,29 @@ esp_err_t tb_capture_start(void)
     }
     tbx_trip_init(&s.trip, s.distance_trip, s.distance_trip_valid);
     if (s.distance_counter_valid) tbx_trip_restore_counter(&s.trip, s.distance_counter_sa, s.distance_counter_raw);
+    tbx_fuel_account_init(&s.fuel_account,s.fuel_trip,s.fuel_trip_valid);
+    if(s.nvs_open){
+        tb_trip_checkpoint_t candidates[2];bool valid[2]={false,false};
+        for(unsigned i=0;i<2;i++){size_t size=sizeof(candidates[i]);
+            valid[i]=nvs_get_blob(s.nvs,i?"trip3b":"trip3a",&candidates[i],&size)==ESP_OK &&
+                size==sizeof(candidates[i]) && tb_trip_checkpoint_valid(&candidates[i]);}
+        if(valid[0] || valid[1]){
+            unsigned pick=valid[1] && (!valid[0] || candidates[1].generation>candidates[0].generation)?1:0;
+            s.checkpoint_generation=candidates[pick].generation;
+            if(legacy_crc==candidates[pick].legacy_before_crc || legacy_crc==candidates[pick].legacy_after_crc){
+                tb_trip_checkpoint_restore(&candidates[pick],&s.trip,&s.fuel_account);mirror_trip_locked();
+                s.fuel_trip=s.fuel_account.observed_l;s.fuel_trip_valid=s.fuel_account.valid;
+            }else{
+                /* Legacy firmware advanced/reset its own checkpoint after a
+                 * rollback. Import it, never resurrect stale v3 anchors. */
+                s.trip.quality="RECUPERADO_CHECKPOINT_LEGADO_ALTERADO";
+                s.fuel_account.quality="RECUPERADO_CHECKPOINT_LEGADO_ALTERADO";
+            }
+        }
+    }
+    if(s.fuel_account.direct_valid && s.fuel_account.direct_mid!=tb_config()->j1587_fuel250_mid){
+        s.fuel_account.direct_valid=false;s.fuel_account.quality="NOVA_ORIGEM_AGUARDANDO_MARCO_PID250";
+    }
     /* Record the power/reset cause once at boot; per-minute HEALTH repeats
      * it so the Cloud can distinguish a crash from an uplink backlog. */
     record_boot_diagnostic();
@@ -719,6 +797,9 @@ esp_err_t tb_capture_start(void)
         if (xTaskCreate(snapshot_task, "tb_snapshot", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
         return ESP_OK;
     }
+    esp_err_t err=ESP_OK;
+#ifndef CONFIG_TB_J1708_ONLY
+    if(tb_config()->can_enabled){
     gpio_set_level(GPIO_NUM_2, 0); gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
     twai_general_config_t general = TWAI_GENERAL_CONFIG_DEFAULT(GPIO_NUM_4, GPIO_NUM_18, TWAI_MODE_LISTEN_ONLY);
     general.tx_queue_len = 0; general.rx_queue_len = 128;
@@ -726,7 +807,7 @@ esp_err_t tb_capture_start(void)
     twai_timing_config_t timing = tb_config()->can_baud == 500000 ? (twai_timing_config_t)TWAI_TIMING_CONFIG_500KBITS() :
         (twai_timing_config_t)TWAI_TIMING_CONFIG_250KBITS();
     twai_filter_config_t filter = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-    esp_err_t err = twai_driver_install(&general, &timing, &filter);
+    err = twai_driver_install(&general, &timing, &filter);
     if (err == ESP_OK) err = twai_start();
     if (err == ESP_ERR_NO_MEM) return err;
     if (err == ESP_OK) {
@@ -734,6 +815,9 @@ esp_err_t tb_capture_start(void)
         s.can_ready = true;
     } else snprintf(s.can_error, sizeof(s.can_error), "%s", esp_err_to_name(err));
 
+    }
+#endif
+    if(tb_config()->j1708_enabled){
     gpio_set_level(GPIO_NUM_21, 0); gpio_set_direction(GPIO_NUM_21, GPIO_MODE_OUTPUT);
     uart_config_t uart = { .baud_rate = 9600, .data_bits = UART_DATA_8_BITS, .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1, .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, .source_clk = UART_SCLK_DEFAULT };
@@ -756,6 +840,7 @@ esp_err_t tb_capture_start(void)
         if(!s.edge_ready)ESP_LOGW(TAG,"J1708 TX blocked: RX edge monitor %s",esp_err_to_name(edge_err));
         if (xTaskCreate(request_task, "tb_j1708_tx", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     } else snprintf(s.j1708_error, sizeof(s.j1708_error), "%s", esp_err_to_name(err));
+    }
     if (xTaskCreate(trip_checkpoint_task, "tb_trip", 3072, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     if (xTaskCreate(snapshot_task, "tb_snapshot", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     ESP_LOGI(TAG, "CAN listen-only=%s J1708 receive-only=%s", s.can_ready ? "ready" : s.can_error,
@@ -769,7 +854,7 @@ void tb_capture_reset_trip(void)
     xSemaphoreTake(s.lock, portMAX_DELAY);
     tbx_trip_reset(&s.trip);
     mirror_trip_locked();
-    s.fuel_trip = 0; tbx_fuel_init(&s.fuel_model); s.fuel_model_at = 0;
+    s.fuel_trip = 0; tbx_fuel_account_init(&s.fuel_account,0,true);tbx_fuel_init(&s.fuel_model); s.fuel_model_at = 0;
     s.distance_trip_valid = s.fuel_trip_valid = true;
     s.speed_at = s.fuel_at = 0;
     s.distance_counter_valid = false; s.distance_counter_at = 0;
@@ -792,13 +877,17 @@ void tb_capture_add_json(cJSON *object)
     add_signal_field(object, "distanceTotalKm", s.total_at && now - s.total_at <= 30000, s.distance_total);
     add_signal_field(object, "distanceTestKm", s.distance_trip_valid, s.distance_trip);
     add_signal_field(object, "fuelLitersTest", s.fuel_trip_valid, s.fuel_trip);
+    tb_accounting_json(object,&s.fuel_account);
+    cJSON_AddBoolToObject(object,"odometer_validated",tb_config()->j1587_odometer_validated);
+    cJSON_AddBoolToObject(object,"fuel250_validated",tb_config()->j1587_fuel250_validated);
     cJSON_AddStringToObject(object, "trip_distance_quality", s.trip.quality);
     cJSON_AddNumberToObject(object, "trip_distance_gaps", s.trip.gaps);
     cJSON_AddNumberToObject(object, "trip_counter_resets", s.trip.resets);
     cJSON_AddNumberToObject(object, "trip_counter_range_errors", s.trip.implausible);
     cJSON_AddNullToObject(object, "combinationWeightKg");
     cJSON *can = cJSON_AddObjectToObject(object, "can");
-    cJSON_AddBoolToObject(can, "enabled", tb_config()->capture_enabled);
+    cJSON_AddBoolToObject(can,"enabled",tb_config()->capture_enabled && tb_config()->can_enabled);
+    cJSON_AddStringToObject(object,"capture_profile",tb_config()->can_enabled?"DUAL":"J1708_ONLY");
     cJSON_AddBoolToObject(can, "ready", s.can_ready);
     cJSON_AddBoolToObject(can, "listen_only", true);
     cJSON_AddNumberToObject(can, "baud", tb_config()->can_baud);
@@ -806,13 +895,16 @@ void tb_capture_add_json(cJSON *object)
     cJSON_AddNumberToObject(can, "remote_frames", s.can_rtr);
     cJSON_AddNumberToObject(can, "read_errors", s.can_errors);
     cJSON_AddStringToObject(can, "error", s.can_error);
+#ifndef CONFIG_TB_J1708_ONLY
     twai_status_info_t status;
     if (s.can_ready && twai_get_status_info(&status) == ESP_OK) {
         cJSON_AddNumberToObject(can, "rx_missed", status.rx_missed_count);
         cJSON_AddNumberToObject(can, "rx_overrun", status.rx_overrun_count);
         cJSON_AddNumberToObject(can, "bus_errors", status.bus_error_count);
     }
+ #endif
     cJSON *j1708 = cJSON_AddObjectToObject(object, "j1708");
+    cJSON_AddBoolToObject(j1708,"enabled",tb_config()->capture_enabled && tb_config()->j1708_enabled);
     cJSON_AddBoolToObject(j1708, "ready", s.j1708_ready);
     cJSON_AddStringToObject(j1708, "framing", "uart_idle_10bits_checksum_validated");
     cJSON_AddStringToObject(j1708, "error", s.j1708_error);
@@ -843,7 +935,23 @@ void tb_capture_add_json(cJSON *object)
     cJSON_AddNumberToObject(requests,"event_dropped",s.request_event_dropped);
     cJSON_AddNumberToObject(requests,"uart_start_faults",s.uart_start_faults);
     cJSON_AddNumberToObject(requests,"consecutive_tx_errors",s.requests.link_error_count);
+    cJSON_AddNumberToObject(requests,"consecutive_request_failures",s.active.consecutive_failures);
+    if(s.requests.sent_total)cJSON_AddNumberToObject(requests,"last_requested_pid",s.active.tx_pid);
     cJSON_AddBoolToObject(requests, "configured", s.active.configured);
+    cJSON_AddNumberToObject(j1708,"frames_per_minute",s.frames_last_minute);
+    cJSON_AddStringToObject(requests,"physical_validation",s.active.physical_validated?"EXTERNAL_CAPTURE_CONFIRMED_BY_OPERATOR":"PENDING_EXTERNAL_CAPTURE");
+    cJSON_AddBoolToObject(requests,"physical_validated",s.active.physical_validated);
+    cJSON_AddBoolToObject(requests,"single_shot",s.active.config.single_shot);
+    char txhex[11],trial_id[64];
+    for(unsigned i=0;i<5;i++)snprintf(txhex+2*i,3,"%02X",s.active.tx_frame[i]);
+    snprintf(trial_id,sizeof(trial_id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),s.active.tx_started_us);
+    cJSON_AddStringToObject(requests,"expected_trial_tx",txhex);
+    cJSON_AddStringToObject(requests,"trial_id",trial_id);
+    if(s.active.last_response_us){
+        cJSON_AddNumberToObject(requests,"last_response_pid",s.active.last_response_pid);
+        cJSON_AddNumberToObject(requests,"last_response_mid",s.active.last_response_mid);
+        cJSON_AddNumberToObject(requests,"last_response_age_ms",(double)((uint64_t)esp_timer_get_time()-s.active.last_response_us)/1000.0);
+    }
     cJSON_AddBoolToObject(requests, "work_mode", s.active.work_mode);
     cJSON_AddBoolToObject(requests, "work_evidence_ready", tbx_j1708_active_work_ready(&s.active,(uint64_t)esp_timer_get_time()));
     cJSON_AddBoolToObject(requests, "safety_stopped", s.requests.safety_stopped);
@@ -857,7 +965,7 @@ void tb_capture_add_json(cJSON *object)
     cJSON_AddNumberToObject(requests, "lease_remaining_ms", s.requests.armed &&
         s.active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
         (double)(s.active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
-    cJSON_AddStringToObject(requests, "block_reason", s.active.configured ? "NONE_OR_SAFETY_INTERLOCK" : "EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED");
+    cJSON_AddStringToObject(requests, "block_reason", !s.active.configured?"EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED":s.requests.safety_stopped?"THREE_TX_FAILURES_OR_MID_CONFLICT":!s.active.physical_validated?"PHYSICAL_TX_VALIDATION_REQUIRED":"NONE_OR_SAFETY_INTERLOCK");
     cJSON_AddBoolToObject(requests,"sequential_scan",s.active.config.sequential_scan);
     if(s.active.config.sequential_scan){
         cJSON_AddNumberToObject(requests,"start_pid",
@@ -885,19 +993,24 @@ void tb_capture_add_json(cJSON *object)
         cJSON *row = cJSON_CreateObject();
         cJSON_AddNumberToObject(row, "pid", stat->pid);
         cJSON_AddBoolToObject(row, "enabled", stat->enabled);
-        if (s.active.configured) cJSON_AddNumberToObject(row, "target_mid", s.active.config.target_mid[i]);
+        cJSON_AddNumberToObject(row,"target_mid",s.active.configured?s.active.config.target_mid[i]:tbx_j1708_policy()[i].mid);
         cJSON_AddNumberToObject(row, "sent", stat->sent);
         cJSON_AddNumberToObject(row, "response_candidates", stat->answered);
         cJSON_AddNumberToObject(row, "timeouts", stat->timed_out);
+        cJSON_AddNumberToObject(row,"interval_ms",stat->period_ms);
+        uint32_t now_ms=(uint32_t)((uint64_t)esp_timer_get_time()/1000u);
+        if(stat->sent)cJSON_AddNumberToObject(row,"last_sent_age_ms",(uint32_t)(now_ms-stat->last_sent_ms));else cJSON_AddNullToObject(row,"last_sent_age_ms");
+        if(stat->answered)cJSON_AddNumberToObject(row,"last_response_age_ms",(uint32_t)(now_ms-stat->last_answered_ms));else cJSON_AddNullToObject(row,"last_response_age_ms");
+        cJSON_AddNumberToObject(row,"next_due_uptime_ms",stat->next_due_ms);
         cJSON_AddItemToArray(stats, row);
     }
     if (s.active.configured) cJSON_AddNumberToObject(requests, "local_mid", s.active.config.local_mid);
     cJSON_AddNumberToObject(requests, "idle_guard_us", s.active.idle_guard_us);
     xSemaphoreGive(s.lock);
     cJSON_AddStringToObject(object, "telemetry_profile",
-        tb_config()->full_decode_enabled ? "COMPLETO" : "LEGACY");
+        tb_profile_raw(tb_config()->full_decode_enabled) ? "COMPLETO" : "LEGACY");
     cJSON_AddNumberToObject(object, "operational_interval_s",
-        tb_config()->full_decode_enabled ? 1 : TB_LEGACY_OPERATIONAL_SECONDS);
+        tb_profile_raw(tb_config()->full_decode_enabled) ? 1 : TB_LEGACY_OPERATIONAL_SECONDS);
     tb_telemetry_add_json(object);
 }
 
@@ -942,14 +1055,16 @@ bool tb_capture_request_enable_work(bool authorized, bool stationary)
     const uint64_t now_ms = now / 1000u;
     /* Speed 0 must be observed freshly in the vehicle, not merely asserted
      * by the caller. A stopped vehicle can then operate with work-mode TX
-     * after passing the controller's 3-echo/response proof. */
+     * after the operator confirms an external TX/response capture. */
     const bool parked = s.speed_at && now_ms >= s.speed_at &&
         now_ms - s.speed_at <= 5000u && s.speed <= 0.1;
     if(parked && !s.edge_enabled){
         s.rx_edge_us=(uint32_t)esp_timer_get_time();
         s.edge_enabled=gpio_intr_enable(GPIO_NUM_20)==ESP_OK;
     }
-    const bool accepted = s.j1708_ready && s.edge_enabled && parked &&
+    const uint8_t local=s.active.config.local_mid;
+    const bool local_free=!(s.observed_mid[local>>3] & (1u<<(local&7u)));
+    const bool accepted = s.j1708_ready && s.edge_enabled && parked && local_free &&
         tbx_j1708_active_enable_work(&s.active, now);
     xSemaphoreGive(s.lock);
     return accepted;
@@ -972,11 +1087,10 @@ bool tb_capture_request_configure(const cJSON *config, char *error, size_t error
         snprintf(error, error_size, "local_mid explicito e topology_confirmed=true obrigatorios"); return false;
     }
     next.local_mid = local; next.inverted_de21_attested = true;
-    /* Test firmware requires parked, automatic one-by-one scan. No
-     * unattended repeating scan or TX during vehicle operation. */
+    /* Stage A always sends exactly one supervised parked request. */
     const cJSON *scan=cJSON_GetObjectItemCaseSensitive(config,"sequential_scan");
     if(scan && !cJSON_IsBool(scan)){snprintf(error,error_size,"sequential_scan deve ser booleano");return false;}
-    next.sequential_scan=scan?cJSON_IsTrue(scan):!s.active.work_mode;
+    next.sequential_scan=true;next.single_shot=true; /* Stage A: only one real request. */
     const cJSON *start=cJSON_GetObjectItemCaseSensitive(config,"start_pid");
     if(start){
         int pid;
@@ -999,10 +1113,7 @@ bool tb_capture_request_configure(const cJSON *config, char *error, size_t error
          * correlations, NOT proof of causality or universal Volvo mapping.
          * Order: 26,33,34,37,62,68,117,118,235,236,250,31,32,63,108,158,160.
          * Local MID is NEVER inferred from these target MIDs. */
-        const uint8_t recorded_mids[TBX_J1708_REQUEST_COUNT] = {
-            128,130,130,130,144,128,140,140,128,128,128,130,130,130,128,128,130
-        };
-        memcpy(next.target_mid, recorded_mids, sizeof(recorded_mids));
+        for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)next.target_mid[i]=tbx_j1708_policy()[i].mid;
         for (unsigned i = 0; i < TBX_J1708_REQUEST_COUNT; ++i) {
             if (next.target_mid[i] == next.local_mid) {
                 snprintf(error, error_size, "MID local conflita com preset de alvos");
@@ -1045,8 +1156,64 @@ bool tb_capture_request_configure(const cJSON *config, char *error, size_t error
         if (!accepted) snprintf(error, error_size, "pare requisicoes antes de alterar configuracao");
     } else {
         accepted = s.j1708_ready && tbx_j1708_active_configure(&s.active, &next);
+        if(accepted){
+            s.trial_reply_size=0;s.requests.timeout_ms=tb_config()->j1708_timeout_ms;
+            for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)s.requests.pids[i].period_ms=tb_config()->j1708_intervals_ms[i];
+        }
         if (!accepted) snprintf(error, error_size, "UART indisponivel ou configuracao recusada");
     }
     xSemaphoreGive(s.lock);
     return accepted;
+}
+
+static size_t evidence_hex(const cJSON *value,uint8_t *bytes,size_t capacity)
+{
+    if(!cJSON_IsString(value))return 0;
+    unsigned half=0,v=0;size_t count=0;
+    for(const unsigned char *p=(const unsigned char *)value->valuestring;*p;p++){
+        if(*p==' ' || *p==':' || *p=='-' || *p=='\n' || *p=='\r')continue;
+        unsigned digit;
+        if(*p>='0' && *p<='9')digit=*p-'0';
+        else if(*p>='a' && *p<='f')digit=*p-'a'+10;
+        else if(*p>='A' && *p<='F')digit=*p-'A'+10;
+        else return 0;
+        v=(v<<4)|digit;
+        if(++half==2){if(count>=capacity)return 0;bytes[count++]=(uint8_t)v;v=half=0;}
+    }
+    return half?0:count;
+}
+bool tb_capture_confirm_physical(const cJSON *body)
+{
+    if(!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"external_capture_verified")) ||
+       !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"local_mid_free_verified")) ||
+       !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"stationary")))return false;
+    uint8_t tx[5],rx[21];
+    size_t nt=evidence_hex(cJSON_GetObjectItemCaseSensitive(body,"tx_observed_hex"),tx,sizeof(tx));
+    size_t nr=evidence_hex(cJSON_GetObjectItemCaseSensitive(body,"response_observed_hex"),rx,sizeof(rx));
+    const cJSON *nonce=cJSON_GetObjectItemCaseSensitive(body,"trial_id");
+    if(nt!=5 || !nr || !cJSON_IsString(nonce) || !tb_protocol_j1708_checksum_valid(tx,nt) ||
+       !tb_protocol_j1708_checksum_valid(rx,nr) || !s.lock || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+    char id[64];snprintf(id,sizeof(id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),s.active.tx_started_us);
+    uint64_t now=(uint64_t)esp_timer_get_time();
+    bool parked=s.speed_at && now/1000>=s.speed_at && now/1000-s.speed_at<=5000 && s.speed<=0.1;
+    bool valid=parked && !strcmp(id,nonce->valuestring) && !memcmp(tx,s.active.tx_frame,5) &&
+        nr==s.trial_reply_size && !memcmp(rx,s.trial_reply,nr) &&
+        tbx_j1708_active_attest_physical(&s.active,true,true,now);
+    xSemaphoreGive(s.lock);
+    if(valid){
+        cJSON *audit=cJSON_CreateObject();
+        if(audit){
+            add_sample_identity(audit,"J1708_REQUEST_EVENT");
+            cJSON_AddStringToObject(audit,"event","PHYSICAL_EVIDENCE");
+            cJSON_AddStringToObject(audit,"classification","OPERATOR_CONFIRMED_EXTERNAL_CAPTURE");
+            cJSON_AddStringToObject(audit,"trial_id",id);
+            char txtext[11],rxtext[43];
+            for(unsigned i=0;i<5;i++)snprintf(txtext+2*i,3,"%02X",tx[i]);
+            for(size_t i=0;i<nr;i++)snprintf(rxtext+2*i,3,"%02X",rx[i]);
+            cJSON_AddStringToObject(audit,"tx_observed_hex",txtext);
+            cJSON_AddStringToObject(audit,"response_observed_hex",rxtext);
+            queue_sample(audit);
+        }
+    }
+    return valid;
 }

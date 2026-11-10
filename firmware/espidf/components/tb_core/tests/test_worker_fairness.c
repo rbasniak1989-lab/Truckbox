@@ -31,11 +31,14 @@ static int xQueueReceive(void *queue, void *item, unsigned timeout) {
     return pdTRUE; /* Deliberately never empty: receive must NOT grant IDLE. */
 }
 #ifdef TEST_STORE
-static struct { void *queue,*mutex; bool ready,initializing; uint64_t scheduling_yields; } state;
+static struct { void *queue,*mutex; const char *base_path; bool ready,medium_initialized,initializing,rollback_paused,rollback_drained; uint64_t scheduling_yields,next_sequence,highest_committed; } state;
 typedef struct { unsigned payload; } queued_record_t;
 static void xSemaphoreTake(void *lock,unsigned wait) { (void)lock;(void)wait;++mutex_depth; }
 static void xSemaphoreGive(void *lock) { (void)lock;assert(mutex_depth==1);--mutex_depth; }
-static bool initialize_medium(void) { state.ready=true;return true; }
+static unsigned uxQueueMessagesWaiting(void *q){(void)q;return 1;}
+static bool recover_records(void) { return true; }
+static void prune_segments(void) { }
+static bool initialize_medium(void) { state.ready=true;state.medium_initialized=true;return true; }
 static void append_record(const queued_record_t *item) {
     (void)item;assert(mutex_depth==1);++processed;now_us+=cost_us;
 }

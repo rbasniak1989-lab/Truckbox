@@ -43,7 +43,7 @@ static struct {
     volatile uint32_t live_clients; /* shared with capture task: fast empty-client check */
     uint32_t uplink_attempts, uplink_success;
     char uplink_error[80];
-    uint64_t uplink_at, link_at;
+    uint64_t cloud_ack_at, uplink_at, link_at;
     cJSON *link_status;
     gps_fix_t gps;
 } s;
@@ -253,7 +253,7 @@ static void bridge_task(void *unused)
         }
         xSemaphoreTake(s.lock, portMAX_DELAY);
         s.uplink_at = esp_timer_get_time();
-        if (acknowledged) { ++s.uplink_success; s.uplink_error[0] = 0; delay_ms = 100; }
+        if (acknowledged) { ++s.uplink_success; s.uplink_error[0] = 0;s.cloud_ack_at=esp_timer_get_time();delay_ms = 100; }
         else {
             snprintf(s.uplink_error, sizeof(s.uplink_error), "link_http:%d %s%s", status, esp_err_to_name(err),
                 response.overflow ? " response_too_large" : " no_valid_ack");
@@ -441,37 +441,21 @@ static esp_err_t gps_handler(httpd_req_t *request)
  * Refuse until the OTA image is marked VALID (main.c confirms after 15 s). */
 static esp_err_t discard_storage_handler(httpd_req_t *request)
 {
-    if (!tb_http_require_admin(request)) return ESP_OK;
-    if (tb_web_ota_busy()) { httpd_resp_set_status(request, "409 Conflict"); return httpd_resp_sendstr(request, "OTA in progress"); }
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    esp_ota_img_states_t image_state = ESP_OTA_IMG_UNDEFINED;
-    if (strcmp(tb_version(), "0.2.4") != 0 || !running ||
-        esp_ota_get_state_partition(running, &image_state) != ESP_OK ||
-        image_state != ESP_OTA_IMG_VALID) {
-        { httpd_resp_set_status(request, "409 Conflict"); return httpd_resp_sendstr(request, "Confirm CORE 0.2.4 OTA first (wait 15s), then discard local logs"); }
-    }
-    cJSON *body = NULL;
-    if (tb_http_read_json(request, 256, &body) != ESP_OK || !cJSON_IsObject(body)) {
-        cJSON_Delete(body);
-        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid JSON");
-    }
-    const cJSON *phrase = cJSON_GetObjectItemCaseSensitive(body, "confirm");
-    bool authorized = cJSON_IsString(phrase) &&
-        !strcmp(phrase->valuestring, "DESCARTAR_REGISTROS");
-    cJSON_Delete(body);
-    if (!authorized)
-        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "explicit confirmation required");
-    esp_err_t scheduled = tb_store_schedule_discard();
-    if (scheduled != ESP_OK)
-        { httpd_resp_set_status(request, "409 Conflict"); return httpd_resp_sendstr(request, "storage not ready"); }
-    cJSON *reply = cJSON_CreateObject();
-    if (!reply) return ESP_ERR_NO_MEM;
-    cJSON_AddBoolToObject(reply, "ok", true);
-    cJSON_AddStringToObject(reply, "action", "discard_local_telemetry_at_next_boot");
-    cJSON_AddStringToObject(reply, "scope", "storage_log_files_only");
-    cJSON_AddBoolToObject(reply, "ota_and_nvs_preserved", true);
-    tb_schedule_restart(1500);
-    return tb_http_send_json(request, reply);
+    if(!tb_http_require_admin(request))return ESP_OK;
+    return httpd_resp_send_err(request,HTTPD_403_FORBIDDEN,"discard disabled; recovery preserves pending and damaged files");
+}
+static esp_err_t rollback_prepare_handler(httpd_req_t *request)
+{
+    if(!tb_http_require_admin(request))return ESP_OK;
+    cJSON *body=NULL;
+    if(tb_web_ota_busy() || tb_http_read_json(request,256,&body)!=ESP_OK){cJSON_Delete(body);return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"OTA busy or invalid JSON");}
+    bool allowed=cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized")) && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"stationary"));cJSON_Delete(body);
+    if(!allowed)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"park vehicle and explicitly authorize maintenance pause");
+    (void)tb_capture_request_control(false,false,true);
+    if(tb_store_prepare_rollback()!=ESP_OK)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"storage not initialized");
+    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);
+    cJSON_AddStringToObject(reply,"action","persistence_paused_until_reboot_wait_for_rollback_ready");
+    tb_store_add_json(reply);return tb_http_send_json(request,reply);
 }
 
 static esp_err_t reset_handler(httpd_req_t *request)
@@ -555,9 +539,10 @@ static esp_err_t requests_handler(httpd_req_t *request)
     bool stop = cJSON_IsString(action) && !strcmp(action->valuestring, "stop");
     bool arm = cJSON_IsString(action) && !strcmp(action->valuestring, "arm");
     bool enable_work = cJSON_IsString(action) && !strcmp(action->valuestring, "enable_work");
-    if (!stop && !arm && !enable_work) {
+    bool confirm_physical=cJSON_IsString(action) && !strcmp(action->valuestring,"confirm_physical");
+    if (!stop && !arm && !enable_work && !confirm_physical) {
         cJSON_Delete(body);
-        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "action must be arm, enable_work or stop");
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "action must be arm, confirm_physical, enable_work or stop");
     }
     if (arm) {
         char error[160] = {0};
@@ -572,7 +557,7 @@ static esp_err_t requests_handler(httpd_req_t *request)
     }
     bool authorized = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "authorized"));
     bool stationary = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "stationary"));
-    bool accepted = enable_work ? tb_capture_request_enable_work(authorized, stationary) :
+    bool accepted = confirm_physical?tb_capture_confirm_physical(body):enable_work ? tb_capture_request_enable_work(authorized, stationary) :
         tb_capture_request_control(arm, authorized, stationary);
     cJSON_Delete(body);
     cJSON *reply = cJSON_CreateObject();
@@ -580,8 +565,8 @@ static esp_err_t requests_handler(httpd_req_t *request)
     cJSON_AddBoolToObject(reply, "armed", (arm || enable_work) && accepted);
     cJSON_AddBoolToObject(reply,"hardware_tx_available",tb_capture_tx_ready());
     cJSON_AddStringToObject(reply,"hardware_tx_validation","EM_VALIDACAO");
-    cJSON_AddStringToObject(reply, "reason", enable_work ?
-        (accepted ? "work_mode_enabled_12h" : "need_3_echo_1_response_stopped_vehicle_and_authorization") :
+    cJSON_AddStringToObject(reply, "reason", confirm_physical?(accepted?"external_capture_attested":"external_capture_mismatch_or_trial_not_successful"):enable_work ?
+        (accepted ? "work_mode_enabled_12h" : "need_external_physical_validation_stopped_vehicle_and_authorization") :
         (arm ? (accepted ? "requests_armed" : "configuration_or_safety_interlock") : "operator_stop"));
     if (!accepted) httpd_resp_set_status(request, "409 Conflict");
     return tb_http_send_json(request, reply);
@@ -598,6 +583,7 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
         { .uri = "/api/link/telemetry", .method = HTTP_POST, .handler = link_telemetry_handler },
         { .uri = "/api/gps", .method = HTTP_POST, .handler = gps_handler },
         { .uri = "/api/reset", .method = HTTP_POST, .handler = reset_handler },
+        { .uri = "/api/storage/prepare-rollback", .method = HTTP_POST, .handler = rollback_prepare_handler },
         { .uri = "/api/storage/discard", .method = HTTP_POST, .handler = discard_storage_handler },
     };
     for (unsigned i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
@@ -617,7 +603,7 @@ esp_err_t tb_application_start(void)
     err = tb_capture_start();
     if (err != ESP_OK) return err;
     if (xTaskCreate(live_task, "tb_tcp", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
-    if (xTaskCreate(bridge_task, "tb_bridge", 8192, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+    if (xTaskCreate(bridge_task, "tb_bridge", 10240, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
 
@@ -633,6 +619,8 @@ void tb_application_add_json(cJSON *object)
     cJSON_AddNumberToObject(live, "clients_rejected", s.live_rejected);
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return;
     cJSON *bridge = cJSON_AddObjectToObject(object, "bridge");
+    if(s.cloud_ack_at)cJSON_AddNumberToObject(bridge,"last_cloud_ack_age_ms",(double)(esp_timer_get_time()-s.cloud_ack_at)/1000.0);else cJSON_AddNullToObject(bridge,"last_cloud_ack_age_ms");
+    if(s.uplink_at)cJSON_AddNumberToObject(bridge,"last_send_attempt_age_ms",(double)(esp_timer_get_time()-s.uplink_at)/1000.0);else cJSON_AddNullToObject(bridge,"last_send_attempt_age_ms");
     cJSON_AddNumberToObject(bridge, "attempts", s.uplink_attempts);
     cJSON_AddNumberToObject(bridge, "successful_acks", s.uplink_success);
     cJSON_AddStringToObject(bridge, "error", s.uplink_error);

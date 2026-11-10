@@ -1,3 +1,5 @@
+Nota0.2.12: a pinagem abaixo continua sendo a referência física. O [procedimento da candidata](REV_B1_0.2.12_CANDIDATA.md) distingue RX comprovada, TX experimental por DE e confirmação em captura externa. Não presume que DI baixo impossibilite TX nem declara retrabalho validado.
+
 # Rev B1 — conferência física
 
 A tabela usa **pinos físicos do ESP32-C6-WROOM-1**, não os do MINI. Confirme o arquivo efetivamente fabricado, a orientação e o pino 1 antes de qualquer retrabalho.

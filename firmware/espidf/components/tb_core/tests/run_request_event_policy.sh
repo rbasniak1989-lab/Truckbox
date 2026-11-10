@@ -26,8 +26,8 @@ cat >"$tmp/test.c" <<'C'
 #include <string.h>
 #include "policy.h"
 int main(void){
-    const char *routine[]={"REQUEST","TX_ECHO","RESPONSE_CANDIDATE"};
-    const char *critical[]={"TIMEOUT","LINK_ERROR","TX_ERROR","AUTO_DISARMED",
+    const char *routine[]={"TX_ECHO","RESPONSE_CANDIDATE"};
+    const char *critical[]={"REQUEST","RESPONSE_VALUE","PHYSICAL_EVIDENCE","TIMEOUT","LINK_ERROR","TX_ERROR","AUTO_DISARMED",
                             "STOPPED","WORK_ENABLED","ARMED","CONFIGURED"};
     for(unsigned i=0;i<sizeof(routine)/sizeof(*routine);i++){
         assert(request_event_should_persist(routine[i],false));

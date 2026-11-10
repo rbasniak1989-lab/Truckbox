@@ -1,0 +1,17 @@
+PASS public status stays read-only and renders untrusted JSON as text
+PASS wrong administrator key leaves configuration locked
+PASS authenticated login enables Core controls without persisting its key
+PASS configuration submits only dirty fields and omits emptied secrets
+PASS explicit open-network checkbox clears Wi-Fi password
+PASS existing-cloud sequence accepts the largest safe JSON integer
+PASS pairing data is authenticated and copyable
+PASS OTA rejects extension, short file, oversized file and invalid magic before upload
+PASS server role rejection is shown and local OTA sends authenticated raw binary
+PASS Core forwards Link OTA to its dedicated route and presents progress
+PASS J1708 timeout and validated source MIDs submit numeric configuration
+PASS J1708 one-shot, external evidence gate, explicit travel activation and stop
+PASS mobile page has no horizontal overflow
+PASS logout clears pairing and removes authorization from future state requests
+PASS Link profile shows pairing/GPS/modem and hides Core forwarding/capture
+PASS Link submits separate GPS credentials and pairing then clears secret inputs
+PASS configuration server errors stay visible without claiming successful save

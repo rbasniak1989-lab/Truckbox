@@ -40,6 +40,7 @@ static tb_config_t host_config;
 static unsigned host_queue_length;
 static unsigned host_fsync_calls;
 static unsigned host_commit_calls;
+static bool host_allow_compression=true;
 static bool host_fail_fsync_once;
 static bool host_fail_commit_once;
 static uint64_t host_nvs_ack, host_nvs_reserved;

@@ -1,3 +1,5 @@
+Pendências da candidata0.2.12: consultar [relatório atual](REV_B1_0.2.12_CANDIDATA.md). Os itens abaixo são históricos das versões anteriores.
+
 Core 0.2.9 (TESTES): correção de acesso ao barramento J1708 e modo de viagem.
 Leia [J1708_FIX_v0.2.9.md](J1708_FIX_v0.2.9.md) e [ACTIVE_J1708.md](ACTIVE_J1708.md).
 Somente Core; teste elétrico/estacionado pendente, Link e microSD sem alteração.
