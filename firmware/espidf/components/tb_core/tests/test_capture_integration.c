@@ -293,6 +293,35 @@ static void test_external_evidence_owner(void)
     cJSON_Delete(body);assert(!host_held);
 }
 
+/* Boundary fixture for authorization/speed/nonce; complete measured rounds are
+ * exercised by test_j1708_field with the production controller. */
+static void test_field_owner_speed_nonce_and_no_external_evidence(void)
+{
+    unsigned before_audits=host_audits;
+    boot_with_checkpoint(NULL,0);
+    tbx_j1708_active_ops_t ops={.begin_tx=proof_begin,.abort_tx=proof_abort};
+    tbx_j1708_active_init(&s.active,&s.requests,&ops,NULL);
+    tbx_j1708_active_config_t config={.local_mid=172,.priority=8,.inverted_de21_attested=true};
+    for(unsigned i=0;i<17;i++)config.target_mid[i]=128;
+    assert(tbx_j1708_active_configure(&s.active,&config));
+    host_now_us=1000000;s.j1708_ready=s.edge_ready=true;s.speed_at=1000;s.speed=0;
+    assert(!tb_capture_field_start(false,true));assert(!tb_capture_field_start(true,false));
+    s.speed=40;assert(!tb_capture_field_start(true,true));s.speed=0;
+    s.observed_mid[172>>3]|=1u<<(172&7);assert(!tb_capture_field_start(true,true));s.observed_mid[172>>3]=0;
+    assert(tb_capture_field_start(true,true));assert(!s.active.physical_validated && s.active.field.started_us==1000000);
+    cJSON *body=cJSON_Parse("{\"authorized\":true,\"stationary\":true,\"local_mid_free_verified\":true,\"indirect_validation_acknowledged\":true,\"session_id\":\"42:1000000\"}");assert(body);
+    assert(!tb_capture_field_confirm(body)); /* Measuring is not a satisfactory result. */
+    s.requests.armed=false;s.active.field.phase=TBX_FIELD_SATISFACTORY;s.active.field.completed_us=1000000;
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"session_id",cJSON_CreateString("41:1000000"));assert(!tb_capture_field_confirm(body));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"session_id",cJSON_CreateString("42:1000000"));
+    s.speed=20;assert(!tb_capture_field_confirm(body));s.speed=0;
+    host_now_us=7000000;assert(!tb_capture_field_confirm(body)); /* stale speed */
+    s.speed_at=7000;cJSON_ReplaceItemInObjectCaseSensitive(body,"indirect_validation_acknowledged",cJSON_CreateFalse());assert(!tb_capture_field_confirm(body));
+    cJSON_ReplaceItemInObjectCaseSensitive(body,"indirect_validation_acknowledged",cJSON_CreateTrue());
+    assert(tb_capture_field_confirm(body));assert(s.active.field.confirmed && !s.active.physical_validated && host_audits==before_audits);
+    cJSON_Delete(body);assert(!host_held);
+}
+
 static void test_reupgrade_imports_legacy_trip_advanced_after_rollback(void)
 {
     trip_blob_t base={.version=2,.distance=10,.fuel=2,.distance_valid=true,.fuel_valid=true};
@@ -334,6 +363,7 @@ int main(void)
 {
     test_validated_counter_mids_and_real_checkpoint_restore();
     test_external_evidence_owner();
+    test_field_owner_speed_nonce_and_no_external_evidence();
     test_reupgrade_imports_legacy_trip_advanced_after_rollback();
     test_movement_stops_parked_trial_but_keeps_authorized_work();
     test_v1_migration_and_v2_reboot();

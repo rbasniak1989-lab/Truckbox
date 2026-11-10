@@ -135,7 +135,10 @@ typedef struct {
     uint64_t uptime_us, tx_start_us;
     uint32_t edges;
     uint16_t pid;
-    uint8_t local_mid,target_mid,frame[5];
+    uint8_t local_mid,target_mid,frame[5],response[21],response_size;
+    uint64_t field_started_us;
+    union {tbx_j1708_field_pid_t field_pid;tbx_j1708_field_health_t field_health;};
+    bool field,field_result;
     char event[24],detail[112];
     bool work;
 } request_event_t;
@@ -158,42 +161,95 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
      * run outside the RX/TX lock and never delay the byte echo deadline. */
     if(s.active.work_mode && (!strcmp(event,"TX_ECHO") || !strcmp(event,"RESPONSE_CANDIDATE")))return;
     request_event_t item={.work=s.active.work_mode,.uptime_us=(uint64_t)esp_timer_get_time(),
-        .tx_start_us=s.last_tx_uart_us,.edges=s.rx_edges,.pid=pid};
+        .tx_start_us=s.last_tx_uart_us,.edges=s.rx_edges,.pid=pid,
+        .field=s.active.field.started_us!=0 && !s.active.physical_validated,.field_started_us=s.active.field.started_us,
+        .field_result=!strcmp(event,"FIELD_PID_RESULT")};
     snprintf(item.event,sizeof(item.event),"%s",event);
     snprintf(item.detail,sizeof(item.detail),"%s",detail?detail:"");
     if(s.active.configured){
         item.local_mid=s.active.config.local_mid;
         for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
-            if(s.requests.pids[i].pid==pid)item.target_mid=s.active.config.target_mid[i];
+            if(s.requests.pids[i].pid==pid){item.target_mid=s.active.config.target_mid[i];item.field_pid=s.active.field.pids[i];}
+        if(item.field && !pid){
+            const tbx_j1708_field_t *f=&s.active.field;
+            item.field_health=(tbx_j1708_field_health_t){.before_frames=f->before_frames,.after_frames=f->after_frames,
+                .before_errors=f->before_errors,.after_errors=f->after_errors,.before_duration_us=f->before_duration_us,.after_duration_us=f->after_duration_us};
+        }
         memcpy(item.frame,s.active.tx_frame,sizeof(item.frame));
     }
-    if(!s.request_events || xQueueSend(s.request_events,&item,0)!=pdTRUE)__atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);
+    if(!s.request_events || xQueueSend(s.request_events,&item,0)!=pdTRUE){
+        __atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);
+        if(item.field)__atomic_store_n(&s.active.field.audit_lost,true,__ATOMIC_RELAXED);
+    }
 }
 
 static void request_store_event(const request_event_t *item)
 {
     cJSON *row = cJSON_CreateObject();
-    if (!row) return;
+    if (!row){__atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);if(item->field)__atomic_store_n(&s.active.field.audit_lost,true,__ATOMIC_RELAXED);return;}
     cJSON_AddStringToObject(row, "sample_kind", "J1708_REQUEST_EVENT");
     cJSON_AddNumberToObject(row, "schema_version", 2);
     cJSON_AddNumberToObject(row, "boot_id", tb_boot_id());
     cJSON_AddNumberToObject(row, "uptime_ms", item->uptime_us / 1000);
-    cJSON_AddNumberToObject(row,"tx_start_us",(double)item->tx_start_us);
-    if(!item->work)cJSON_AddNumberToObject(row,"rx_edges",item->edges);
+    bool tx_record=!strcmp(item->event,"REQUEST") || !strcmp(item->event,"TX_ECHO") || !strcmp(item->event,"RESPONSE_CANDIDATE") || item->response_size;
+    if(tx_record)cJSON_AddNumberToObject(row,"tx_start_us",(double)item->tx_start_us);
+    if(!item->work && !item->field)cJSON_AddNumberToObject(row,"rx_edges",item->edges);
     cJSON_AddBoolToObject(row, "time_valid", false);
     cJSON_AddStringToObject(row, "time_source", "boot_monotonic");
     cJSON_AddStringToObject(row, "event", item->event);
-    if(!item->work || strcmp(item->event,"REQUEST"))cJSON_AddStringToObject(row,"detail",item->detail);
-    cJSON_AddNumberToObject(row, "pid", item->pid);
+    if(!item->field && (!item->work || strcmp(item->event,"REQUEST")))cJSON_AddStringToObject(row,"detail",item->detail);
+    if(item->field){
+        char session[64];snprintf(session,sizeof(session),"%" PRIu32 ":%" PRIu64,tb_boot_id(),item->field_started_us);
+        cJSON_AddStringToObject(row,"field_session",session);
+        cJSON_AddStringToObject(row,"classification","OPERATIONAL_INDIRECT");
+        if(!tx_record)cJSON_AddStringToObject(row,"detail",item->detail);
+    }
+    if(item->field && !item->pid){
+        const tbx_j1708_field_health_t *v=&item->field_health;
+        if(v->before_duration_us){cJSON_AddNumberToObject(row,"before_frames",v->before_frames);cJSON_AddNumberToObject(row,"before_checksum_errors",v->before_errors);cJSON_AddNumberToObject(row,"before_duration_ms",v->before_duration_us/1000.0);}
+        if(v->after_duration_us){cJSON_AddNumberToObject(row,"after_frames",v->after_frames);cJSON_AddNumberToObject(row,"after_checksum_errors",v->after_errors);cJSON_AddNumberToObject(row,"after_duration_ms",v->after_duration_us/1000.0);}
+    }
+    if(item->field_result){
+        const tbx_j1708_field_pid_t *v=&item->field_pid;
+        cJSON_AddNumberToObject(row,"before",v->before);cJSON_AddNumberToObject(row,"after",v->after);
+        cJSON_AddNumberToObject(row,"controls",v->controls);cJSON_AddNumberToObject(row,"control_hits",v->control_hits);
+        cJSON_AddNumberToObject(row,"sent",v->sent);cJSON_AddNumberToObject(row,"echoes",v->echoes);cJSON_AddNumberToObject(row,"replies",v->replies);
+        cJSON_AddNumberToObject(row,"latency_min_us",v->latency_min_us);cJSON_AddNumberToObject(row,"latency_max_us",v->latency_max_us);
+    }
+    if(item->response_size){
+        char response[43];for(unsigned i=0;i<item->response_size;i++)snprintf(response+2*i,3,"%02X",item->response[i]);
+        cJSON_AddStringToObject(row,"response_frame",response);cJSON_AddBoolToObject(row,"checksum_valid",true);
+    }
+    if(!item->field || item->pid)cJSON_AddNumberToObject(row,"pid",item->pid);
     cJSON_AddNumberToObject(row,"local_mid",item->local_mid);
-    cJSON_AddNumberToObject(row,"target_mid",item->target_mid);
+    if(!item->field || item->pid)cJSON_AddNumberToObject(row,"target_mid",item->target_mid);
     char raw[11];
     for(unsigned i=0;i<5;i++)snprintf(raw+2*i,3,"%02X",item->frame[i]);
-    cJSON_AddStringToObject(row,"tx_frame",raw);
+    if(tx_record)cJSON_AddStringToObject(row,"tx_frame",raw);
     cJSON_AddStringToObject(row, "validation", "EM_VALIDACAO");
-    char *json = cJSON_PrintUnformatted(row);
-    if (!json || strlen(json)>=TB_RECORD_MAX || tb_store_submit(json)!=ESP_OK)__atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);
-    free(json); cJSON_Delete(row);
+    bool complete=true;
+    if(item->field){
+        static const char *const required[]={"sample_kind","schema_version","boot_id","uptime_ms","time_valid","time_source","event","local_mid","validation","field_session","classification"};
+        for(unsigned i=0;i<sizeof(required)/sizeof(*required);i++)if(!cJSON_GetObjectItemCaseSensitive(row,required[i]))complete=false;
+        if(item->pid && (!cJSON_GetObjectItemCaseSensitive(row,"pid") || !cJSON_GetObjectItemCaseSensitive(row,"target_mid")))complete=false;
+        if(!item->pid){
+            if(item->field_health.before_duration_us && (!cJSON_GetObjectItemCaseSensitive(row,"before_frames") || !cJSON_GetObjectItemCaseSensitive(row,"before_checksum_errors") || !cJSON_GetObjectItemCaseSensitive(row,"before_duration_ms")))complete=false;
+            if(item->field_health.after_duration_us && (!cJSON_GetObjectItemCaseSensitive(row,"after_frames") || !cJSON_GetObjectItemCaseSensitive(row,"after_checksum_errors") || !cJSON_GetObjectItemCaseSensitive(row,"after_duration_ms")))complete=false;
+        }
+        if(item->field_result){
+            static const char *const measured[]={"before","after","controls","control_hits","sent","echoes","replies","latency_min_us","latency_max_us"};
+            for(unsigned i=0;i<sizeof(measured)/sizeof(*measured);i++)if(!cJSON_GetObjectItemCaseSensitive(row,measured[i]))complete=false;
+        }
+        if(!tx_record && !cJSON_GetObjectItemCaseSensitive(row,"detail"))complete=false;
+        if(tx_record && (!cJSON_GetObjectItemCaseSensitive(row,"tx_frame") || !cJSON_GetObjectItemCaseSensitive(row,"tx_start_us")))complete=false;
+        if(item->response_size && (!cJSON_GetObjectItemCaseSensitive(row,"response_frame") || !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(row,"checksum_valid"))))complete=false;
+    }
+    char *json = complete?cJSON_PrintUnformatted(row):NULL;
+    if (!json || strlen(json)>=TB_RECORD_MAX || tb_store_submit(json)!=ESP_OK){
+        __atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);
+        if(item->field)__atomic_store_n(&s.active.field.audit_lost,true,__ATOMIC_RELAXED);
+    }
+    cJSON_free(json); cJSON_Delete(row);
 }
 
 static void request_task(void *unused)
@@ -204,6 +260,9 @@ static void request_task(void *unused)
         xSemaphoreTake(s.lock, portMAX_DELAY);
         uint64_t now = esp_timer_get_time();
         if (ota_busy && s.requests.armed) tbx_j1708_active_stop(&s.active, "OTA_BUSY");
+        if(tbx_j1708_field_running(&s.active.field) &&
+           (!s.speed_at || now/1000<s.speed_at || now/1000-s.speed_at>5000 || s.speed>0.1))
+            tbx_j1708_field_fail(&s.active,"FIELD_REQUIRES_FRESH_STATIONARY_SPEED");
         if(s.requests.armed && !request_bus_idle((uint32_t)now))
             tbx_j1708_active_note_rx(&s.active,NULL,0,now);
         tbx_j1708_active_tick(&s.active, now);
@@ -390,6 +449,7 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
     (void)unused;
     uint64_t now = value->uptime_ms;
     if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL) {
+        tbx_j1708_field_note_parameter(&s.active,value->mid,value->pid,now*1000);
         const bool matched=tbx_j1708_active_note_response(&s.active,value->mid,value->pid,now*1000);
         if (matched)
             tb_j1708_store_matched_response(value,now);
@@ -433,6 +493,7 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
     uint64_t captured_us = esp_timer_get_time();
     xSemaphoreTake(s.lock, portMAX_DELAY);
     bool echo = !oversize && tbx_j1708_active_is_tx_echo(&s.active, frame, size, captured_us);
+    if(!echo)tbx_j1708_field_note_frame(&s.active,frame[0],!oversize && size<=21 && tb_protocol_j1708_checksum_valid(frame,size) && frame[0]>=128,captured_us);
     if (!echo && !oversize && size <= 21 && tb_protocol_j1708_checksum_valid(frame, size) && frame[0] >= 128) {
         s.observed_mid[frame[0] >> 3] |= (uint8_t)(1u << (frame[0] & 7u));
         if (s.active.configured && frame[0] == s.active.config.local_mid) {
@@ -467,7 +528,18 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
         s.j1708_at = now;
         uint32_t before=s.requests.answered_total;
         (void)tbx_j1587_bridge_decode(frame, size, now, update_j1587_signal_locked, NULL);
-        if(s.requests.answered_total>before){memcpy(s.trial_reply,frame,size);s.trial_reply_size=(uint8_t)size;}
+        if(s.requests.answered_total>before){
+            memcpy(s.trial_reply,frame,size);s.trial_reply_size=(uint8_t)size;
+            if(tbx_j1708_field_running(&s.active.field)){
+                request_event_t item={.field=true,.field_started_us=s.active.field.started_us,.uptime_us=captured_us,
+                    .tx_start_us=s.last_tx_uart_us,.pid=s.active.last_response_pid,.local_mid=s.active.config.local_mid,
+                    .target_mid=s.active.last_response_mid,.response_size=(uint8_t)size};
+                snprintf(item.event,sizeof(item.event),"RESPONSE_FRAME");memcpy(item.frame,s.active.tx_frame,5);memcpy(item.response,frame,size);
+                if(!s.request_events || xQueueSend(s.request_events,&item,0)!=pdTRUE){
+                    __atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);__atomic_store_n(&s.active.field.audit_lost,true,__ATOMIC_RELAXED);
+                }
+            }
+        }
         xSemaphoreGive(s.lock);
     }
 }
@@ -888,6 +960,15 @@ static void request_stats_locked(cJSON *requests,unsigned offset,unsigned limit)
         if(stat->answered)cJSON_AddNumberToObject(row,"last_response_age_ms",(uint32_t)(now_ms-stat->last_answered_ms));else cJSON_AddNullToObject(row,"last_response_age_ms");
         cJSON_AddNumberToObject(row,"next_due_uptime_ms",stat->next_due_ms);
         if(cJSON_GetArraySize(row)!=10){cJSON_Delete(row);break;}
+        if(s.active.field.started_us){
+            const tbx_j1708_field_pid_t *v=&s.active.field.pids[i];cJSON *field=cJSON_AddObjectToObject(row,"field");
+            cJSON_AddNumberToObject(field,"before",v->before);cJSON_AddNumberToObject(field,"after",v->after);
+            cJSON_AddNumberToObject(field,"controls",v->controls);cJSON_AddNumberToObject(field,"control_hits",v->control_hits);
+            cJSON_AddNumberToObject(field,"sent",v->sent);cJSON_AddNumberToObject(field,"echoes",v->echoes);cJSON_AddNumberToObject(field,"replies",v->replies);
+            if(v->replies){cJSON_AddNumberToObject(field,"latency_min_us",v->latency_min_us);cJSON_AddNumberToObject(field,"latency_max_us",v->latency_max_us);}
+            else{cJSON_AddNullToObject(field,"latency_min_us");cJSON_AddNullToObject(field,"latency_max_us");}
+            if(!field || cJSON_GetArraySize(field)!=9){cJSON_Delete(row);break;}
+        }
         if(!tb_json_add_array(stats,row))break;
     }
 }
@@ -964,6 +1045,25 @@ static void capture_json_mode(cJSON *object,bool compact)
     cJSON_AddNumberToObject(j1708,"frames_per_minute",s.frames_last_minute);
     cJSON_AddStringToObject(requests,"physical_validation",s.active.physical_validated?"EXTERNAL_CAPTURE_CONFIRMED_BY_OPERATOR":"PENDING_EXTERNAL_CAPTURE");
     cJSON_AddBoolToObject(requests,"physical_validated",s.active.physical_validated);
+    cJSON_AddStringToObject(requests,"validation_method",s.active.physical_validated?"EXTERNAL_INDEPENDENT":s.active.field.confirmed?"SUPERVISED_FIELD_INDIRECT":"NONE");
+    const tbx_j1708_field_t *f=&s.active.field;
+    cJSON *field=cJSON_AddObjectToObject(requests,"field_validation");
+    cJSON_AddStringToObject(field,"phase",tbx_j1708_field_phase_name(f->phase));
+    cJSON_AddBoolToObject(field,"running",tbx_j1708_field_running(f));
+    cJSON_AddBoolToObject(field,"confirmed",f->confirmed);
+    cJSON_AddBoolToObject(field,"external_electrical_proof",false);
+    if(f->started_us){
+        char session[64];snprintf(session,sizeof(session),"%" PRIu32 ":%" PRIu64,tb_boot_id(),f->started_us);
+        cJSON_AddStringToObject(field,"session_id",session);cJSON_AddStringToObject(field,"reason",f->reason?f->reason:"");
+        cJSON_AddNumberToObject(field,"completed_trials",f->completed);cJSON_AddNumberToObject(field,"total_trials",51);
+        cJSON_AddNumberToObject(field,"contrasting_pids",f->contrasting_pids);
+        cJSON_AddNumberToObject(field,"before_frames",f->before_frames);cJSON_AddNumberToObject(field,"after_frames",f->after_frames);
+        cJSON_AddNumberToObject(field,"before_duration_ms",f->before_duration_us/1000.0);cJSON_AddNumberToObject(field,"after_duration_ms",f->after_duration_us/1000.0);
+        cJSON_AddNumberToObject(field,"before_checksum_errors",f->before_errors);cJSON_AddNumberToObject(field,"after_checksum_errors",f->after_errors);
+        cJSON_AddNumberToObject(field,"checksum_errors",f->bad_frames);
+        cJSON_AddStringToObject(field,"latency_reference","SOFTWARE_REQUEST_TO_PARSED_REPLY");
+        cJSON_AddBoolToObject(field,"audit_lost",__atomic_load_n(&f->audit_lost,__ATOMIC_RELAXED));
+    }
     cJSON_AddBoolToObject(requests,"single_shot",s.active.config.single_shot);
     char txhex[11],trial_id[64];
     for(unsigned i=0;i<5;i++)snprintf(txhex+2*i,3,"%02X",s.active.tx_frame[i]);
@@ -984,11 +1084,11 @@ static void capture_json_mode(cJSON *object,bool compact)
     cJSON_AddNumberToObject(requests, "echo_timeouts", s.active.echo_timeouts);
     cJSON_AddNumberToObject(requests, "lease_expirations", s.active.lease_expirations);
     cJSON_AddNumberToObject(requests, "authorization_lease_ms",
-        s.active.work_mode ? TBX_J1708_WORK_LEASE_US / 1000 : TBX_J1708_ACTIVE_LEASE_US / 1000);
+        tbx_j1708_field_running(&s.active.field)?TBX_J1708_FIELD_LEASE_US/1000:s.active.work_mode ? TBX_J1708_WORK_LEASE_US / 1000 : TBX_J1708_ACTIVE_LEASE_US / 1000);
     cJSON_AddNumberToObject(requests, "lease_remaining_ms", s.requests.armed &&
         s.active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
         (double)(s.active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
-    cJSON_AddStringToObject(requests, "block_reason", !s.active.configured?"EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED":s.requests.safety_stopped?"THREE_TX_FAILURES_OR_MID_CONFLICT":!s.active.physical_validated?"PHYSICAL_TX_VALIDATION_REQUIRED":"NONE_OR_SAFETY_INTERLOCK");
+    cJSON_AddStringToObject(requests, "block_reason", !s.active.configured?"EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED":s.requests.safety_stopped?"THREE_TX_FAILURES_OR_MID_CONFLICT":!(s.active.physical_validated || s.active.field.confirmed)?"EXTERNAL_OR_SUPERVISED_FIELD_VALIDATION_REQUIRED":"NONE_OR_SAFETY_INTERLOCK");
     cJSON_AddBoolToObject(requests,"sequential_scan",s.active.config.sequential_scan);
     if(s.active.config.sequential_scan){
         cJSON_AddNumberToObject(requests,"start_pid",
@@ -1054,6 +1154,7 @@ bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
     if (!arm) { s.emergency_stop = true; request_abort_tx(NULL); }
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     bool accepted = true;
+    if (arm && tbx_j1708_field_running(&s.active.field)){xSemaphoreGive(s.lock);return false;}
     if (arm) {
         const uint64_t now_ms=(uint64_t)(esp_timer_get_time()/1000);
         const bool speed_fresh=s.speed_at && now_ms>=s.speed_at && now_ms-s.speed_at<=5000u;
@@ -1182,6 +1283,8 @@ bool tb_capture_request_configure(const cJSON *config, char *error, size_t error
     bool accepted = false;
     if (s.observed_mid[next.local_mid >> 3] & (1u << (next.local_mid & 7u))) {
         snprintf(error, error_size, "MID local ja observado na rede; selecione MID livre confirmado");
+    } else if(tbx_j1708_field_running(&s.active.field)){
+        snprintf(error,error_size,"validacao supervisionada em andamento; pare antes de reconfigurar");
     } else if (s.requests.armed) {
         accepted = next.local_mid == s.active.config.local_mid && next.priority == s.active.config.priority &&
             memcmp(next.target_mid, s.active.config.target_mid, sizeof(next.target_mid)) == 0 &&
@@ -1229,7 +1332,7 @@ bool tb_capture_confirm_physical(const cJSON *body)
     char id[64];snprintf(id,sizeof(id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),s.active.tx_started_us);
     uint64_t now=(uint64_t)esp_timer_get_time();
     bool parked=s.speed_at && now/1000>=s.speed_at && now/1000-s.speed_at<=5000 && s.speed<=0.1;
-    bool valid=parked && !strcmp(id,nonce->valuestring) && !memcmp(tx,s.active.tx_frame,5) &&
+    bool valid=parked && !tbx_j1708_field_running(&s.active.field) && !strcmp(id,nonce->valuestring) && !memcmp(tx,s.active.tx_frame,5) &&
         nr==s.trial_reply_size && !memcmp(rx,s.trial_reply,nr) &&
         tbx_j1708_active_attest_physical(&s.active,true,true,now);
     xSemaphoreGive(s.lock);
@@ -1249,4 +1352,32 @@ bool tb_capture_confirm_physical(const cJSON *body)
         }
     }
     return valid;
+}
+
+bool tb_capture_field_start(bool authorized,bool stationary)
+{
+    if(!authorized || !stationary || !s.lock || tb_web_ota_busy() || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+    uint64_t now=(uint64_t)esp_timer_get_time();uint8_t mid=s.active.config.local_mid;
+    bool parked=s.speed_at && now/1000>=s.speed_at && now/1000-s.speed_at<=5000 && s.speed<=0.1;
+    if(parked && s.edge_ready && !s.edge_enabled){s.rx_edge_us=(uint32_t)now;s.edge_enabled=gpio_intr_enable(GPIO_NUM_20)==ESP_OK;}
+    bool accepted=s.j1708_ready && s.edge_enabled && parked && !(s.observed_mid[mid>>3]&(1u<<(mid&7u))) &&
+        tbx_j1708_field_start(&s.active,authorized,stationary,now);
+    if(accepted)s.emergency_stop=false;
+    xSemaphoreGive(s.lock);return accepted;
+}
+bool tb_capture_field_confirm(const cJSON *body)
+{
+    const cJSON *nonce=cJSON_GetObjectItemCaseSensitive(body,"session_id");
+    if(!cJSON_IsString(nonce) || !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized")) ||
+       !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"stationary")) ||
+       !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"indirect_validation_acknowledged")) ||
+       !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"local_mid_free_verified")) || !s.lock ||
+       tb_web_ota_busy() || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+    uint64_t now=(uint64_t)esp_timer_get_time();char session[64];
+    snprintf(session,sizeof(session),"%" PRIu32 ":%" PRIu64,tb_boot_id(),s.active.field.started_us);
+    bool parked=s.speed_at && now/1000>=s.speed_at && now/1000-s.speed_at<=5000 && s.speed<=0.1;
+    uint8_t mid=s.active.config.local_mid;
+    bool accepted=parked && !strcmp(session,nonce->valuestring) && !(s.observed_mid[mid>>3]&(1u<<(mid&7u))) &&
+        tbx_j1708_field_confirm(&s.active,s.active.field.started_us,true,now);
+    xSemaphoreGive(s.lock);return accepted;
 }

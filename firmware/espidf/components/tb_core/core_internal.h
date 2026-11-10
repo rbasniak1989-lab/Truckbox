@@ -21,3 +21,6 @@ bool tb_capture_request_enable_work(bool authorized, bool stationary);
 bool tb_capture_request_configure(const cJSON *config, char *error, size_t error_size);
 
 bool tb_capture_confirm_physical(const cJSON *body);
+
+bool tb_capture_field_start(bool authorized,bool stationary);
+bool tb_capture_field_confirm(const cJSON *body);

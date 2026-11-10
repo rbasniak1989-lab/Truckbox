@@ -1,0 +1,12 @@
+{
+  "scope": "READ_ONLY_HISTORY_NOT_A_CANDIDATE_FIELD_VALIDATION",
+  "boot_id": 270,
+  "requests": 17,
+  "distinct_requested_pids": 17,
+  "complete_tx_echo_events": 17,
+  "response_values": 17,
+  "response_values_matching_target_mid": 17,
+  "response_candidates": 17,
+  "timeout_events_for_boot": 0,
+  "imported_as_authorization": false
+}

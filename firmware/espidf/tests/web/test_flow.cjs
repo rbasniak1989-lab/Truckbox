@@ -64,11 +64,24 @@ const server = http.createServer(async(req,res) => {
   if(req.url==='/api/j1708/requests' && req.method==='POST'){
     const update=JSON.parse(body.toString()), status=simulatedJ1708.j1708.requests;
     if(update.action==='arm'){assert.equal(update.authorized,true);assert.equal(update.stationary,true);status.armed=true;status.single_shot=true;}
+    if(update.action==='start_field'){
+      assert.equal(update.authorized,true);assert.equal(update.stationary,true);assert.equal(update.topology_confirmed,true);
+      assert.equal(update.external_capture_verified,undefined);assert.equal(update.tx_observed_hex,undefined);
+      status.physical_validated=false;status.work_evidence_ready=false;status.single_shot=false;status.armed=true;
+      status.field_validation={phase:'PASSIVE_BEFORE',running:true,confirmed:false,session_id:'42:2000000',completed_trials:0,total_trials:51,contrasting_pids:0};
+    }
+    if(update.action==='confirm_field'){
+      assert.equal(update.authorized,true);assert.equal(update.stationary,true);assert.equal(update.indirect_validation_acknowledged,true);
+      assert.equal(update.session_id,'42:2000000');assert.equal(update.external_capture_verified,undefined);
+      assert.equal(update.tx_observed_hex,undefined);assert.equal(update.response_observed_hex,undefined);
+      assert.equal(status.field_validation.phase,'SATISFACTORY_INDIRECT');
+      status.field_validation.confirmed=true;status.field_validation.phase='OPERATOR_CONFIRMED_INDIRECT';status.work_evidence_ready=true;
+    }
     if(update.action==='confirm_physical'){
       assert.equal(update.external_capture_verified,true);assert.equal(update.local_mid_free_verified,true);assert.equal(update.trial_id,'42:1005000');
       assert.equal(update.tx_observed_hex,'F2 80 1A 80 F4');assert.equal(update.response_observed_hex,'80 1A 01 65');status.physical_validated=true;status.work_evidence_ready=true;
     }
-    if(update.action==='enable_work'){assert.equal(status.physical_validated,true);status.work_mode=true;status.armed=true;}
+    if(update.action==='enable_work'){assert(status.physical_validated || status.field_validation?.confirmed);status.work_mode=true;status.armed=true;}
     if(update.action==='stop'){status.work_mode=false;status.armed=false;}
     return json(res,200,{ok:true});
   }
@@ -229,12 +242,34 @@ async function file(page,name,size=512,magic=0xe9){
       assert.match(await page.locator('#diag-can').textContent(),/Desativada no perfil J1708_ONLY/);
       await page.locator('#j1708-stop').click();await page.waitForFunction(()=>document.querySelector('#j1708-message').textContent.includes('Parada solicitada'));
     });
+    await check('supervised field path requires parked authorization and separate indirect confirmation; external fields remain empty',async()=>{
+      await page.locator('#j1708-tx-proof').fill('');await page.locator('#j1708-rx-proof').fill('');await page.locator('#j1708-external-proof').uncheck();
+      await page.locator('#refresh').click();await page.waitForTimeout(150);
+      assert.equal(await page.locator('#j1708-field-start').isDisabled(),true);
+      await page.locator('#j1708-field-authorize').check();
+      await page.locator('#j1708-field-start').click();await page.locator('#j1708-message').filter({hasText:'supervisionada iniciada'}).waitFor();
+      assert.equal(await page.locator('#j1708-work').isDisabled(),true);assert.equal(await page.locator('#j1708-field-confirm').isDisabled(),true);
+      Object.assign(simulatedJ1708.j1708.requests,{armed:false});
+      Object.assign(simulatedJ1708.j1708.requests.field_validation,{phase:'INCONCLUSIVE',running:false,completed_trials:51});
+      await page.locator('#refresh').click();await page.waitForTimeout(150);await page.locator('#j1708-field-ack').check();
+      assert.equal(await page.locator('#j1708-field-confirm').isDisabled(),true);assert.equal(await page.locator('#j1708-work').isDisabled(),true);
+      Object.assign(simulatedJ1708.j1708.requests.field_validation,{phase:'SATISFACTORY_INDIRECT',contrasting_pids:17});
+      await page.locator('#refresh').click();await page.waitForTimeout(150);
+      await page.locator('#j1708-field-confirm').click();await page.locator('#j1708-message').filter({hasText:'operacional indireto confirmado'}).waitFor();
+      assert.equal(simulatedJ1708.j1708.requests.physical_validated,false);
+      assert.equal(await page.locator('#j1708-tx-proof').inputValue(),'');assert.equal(await page.locator('#j1708-rx-proof').inputValue(),'');
+      assert.equal(await page.locator('#j1708-external-proof').isChecked(),false);
+      await page.locator('#j1708-work').click();await page.locator('#j1708-message').filter({hasText:'Modo de viagem ativado'}).waitFor();
+      await page.locator('#j1708-stop').click();await page.locator('#j1708-message').filter({hasText:'Parada solicitada'}).waitFor();
+    });
     await check('compact diagnostics paginate all 17 PID statistics without the large full-state response',async()=>{
       simulatedJ1708.j1708.requests.stats=Array.from({length:17},(_,i)=>({pid:i+1,target_mid:128,interval_ms:60000,sent:i,response_candidates:0,timeouts:0}));
+      await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);
       const before=requests.length;
-      await page.locator('#refresh').click();await page.locator('#j1708-cadences').filter({hasText:'PID 17 / MID 128'}).waitFor();
+      const lastPage=page.waitForResponse(r=>r.url().endsWith('/api/j1708/requests?offset=16&limit=4'));
+      await page.locator('#refresh').click();await lastPage;await page.locator('#j1708-cadences').filter({hasText:'PID 17 / MID 128'}).waitFor();
       assert(recent('GET','/api/state?compact=1'));
-      for(const offset of [0,8,16])assert(requests.slice(before).some(r=>r.url==='/api/j1708/requests?offset='+offset+'&limit=8'));
+      for(const offset of [0,4,8,12,16])assert(requests.slice(before).some(r=>r.url==='/api/j1708/requests?offset='+offset+'&limit=4'));
       assert(!requests.slice(before).some(r=>r.url==='/api/state'));
     });
     await check('RAM failure shows partial health, preserves OTA access and stop, and never enables a stale active test',async()=>{

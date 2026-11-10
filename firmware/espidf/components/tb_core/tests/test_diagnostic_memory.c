@@ -128,5 +128,7 @@ static void bridge_memory(void)
 }
 int main(void)
 {
-    setup_capture();compact_and_pagination();fault_every_allocation();bridge_memory();return 0;
+    setup_capture();compact_and_pagination();fault_every_allocation();
+    s.active.field.started_us=1000000;s.active.field.phase=TBX_FIELD_SATISFACTORY;s.active.field.reason="SYNTHETIC_DIAGNOSTIC_FIXTURE";
+    compact_and_pagination();fault_every_allocation();bridge_memory();return 0;
 }
