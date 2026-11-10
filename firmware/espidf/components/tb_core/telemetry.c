@@ -590,107 +590,211 @@ void tb_telemetry_add_json(cJSON *object)
 
 
 
-/* Rev.B1 HEALTH export — 48 passive + 17 active-request candidates seen
- * with NEXIQ/Validator on 2026-10-29. TX remains completely independent
- * and disabled by default; this function only exports RX already cached.
- *
- * Data quality EM_VALIDACAO does not prove a response was caused by the
- * TruckBox request. MID, capture age and original RAW remain traceable.
- *
- * Storage budget 768 bytes: always try water, then 3 rotated active PIDs,
- * then remaining critical passive readings, then other active candidates
- * and finally the remaining passive PIDs. The three promoted active PIDs
- * rotate each minute so each of the 17 gets a high-priority slot within
- * six HEALTH samples, provided the vehicle sends them.
+/* Rev.B1 passive J1587 dual-lane export. Never enables TX.
+ * Each record must fit TB_RECORD_MAX (768 bytes); no per-frame RAW flash writes.
+ * Source ages and MIDs travel with the decoded values, and the original bytes
+ * of the unvalidated economy readings 184/185 are preserved for comparison.
  */
+static const uint16_t s_j1587_fast_pids[] = {
+    190, 91, 92, 183, 184, 185, 110, 175, 105, 177,
+    100, 102, 440, 46, 168, 84, 245, 122, 70, 85,
+    86, 43, 44, 49, 151, 162, 163
+};
+enum { TB_J1587_FAST_COUNT = sizeof(s_j1587_fast_pids) / sizeof(s_j1587_fast_pids[0]) };
+_Static_assert(TB_J1587_FAST_COUNT == 27, "27 fast J1587 PIDs required");
+
+/* Twelve slow PIDs, then five backwards-compatible display fallbacks,
+ * then the seventeen already catalogued request targets (passive RX only).
+ * Request candidates rotate their priority to avoid permanent starvation. */
+static const uint16_t s_j1587_health_pids[] = {
+    36, 98, 111, 247, 89, 150, 187, 71, 83, 97, 194, 128,
+    110, 175, 100, 102, 177,
+    26, 33, 34, 37, 62, 68, 117, 118, 235, 236, 250, 31, 32, 63, 108, 158, 160
+};
+enum { TB_J1587_SLOW_COUNT = 12, TB_J1587_COMPAT_COUNT = 5,
+       TB_J1587_REQUEST_COUNT = 17,
+       TB_J1587_HEALTH_COUNT = sizeof(s_j1587_health_pids) / sizeof(s_j1587_health_pids[0]) };
+_Static_assert(TB_J1587_HEALTH_COUNT == 34, "J1587 health catalog mismatch");
+
+static bool j1587_cached(uint16_t pid, uint64_t now_us, uint64_t max_age_us, latest_t *out)
+{
+    latest_t match = {0};
+    portENTER_CRITICAL(&s_mux);
+    for (size_t i = 0; i < s.latest_count; ++i) {
+        const latest_t *candidate = &s.latest[i];
+        if (!candidate->used || candidate->can || candidate->component_index != UINT8_MAX ||
+            candidate->signal != pid) continue;
+        if (!match.used || candidate->captured_us > match.captured_us)
+            match = *candidate;
+    }
+    portEXIT_CRITICAL(&s_mux);
+    if (!match.used || !match.captured_us || now_us < match.captured_us ||
+        now_us - match.captured_us > max_age_us)
+        return false;
+    /* Do not present unsupported/invalid readings as valid sensor values. */
+    if (!match.quality || strcmp(match.quality, "EM_VALIDACAO") != 0)
+        return false;
+    *out = match;
+    return true;
+}
+
+static bool j1587_record_fits(cJSON *record)
+{
+    char json[TB_RECORD_MAX];
+    return record && cJSON_PrintPreallocated(record, json, sizeof(json), false);
+}
+
+static bool j1587_add_observation(cJSON *record, uint16_t pid, const latest_t *latest,
+                                  uint64_t now_us, bool preserve_raw)
+{
+    const bool numeric = latest->has_value && isfinite(latest->value);
+    const char *field = numeric ? "j1587_sensors" : "j1587_raw";
+    cJSON *bucket = cJSON_GetObjectItemCaseSensitive(record, field);
+    if (!bucket) bucket = cJSON_AddObjectToObject(record, field);
+    if (!bucket) return false;
+    char key[6];
+    snprintf(key, sizeof(key), "%u", (unsigned)pid);
+    cJSON *entry = cJSON_AddArrayToObject(bucket, key);
+    if (!entry) return false;
+    char bytes[sizeof(latest->raw) * 2u + 1u];
+    if (numeric) cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest->value));
+    else {
+        hex(bytes, latest->raw, latest->raw_length);
+        cJSON_AddItemToArray(entry, cJSON_CreateString(bytes));
+    }
+    /* The receiving Cloud can calculate the original observation time. */
+    cJSON_AddItemToArray(entry, cJSON_CreateNumber(
+        (double)((now_us - latest->captured_us) / UINT64_C(1000000))));
+    cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest->address));
+    if (numeric && preserve_raw) {
+        hex(bytes, latest->raw, latest->raw_length);
+        cJSON_AddItemToArray(entry, cJSON_CreateString(bytes));
+    }
+    if (!j1587_record_fits(record)) {
+        cJSON_DeleteItemFromObjectCaseSensitive(bucket, key);
+        if (!bucket->child) cJSON_DeleteItemFromObjectCaseSensitive(record, field);
+        return false;
+    }
+    return true;
+}
+
+/* Adds provisional scalar aliases only where absent, so J1939 remains primary.
+ * This makes the already-supported SQL telemetry columns useful even before
+ * dashboard consumers are upgraded to the richer j1587_fast format. */
+bool tb_telemetry_append_j1587_operational(cJSON *sample)
+{
+    if (!sample) return false;
+    static const struct { uint16_t pid; const char *key; } fields[] = {
+        {110,"coolant_temp_c"}, {175,"oil_temp_c"}, {100,"oil_pressure_bar"},
+        {102,"boost_bar"}, {440,"boost_bar"}, {177,"gearbox_temp_c"},
+        {105,"intake_temp_c"}, {92,"load_pct"}, {91,"pedal_pct"},
+        {168,"battery_voltage_v"}, {46,"air_pressure_bar"},
+        {122,"veb_pct"}, {184,"j1587_instant_kml"}, {185,"j1587_average_kml"}
+    };
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    bool added = false;
+    for (size_t i = 0; i < sizeof(fields)/sizeof(fields[0]); ++i) {
+        if (cJSON_GetObjectItemCaseSensitive(sample, fields[i].key)) continue;
+        latest_t latest = {0};
+        const uint64_t max_age = fields[i].pid == 184 || fields[i].pid == 185
+            ? UINT64_C(90000000) : UINT64_C(40000000);
+        if (!j1587_cached(fields[i].pid, now_us, max_age, &latest) ||
+            !latest.has_value || !isfinite(latest.value)) continue;
+        if (!cJSON_AddNumberToObject(sample, fields[i].key, latest.value)) continue;
+        if (!j1587_record_fits(sample)) {
+            cJSON_DeleteItemFromObjectCaseSensitive(sample, fields[i].key);
+            continue;
+        }
+        added = true;
+    }
+    return added;
+}
+
+/* Cursor-based packing permits every currently observed fast PID to go out
+ * in the same 10-second cycle, split into bounded records if necessary.
+ * The caller owns the record identity and persists only nonempty chunks. */
+size_t tb_telemetry_append_j1587_fast(cJSON *fast, size_t *cursor)
+{
+    if (!fast || !cursor || *cursor >= TB_J1587_FAST_COUNT) return 0;
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    size_t count = 0;
+    while (*cursor < TB_J1587_FAST_COUNT) {
+        uint16_t pid = s_j1587_fast_pids[*cursor];
+        latest_t latest = {0};
+        const uint64_t max_age = (pid == 184 || pid == 185 || pid == 245)
+            ? UINT64_C(90000000) : UINT64_C(40000000);
+        if (!j1587_cached(pid, now_us, max_age, &latest)) {
+            ++*cursor;
+            continue;
+        }
+        if (!j1587_add_observation(fast, pid, &latest, now_us,
+                                   pid == 184 || pid == 185)) {
+            /* When a chunk is full retry this PID in the next chunk.
+             * Skip a single impossible observation to guarantee progress. */
+            if (count) break;
+            ++*cursor;
+            continue;
+        }
+        ++*cursor;
+        ++count;
+    }
+    return count;
+}
+
+/* HEALTH stays at 60 seconds. Slow health readings have first priority;
+ * the legacy display fallbacks and parked-only request targets come after.
+ * No additional J1708 requests and no raw traffic dumps are produced here. */
 void tb_telemetry_append_j1587_health(cJSON *health)
 {
     if (!health) return;
     cJSON *metrics = cJSON_GetObjectItemCaseSensitive(health, "metrics");
     cJSON *context = cJSON_GetObjectItemCaseSensitive(health, "context");
     if (!cJSON_IsObject(metrics) || !cJSON_IsObject(context)) return;
-
-    static const uint16_t pids[] = {
-        110, 175, 100, 102, 177, 105, 106, 92, 168, 98, 96, 171, 174,
-        26, 33, 34, 37, 62, 68, 117, 118, 235, 236, 250, 31, 32, 63, 108, 158, 160,
-        36, 43, 44, 46, 49, 70, 71, 83, 84, 85, 86, 89, 91, 97, 111, 122, 128, 150, 151, 155, 162, 163, 183, 184, 185, 187, 188, 190, 194, 245, 247, 249, 251, 252, 440
-    };
-    enum { PRIMARY_COUNT = 13, ACTIVE_COUNT = 17, PASSIVE_EXTRA_COUNT = 35,
-           TOTAL_COUNT = sizeof(pids) / sizeof(pids[0]) };
-    _Static_assert(TOTAL_COUNT == PRIMARY_COUNT + ACTIVE_COUNT + PASSIVE_EXTRA_COUNT,
-                   "J1587 catalog must contain 48 passive and 17 active targets");
-    static uint32_t rotation_minute;
-    const uint32_t minute = rotation_minute++;
-    const unsigned active_rotation = ((minute % ACTIVE_COUNT) * 3u) % ACTIVE_COUNT;
-    const unsigned passive_rotation = minute % PASSIVE_EXTRA_COUNT;
     const uint64_t now_us = (uint64_t)esp_timer_get_time();
-    cJSON *numeric = NULL, *raw_values = NULL;
-    char check[TB_RECORD_MAX];
-    cJSON_AddStringToObject(context, "j1587_sensor_quality", "EM_VALIDACAO");
-
-    for (size_t n = 0; n < TOTAL_COUNT + 3u; ++n) {
-        size_t index;
-        if (n == 0u) index = 0u;
-        else if (n <= 3u)
-            index = PRIMARY_COUNT + ((active_rotation + n - 1u) % ACTIVE_COUNT);
-        else if (n <= PRIMARY_COUNT + 2u)
-            index = n - 3u;
-        else if (n < PRIMARY_COUNT + 3u + ACTIVE_COUNT) {
-            const size_t active_order = n - (PRIMARY_COUNT + 3u);
-            if (active_order < 3u) continue; /* already promoted */
-            index = PRIMARY_COUNT + ((active_rotation + active_order) % ACTIVE_COUNT);
-        } else {
-            const size_t passive_order = n - (PRIMARY_COUNT + 3u + ACTIVE_COUNT);
-            index = PRIMARY_COUNT + ACTIVE_COUNT +
-                    ((passive_rotation + passive_order) % PASSIVE_EXTRA_COUNT);
-        }
-        const uint16_t pid = pids[index];
-
+    static uint32_t rotation;
+    const unsigned rotate = rotation++ % TB_J1587_REQUEST_COUNT;
+    cJSON *sensor_data = cJSON_CreateObject();
+    if (!sensor_data) return;
+    for (size_t i = 0; i < TB_J1587_HEALTH_COUNT; ++i) {
+        size_t index = i;
+        if (i >= TB_J1587_SLOW_COUNT + TB_J1587_COMPAT_COUNT)
+            index = TB_J1587_SLOW_COUNT + TB_J1587_COMPAT_COUNT +
+                    ((i - TB_J1587_SLOW_COUNT - TB_J1587_COMPAT_COUNT + rotate)
+                     % TB_J1587_REQUEST_COUNT);
+        uint16_t pid = s_j1587_health_pids[index];
         latest_t latest = {0};
-        portENTER_CRITICAL(&s_mux);
-        for (size_t i = 0; i < s.latest_count; ++i) {
-            const latest_t *candidate = &s.latest[i];
-            if (candidate->can || candidate->component_index != UINT8_MAX ||
-                candidate->signal != pid || !candidate->used) continue;
-            if (!latest.used || candidate->captured_us > latest.captured_us)
-                latest = *candidate;
-        }
-        portEXIT_CRITICAL(&s_mux);
-        if (!latest.used || !latest.captured_us ||
-            now_us < latest.captured_us ||
-            now_us - latest.captured_us > UINT64_C(300000000)) continue;
-
-        const bool usable = latest.has_value && isfinite(latest.value) &&
-            latest.quality && strcmp(latest.quality, "EM_VALIDACAO") == 0;
-        cJSON **target = usable ? &numeric : &raw_values;
-        const char *property = usable ? "j1587_sensors" : "j1587_raw";
-        if (!*target) *target = cJSON_AddObjectToObject(metrics, property);
-        if (!*target) break;
-
-        char key[6];
+        if (!j1587_cached(pid, now_us, UINT64_C(300000000), &latest)) continue;
+        /* Use the existing Cloud HEALTH schema; keep room for the other
+         * diagnostic counters and prevent oversized flash writes. */
+        const bool numeric = latest.has_value && isfinite(latest.value);
+        const char *field = numeric ? "j1587_sensors" : "j1587_raw";
+        cJSON *target = cJSON_GetObjectItemCaseSensitive(metrics, field);
+        if (!target) target = cJSON_AddObjectToObject(metrics, field);
+        if (!target) continue;
+        char key[6], bytes[sizeof(latest.raw)*2u+1u];
         snprintf(key, sizeof(key), "%u", (unsigned)pid);
-        cJSON *entry = cJSON_AddArrayToObject(*target, key);
-        if (!entry) break;
-        if (usable) cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest.value));
+        cJSON *entry = cJSON_AddArrayToObject(target, key);
+        if (!entry) continue;
+        if (numeric) cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest.value));
         else {
-            char bytes[sizeof(latest.raw) * 2u + 1u];
             hex(bytes, latest.raw, latest.raw_length);
             cJSON_AddItemToArray(entry, cJSON_CreateString(bytes));
         }
         cJSON_AddItemToArray(entry, cJSON_CreateNumber(
-            (double)((now_us - latest.captured_us) / 1000000)));
+            (double)((now_us-latest.captured_us)/UINT64_C(1000000))));
         cJSON_AddItemToArray(entry, cJSON_CreateNumber(latest.address));
-        if (!usable) cJSON_AddItemToArray(entry, cJSON_CreateString(
-            latest.quality ? latest.quality : "SEM_DECODIFICACAO"));
-
-        if (!cJSON_PrintPreallocated(health, check, sizeof(check), false))
-            cJSON_DeleteItemFromObjectCaseSensitive(*target, key);
+        if (!j1587_record_fits(health)) {
+            cJSON_DeleteItemFromObjectCaseSensitive(target, key);
+            if (!target->child) cJSON_DeleteItemFromObjectCaseSensitive(metrics, field);
+        }
     }
-    const bool has_numeric = numeric && numeric->child;
-    const bool has_raw = raw_values && raw_values->child;
-    if (!has_numeric && numeric) cJSON_DeleteItemFromObjectCaseSensitive(metrics, "j1587_sensors");
-    if (!has_raw && raw_values) cJSON_DeleteItemFromObjectCaseSensitive(metrics, "j1587_raw");
-    if (!has_numeric && !has_raw)
+    cJSON_Delete(sensor_data);
+    if (cJSON_GetObjectItemCaseSensitive(metrics, "j1587_sensors") ||
+        cJSON_GetObjectItemCaseSensitive(metrics, "j1587_raw"))
+        cJSON_AddStringToObject(context, "j1587_sensor_quality", "EM_VALIDACAO");
+    /* If quality metadata itself pushes the record over the storage cap,
+     * remove metadata, never the window counters or entire HEALTH record. */
+    if (!j1587_record_fits(health))
         cJSON_DeleteItemFromObjectCaseSensitive(context, "j1587_sensor_quality");
 }
 
