@@ -467,6 +467,98 @@ static void test_compact_j1587_health_from_cache(void)
     cJSON_Delete(health);
 }
 
+
+/* All 27 fast targets must be exported during the same 10-second cycle,
+ * without exceeding one flash record or marking stale readings fresh.
+ * The original bytes of PID 184/185 must remain available to the Cloud. */
+static void test_j1587_fast_dual_lane_and_boundaries(void)
+{
+    memset(s.latest, 0, sizeof(s.latest));
+    s.latest_count = 0;
+    host_now_us = UINT64_C(1000000000);
+    for (size_t i = 0; i < TB_J1587_FAST_COUNT; ++i) {
+        latest_t point = {
+            .used = true, .can = false, .signal = s_j1587_fast_pids[i],
+            .address = (uint8_t)(128u + (i % 3u)),
+            .component_index = UINT8_MAX,
+            .captured_us = host_now_us - UINT64_C(2000000),
+            .capture_id = 10000u + i,
+            .has_value = true, .value = 10.0 + (double)i,
+            .quality = "EM_VALIDACAO", .validation = "EM_VALIDACAO",
+            .raw_length = 2, .raw = {0x12, 0x34}
+        };
+        if (point.signal == 44) {
+            point.has_value = false;
+            point.raw_length = 1;
+            point.raw[0] = 0xAA;
+        }
+        update_latest(&point);
+    }
+
+    bool seen[TB_J1587_FAST_COUNT] = {0};
+    size_t next = 0;
+    unsigned chunks = 0, observed = 0;
+    while (next < TB_J1587_FAST_COUNT) {
+        cJSON *record = cJSON_CreateObject();
+        assert(record);
+        cJSON_AddStringToObject(record, "sample_kind", "J1708_FAST");
+        cJSON_AddNumberToObject(record, "boot_id", 42);
+        cJSON_AddNumberToObject(record, "uptime_ms", 1000000);
+        cJSON_AddStringToObject(record, "source", "j1708");
+        cJSON_AddStringToObject(record, "origin", "PASSIVE_RX");
+        size_t count = tb_telemetry_append_j1587_fast(record, &next);
+        assert(count > 0);
+        assert(j1587_record_fits(record));
+        for (unsigned type = 0; type < 2; ++type) {
+            cJSON *bucket = cJSON_GetObjectItemCaseSensitive(record,
+                type ? "j1587_raw" : "j1587_sensors");
+            const cJSON *item;
+            cJSON_ArrayForEach(item, bucket) {
+                const char *key = item->string;
+                assert(key);
+                unsigned pid = (unsigned)atoi(key);
+                size_t pos = TB_J1587_FAST_COUNT;
+                for (size_t k = 0; k < TB_J1587_FAST_COUNT; ++k)
+                    if (s_j1587_fast_pids[k] == pid) pos = k;
+                assert(pos != TB_J1587_FAST_COUNT && !seen[pos]);
+                seen[pos] = true;
+                ++observed;
+                assert(cJSON_GetArraySize(item) >= 3);
+                assert(cJSON_GetArrayItem(item, 1)->valueint == 2);
+                assert(cJSON_IsNumber(cJSON_GetArrayItem(item, 2)));
+                if (pid == 184 || pid == 185)
+                    assert(!strcmp(cJSON_GetArrayItem(item, 3)->valuestring, "1234"));
+                if (pid == 44)
+                    assert(!strcmp(cJSON_GetArrayItem(item, 0)->valuestring, "AA"));
+            }
+        }
+        ++chunks;
+        assert(chunks <= 3);
+        cJSON_Delete(record);
+    }
+    assert(observed == TB_J1587_FAST_COUNT);
+    assert(chunks >= 2); /* Proves records split instead of truncating. */
+
+    cJSON *op = cJSON_CreateObject();
+    assert(op);
+    cJSON_AddNumberToObject(op, "coolant_temp_c", 99);
+    assert(tb_telemetry_append_j1587_operational(op));
+    assert(cJSON_GetObjectItemCaseSensitive(op, "coolant_temp_c")->valuedouble == 99);
+    assert(cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(op, "oil_pressure_bar")));
+    assert(j1587_record_fits(op));
+    cJSON_Delete(op);
+
+    /* Fast snapshots must not repeat stale values indefinitely. */
+    host_now_us += UINT64_C(200000000);
+    cJSON *stale = cJSON_CreateObject();
+    assert(stale);
+    next = 0;
+    assert(tb_telemetry_append_j1587_fast(stale, &next) == 0);
+    assert(next == TB_J1587_FAST_COUNT);
+    assert(!tb_telemetry_append_j1587_operational(stale));
+    cJSON_Delete(stale);
+}
+
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -476,6 +568,7 @@ int main(void)
     test_bam_grouped_components_and_latest_history();
     test_legacy_decodes_without_persistent_raw();
     test_compact_j1587_health_from_cache();
+    test_j1587_fast_dual_lane_and_boundaries();
     vQueueDelete(s.queue);
     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;
