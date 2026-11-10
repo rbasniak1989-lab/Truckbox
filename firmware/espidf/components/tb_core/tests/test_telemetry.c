@@ -506,6 +506,11 @@ static void test_j1587_fast_dual_lane_and_boundaries(void)
         cJSON_AddNumberToObject(record, "uptime_ms", 1000000);
         cJSON_AddStringToObject(record, "source", "j1708");
         cJSON_AddStringToObject(record, "origin", "PASSIVE_RX");
+        /* Simulate a long operational record so packet splitting is exercised. */
+        char padding[321];
+        memset(padding, 'x', sizeof(padding)-1);
+        padding[sizeof(padding)-1] = 0;
+        cJSON_AddStringToObject(record, "test_padding", padding);
         size_t count = tb_telemetry_append_j1587_fast(record, &next);
         assert(count > 0);
         assert(j1587_record_fits(record));
