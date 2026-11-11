@@ -451,7 +451,7 @@ static esp_err_t rollback_prepare_handler(httpd_req_t *request)
     if(tb_web_ota_busy() || tb_http_read_json(request,256,&body)!=ESP_OK){cJSON_Delete(body);return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"OTA busy or invalid JSON");}
     bool allowed=cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized")) && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"stationary"));cJSON_Delete(body);
     if(!allowed)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"park vehicle and explicitly authorize maintenance pause");
-    (void)tb_capture_request_control(false,false,true);
+    tb_capture_pause_maintenance();
     if(tb_store_prepare_rollback()!=ESP_OK)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"storage not initialized");
     cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);
     cJSON_AddStringToObject(reply,"action","persistence_paused_until_reboot_wait_for_rollback_ready");
@@ -547,6 +547,13 @@ static esp_err_t requests_handler(httpd_req_t *request)
         cJSON_Delete(body); return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid request");
     }
     const cJSON *action = cJSON_GetObjectItemCaseSensitive(body, "action");
+    if(cJSON_IsString(action) && !strcmp(action->valuestring,"automatic_enable")){
+        bool ok=tb_capture_automatic_enable();cJSON_Delete(body);
+        cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",ok);
+        cJSON_AddStringToObject(reply,"reason",ok?"persistent_policy_waiting_healthy_network":"NVS_or_capture_busy");
+        if(!ok)httpd_resp_set_status(request,"409 Conflict");
+        return tb_http_send_json(request,reply);
+    }
     bool stop = cJSON_IsString(action) && !strcmp(action->valuestring, "stop");
     bool arm = cJSON_IsString(action) && !strcmp(action->valuestring, "arm");
     bool enable_work = cJSON_IsString(action) && !strcmp(action->valuestring, "enable_work");

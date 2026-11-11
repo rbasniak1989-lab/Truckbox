@@ -1,0 +1,18 @@
+pid,mid_destino,informacao_hipotese,normal_s,arrancada_s,validacao
+31,130,Posicao/range,10,2,EM_VALIDACAO
+33,130,Cilindro da embreagem,5,2,EM_VALIDACAO
+34,130,Atuador da embreagem,15,5,EM_VALIDACAO
+63,130,Atuadores da transmissao,15,5,EM_VALIDACAO
+32,130,Divisor,30,10,EM_VALIDACAO
+160,130,Rotacao de eixo da caixa; funcao a validar,30,10,EM_VALIDACAO
+37,130,Pressao de ar da transmissao,30,15,EM_VALIDACAO
+26,128,Ventoinha,60,60,EM_VALIDACAO
+62,144,Inibicao do retardador,60,60,EM_VALIDACAO
+68,128,Limitacao de torque,60,60,EM_VALIDACAO
+108,128,Pressao atmosferica,60,60,EM_VALIDACAO
+117,140,Ar primario,60,60,EM_VALIDACAO
+118,140,Ar secundario,60,60,EM_VALIDACAO
+158,128,Tensao eletrica,60,60,EM_VALIDACAO
+250,128,Combustivel total ECU,300,300,EM_VALIDACAO
+235,128,Horas marcha lenta,900,900,EM_VALIDACAO
+236,128,Combustivel marcha lenta,900,900,EM_VALIDACAO

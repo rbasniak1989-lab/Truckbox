@@ -10,7 +10,8 @@
 
 static char *persisted;
 static char *pending;
-static char *extension_saved,*extension_pending;
+static char *extension_saved,*extension_pending,*auto_saved,*auto_pending;
+static bool target_mac;
 static esp_err_t flash_error;
 static esp_err_t write_error;
 static unsigned writes;
@@ -47,6 +48,7 @@ esp_err_t esp_read_mac(uint8_t *mac, int type)
     assert(type == ESP_MAC_WIFI_STA);
     const uint8_t known_mac[6] = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x55 };
     memcpy(mac, known_mac, sizeof(known_mac));
+    if(target_mac){const uint8_t actual[]={0xd4,0x05,0x92,0xb9,0x19,0x0c};memcpy(mac,actual,6);}
     return ESP_OK;
 }
 
@@ -65,6 +67,10 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v216")){
+        if(!auto_saved)return ESP_ERR_NVS_NOT_FOUND;
+        size_t n=strlen(auto_saved)+1;if(value){assert(*size>=n);memcpy(value,auto_saved,n);}*size=n;return ESP_OK;
+    }
     if(!strcmp(key,"v212")){
         if(!extension_saved)return ESP_ERR_NVS_NOT_FOUND;
         size_t n=strlen(extension_saved)+1;
@@ -86,6 +92,7 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v216")){if(write_error!=ESP_OK)return write_error;free(auto_pending);auto_pending=strdup(value);assert(auto_pending);return ESP_OK;}
     if(!strcmp(key,"v212")){if(write_error!=ESP_OK)return write_error;free(extension_pending);extension_pending=strdup(value);assert(extension_pending);return ESP_OK;}
     assert(!strcmp(key,"config"));
     if (write_error != ESP_OK) {
@@ -100,6 +107,7 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if(auto_pending){free(auto_saved);auto_saved=auto_pending;auto_pending=NULL;}
     if(extension_pending){free(extension_saved);extension_saved=extension_pending;extension_pending=NULL;}
     free(persisted);
     persisted = pending;
@@ -124,6 +132,7 @@ static void clear_storage(void)
 {
     free(persisted);
     free(pending);free(extension_saved);free(extension_pending);extension_saved=extension_pending=NULL;
+    free(auto_saved);free(auto_pending);auto_saved=auto_pending=NULL;target_mac=false;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;
     writes = 0;
@@ -286,8 +295,37 @@ static void test_v212_extension_rollback_compatibility(void)
     assert(tb_config()->j1708_timeout_ms==450); /* Corrupt optional extension cannot block passive collection. */
 }
 
+static void test_automatic_persistence(void)
+{
+    clear_storage();target_mac=true;assert(tb_config_init()==ESP_OK);
+#if CONFIG_TB_ROLE_LINK
+    assert(!tb_config_j1708_auto_enabled());
+#else
+    assert(tb_config_j1708_auto_enabled() && tb_config_j1708_auto_persisted());
+    assert(tb_config()->j1708_local_mid==172 && tb_config()->j1708_topology_attested);
+#endif
+    assert(auto_saved && !strstr(persisted,"j1708_auto") && !strstr(extension_saved,"j1708_auto"));
+    unsigned count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    assert(tb_config_set_j1708_auto(false)==ESP_OK && !tb_config_j1708_auto_enabled());
+    cJSON *public=tb_config_public_json();assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(public,"j1708_auto_enabled")));cJSON_Delete(public);
+    count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count && !tb_config_j1708_auto_enabled());
+    for(unsigned i=0;i<17;i++)assert(tb_config()->j1708_auto_intervals_ms[i]==tbx_j1708_production_period(tbx_j1708_policy()[i].pid,false));
+    assert(apply("{\"j1708_auto_intervals_ms\":{\"33\":7000},\"j1708_launch_intervals_ms\":{\"33\":2500}}") == ESP_OK);
+    reboot();assert(tb_config_init()==ESP_OK && tb_config()->j1708_auto_intervals_ms[1]==7000 && tb_config()->j1708_launch_intervals_ms[1]==2500);
+    /* Existing 0.2.15 install: absent extension migrates exactly once. */
+    free(auto_saved);auto_saved=NULL;count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count+1);
+    count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    free(auto_saved);auto_saved=NULL;write_error=ESP_FAIL;count=writes;reboot();
+    assert(tb_config_init()==ESP_OK && !tb_config_j1708_auto_enabled() && !tb_config_j1708_auto_persisted() && writes==count);
+    write_error=ESP_OK;reboot();assert(tb_config_init()==ESP_OK && tb_config_j1708_auto_persisted());
+    free(auto_saved);auto_saved=strdup("{\"broken\":true}");count=writes;reboot();
+    assert(tb_config_init()==ESP_OK && !tb_config_j1708_auto_enabled() && !tb_config_j1708_auto_persisted() && writes==count);
+    clear_storage();
+}
+
 int main(void)
 {
+    test_automatic_persistence();
     test_v212_extension_rollback_compatibility();
     test_first_boot_and_public_data();
     test_save_reboot_and_partial_updates();

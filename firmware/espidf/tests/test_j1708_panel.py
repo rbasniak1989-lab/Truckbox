@@ -19,7 +19,7 @@ class J1708PanelTests(unittest.TestCase):
         boundary = """
 const assert=require('node:assert/strict');
 const elements=new Map();
-const $=id=>{if(!elements.has(id))elements.set(id,{value:'',checked:false,disabled:false});return elements.get(id);};
+const $=id=>{if(!elements.has(id))elements.set(id,{value:'',checked:false,disabled:false,dataset:{}});return elements.get(id);};
 const text=()=>{};
 let role='core',token='SYNTHETIC_TEST_TOKEN',uploadBusy=false,j1708Busy=false,stateBusy=false;
 let lastState={speedKph:0,ota_busy:false,j1708:{ready:true,observed_mids:[128,130,140,144],

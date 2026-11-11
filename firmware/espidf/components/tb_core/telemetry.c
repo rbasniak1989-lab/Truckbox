@@ -11,6 +11,7 @@
 #include "tbx_j1939.h"
 #include "tbx_j1939_tp.h"
 #include "tbx_j1587_bridge.h"
+#include "tbx_transmission.h"
 
 #include <inttypes.h>
 #include <math.h>
@@ -907,4 +908,51 @@ cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit)
     }
     free(snapshot);
     return result;
+}
+
+/* Snapshot only the already decoded sensor cache. No additional CAN requests,
+ * raw-frame logging or interpretation of proprietary shaft ratios occurs. */
+void tb_telemetry_transmission_can(tbx_transmission_t *monitor)
+{
+    for(size_t i=0;i<s.latest_count;i++){
+        latest_t r;portENTER_CRITICAL(&s_mux);r=s.latest[i];portEXIT_CRITICAL(&s_mux);
+        if(!r.used || !r.can || !r.has_value || !isfinite(r.value) || !r.quality ||
+           (strcmp(r.quality,"VALIDO") && strcmp(r.quality,"EM_VALIDACAO")))continue;
+        unsigned input=r.signal==6?TBX_TR_PEDAL:r.signal==44?TBX_TR_SELECTED:r.signal==45?TBX_TR_GEAR:TBX_TR_INPUTS;
+        if(input<TBX_TR_INPUTS)tbx_transmission_observe(monitor,input,r.value,r.captured_us);
+    }
+}
+static bool transmission_selected(const latest_t *r)
+{
+    if(!r->used || r->component_index!=UINT8_MAX)return false;
+    if(r->can)return r->signal==1 || r->signal==2 || r->signal==6 || r->signal==14 || (r->signal>=40 && r->signal<=46);
+    switch(r->signal){case 31:case 33:case 34:case 37:case 63:case 32:case 160:
+        case 190:case 84:case 162:case 163:case 91:case 92:return true;default:return false;}
+}
+size_t tb_telemetry_transmission_snapshot(cJSON *record,size_t *cursor,uint64_t now)
+{
+    size_t count=0;
+    cJSON *cells=cJSON_AddArrayToObject(record,"cells");if(!cells)return 0;
+    while(*cursor<s.latest_count){
+        latest_t r;portENTER_CRITICAL(&s_mux);r=s.latest[*cursor];portEXIT_CRITICAL(&s_mux);
+        if(!transmission_selected(&r) || now<r.captured_us){++*cursor;continue;}
+        char raw[65];hex(raw,r.raw,r.raw_length);
+        cJSON *cell=cJSON_CreateArray();if(!cell)return count;
+        bool ok=tb_json_add_array(cell,cJSON_CreateString(r.can?"J1939":"J1587")) &&
+            tb_json_add_array(cell,cJSON_CreateNumber(r.signal)) &&
+            tb_json_add_array(cell,cJSON_CreateNumber(r.address)) &&
+            tb_json_add_array(cell,r.has_value && isfinite(r.value)?cJSON_CreateNumber(r.value):cJSON_CreateNull()) &&
+            tb_json_add_array(cell,cJSON_CreateString(r.unit?r.unit:"raw")) &&
+            tb_json_add_array(cell,cJSON_CreateString(raw)) &&
+            tb_json_add_array(cell,cJSON_CreateNumber((double)((now-r.captured_us)/1000))) &&
+            tb_json_add_array(cell,cJSON_CreateString(r.quality?r.quality:"SEM_DADOS"));
+        if(!ok){cJSON_Delete(cell);return count;}
+        if(!tb_json_add_array(cells,cell))return count;
+        if(!j1587_record_fits(record)){
+            cJSON_DeleteItemFromArray(cells,cJSON_GetArraySize(cells)-1);
+            return count; /* Same cursor is retried in the next bounded part. */
+        }
+        ++*cursor;++count;
+    }
+    return count;
 }

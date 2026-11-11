@@ -1,0 +1,13 @@
+(node:13731) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS: RAW/DECODED/request events persist and ACK without latest/trip/runtime side effects
+PASS: mixed batches update aggregates from OPERATIONAL only, ACKing every persisted sequence
+PASS: legacy samples without sample_kind retain operational behavior
+PASS: previous-boot monotonic samples keep original time quality and no invented GPS
+PASS: persistence failure prevents ACK and aggregate side effects
+Cloud ingest compatibility mock tests: PASS (local only; no deployment/network/database)
+PASS: compact GUARD_DECISION persists unchanged and ACKs without trip/latest or external-validation effects
+PASS: automatic status and synchronized transmission snapshot retain RAW/age/quality/null/candidate data without trip or consumption side effects
+PASS: v25 preserves diagnostic kinds, NULLs and health provenance; malformed sequences/auth/storage errors never ACK
+PASS: v25 fractional uptime reproduces PostgreSQL bigint rejection before ACK
+PASS: v26 writes integer/null milliseconds and preserves original microseconds without GPS

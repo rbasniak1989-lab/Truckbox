@@ -10,7 +10,7 @@ trap 'rm -f "$test_binary"' EXIT HUP INT TERM
 cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic \
     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
     -I"$core_dir" -I"$module" -I"$cjson_dir" \
-    "$test_dir/test_telemetry.c" "$core_dir/protocols.c" \
+    "$test_dir/test_telemetry.c" "$core_dir/tbx_transmission.c" "$core_dir/protocols.c" \
     "$core_dir/tbx_j1939.c" "$core_dir/tbx_j1939_tp.c" "$core_dir/tbx_j1587_bridge.c" \
     "$module/tbx_j1587_decoder.c" "$module/tbx_j1587_passive.c" \
     "$module/tbx_j1587_passive_full.c" "$module/tbx_j1708_requests.c" \

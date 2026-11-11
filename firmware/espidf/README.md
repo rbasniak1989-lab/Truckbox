@@ -1,3 +1,5 @@
+Core **0.2.16 — PRODUÇÃO, aguardando instalação**: [polling permanente, NVS e frequências](PRODUCAO_v0.2.16.md), [testes](TESTES_v0.2.16.md) e [changelog](CHANGELOG_v0.2.16.md). Início automático após rede saudável; prioridade em arrancada; nenhuma OTA realizada.
+
 Core **0.2.15 — CANDIDATA, não instalada**: [auditoria e correção da proteção J1708](REV_B1_0.2.15_AUDITORIA.md), [testes](TESTES_v0.2.15.md) e [changelog](CHANGELOG_v0.2.15.md). Evita decidir com uma janela ruidosa ou taxa histórica; preserva proteções, 17 PIDs e validação indireta. OTA e ativação dependem de aprovação explícita.
 
 Core **0.2.14 — referência histórica**: [Validação supervisionada em campo, critérios e instruções originais](REV_B1_0.2.14_CANDIDATA.md). Seus critérios de supervisão em viagem foram revisados na candidata 0.2.15; o documento original permanece preservado.

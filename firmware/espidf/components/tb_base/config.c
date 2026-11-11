@@ -26,6 +26,7 @@ static tb_config_t s_config;
 static tb_config_t s_saved_config;
 static char s_device_uid[32];
 static bool s_ready;
+static bool s_auto_persisted,s_auto_enabled;
 
 typedef struct {
     const char *name;
@@ -52,7 +53,7 @@ static const string_field_t STRING_FIELDS[] = {
 };
 
 static const bool_field_t BOOL_FIELDS[] = {
-    BOOL_FIELD(j1587_odometer_validated), BOOL_FIELD(j1587_fuel250_validated), BOOL_FIELD(capture_enabled), BOOL_FIELD(can_enabled), BOOL_FIELD(j1708_enabled), BOOL_FIELD(full_decode_enabled), BOOL_FIELD(sd_enabled), BOOL_FIELD(fram_enabled),
+    BOOL_FIELD(j1708_auto_enabled), BOOL_FIELD(j1708_topology_attested), BOOL_FIELD(j1587_odometer_validated), BOOL_FIELD(j1587_fuel250_validated), BOOL_FIELD(capture_enabled), BOOL_FIELD(can_enabled), BOOL_FIELD(j1708_enabled), BOOL_FIELD(full_decode_enabled), BOOL_FIELD(sd_enabled), BOOL_FIELD(fram_enabled),
     BOOL_FIELD(modem_enabled), BOOL_FIELD(gnss_enabled), BOOL_FIELD(repaired_power_gates),
 };
 
@@ -150,6 +151,18 @@ static void defaults(tb_config_t *config)
 {
     memset(config, 0, sizeof(*config));
     config->j1708_timeout_ms=450;
+    config->j1708_auto_enabled=tb_role()==TB_ROLE_CORE;
+    /* Previously observed operational-indirect profile, scoped to this Core.
+     * Never import this as external electrical validation for any device. */
+    if(tb_role()==TB_ROLE_CORE && !strcmp(s_device_uid,"tb-c6-d40592b9190c")){
+        config->j1708_local_mid=172;config->j1708_topology_attested=true;
+    }
+    for(unsigned i=0;i<17;i++){
+        uint16_t pid=tbx_j1708_policy()[i].pid;
+        config->j1708_targets[i]=tbx_j1708_policy()[i].mid;
+        config->j1708_auto_intervals_ms[i]=tbx_j1708_production_period(pid,false);
+        config->j1708_launch_intervals_ms[i]=tbx_j1708_production_period(pid,true);
+    }
     for(unsigned i=0;i<17;i++)config->j1708_intervals_ms[i]=tbx_j1708_policy()[i].period_ms;
     config->can_baud = 250000;
     config->gnss_baud = 9600;
@@ -172,6 +185,12 @@ static void defaults(tb_config_t *config)
     bootloader_random_disable();
 }
 
+static bool v216_key(const char *name)
+{
+    return !strcmp(name,"j1708_auto_enabled") || !strcmp(name,"j1708_topology_attested") ||
+        !strcmp(name,"j1708_local_mid") || !strcmp(name,"j1708_targets") ||
+        !strcmp(name,"j1708_auto_intervals_ms") || !strcmp(name,"j1708_launch_intervals_ms");
+}
 static bool known_key(const char *name, bool loading)
 {
     if (name == NULL) {
@@ -187,7 +206,7 @@ static bool known_key(const char *name, bool loading)
             return true;
         }
     }
-    return strcmp(name,"j1587_odometer_mid")==0 || strcmp(name,"j1587_fuel250_mid")==0 || strcmp(name,"j1708_intervals_ms")==0 || strcmp(name,"j1708_timeout_ms")==0 || strcmp(name, "can_baud") == 0 || strcmp(name, "gnss_baud") == 0 ||
+    return v216_key(name) || strcmp(name,"j1587_odometer_mid")==0 || strcmp(name,"j1587_fuel250_mid")==0 || strcmp(name,"j1708_intervals_ms")==0 || strcmp(name,"j1708_timeout_ms")==0 || strcmp(name, "can_baud") == 0 || strcmp(name, "gnss_baud") == 0 ||
            strcmp(name, "sequence_floor") == 0 ||
            (loading && strcmp(name, "schema") == 0);
 }
@@ -334,6 +353,32 @@ static esp_err_t apply_fields(const cJSON *json, tb_config_t *config, bool loadi
             if(!found)return invalid(error,capacity,"PID J1708 desconhecido no intervalo");
         }
     }
+    const cJSON *local=cJSON_GetObjectItemCaseSensitive(json,"j1708_local_mid");
+    if(local){
+        if(!cJSON_IsNumber(local) || (local->valuedouble!=0 && (local->valuedouble<128 || local->valuedouble>255)) || floor(local->valuedouble)!=local->valuedouble)return invalid(error,capacity,"MID local: 0 nao configurado, ou inteiro128..255");
+        config->j1708_local_mid=(uint8_t)local->valueint;
+    }
+    const char *groups[]={"j1708_targets","j1708_auto_intervals_ms","j1708_launch_intervals_ms"};
+    for(unsigned g=0;g<3;g++){
+        const cJSON *object=cJSON_GetObjectItemCaseSensitive(json,groups[g]);if(!object)continue;
+        if(!cJSON_IsObject(object))return invalid(error,capacity,"polling J1708: objeto PID:valor obrigatorio");
+        const cJSON *entry;cJSON_ArrayForEach(entry,object){
+            bool found=false;
+            for(const cJSON *other=entry->next;other;other=other->next)if(!strcmp(entry->string,other->string))return invalid(error,capacity,"PID automatico duplicado");
+            for(unsigned i=0;i<17;i++){
+                char key[8];snprintf(key,sizeof(key),"%u",tbx_j1708_policy()[i].pid);
+                if(strcmp(key,entry->string))continue;
+                double min=g?500:128,max=g?3600000:255;
+                if(!cJSON_IsNumber(entry) || !isfinite(entry->valuedouble) || entry->valuedouble<min || entry->valuedouble>max || floor(entry->valuedouble)!=entry->valuedouble)return invalid(error,capacity,"MID alvo128..255 ou intervalo500..3600000 obrigatorio");
+                if(g==0)config->j1708_targets[i]=(uint8_t)entry->valueint;
+                else if(g==1)config->j1708_auto_intervals_ms[i]=(uint32_t)entry->valueint;
+                else config->j1708_launch_intervals_ms[i]=(uint32_t)entry->valueint;
+                found=true;break;
+            }
+            if(!found)return invalid(error,capacity,"PID automatico desconhecido");
+        }
+    }
+    if(config->j1708_local_mid)for(unsigned i=0;i<17;i++)if(config->j1708_local_mid==config->j1708_targets[i])return invalid(error,capacity,"MID local conflita com alvo");
     const cJSON *floor = cJSON_GetObjectItemCaseSensitive(json, "sequence_floor");
     if (floor != NULL) {
         if (!cJSON_IsNumber(floor) || !isfinite(floor->valuedouble) ||
@@ -397,6 +442,45 @@ static void load_extension(void)
     cJSON_Delete(o);
 }
 
+static cJSON *auto_json(const tb_config_t *config,bool enabled)
+{
+    cJSON *o=cJSON_CreateObject();if(!o)return NULL;
+    bool ok=cJSON_AddBoolToObject(o,"j1708_auto_enabled",enabled) &&
+        cJSON_AddBoolToObject(o,"j1708_topology_attested",config->j1708_topology_attested) &&
+        cJSON_AddNumberToObject(o,"j1708_local_mid",config->j1708_local_mid);
+    const char *names[]={"j1708_targets","j1708_auto_intervals_ms","j1708_launch_intervals_ms"};
+    for(unsigned g=0;ok && g<3;g++){
+        cJSON *group=cJSON_AddObjectToObject(o,names[g]);ok=group!=NULL;
+        for(unsigned i=0;ok && i<17;i++){
+            char key[8];snprintf(key,sizeof(key),"%u",tbx_j1708_policy()[i].pid);
+            uint32_t value=g==0?config->j1708_targets[i]:g==1?config->j1708_auto_intervals_ms[i]:config->j1708_launch_intervals_ms[i];
+            ok=cJSON_AddNumberToObject(group,key,value)!=NULL;
+        }
+    }
+    if(!ok){cJSON_Delete(o);return NULL;}return o;
+}
+static bool load_auto_extension(void)
+{
+    s_auto_persisted=false;nvs_handle_t h;
+    esp_err_t err=nvs_open(CONFIG_NAMESPACE,NVS_READONLY,&h);
+    if(err==ESP_ERR_NVS_NOT_FOUND)return true;
+    if(err!=ESP_OK){s_config.j1708_auto_enabled=false;return false;}
+    size_t n=0;err=nvs_get_str(h,"v216",NULL,&n);
+    if(err==ESP_ERR_NVS_NOT_FOUND){nvs_close(h);return true;}
+    char *text=err==ESP_OK && n>=2 && n<=4096?malloc(n):NULL;
+    cJSON *o=NULL;if(text && nvs_get_str(h,"v216",text,&n)==ESP_OK)o=cJSON_ParseWithLengthOpts(text,n,NULL,true);
+    free(text);nvs_close(h);
+    bool keys=cJSON_IsObject(o);const cJSON *entry;cJSON_ArrayForEach(entry,o)if(!entry->string || !v216_key(entry->string))keys=false;
+    const char *required[]={"j1708_auto_enabled","j1708_topology_attested","j1708_local_mid","j1708_targets","j1708_auto_intervals_ms","j1708_launch_intervals_ms"};
+    for(unsigned i=0;i<6;i++)if(!cJSON_GetObjectItemCaseSensitive(o,required[i]))keys=false;
+    for(unsigned i=3;i<6;i++)if(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(o,required[i]))!=17)keys=false;
+    tb_config_t candidate=s_config;char error[96];
+    if(!keys || apply_fields(o,&candidate,true,error,sizeof(error))!=ESP_OK){
+        s_config.j1708_auto_enabled=false;snprintf(extension_error,sizeof(extension_error),"v216 invalid: automatic TX blocked; NVS preserved");
+    }else{s_config=candidate;s_auto_persisted=extension_error[0]==0;}
+    cJSON_Delete(o);return false;
+}
+
 static cJSON *private_json(const tb_config_t *config)
 {
     cJSON *json = cJSON_CreateObject();
@@ -417,7 +501,7 @@ static cJSON *private_json(const tb_config_t *config)
     }
     for (size_t i = 0; i < sizeof(BOOL_FIELDS) / sizeof(BOOL_FIELDS[0]); ++i) {
         const bool_field_t *field = &BOOL_FIELDS[i];
-        if(v212_key(field->name))continue;
+        if(v212_key(field->name) || v216_key(field->name))continue;
         if (cJSON_AddBoolToObject(json, field->name,
                                  *(const bool *)((const char *)config + field->offset)) == NULL) {
             cJSON_Delete(json);
@@ -433,7 +517,7 @@ static cJSON *private_json(const tb_config_t *config)
     return json;
 }
 
-static esp_err_t persist(const tb_config_t *config)
+static esp_err_t persist(const tb_config_t *config,bool save_auto)
 {
     cJSON *json = private_json(config);
     if (json == NULL) {
@@ -447,11 +531,14 @@ static esp_err_t persist(const tb_config_t *config)
     cJSON *extension=extension_json(config);
     char *ext=extension?cJSON_PrintUnformatted(extension):NULL;cJSON_Delete(extension);
     if(!ext){volatile char *clear=serialized;size_t size=strlen(serialized);for(size_t i=0;i<size;i++)clear[i]=0;free(serialized);return ESP_ERR_NO_MEM;}
+    cJSON *automatic=auto_json(config,config->j1708_auto_enabled);char *auto_text=automatic?cJSON_PrintUnformatted(automatic):NULL;cJSON_Delete(automatic);
+    if(!auto_text){free(serialized);free(ext);return ESP_ERR_NO_MEM;}
     nvs_handle_t handle;
     esp_err_t result = nvs_open(CONFIG_NAMESPACE, NVS_READWRITE, &handle);
     if (result == ESP_OK) {
         result = nvs_set_str(handle, CONFIG_KEY, serialized);
         if(result==ESP_OK)result=nvs_set_str(handle,"v212",ext);
+        if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v216",auto_text);
         if (result == ESP_OK) {
             result = nvs_commit(handle);
         }
@@ -463,7 +550,7 @@ static esp_err_t persist(const tb_config_t *config)
     for (size_t i = 0; i < length; ++i) {
         clear[i] = 0;
     }
-    free(serialized);free(ext);
+    free(serialized);free(ext);free(auto_text);
     return result;
 }
 
@@ -561,7 +648,7 @@ esp_err_t tb_config_init(void)
                     for (size_t i = 0; i < sizeof(BOOL_FIELDS) / sizeof(BOOL_FIELDS[0]); ++i) {
                         /* Missing opt-in flag means LEGACY; no extra NVS write
                          * solely to introduce a field on an existing board. */
-                        if (!v212_key(BOOL_FIELDS[i].name) && strcmp(BOOL_FIELDS[i].name, "full_decode_enabled") != 0)
+                        if (!v212_key(BOOL_FIELDS[i].name) && !v216_key(BOOL_FIELDS[i].name) && strcmp(BOOL_FIELDS[i].name, "full_decode_enabled") != 0)
                             upgrade |= cJSON_GetObjectItemCaseSensitive(json, BOOL_FIELDS[i].name) == NULL;
                     }
                     upgrade |= cJSON_GetObjectItemCaseSensitive(json, "can_baud") == NULL;
@@ -578,13 +665,21 @@ esp_err_t tb_config_init(void)
     }
 
     load_extension();
-    if (first_boot || upgrade) {
-        result = persist(&s_config);
+    bool auto_migrate=load_auto_extension();
+    if (first_boot || upgrade || auto_migrate) {
+        result = persist(&s_config,auto_migrate || s_auto_persisted);
         if (result != ESP_OK) {
-            return result;
+            if(!first_boot && !upgrade && auto_migrate){
+                /* A new optional policy must not brick a previously valid
+                 * passive/Wi-Fi installation when NVS cannot accept migration. */
+                s_config.j1708_auto_enabled=false;s_auto_persisted=false;auto_migrate=false;
+                snprintf(extension_error,sizeof(extension_error),"v216 migration not saved; automatic TX blocked");
+            }else return result;
         }
     }
+    if(auto_migrate && !extension_error[0])s_auto_persisted=true;
     s_saved_config = s_config;
+    __atomic_store_n(&s_auto_enabled,s_config.j1708_auto_enabled,__ATOMIC_RELEASE);
     s_ready = true;
     if (first_boot || created_access_credentials) {
         ESP_LOGW(TAG, "Credenciais criadas para %s. Guarde os valores abaixo em local privado.", s_device_uid);
@@ -606,9 +701,10 @@ esp_err_t tb_config_apply_json(const cJSON *json, char *error, size_t error_size
     tb_config_t candidate = s_saved_config;
     esp_err_t result = apply_fields(json, &candidate, false, error, error_size);
     if (result == ESP_OK) {
-        result = persist(&candidate);
+        result = persist(&candidate,true);
         if (result == ESP_OK) {
-            s_saved_config = candidate;
+            s_saved_config = candidate;s_auto_persisted=true;extension_error[0]=0;
+            __atomic_store_n(&s_auto_enabled,candidate.j1708_auto_enabled,__ATOMIC_RELEASE);
         }
         if (result != ESP_OK && error != NULL && error_size > 0) {
             snprintf(error, error_size, "Falha ao salvar configuracao: %s", esp_err_to_name(result));
@@ -617,6 +713,15 @@ esp_err_t tb_config_apply_json(const cJSON *json, char *error, size_t error_size
     /* Runtime readers retain the boot-time snapshot until the scheduled restart. */
     memset(&candidate, 0, sizeof(candidate));
     return result;
+}
+
+bool tb_config_j1708_auto_enabled(void){return s_ready && __atomic_load_n(&s_auto_enabled,__ATOMIC_ACQUIRE);}
+bool tb_config_j1708_auto_persisted(void){return s_ready && s_auto_persisted;}
+esp_err_t tb_config_set_j1708_auto(bool enabled)
+{
+    cJSON *o=cJSON_CreateObject();if(!o)return ESP_ERR_NO_MEM;
+    if(!cJSON_AddBoolToObject(o,"j1708_auto_enabled",enabled)){cJSON_Delete(o);return ESP_ERR_NO_MEM;}
+    esp_err_t err=tb_config_apply_json(o,NULL,0);cJSON_Delete(o);return err;
 }
 
 cJSON *tb_config_public_json(void)
@@ -637,6 +742,9 @@ cJSON *tb_config_public_json(void)
     cJSON_AddNumberToObject(json, "can_baud", s_config.can_baud);
     cJSON_AddNumberToObject(json, "gnss_baud", s_config.gnss_baud);
     add_j1708_periods(json,&s_config);
+    cJSON *automatic=auto_json(&s_config,tb_config_j1708_auto_enabled());
+    if(automatic){cJSON *item;while((item=cJSON_DetachItemFromArray(automatic,0))!=NULL){if(!tb_json_add_object(json,item->string,item))break;}cJSON_Delete(automatic);}
+    cJSON_AddBoolToObject(json,"j1708_auto_persisted",s_auto_persisted);
     cJSON_AddStringToObject(json,"capture_profile",s_config.can_enabled?"DUAL":"J1708_ONLY");
     cJSON_AddNumberToObject(json, "sequence_floor", (double)s_config.sequence_floor);
     cJSON_AddBoolToObject(json, "wifi_password_configured", s_config.wifi_password[0] != '\0');

@@ -1,0 +1,17 @@
+{
+  "scope": "READ_ONLY_EXISTING_FIELD_PROFILE_NOT_A_NEW_PRODUCTION_DEVICE_TEST",
+  "device_uid": "tb-c6-d40592b9190c",
+  "observed_firmware": "0.2.15",
+  "recent_request_boot": 294,
+  "local_mid_observed": 172,
+  "recent_boots": [
+    296,
+    297
+  ],
+  "observed_elf_prefix": "b9442d27f",
+  "published_0215_elf_sha256": "b9442d27f9851e9072e804fc42fde2469ee5631dcbeb7d103faf60a465204654",
+  "full_field_hash_available": false,
+  "classification": "OPERATIONAL_INDIRECT",
+  "imported_as_external_electrical_proof": false,
+  "production_device_written": false
+}

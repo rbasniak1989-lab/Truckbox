@@ -4,6 +4,7 @@
 #define CONFIG_TB_J1708_ONLY 1
 #include "../telemetry.c"
 #include "../tbx_j1708_active.h"
+#include "../tbx_j1708_auto.h"
 #include "tbx_j1708_policy.h"
 #include <assert.h>
 #include <time.h>
@@ -11,7 +12,7 @@
 #include "../tbx_trip.h"
 #define ESP_LOGW(tag,...) ((void)(tag))
 static const char *TAG="offline";
-static struct {tbx_j1708_active_t active;tbx_j1708_request_scheduler_t requests;uint32_t request_event_dropped;
+static struct {tbx_transmission_t transmission;tbx_j1708_auto_t automatic;uint64_t transmission_snapshot_at;uint32_t transmission_last_flags,transmission_last_launches;tbx_j1708_active_t active;tbx_j1708_request_scheduler_t requests;uint32_t request_event_dropped;
     uint32_t can_frames,j1708_frames,j1708_checksum_errors,uart_overruns;
     uint64_t speed_at,rpm_at,fuel_at,total_at;
     double speed,rpm,fuel_rate,distance_total,distance_trip,fuel_trip;
@@ -23,7 +24,8 @@ static struct {tbx_j1708_active_t active;tbx_j1708_request_scheduler_t requests;
 static bool tb_core_append_gps(cJSON *o){return tb_core_append_gps_at(o,host_now_us);}
 static unsigned esp_reset_reason(void){return 1;}
 static unsigned esp_get_minimum_free_heap_size(void){return 100000;}
-static const char *tb_version(void){return "0.2.15";}
+static const char *tb_version(void){return "0.2.16";}
+#define tb_config_j1708_auto_enabled() true
 
 static int simulated_gettimeofday(struct timeval *tv,void *zone)
 {
@@ -64,6 +66,7 @@ static bool send_query(uint16_t pid,void *unused)
     uint8_t *tx=capture_fixture.active.tx_frame;
     tx[0]=242;tx[1]=128;tx[2]=(uint8_t)pid;tx[3]=tbx_j1708_policy()[i].mid;
     tx[4]=(uint8_t)(0u-tx[0]-tx[1]-tx[2]-tx[3]);
+    if(capture_fixture.active.production_mode)return true; /* Real producer suppresses per-query success records. */
     request_event_t event={.uptime_us=host_now_us,.tx_start_us=host_now_us,
         .pid=pid,.local_mid=242,.target_mid=tx[3],.work=true,.field=true,.field_started_us=1};
     memcpy(event.frame,tx,5);strcpy(event.event,"REQUEST");strcpy(event.detail,"PID128_TARGETED_REQUEST_QUEUED");
@@ -94,14 +97,18 @@ int main(int argc,char **argv)
     tbx_j1708_request_init(&capture_fixture.requests);
     tbx_j1708_request_permit_stationary_test(&capture_fixture.requests,true);
     assert(tbx_j1708_request_arm(&capture_fixture.requests));
-    tbx_j1708_request_set_spacing(&capture_fixture.requests,1200);
+    tbx_j1708_request_set_spacing(&capture_fixture.requests,500);
     tbx_j1708_request_start_periodic(&capture_fixture.requests,1000);
-    capture_fixture.active.config.local_mid=242;
-    capture_fixture.active.field.started_us=1;capture_fixture.active.field.confirmed=true;
-    capture_fixture.active.field.phase=TBX_FIELD_CONFIRMED; /* Volume after a simulated completed validation. */
+    capture_fixture.active.config.local_mid=172;capture_fixture.active.production_mode=true;
+    capture_fixture.automatic.phase=TBX_AUTO_RUNNING;capture_fixture.automatic.reason="PERSISTENT_POLICY_OPERATIONAL_INDIRECT";
+    uint32_t periods[17];for(unsigned i=0;i<17;i++)periods[i]=tbx_j1708_production_period(tbx_j1708_policy()[i].pid,false);
+    tbx_j1708_request_production(&capture_fixture.requests,periods,false,1000,true);
     for(unsigned i=0;i<17;i++)capture_fixture.active.config.target_mid[i]=tbx_j1708_policy()[i].mid;
     unsigned catalog_size;const tbx_j1587_passive_spec_t *catalog=tbx_j1587_passive_specs(&catalog_size);
     for(unsigned sec=1;sec<=7200;sec++){
+        bool launch=(sec%120u)<30u;capture_fixture.transmission.launch=launch;
+        for(unsigned i=0;i<17;i++)periods[i]=tbx_j1708_production_period(tbx_j1708_policy()[i].pid,launch);
+        tbx_j1708_request_production(&capture_fixture.requests,periods,launch,sec*1000u,false);
         for(unsigned f=0;f<60;f++){
             host_now_us=(uint64_t)sec*1000000+(uint64_t)f*16000;
             uint16_t pid=catalog[(sec*60u+f)%catalog_size].pid;
@@ -123,6 +130,7 @@ int main(int argc,char **argv)
             capture_fixture.trip.quality="DELTA_ODO_J1587_VALIDADO";
             capture_fixture.fuel_account=(tbx_fuel_account_t){.integrated_l=sec*.0075,.estimated_l=.15,.gaps=2,.unknown_gap=true,.quality="INTEGRADO_VAZAO_J1587_EM_VALIDACAO"};
             offline_operational(host_now_us/1000);
+            offline_transmission(host_now_us/1000);
             size_t cursor=0;
             while(cursor<27){cJSON *fast=identity("J1708_FAST");
                 cJSON_AddStringToObject(fast,"source","j1708");cJSON_AddStringToObject(fast,"origin","PASSIVE_RX");
@@ -141,8 +149,8 @@ int main(int argc,char **argv)
         }
         drain();
     }
-    assert(capture_fixture.requests.sent_total==1624 && capture_fixture.requests.answered_total==1624);
-    for(unsigned i=0;i<17;i++){unsigned expected=7200000u/capture_fixture.requests.pids[i].period_ms;assert(capture_fixture.requests.pids[i].sent==expected);}
+    assert(capture_fixture.requests.sent_total>4500 && capture_fixture.requests.sent_total==capture_fixture.requests.answered_total);
+    for(unsigned i=0;i<17;i++){unsigned expected=7200000u/tbx_j1708_production_period(capture_fixture.requests.pids[i].pid,false);assert(capture_fixture.requests.pids[i].sent+1>=expected);}
     for(unsigned i=0;i<catalog_size;i++)assert(catalog[i].pid<512 && seen_pid[catalog[i].pid]);
     for(unsigned i=0;i<17;i++)assert(seen_pid[tbx_j1708_policy()[i].pid]);
     assert(s.latest_evictions==0);

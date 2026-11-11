@@ -608,6 +608,29 @@ static void test_compact_sensor_allocation_failures_are_atomic(void)
     puts("J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks");
 }
 
+static void test_transmission_snapshot(void)
+{
+    heap_reset();s.latest_count=0;memset(s.latest,0,sizeof(s.latest));
+    latest_t v={.used=true,.signal=33,.address=130,.component_index=UINT8_MAX,.captured_us=3000000,.has_value=true,.value=20,.unit="%",.quality="EM_VALIDACAO",.raw={50},.raw_length=1};
+    update_latest(&v);v.can=true;v.signal=42;v.address=0;v.has_value=false;v.quality="INDISPONIVEL";update_latest(&v);
+    size_t cursor=0;cJSON *o=cJSON_CreateObject();assert(tb_telemetry_transmission_snapshot(o,&cursor,5000000)==2);
+    cJSON *cells=cJSON_GetObjectItemCaseSensitive(o,"cells");assert(cJSON_GetArraySize(cells)==2);
+    cJSON *a=cJSON_GetArrayItem(cells,0);assert(cJSON_GetArraySize(a)==8);
+    assert(cJSON_GetArrayItem(a,1)->valueint==33 && cJSON_GetArrayItem(a,2)->valueint==130);
+    assert(!strcmp(cJSON_GetArrayItem(a,5)->valuestring,"32") && cJSON_GetArrayItem(a,6)->valueint==2000);
+    assert(cJSON_IsNull(cJSON_GetArrayItem(cJSON_GetArrayItem(cells,1),3)));
+    size_t calls=heap_calls;cJSON_Delete(o);assert(!heap_used);
+    for(size_t fail=2;fail<=calls;fail++){
+        heap_reset();o=cJSON_CreateObject();heap_fail_call=fail;cursor=0;
+        tb_telemetry_transmission_snapshot(o,&cursor,5000000);
+        cells=cJSON_GetObjectItemCaseSensitive(o,"cells");
+        const cJSON *cell;cJSON_ArrayForEach(cell,cells)assert(cJSON_GetArraySize(cell)==8);
+        cJSON_Delete(o);assert(!heap_used);
+    }
+    heap_reset();cJSON_InitHooks(NULL);
+    puts("Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS");
+}
+
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -619,6 +642,7 @@ int main(void)
     test_compact_j1587_health_from_cache();
     test_j1587_fast_dual_lane_and_boundaries();
     test_compact_sensor_allocation_failures_are_atomic();
+    test_transmission_snapshot();
     vQueueDelete(s.queue);
     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;
