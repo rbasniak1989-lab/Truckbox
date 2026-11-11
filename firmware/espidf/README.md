@@ -1,4 +1,6 @@
-Core **0.2.14 — CANDIDATA**: [Validação supervisionada em campo, critérios e instruções](REV_B1_0.2.14_CANDIDATA.md). Alternativa operacional indireta ao analisador simultâneo; mantém validação externa independente e a correção de RAM. Somente Core; instalação manual.
+Core **0.2.15 — CANDIDATA, não instalada**: [auditoria e correção da proteção J1708](REV_B1_0.2.15_AUDITORIA.md), [testes](TESTES_v0.2.15.md) e [changelog](CHANGELOG_v0.2.15.md). Evita decidir com uma janela ruidosa ou taxa histórica; preserva proteções, 17 PIDs e validação indireta. OTA e ativação dependem de aprovação explícita.
+
+Core **0.2.14 — referência histórica**: [Validação supervisionada em campo, critérios e instruções originais](REV_B1_0.2.14_CANDIDATA.md). Seus critérios de supervisão em viagem foram revisados na candidata 0.2.15; o documento original permanece preservado.
 
 Core **0.2.13 — CANDIDATA**: [correção de RAM do diagnóstico e instruções](REV_B1_0.2.13_CANDIDATA.md). Base 0.2.12 preservada; somente Core, Link instalado compatível. Não instalada automaticamente.
 

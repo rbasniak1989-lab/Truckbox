@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "tbx_j1708_requests.h"
 #include "tbx_j1708_field.h"
+#include "tbx_j1708_rx_guard.h"
 
 #define TBX_J1708_ACTIVE_LEASE_US UINT64_C(60000000)
 #define TBX_J1708_ACTIVE_ECHO_TIMEOUT_US UINT64_C(20000)
@@ -56,6 +57,7 @@ typedef struct tbx_j1708_active {
     uint64_t retry_after_us, promotion_deadline_us;
     bool physical_validated;
     tbx_j1708_field_t field;
+    tbx_j1708_rx_guard_t rx_guard;
     uint8_t consecutive_failures;
     uint16_t last_response_pid;
     uint8_t last_response_mid;

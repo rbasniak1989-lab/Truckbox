@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.14"
+VERSION = "0.2.15"
 EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
 REQUIRED_SOURCE = (
     "firmware/espidf/CMakeLists.txt",
@@ -123,8 +123,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
         "branch": git_value(project_root, "branch", "--show-current"),
         "commit": git_value(project_root, "rev-parse", "HEAD"),
         "dirty": bool(git_value(project_root, "status", "--porcelain")),
-        "integration_base_branch": "fix/revb1-v0213-http-memory",
-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "34f3c87536f9e10fa4608b3036036dd22511ccb2"),
+        "integration_base_branch": "feature/revb1-v0214-field-validation",
+        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "94cd01a7a64f24e742ce27a03ca3b547b340f129"),
         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
     }
     result["builds"] = {}

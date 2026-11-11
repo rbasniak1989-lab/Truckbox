@@ -152,6 +152,21 @@ if (baselinePath) {
   console.log('PASS: persistence failure prevents ACK and aggregate side effects');
 }
 console.log('Cloud ingest compatibility mock tests: PASS (local only; no deployment/network/database)');
+{
+  // New Core guard diagnostic remains a normal durable request event. All
+  // compact arrays/bit flags must survive ingest without trip/latest effects.
+  const guard={seq:21,sample_kind:'J1708_REQUEST_EVENT',event:'GUARD_DECISION',boot_id:55,uptime_ms:15000,
+    guard_v:1,guard_id:'55:15000000',mid:172,source:'LIVE_PROTECTION_DECISION',reason:'RX_ERROR_RATE_PERSISTENT',
+    stopped:true,predicates:529,streak:3,fails:0,candidate_only:true,crc_hit:true,frame_hit:false,persist_hit:true,
+    w:[5000,15000,599,40,0,0,0,0],ref:[0,3000,1800,1,0],totals:[9000,120,0,0,0,0,18,18,18,0,0,0,0],
+    ci_ppm:[0,0],policy:[10000,3,99,60000,3,450,1200,20],mode:[3,0]};
+  const got=await invoke(sourcePath,[guard]);
+  assert.equal(got.status,200);assert.equal(got.response.ack_seq,21);
+  assert.deepEqual(got.rows[0].raw,guard);assert.equal(got.rows[0].uptime_ms,15000);
+  assert.deepEqual(got.state.latest,got.initialLatest);assert.equal(got.rpcs.length,0);
+  assert.equal(got.rows[0].trip_id,null);assert.equal(got.rows[0].lat,null);assert.equal(got.rows[0].lon,null);
+  console.log('PASS: compact GUARD_DECISION persists unchanged and ACKs without trip/latest or external-validation effects');
+}
 if (args.includes('--v25')) {
   const got = await invoke(sourcePath, diagnostics);
   for (const [index, row] of got.rows.entries()) {

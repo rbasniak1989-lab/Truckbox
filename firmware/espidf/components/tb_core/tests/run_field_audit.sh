@@ -9,12 +9,14 @@ import re,sys
 s=Path(sys.argv[1]).read_text()
 end=s.index('} request_event_t;')+len('} request_event_t;');start=s.rfind('typedef struct {',0,end)
 assert start>=0;out=s[start:end]+'\n'
-m=re.search(r'^static void request_store_event\([^;]*?\)\s*\{',s,re.M);assert m
-end=s.index('{',m.start())+1;depth=1
-while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
-Path(sys.argv[2]).write_text(out+s[m.start():end])
+for name in ['guard_values','guard_record','request_store_guard','request_store_event']:
+ m=re.search(r'^static (?:bool|void) '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
+ end=s.index('{',m.start())+1;depth=1
+ while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
+ out+=s[m.start():end]+'\n'
+Path(sys.argv[2]).write_text(out)
 PY
 cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined -fno-omit-frame-pointer -g \
- -I"$work" -I"$test_dir/.." -I"$test_dir/../../../../j1708_17pid/src" -I"$IDF_PATH/components/json/cJSON" \
- "$test_dir/test_field_audit.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/test"
+ -I"$work" -I"$test_dir/.." -I"$test_dir/../../tb_base/include" -I"$test_dir/../../../../j1708_17pid/src" -I"$IDF_PATH/components/json/cJSON" \
+ "$test_dir/test_field_audit.c" "$test_dir/../tbx_j1708_rx_guard.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/test"
 ASAN_OPTIONS=detect_leaks=1 "$work/test"

@@ -1,0 +1,7 @@
+{
+  "scope": "Browser against local mock only; not physical OTA or production Supabase.",
+  "failed": [],
+  "browserErrors": [],
+  "passed_checks": 21,
+  "requests_are_local_mocks": true
+}

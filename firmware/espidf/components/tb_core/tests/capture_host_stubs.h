@@ -42,7 +42,7 @@ static esp_err_t nvs_get_blob(nvs_handle_t, const char *, void *, size_t *);
 static esp_err_t nvs_set_blob(nvs_handle_t, const char *, const void *, size_t);
 static esp_err_t nvs_commit(nvs_handle_t);
 
-static struct { bool j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated;uint8_t j1587_odometer_mid,j1587_fuel250_mid; } host_capture_config;
+static struct { bool full_decode_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated;uint8_t j1587_odometer_mid,j1587_fuel250_mid; } host_capture_config;
 #define tb_config() (&host_capture_config)
 
 #define pdTRUE 1
@@ -52,3 +52,23 @@ static uint32_t tb_boot_id(void){return 42;}
 #define GPIO_NUM_20 20
 #define gpio_intr_enable(pin) ((void)(pin),ESP_OK)
 #define tb_web_ota_busy() false
+
+/* Actual RX task driven by scripted UART interrupts in host integration tests. */
+#define UART_NUM_1 1
+#define UART_DATA 1
+#define UART_FIFO_OVF 2
+#define UART_BUFFER_FULL 3
+#define UART_FRAME_ERR 4
+#define UART_PARITY_ERR 5
+#define UART_LL_GET_HW(port) (port)
+typedef struct {int type;size_t size;bool timeout_flag;}uart_event_t;
+static bool xQueueReceive(QueueHandle_t,void *,unsigned);
+static bool xQueueSend(QueueHandle_t,const void *,unsigned);
+static void xQueueReset(QueueHandle_t);
+static int uart_read_bytes(int,void *,size_t,unsigned);
+static void uart_flush_input(int);
+static int gpio_get_level(int);
+static unsigned uart_ll_get_rxfifo_len(int);
+static int uart_get_buffered_data_len(int,size_t *);
+static bool tb_telemetry_j1708(const uint8_t *,size_t,uint64_t,bool);
+static bool tb_telemetry_j1708_echo(const uint8_t *,size_t,uint64_t,bool);

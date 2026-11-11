@@ -1,0 +1,164 @@
+{
+  "scope": "READ_ONLY_BOOT_290_HISTORY_NOT_PHYSICAL_TX_PROOF",
+  "device_uid": "tb-c6-d40592b9190c",
+  "boot_id": 290,
+  "firmware_observed": "0.2.14",
+  "flash_image_hash_verified": false,
+  "classification": "OPERATIONAL_INDIRECT",
+  "response_classification": "RESPONSE_CANDIDATE",
+  "events": [
+    {
+      "n": 1,
+      "event": "ARMED",
+      "distinct_pids": 0
+    },
+    {
+      "n": 1,
+      "event": "CONFIGURED",
+      "distinct_pids": 1
+    },
+    {
+      "n": 1,
+      "event": "FIELD_AFTER",
+      "distinct_pids": 0
+    },
+    {
+      "n": 1,
+      "event": "FIELD_CONFIRMED",
+      "distinct_pids": 0
+    },
+    {
+      "n": 51,
+      "event": "FIELD_CONTROL",
+      "distinct_pids": 17
+    },
+    {
+      "n": 1,
+      "event": "FIELD_FAILED",
+      "distinct_pids": 0
+    },
+    {
+      "n": 17,
+      "event": "FIELD_PID_RESULT",
+      "distinct_pids": 17
+    },
+    {
+      "n": 1,
+      "event": "FIELD_SATISFACTORY",
+      "distinct_pids": 0
+    },
+    {
+      "n": 1,
+      "event": "FIELD_STARTED",
+      "distinct_pids": 0
+    },
+    {
+      "n": 318,
+      "event": "REQUEST",
+      "distinct_pids": 17
+    },
+    {
+      "n": 51,
+      "event": "RESPONSE_CANDIDATE",
+      "distinct_pids": 17
+    },
+    {
+      "n": 51,
+      "event": "RESPONSE_FRAME",
+      "distinct_pids": 17
+    },
+    {
+      "n": 318,
+      "event": "RESPONSE_VALUE",
+      "distinct_pids": 17
+    },
+    {
+      "n": 2,
+      "event": "STOPPED",
+      "distinct_pids": 2
+    },
+    {
+      "n": 51,
+      "event": "TX_ECHO",
+      "distinct_pids": 17
+    },
+    {
+      "n": 1,
+      "event": "WORK_ENABLED",
+      "distinct_pids": 0
+    }
+  ],
+  "timeline": [
+    {
+      "ts": "2026-11-10T22:40:51.573+00:00",
+      "seq": 47799,
+      "event": "FIELD_SATISFACTORY",
+      "detail": "OPERATIONAL_INDIRECT_OPERATOR_CONFIRMATION_REQUIRED",
+      "uptime_ms": "275323",
+      "after_errors": "2",
+      "after_frames": "1809",
+      "before_errors": "0",
+      "before_frames": "1916"
+    },
+    {
+      "ts": "2026-11-10T22:40:51.573+00:00",
+      "seq": 47800,
+      "event": "STOPPED",
+      "detail": "FIELD_TEST_COMPLETE",
+      "uptime_ms": "275323",
+      "after_errors": null,
+      "after_frames": null,
+      "before_errors": null,
+      "before_frames": null
+    },
+    {
+      "ts": "2026-11-10T22:41:01.044+00:00",
+      "seq": 47804,
+      "event": "FIELD_CONFIRMED",
+      "detail": "OPERATOR_CONFIRMED_OPERATIONAL_INDIRECT_NOT_EXTERNAL",
+      "uptime_ms": "284521",
+      "after_errors": "2",
+      "after_frames": "1809",
+      "before_errors": "0",
+      "before_frames": "1916"
+    },
+    {
+      "ts": "2026-11-10T22:43:03.536+00:00",
+      "seq": 47856,
+      "event": "WORK_ENABLED",
+      "detail": "SUPERVISED_FIELD_OPERATIONAL_INDIRECT_OPERATOR_CONFIRMED",
+      "uptime_ms": "406751",
+      "after_errors": "2",
+      "after_frames": "1809",
+      "before_errors": "0",
+      "before_frames": "1916"
+    },
+    {
+      "ts": "2026-11-10T23:02:34.006+00:00",
+      "seq": 48876,
+      "event": "FIELD_FAILED",
+      "detail": "PASSIVE_BUS_ERROR_OR_RATE_ANOMALY",
+      "uptime_ms": "1577473",
+      "after_errors": "2",
+      "after_frames": "1809",
+      "before_errors": "0",
+      "before_frames": "1916"
+    },
+    {
+      "ts": "2026-11-10T23:02:33.813+00:00",
+      "seq": 48877,
+      "event": "STOPPED",
+      "detail": "PASSIVE_BUS_ERROR_OR_RATE_ANOMALY",
+      "uptime_ms": "1577473",
+      "after_errors": null,
+      "after_frames": null,
+      "before_errors": null,
+      "before_frames": null
+    }
+  ],
+  "limits": [
+    "No 10-second decision-window counters were stored in firmware 0.2.14",
+    "before/after values are historical field validation measurements",
+    "Cloud timestamps are derived; use seq and monotonic uptime for ordering"
+  ]
+}

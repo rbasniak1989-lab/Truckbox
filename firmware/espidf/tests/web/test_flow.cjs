@@ -248,6 +248,9 @@ async function file(page,name,size=512,magic=0xe9){
       assert.equal(await page.locator('#j1708-field-start').isDisabled(),true);
       await page.locator('#j1708-field-authorize').check();
       await page.locator('#j1708-field-start').click();await page.locator('#j1708-message').filter({hasText:'supervisionada iniciada'}).waitFor();
+      // Command acknowledgement precedes its diagnostic refresh. Wait for
+      // the actual new phase, not a 150 ms guess or the earlier external proof.
+      await page.locator('#j1708-field-status').filter({hasText:'Medindo tráfego passivo anterior'}).waitFor();
       assert.equal(await page.locator('#j1708-work').isDisabled(),true);assert.equal(await page.locator('#j1708-field-confirm').isDisabled(),true);
       Object.assign(simulatedJ1708.j1708.requests,{armed:false});
       Object.assign(simulatedJ1708.j1708.requests.field_validation,{phase:'INCONCLUSIVE',running:false,completed_trials:51});
@@ -271,6 +274,12 @@ async function file(page,name,size=512,magic=0xe9){
       assert(recent('GET','/api/state?compact=1'));
       for(const offset of [0,4,8,12,16])assert(requests.slice(before).some(r=>r.url==='/api/j1708/requests?offset='+offset+'&limit=4'));
       assert(!requests.slice(before).some(r=>r.url==='/api/state'));
+    });
+    await check('latched RX fault explains the stop and blocks new TX controls while manual stop stays available',async()=>{
+      simulatedJ1708.j1708.requests.rx_guard={fault_latched:true,last_cause:'RX_ERROR_RATE_PERSISTENT',decision_uptime_ms:60000};
+      await page.locator('#refresh').click();await page.locator('#j1708-block').filter({hasText:'reconfiguração e nova autorização'}).waitFor();
+      for(const id of ['j1708-test','j1708-field-start','j1708-confirm','j1708-work'])assert.equal(await page.locator('#'+id).isDisabled(),true);
+      assert.equal(await page.locator('#j1708-stop').isDisabled(),false);
     });
     await check('RAM failure shows partial health, preserves OTA access and stop, and never enables a stale active test',async()=>{
       diagnosticOOM=true;await page.locator('#refresh').click();

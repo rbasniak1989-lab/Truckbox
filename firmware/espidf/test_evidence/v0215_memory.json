@@ -1,0 +1,41 @@
+{
+  "baseline": {
+    "sections": {
+      ".iram0.text": 127464,
+      ".iram0.data": 8,
+      ".iram0.bss": 0,
+      ".dram0.data": 14788,
+      ".noinit": 0,
+      ".dram0.bss": 59888,
+      "static_ram": 202148
+    },
+    "types": {
+      "tbx_j1708_active_t": 688,
+      "request_event_t": 232
+    }
+  },
+  "candidate": {
+    "sections": {
+      ".iram0.text": 127468,
+      ".iram0.data": 4,
+      ".iram0.bss": 0,
+      ".dram0.data": 14788,
+      ".noinit": 0,
+      ".dram0.bss": 60320,
+      "static_ram": 202580
+    },
+    "types": {
+      "tbx_j1708_rx_guard_t": 432,
+      "tbx_j1708_active_t": 1120,
+      "request_event_t": 392
+    }
+  },
+  "baseline_version": "0.2.14",
+  "candidate_version": "0.2.15",
+  "source": "ELF sections and DWARF ESP32-C6 type sizes",
+  "event_queue_capacity": 16,
+  "static_added_bytes": 432,
+  "queue_added_bytes": 2560,
+  "physical_heap": "NOT_MEASURED_FOR_CANDIDATE",
+  "known_added_ram_bytes": 2992
+}
