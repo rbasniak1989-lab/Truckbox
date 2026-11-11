@@ -1,0 +1,97 @@
+config host tests passed (core)
+config host tests passed (link)
+config host tests passed (core)
+JSON memory: 25624-byte native tree / 14401-byte wire output: old print fails with 256 free bytes; streaming uses zero new cJSON allocations
+JSON equivalence, references, all sink failures, depth/size limits, OOM and insertion ownership passed
+Production diagnostics native cJSON: full tree 25184 bytes; old print peak 39612; compact tree 9178 (63.6% smaller); 17 stats fetched in pages <=8
+Production capture full: 644 individual allocation failures leave no orphan nodes
+Production capture compact: 244 individual allocation failures leave no orphan nodes
+Production diagnostics native cJSON: full tree 38816 bytes; old print peak 55903; compact tree 10383 (73.3% smaller); 17 stats fetched in pages <=8
+Production capture full: 1015 individual allocation failures leave no orphan nodes
+Production capture compact: 275 individual allocation failures leave no orphan nodes
+Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
+Production HTTP: chunked wire equivalence, maximum 1024-byte staging, zero serializer allocations and all client disconnect points free the tree
+Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved
+Network peer cache: same LAN/private AP, own/foreign address rejection, DHCP change and stale fallback passed
+Real sockets: v0.2.2 IPv4-on-IPv6 regression reproduced; mapped IPv4 and native IPv4 learned; native IPv6/invalid FD rejected
+image policy: valid roles, malformed/truncated images, chip, hash and string boundaries passed
+Protocol tests passed
+Validated 4000 generated records with an independent JSON parser
+Storage record CRC and interrupted-tail tests passed
+FRAM codec tests passed: golden CRC, 512 corruptions, sequence bounds, generation wrap, 65 interrupted writes, NVS-reset checkpoint
+Independent Python CRC/serialization golden vector passed
+Storage transactions: no GPS/offline/reboot, late GPS immutability, ACK gaps/idempotence/NVS fault, fsync fault, torn tail, corruption, capacity and startup queue passed
+Storage codec: UTF-8/key tokens, lossless roundtrip, output bounds, all truncations, malformed base64/backreferences and 3000 deterministic fuzz inputs PASS
+Power cuts: 90 byte boundaries, CRC-valid completion without newline, append/reboot after every cut PASS
+0.2.11-compatible non-final/oversized/CRC corruption, repeated resets, suffix salvage, ACK refusal and immutable evidence PASS
+Real writer loop: retry uncommitted row, avoid duplicate after ambiguous fsync, repeated read-only recovery, drain barrier and maintenance pause PASS
+tb_decode: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
+storage_task: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
+OK: LEGACY=6/60 state snapshots; FULL=60/60
+J1939: 76 catalog rows / 29 PGNs; 55 evidenced mappings, 15 partial/raw, 6 pending/unavailable; SAE status, source isolation and delta tests PASS
+J1939 TP.BAM: complete30/19byte, interleaving, bounds, seq, timeout, capacity PASS
+OK: J1939 inventory 76 signal rows / 29 PGNs; 46 observed PGNs; confidence tags
+J1939 C/PythonV1: 80 scalar/component equivalence checks + explicit safety differences PASS; constructed Master vectors, no full Logs Mae replay
+OK: 17 PIDs, authorization, spacing, replies and cutoffs
+OK: 17 PID scales, raw retention, status bits, unavailable and malformed frames
+OK: 48 passive PIDs; numeric/raw/invalid/unavailable
+OK: 31/31 passive PID decoder paths, physical units, masks, codes and time
+OK: J1587 bridge48+17, multiparameter/page2, checksum/bounds/NA, counter deltas, hardware TX inhibit
+Trip: checkpoint/reboot, source priority, counter reset/jump/gap and fallback overlap PASS
+Accounting: validated odometer recovery, speed overlap replacement, isolated estimates, PID250 reconciliation/no duplication, unknown gap and CRC fallback PASS
+Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS
+Actual capture functions passed: v1 migration/v2 reboot, GPS-independent trip/source selection, gap/reset rebasing, unavailable readings, NVS outside RX lock, canonical C0 derived fuel/fallback boundaries
+Actual Core GPS functions passed: absent GPS, no invented coordinates/time, receipt-vs-aged fix guard, no retroactive queued/history fixes, expiry/restart, source speed preservation
+J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
+Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
+OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
+J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed
+Field J1708: baseline/control/3x17/after, measured latency/echo, indirect operator confirmation, ambiguity rejection, conflicts/faults/stop/reboot and existing travel cadence PASS
+0.2.14 synthetic 599 valid/6 invalid window stops; 0.2.15 isolated burst does not. Incident branch itself remains unidentifiable from minute aggregates.
+RX guard A-J: stable traffic, isolated noise, traffic/engine changes, persistent RX faults, TX faults, repeated timeouts, offline/reconnect, reboot, spontaneous candidates and stale calibration PASS
+Production J1708: automatic boot/reboot, all17, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS
+Actual field audit: 482-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS
+Guard upper-range fixture fits 731 bytes (limit 767); Guard record: 522 bytes, live/ref counters and actual predicate/mode flags, atomic arrays and allocation failure ownership PASS
+J1708 event persistence policy: PASSED
+Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed
+Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed
+NMEA parser tests passed
+GPS outbox tests passed
+test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
+test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
+test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
+test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
+test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
+test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
+test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
+test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
+test_diff_cannot_overwrite_source_or_private_review (test_cloud_patch.CloudPatchTests.test_diff_cannot_overwrite_source_or_private_review) ... ok
+test_input_cannot_be_overwritten (test_cloud_patch.CloudPatchTests.test_input_cannot_be_overwritten) ... ok
+test_missing_or_duplicate_fragments_rejected (test_cloud_patch.CloudPatchTests.test_missing_or_duplicate_fragments_rejected) ... ok
+test_only_reviewed_fragments_change (test_cloud_patch.CloudPatchTests.test_only_reviewed_fragments_change) ... ok
+test_public_diff_contains_no_authentication_block (test_cloud_patch.CloudPatchTests.test_public_diff_contains_no_authentication_block) ... ok
+test_wrong_source_hash_leaves_input_and_output_untouched (test_cloud_patch.CloudPatchTests.test_wrong_source_hash_leaves_input_and_output_untouched) ... ok
+test_corrupt_file_rejected_before_usb (test_flash_package.FlashPackageTests.test_corrupt_file_rejected_before_usb) ... ok
+test_manifest_cannot_write_nvs (test_flash_package.FlashPackageTests.test_manifest_cannot_write_nvs) ... ok
+test_path_escape_rejected (test_flash_package.FlashPackageTests.test_path_escape_rejected) ... ok
+test_success_preserves_nvs_and_uses_argument_list (test_flash_package.FlashPackageTests.test_success_preserves_nvs_and_uses_argument_list) ... ok
+test_wrong_flash_size_never_writes (test_flash_package.FlashPackageTests.test_wrong_flash_size_never_writes) ... ok
+test_wrong_role_binary_rejected_even_with_matching_hash (test_flash_package.FlashPackageTests.test_wrong_role_binary_rejected_even_with_matching_hash) ... ok
+test_missing_invalid_reset_and_source_change_skip_intervals (test_fuel_equivalence.FuelEquivalence.test_missing_invalid_reset_and_source_change_skip_intervals) ... ok
+test_python_c_1000_generated_valid_samples (test_fuel_equivalence.FuelEquivalence.test_python_c_1000_generated_valid_samples) ... ok
+test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
+test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 2.690s
+
+OK
+Offline source: clock=0 virtual_seconds=7200 frames=438780 records=3256 requests=6780 response_candidates=6780 latest=65 RAW_writes=0
+Offline storage: duration=7200s input_records=3256 original_JSON_bytes=2193894 physical_bytes=1281076 budget_bytes=1818624 segments=27 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 684659 bytes; remains on disk and reduces future offline space until explicit review
+Reconnect: unique_Cloud_rows=3256 deliveries_including_retries=3264 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
+Offline source: clock=1 virtual_seconds=7200 frames=438780 records=3256 requests=6780 response_candidates=6780 latest=65 RAW_writes=0
+Offline storage: duration=7200s input_records=3256 original_JSON_bytes=2276035 physical_bytes=1379760 budget_bytes=1818624 segments=29 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 685019 bytes; remains on disk and reduces future offline space until explicit review
+Reconnect: unique_Cloud_rows=3256 deliveries_including_retries=3264 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
+Host tests passed; ESP32 physical tests remain pending.

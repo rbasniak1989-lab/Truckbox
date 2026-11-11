@@ -167,6 +167,16 @@ console.log('Cloud ingest compatibility mock tests: PASS (local only; no deploym
   assert.equal(got.rows[0].trip_id,null);assert.equal(got.rows[0].lat,null);assert.equal(got.rows[0].lon,null);
   console.log('PASS: compact GUARD_DECISION persists unchanged and ACKs without trip/latest or external-validation effects');
 }
+{
+  const samples=[
+    {seq:22,sample_kind:'J1708_REQUEST_EVENT',event:'AUTOMATIC_STATUS',boot_id:55,uptime_ms:15000,state:'RUNNING',launch:true,last_pid:33,response_mid:130,latency_ms:210},
+    {seq:23,sample_kind:'J1708_REQUEST_EVENT',event:'TRANSMISSION_SNAPSHOT',boot_id:55,uptime_ms:16000,snapshot_ms:16000,launch_id:1,flags:8,launch:true,slip_confirmed:false,quality:'EM_VALIDACAO',cells:[['J1587',33,130,20,'%', '32',210,'EM_VALIDACAO'],['J1939',42,0,null,'%', 'ff',1000,'INDISPONIVEL']]}
+  ];
+  const got=await invoke(sourcePath,samples);assert.equal(got.status,200);assert.equal(got.response.ack_seq,23);
+  assert.deepEqual(got.state.latest,got.initialLatest);assert.equal(got.rpcs.length,0);
+  for(let i=0;i<2;i++){assert.deepEqual(got.rows[i].raw,samples[i]);assert.equal(got.rows[i].trip_id,null);}
+  console.log('PASS: automatic status and synchronized transmission snapshot retain RAW/age/quality/null/candidate data without trip or consumption side effects');
+}
 if (args.includes('--v25')) {
   const got = await invoke(sourcePath, diagnostics);
   for (const [index, row] of got.rows.entries()) {

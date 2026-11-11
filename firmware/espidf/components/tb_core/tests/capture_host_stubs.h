@@ -14,6 +14,9 @@
 #include "trip_checkpoint.h"
 #include "tbx_j1587_bridge.h"
 #include "tbx_j1708_active.h"
+#include "tbx_j1708_auto.h"
+#include "tbx_transmission.h"
+#define tb_config_j1708_auto_enabled() false
 #define TB_RECORD_MAX 768
 #define ESP_OK 0
 #define ESP_FAIL -1

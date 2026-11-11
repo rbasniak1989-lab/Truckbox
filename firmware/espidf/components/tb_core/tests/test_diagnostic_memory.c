@@ -7,6 +7,10 @@
 #include "tb_json.h"
 #include "../../tb_base/tests/json_heap.h"
 #include "tbx_j1708_active.h"
+#include "tbx_j1708_auto.h"
+#include "tbx_transmission.h"
+#define tb_config_j1708_auto_enabled() false
+#define tb_config_j1708_auto_persisted() false
 #include "tbx_j1708_policy.h"
 #include "tbx_trip.h"
 #include "tbx_fuel.h"

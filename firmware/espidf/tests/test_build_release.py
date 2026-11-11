@@ -76,7 +76,7 @@ class ReleasePackageTests(unittest.TestCase):
         self.assertEqual(result["sha256"], hashlib.sha256(self.archive.read_bytes()).hexdigest())
         with zipfile.ZipFile(self.archive) as full:
             manifest = json.loads(full.read("manifest.json"))
-            self.assertEqual(manifest["state"], "VERSAO_DE_TESTES")
+            self.assertEqual(manifest["state"], "PRODUCAO_AGUARDANDO_INSTALACAO")
             self.assertEqual(manifest["validation"], "PARTIAL")
             self.assertFalse(manifest["automatic_flash"])
             for role, image in manifest["images"].items():

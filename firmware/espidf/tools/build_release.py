@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package tested 0.2.0 builds, their complete sibling sources, and manual flash tools."""
+"""Package Core production builds, complete sibling sources, and manual recovery tools."""
 from __future__ import annotations
 
 import argparse
@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.15"
+VERSION = "0.2.16"
 EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
 REQUIRED_SOURCE = (
     "firmware/espidf/CMakeLists.txt",
@@ -117,14 +117,14 @@ def provenance(project_root: Path, builds: dict) -> dict:
         }
     if not result.get("original_release", {}).get("embedded_source_sha256"):
         raise ValueError("Original release/source provenance missing")
-    result.update({"version": VERSION, "state": "VERSAO_DE_TESTES", "validation": "PARTIAL",
+    result.update({"version": VERSION, "state": "PRODUCAO_AGUARDANDO_INSTALACAO", "validation": "PARTIAL",
                    "physical_validation": "PENDING", "esp_idf": "v5.5.2"})
     result["development"] = {
         "branch": git_value(project_root, "branch", "--show-current"),
         "commit": git_value(project_root, "rev-parse", "HEAD"),
         "dirty": bool(git_value(project_root, "status", "--porcelain")),
-        "integration_base_branch": "feature/revb1-v0214-field-validation",
-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "94cd01a7a64f24e742ce27a03ca3b547b340f129"),
+        "integration_base_branch": "fix/revb1-v0215-j1708-guard",
+        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "4a6f2b7"),
         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
     }
     result["builds"] = {}
@@ -192,7 +192,7 @@ def package_release(project_root: Path, output_dir: Path, package_path: Path, ro
     entries = source_entries(project_root)
     builds = {role: validate_build(project_root, role) for role in roles}
     origin = provenance(project_root, builds)
-    manifest = {"hardware_revision": "B1", "version": VERSION, "state": "VERSAO_DE_TESTES",
+    manifest = {"hardware_revision": "B1", "version": VERSION, "state": "PRODUCAO_AGUARDANDO_INSTALACAO",
                 "validation": "PARTIAL", "physical_validation": "pending", "esp_idf": "v5.5.2",
                 "preserves_nvs_and_storage": True, "automatic_flash": False, "images": {}}
     output_dir.parent.mkdir(parents=True, exist_ok=True)

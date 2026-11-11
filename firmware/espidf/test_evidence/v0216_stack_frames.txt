@@ -1,0 +1,4 @@
+/workspace/work/Truckbox-v0216/firmware/espidf/components/tb_core/capture.c:309:13:request_task	528	static
+/workspace/work/Truckbox-v0216/firmware/espidf/components/tb_core/capture.c:853:13:j1708_task	208	static
+/workspace/work/Truckbox-v0216/firmware/espidf/components/tb_core/capture.c:690:13:snapshot_task	368	static
+/workspace/work/Truckbox-v0216/firmware/espidf/components/tb_core/tbx_j1708_auto.c:24:6:tbx_j1708_auto_tick	64	static

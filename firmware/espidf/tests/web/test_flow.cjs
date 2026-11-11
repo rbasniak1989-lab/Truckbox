@@ -82,7 +82,8 @@ const server = http.createServer(async(req,res) => {
       assert.equal(update.tx_observed_hex,'F2 80 1A 80 F4');assert.equal(update.response_observed_hex,'80 1A 01 65');status.physical_validated=true;status.work_evidence_ready=true;
     }
     if(update.action==='enable_work'){assert(status.physical_validated || status.field_validation?.confirmed);status.work_mode=true;status.armed=true;}
-    if(update.action==='stop'){status.work_mode=false;status.armed=false;}
+    if(update.action==='stop'){status.work_mode=false;status.armed=false;if(status.automatic){status.automatic.enabled=false;status.automatic.state='DISABLED';}}
+    if(update.action==='automatic_enable'){status.automatic.enabled=true;status.automatic.state='WAITING_HEALTHY_RX';}
     return json(res,200,{ok:true});
   }
   if(req.url === '/api/ota' || req.url === '/api/ota/link') {
@@ -294,6 +295,21 @@ async function file(page,name,size=512,magic=0xe9){
       await page.locator('#j1708-message').filter({hasText:'Parada solicitada'}).waitFor();
       diagnosticOOM=false;await page.locator('#refresh').click();
       await page.locator('#connection').filter({hasText:/^Online$/}).waitFor();
+    });
+    await check('persistent automatic status needs no arm command; manual tests stay separate and re-enable only saves policy',async()=>{
+      const status=simulatedJ1708.j1708.requests;
+      status.automatic={enabled:true,persisted:true,state:'RUNNING',TRANSMISSION_LAUNCH_MONITOR:true,reason:'PERSISTENT_POLICY_OPERATIONAL_INDIRECT'};
+      status.rx_guard={fault_latched:false};status.work_mode=true;status.armed=true;
+      const posts=requests.filter(r=>r.method==='POST' && r.url==='/api/j1708/requests').length;
+      await page.locator('#refresh').click();await page.locator('#j1708-automatic-status').filter({hasText:'J1708 ativa'}).waitFor();
+      assert.equal(requests.filter(r=>r.method==='POST' && r.url==='/api/j1708/requests').length,posts);
+      assert.match(await page.locator('#j1708-automatic-status').textContent(),/monitor de arrancada ativo/);
+      assert.equal(await page.locator('#j1708-test').isDisabled(),true);
+      assert.equal(await page.locator('#j1708-work').isDisabled(),true);
+      await page.locator('#j1708-stop').click();await page.locator('#j1708-automatic-status').filter({hasText:'desabilitadas'}).waitFor();
+      await page.locator('#j1708-automatic-enable').click();await page.locator('#j1708-message').filter({hasText:'Polling automático salvo'}).waitFor();
+      await page.locator('#j1708-automatic-status').filter({hasText:'aguardando rede saudável'}).waitFor();
+      assert.equal(JSON.parse(recent('POST','/api/j1708/requests').body.toString()).action,'automatic_enable');
     });
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:path.join(__dirname,'core-mobile.png'),fullPage:true});

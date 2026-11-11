@@ -1,0 +1,40 @@
+{
+  "baseline": {
+    "sections": {
+      ".iram0.text": 127468,
+      ".iram0.data": 4,
+      ".iram0.bss": 0,
+      ".dram0.data": 14788,
+      ".noinit": 0,
+      ".dram0.bss": 60320,
+      "ram_static_bytes": 202580
+    },
+    "types": {
+      "tbx_j1708_request_scheduler_t": 592,
+      "tbx_j1708_active_t": 1120,
+      "request_event_t": 392
+    }
+  },
+  "production": {
+    "sections": {
+      ".iram0.text": 127468,
+      ".iram0.data": 4,
+      ".iram0.bss": 0,
+      ".dram0.data": 14788,
+      ".noinit": 0,
+      ".dram0.bss": 61264,
+      "ram_static_bytes": 203524
+    },
+    "types": {
+      "tbx_transmission_t": 248,
+      "tbx_j1708_request_scheduler_t": 868,
+      "tbx_j1708_active_t": 1136,
+      "tbx_j1708_auto_t": 48,
+      "request_event_t": 392
+    }
+  },
+  "static_added_bytes": 944,
+  "event_queue_capacity": 16,
+  "queue_added_bytes": 0,
+  "physical_heap": "NOT_MEASURED"
+}

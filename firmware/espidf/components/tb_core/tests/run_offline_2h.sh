@@ -21,6 +21,9 @@ start=s.index('static void snapshot_task(')
 a=s.index('if (tb_operational_due(',start);begin=s.index('{',a)+1;end=begin;depth=1
 while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
 chunks.append('static void offline_operational(uint64_t now){'+re.sub(r'\bs\.', 'capture_fixture.',s[begin:end-1])+'}')
+a=s.index('if((seconds+1U)%10U==0U && tb_config_j1708_auto_enabled())',start);begin=s.index('{',a)+1;end=begin;depth=1
+while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
+chunks.append('static void offline_transmission(uint64_t now){'+re.sub(r'\bs\.', 'capture_fixture.',s[begin:end-1])+'}')
 a=s.index('        cJSON *health =',start);b=s.index('        /* Append optional sensors',a)
 health=s[a:b].replace('if (!health) continue;','if (!health) return NULL;')
 health=re.sub(r'\bs\.', 'capture_fixture.',health)
@@ -30,7 +33,7 @@ PY
 cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
  -fsanitize=address,undefined -fno-omit-frame-pointer -g \
  -I"$work" -I"$core" -I"$module" -I"$IDF_PATH/components/json/cJSON" \
- "$test_dir/offline_export.c" "$core/protocols.c" "$core/tbx_j1587_bridge.c" \
+ "$core/tbx_transmission.c" "$core/tbx_j1708_auto.c" "$test_dir/offline_export.c" "$core/protocols.c" "$core/tbx_j1587_bridge.c" \
  "$module/tbx_j1587_decoder.c" "$module/tbx_j1587_passive.c" "$module/tbx_j1587_passive_full.c" \
  "$module/tbx_j1708_requests.c" "$core/tbx_j1708_rx_guard.c" "$core/tbx_j1708_active.c" "$core/tbx_j1708_field.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/export"
 cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \

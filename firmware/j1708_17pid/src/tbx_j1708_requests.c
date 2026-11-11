@@ -21,6 +21,23 @@ void tbx_j1708_request_start_periodic(tbx_j1708_request_scheduler_t *s,uint32_t 
     for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
         s->pids[i].next_due_ms=now+(uint32_t)(i*60000u/TBX_J1708_REQUEST_COUNT);
 }
+void tbx_j1708_request_production(tbx_j1708_request_scheduler_t *s,const uint32_t periods[17],bool launch,uint32_t now,bool initial)
+{
+    s->priority_polling=true;s->periodic=true;
+    for(unsigned i=0;i<17;i++){
+        tbx_j1708_request_stat_t *p=&s->pids[i];uint32_t before=p->period_ms;
+        p->period_ms=periods[i]<500?500:periods[i];
+        bool primary=p->pid==31 || p->pid==33;
+        bool transmission=primary || p->pid==34 || p->pid==37 || p->pid==63 || p->pid==32 || p->pid==160;
+        p->priority=launch && primary?0:transmission?1:2;
+        if(initial){
+            uint32_t offset=p->pid==31?0:p->pid==33?500:p->pid==34?1000:p->pid==63?1500:p->pid==37?2000:p->pid==32?2500:p->pid==160?3000:4000+i*500;
+            p->next_due_ms=now+offset;p->retries=0;
+        }else if(p->period_ms!=before && s->pending!=i){
+            p->next_due_ms=p->sent?p->last_sent_ms+p->period_ms:now;
+        }
+    }
+}
 void tbx_j1708_request_init(tbx_j1708_request_scheduler_t *s) {
     if (!s) return;
     memset(s, 0, sizeof(*s));
@@ -77,7 +94,10 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
     if (!s || !s->armed || !s->test_permitted || s->safety_stopped) return;
     if (s->pending != TBX_J1708_NO_PENDING) {
         if (!time_due(now, s->pending_since_ms + s->timeout_ms)) return;
-        ++s->pids[s->pending].timed_out;
+        tbx_j1708_request_stat_t *expired=&s->pids[s->pending];
+        ++expired->timed_out;
+        if(s->priority_polling && expired->retries==0){expired->next_due_ms=now+s->min_spacing_ms;expired->retries=1;}
+        else if(s->priority_polling)expired->retries=0;
         ++s->timeout_total;
         s->pending = TBX_J1708_NO_PENDING;
         if (s->consecutive_timeouts < UINT8_MAX) ++s->consecutive_timeouts;
@@ -89,8 +109,21 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
      * by the bus-access controller. No send or link error is then generated. */
     if (!send) return;
     if (s->next_tx_valid && !time_due(now, s->next_tx_ms)) return;
+    uint8_t selected=TBX_J1708_NO_PENDING;
+    if(s->priority_polling){
+        for(uint8_t i=0;i<17;i++){
+            const tbx_j1708_request_stat_t *p=&s->pids[i];
+            if(!p->enabled || !time_due(now,p->next_due_ms))continue;
+            /* Aging prevents an indefinitely late secondary request from
+             * being starved by a continually busy launch priority group. */
+            unsigned priority=now-p->next_due_ms>=60000?0:p->priority;
+            unsigned old=selected==TBX_J1708_NO_PENDING?255:(now-s->pids[selected].next_due_ms>=60000?0:s->pids[selected].priority);
+            if(selected==TBX_J1708_NO_PENDING || priority<old || (priority==old && (int32_t)(p->next_due_ms-s->pids[selected].next_due_ms)<0))selected=i;
+        }
+        if(selected==TBX_J1708_NO_PENDING)return;
+    }
     for (uint8_t tries=0; tries<TBX_J1708_REQUEST_COUNT; tries++) {
-        uint8_t i = (uint8_t)((s->cursor + tries) % TBX_J1708_REQUEST_COUNT);
+        uint8_t i = s->priority_polling?selected:(uint8_t)((s->cursor + tries) % TBX_J1708_REQUEST_COUNT);
         if (!s->pids[i].enabled) continue;
         if(s->periodic && !time_due(now,s->pids[i].next_due_ms))continue;
         s->send_deferred = false;
@@ -108,7 +141,7 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
         ++s->pids[i].sent;
         if(s->periodic){
             uint32_t period=s->pids[i].period_ms;
-            if(period<1200)period=1200;
+            if(period<(s->priority_polling?500u:1200u))period=s->priority_polling?500u:1200u;
             uint32_t late=now-s->pids[i].next_due_ms;
             s->pids[i].next_due_ms=now+period-late%period;
         }
@@ -127,6 +160,11 @@ bool tbx_j1708_request_note_response(tbx_j1708_request_scheduler_t *s, uint16_t 
     uint8_t i = s->pending;
     if (s->pids[i].pid != pid) return false;
     if (time_due(now, s->pending_since_ms + s->timeout_ms)) return false;
+    tbx_j1708_request_stat_t *p=&s->pids[i];
+    uint32_t latency=now-s->pending_since_ms;p->last_latency_ms=latency;
+    if(!p->answered || latency<p->min_latency_ms)p->min_latency_ms=latency;
+    if(latency>p->max_latency_ms)p->max_latency_ms=latency;
+    p->retries=0;
     ++s->pids[i].answered;
     s->pids[i].last_answered_ms = now;
     ++s->answered_total;

@@ -1,0 +1,11 @@
+{
+  "version": "0.2.16",
+  "project": "truckbox_core",
+  "idf": "v5.5.2",
+  "size": 1517168,
+  "sha256": "1ccf27cb62d141d1987095af9aa941ad936fcf1b8395e802a2b481a6d7ad0399",
+  "app_elf_sha256": "2282069031d6e844a572833e7c502f0ebe40cf889da93be99b5fba969ac1eae7",
+  "chip_id": 13,
+  "flash_mb": 8,
+  "partition_csv_sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832"
+}

@@ -25,3 +25,7 @@ size_t tb_telemetry_append_j1587_fast(cJSON *fast, size_t *cursor);
 void tb_telemetry_append_j1587_health(cJSON *health);
 
 size_t tb_telemetry_append_j1587_slow(cJSON *record,size_t *cursor);
+
+#include "tbx_transmission.h"
+void tb_telemetry_transmission_can(tbx_transmission_t *monitor);
+size_t tb_telemetry_transmission_snapshot(cJSON *record,size_t *cursor,uint64_t now_us);

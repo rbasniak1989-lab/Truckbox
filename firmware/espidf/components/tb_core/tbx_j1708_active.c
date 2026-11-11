@@ -53,7 +53,7 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *c, const tbx_j1708_active_co
     tbx_j1708_rx_reconfigure(c);
     memset(&c->field,0,sizeof(c->field));
     c->physical_validated=false;c->last_response_us=0;c->consecutive_failures=0;
-    c->scheduler->periodic=false;
+    c->scheduler->periodic=false;c->scheduler->priority_polling=false;c->production_mode=false;
     c->trial_echo_base=c->echo_ok;
     c->trial_answer_base=c->scheduler->answered_total;
     c->promotion_deadline_us=0;
@@ -140,6 +140,21 @@ bool tbx_j1708_active_enable_work(tbx_j1708_active_t *c, uint64_t now_us)
     return true;
 }
 
+/* Caller owns persistent production authorization and the stable RX gate.
+ * This entry point never marks physical/external validation as completed. */
+bool tbx_j1708_active_start_production(tbx_j1708_active_t *c,uint64_t now)
+{
+    if(!c || !c->configured || !c->scheduler || c->scheduler->armed || c->tx_active ||
+       c->scheduler->safety_stopped || c->rx_guard.fault_latched || c->rx_guard.clock_fault)return false;
+    c->work_mode=c->production_mode=true;c->now_us=now;
+    c->config.sequential_scan=c->config.single_shot=false;
+    tbx_j1708_request_permit_stationary_test(c->scheduler,true);
+    if(!tbx_j1708_request_arm(c->scheduler)){c->work_mode=c->production_mode=false;return false;}
+    tbx_j1708_request_set_spacing(c->scheduler,500);
+    c->lease_deadline_us=UINT64_MAX;c->last_rx_us=now;
+    event(c,"AUTO_STARTED",0,"PERSISTED_PRODUCTION_POLICY_OPERATIONAL_INDIRECT");return true;
+}
+
 void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
 {
     if (!c) return;
@@ -152,7 +167,7 @@ void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
     c->promotion_deadline_us=(reason && (!strcmp(reason,"SEQUENTIAL_SCAN_COMPLETE") || !strcmp(reason,"PHYSICAL_TRIAL_COMPLETE") || !strcmp(reason,"FIELD_TEST_COMPLETE")))?
         c->now_us+UINT64_C(900000000):0;
     release_tx(c);
-    c->work_mode=false;
+    c->work_mode=false;c->production_mode=false;
     if (c->scheduler) {
         tbx_j1708_request_permit_stationary_test(c->scheduler,false);
         tbx_j1708_request_set_spacing(c->scheduler,250);
@@ -221,6 +236,7 @@ static bool send_request(uint16_t pid, void *context)
         /* The scheduler counts the failed callback as a link error. */
         return false;
     }
+    c->last_sent_pid=pid;c->last_sent_us=c->now_us;
     tbx_j1708_field_sent(c);
     event(c,"REQUEST",pid,"PID128_TARGETED_REQUEST_QUEUED");
     return true;

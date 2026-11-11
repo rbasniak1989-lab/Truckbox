@@ -9,7 +9,7 @@
 
 #define TBX_J1708_ACTIVE_LEASE_US UINT64_C(60000000)
 #define TBX_J1708_ACTIVE_ECHO_TIMEOUT_US UINT64_C(20000)
-/* Deliberately non-persistent supervised road trial: expires after 12 h. */
+/* Legacy manual road trial only. Production uses its persisted policy. */
 #define TBX_J1708_WORK_LEASE_US UINT64_C(43200000000)
 #define TBX_J1708_WORK_MIN_SPACING_MS 1200u
 
@@ -44,10 +44,11 @@ typedef struct tbx_j1708_active {
     tbx_j1708_active_config_t config;
     tbx_j1708_active_ops_t ops;
     void *context;
-    bool configured, tx_active, work_mode;
+    bool configured, tx_active, work_mode,production_mode;
     uint8_t echo_position;
     uint8_t tx_frame[5];
-    uint16_t tx_pid;
+    uint16_t tx_pid,last_sent_pid;
+    uint64_t last_sent_us;
     uint64_t now_us, last_rx_us, tx_started_us, lease_deadline_us;
     uint32_t idle_guard_us;
     uint32_t echo_ok, collisions, echo_timeouts, lease_expirations;
@@ -76,6 +77,7 @@ bool tbx_j1708_active_enable_work(tbx_j1708_active_t *, uint64_t now_us);
 bool tbx_j1708_active_work_ready(const tbx_j1708_active_t *, uint64_t now_us);
 bool tbx_j1708_active_attest_physical(tbx_j1708_active_t *, bool external_tx,
     bool external_reply, uint64_t now_us);
+bool tbx_j1708_active_start_production(tbx_j1708_active_t *,uint64_t now_us);
 void tbx_j1708_active_stop(tbx_j1708_active_t *, const char *reason);
 void tbx_j1708_active_tick(tbx_j1708_active_t *, uint64_t now_us);
 /* Feed every received UART byte, before frame parsing; echo mismatch releases
