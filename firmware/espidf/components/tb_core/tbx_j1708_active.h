@@ -22,7 +22,7 @@ typedef enum {
 typedef struct {
     uint8_t local_mid;
     /* Same order as scheduler.pids: all17 must be supplied, no defaults. */
-    uint8_t target_mid[TBX_J1708_REQUEST_COUNT];
+    uint8_t target_mid[TBX_J1708_REQUEST_CAPACITY];
     uint8_t priority; /* 1..8; priority8 is the conservative test policy. */
     bool inverted_de21_attested;
     /* Parked-only, one outstanding PID at a time; 0 start_pid means first PID. */
@@ -46,7 +46,7 @@ typedef struct tbx_j1708_active {
     void *context;
     bool configured, tx_active, work_mode,production_mode;
     uint8_t echo_position;
-    uint8_t tx_frame[5];
+    uint8_t tx_frame[6], tx_length;
     uint16_t tx_pid,last_sent_pid;
     uint64_t last_sent_us;
     uint64_t now_us, last_rx_us, tx_started_us, lease_deadline_us;

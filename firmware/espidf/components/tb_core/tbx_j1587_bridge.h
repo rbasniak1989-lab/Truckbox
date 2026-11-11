@@ -8,7 +8,7 @@
 #include "tbx_j1587_passive_full.h"
 #include "tbx_j1708_requests.h"
 
-#define TBX_J1587_DECODER_VERSION "0.2.0-sae-provisional"
+#define TBX_J1587_DECODER_VERSION "0.2.17-sae-provisional"
 
 typedef enum {
     TBX_J1587_FRAME_OK = 0,

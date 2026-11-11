@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "catalog_version": "volvo-fh-e5-0.1.0",
+  "language": "pt-BR",
+  "vehicle_scope": {
+    "manufacturer": "Volvo",
+    "family": "FH Euro 5",
+    "year": 2013
+  },
+  "modules": {
+    "128": "Motor",
+    "130": "Transmissão I-Shift",
+    "136": "Freios ABS/EBS",
+    "140": "Painel de instrumentos",
+    "144": "Controle do veículo"
+  },
+  "fmi": {
+    "0": "Dado acima da faixa operacional",
+    "1": "Dado abaixo da faixa operacional",
+    "2": "Leitura irregular, intermitente ou incorreta",
+    "3": "Tensão acima do normal ou curto para positivo",
+    "4": "Tensão abaixo do normal ou curto para negativo",
+    "5": "Corrente abaixo do normal ou circuito aberto",
+    "6": "Corrente acima do normal ou curto para negativo",
+    "7": "Resposta mecânica inadequada",
+    "8": "Frequência, pulso ou período fora do esperado",
+    "9": "Atualização de dados fora do intervalo esperado",
+    "10": "Taxa de mudança fora do esperado",
+    "11": "Modo de falha não identificado",
+    "12": "Falha do dispositivo eletrônico",
+    "13": "Valor fora de calibração",
+    "14": "Consultar instruções específicas do fabricante",
+    "15": "FMI reservado ou específico; consultar fabricante"
+  },
+  "sources": [
+    {
+      "id": "SAE-J1587-2002",
+      "publisher": "SAE International",
+      "version": "FEB2002",
+      "url": "https://www.sae.org/standards/j1587_200202",
+      "use": "Fatos de protocolo e identificação, paráfrases próprias; norma integral não distribuída."
+    },
+    {
+      "id": "SAE-J1587-2013",
+      "publisher": "SAE International",
+      "version": "JAN2013",
+      "url": "https://www.sae.org/standards/j1587_201301-electronic-data-interchange-microcomputer-systems-heavy-duty-vehicle-applications",
+      "use": "Referência da revisão e extensão da página2; SID estendido nunca implica PSID automaticamente."
+    },
+    {
+      "id": "CAI-2015",
+      "publisher": "Canadian Automotive Instruments",
+      "version": "REGMAP J08generic V2.0 Apr2015",
+      "url": "https://c-a-i.net/DOWNLOADS/REGMAP_J08generic.pdf",
+      "use": "Documentação do fabricante de interface; seus registros Modbus não definem endianness do fio J1587."
+    },
+    {
+      "id": "TRUCKBOX-29OCT",
+      "publisher": "TruckBox",
+      "version": "Validator v2.2 29/10/2026",
+      "path": "firmware/j1708_17pid/PASSIVE.md",
+      "use": "Amostras de valor preservadas no projeto; ZIP NEXIQ original indisponível nesta tarefa."
+    },
+    {
+      "id": "CLOUD-11NOV",
+      "publisher": "TruckBox",
+      "version": "Cloud seq58610/58611 boot306",
+      "path": "firmware/espidf/test_evidence/v0217_cloud_readonly.json",
+      "use": "Consulta somente leitura confirma bytes de valor do motor e ABS."
+    },
+    {
+      "id": "VOLVO-VN-2007",
+      "publisher": "Volvo Trucks",
+      "version": "Service Manual Group28 MID128 2007 Emissions VN/VHD/VT",
+      "url": "https://www.manualshelf.com/manual/volvo-trucks/volvo-vt/service-manual-english.html",
+      "use": "Documento OEM de outra família. SID18 é descrito como válvula do separador; não comprova aplicação ao FH Euro5 2013."
+    },
+    {
+      "id": "OPERATOR-REQUEST",
+      "publisher": "Operador TruckBox",
+      "version": "Requisitos desta tarefa",
+      "use": "Interpretações candidatas fornecidas pelo operador; não é confirmação OEM."
+    }
+  ],
+  "definitions": [
+    {
+      "manufacturer": "Volvo",
+      "family": "FH Euro 5",
+      "year_from": 2013,
+      "year_to": 2013,
+      "mid": 128,
+      "identifier_type": "SID",
+      "identifier": 18,
+      "fmi": 5,
+      "definition_version": "volvo-fh-e5-0.1.0",
+      "module": "Motor",
+      "component": "Circuito de detecção/separação de água no combustível — componente a confirmar",
+      "description_pt": "Circuito do sensor de água no combustível: corrente baixa ou circuito aberto (descrição candidata).",
+      "driver_pt": "O código aponta um problema elétrico no circuito de detecção/separação. Ele não confirma água no diesel. O componente exato depende da ECU e do chassi.",
+      "possible_causes": [
+        "Conector ou chicote interrompido",
+        "Mau contato no circuito",
+        "Sensor ou válvula do separador, conforme aplicação"
+      ],
+      "recommended_checks": [
+        "Registrar código e estado antes de qualquer intervenção",
+        "Conferir chicote e conector com o veículo estacionado",
+        "Confirmar pelo chassi se SID18 se refere à válvula ou ao sensor antes de substituir peças"
+      ],
+      "sources": [
+        "TRUCKBOX-29OCT",
+        "CLOUD-11NOV",
+        "OPERATOR-REQUEST",
+        "VOLVO-VN-2007"
+      ],
+      "confidence": "CANDIDATE_CONFLICTING_OEM_APPLICABILITY",
+      "oem_confirmed": false,
+      "severity": "UNCLASSIFIED"
+    },
+    {
+      "manufacturer": "Volvo",
+      "family": "FH Euro 5",
+      "year_from": 2013,
+      "year_to": 2013,
+      "mid": 136,
+      "identifier_type": "SID",
+      "identifier": 2,
+      "fmi": 5,
+      "definition_version": "volvo-fh-e5-0.1.0",
+      "module": "Freios ABS/EBS",
+      "component": "Circuito do sensor de velocidade da roda dianteira direita — confirmar configuração ABS/EBS",
+      "description_pt": "Corrente baixa ou circuito aberto no sensor de velocidade da roda dianteira direita (candidato por configuração).",
+      "driver_pt": "A central de freios registrou uma falha elétrica no circuito identificado como SID2. Confirmar a posição da roda e a configuração da central.",
+      "possible_causes": [
+        "Conector ou fio interrompido",
+        "Mau contato",
+        "Defeito no sensor ou circuito de entrada"
+      ],
+      "recommended_checks": [
+        "Conferir código completo e identificação da central ABS/EBS",
+        "Inspecionar visualmente chicote e conector sem realizar comandos de atuação",
+        "Consultar procedimento do fabricante para o chassi antes de medir ou substituir"
+      ],
+      "sources": [
+        "CLOUD-11NOV",
+        "OPERATOR-REQUEST",
+        "SAE-J1587-2002"
+      ],
+      "confidence": "CANDIDATE_ABS_CONFIGURATION_REQUIRED",
+      "oem_confirmed": false,
+      "severity": "UNCLASSIFIED"
+    },
+    {
+      "manufacturer": "Volvo",
+      "family": "FH Euro 5",
+      "year_from": 2013,
+      "year_to": 2013,
+      "mid": 130,
+      "identifier_type": "PID",
+      "identifier": 37,
+      "fmi": 1,
+      "definition_version": "volvo-fh-e5-0.1.0",
+      "module": "Transmissão I-Shift",
+      "component": "Pressão pneumática da transmissão",
+      "description_pt": "Pressão de ar da transmissão abaixo da faixa operacional.",
+      "driver_pt": "A central da transmissão informou pressão abaixo da faixa. O código não identifica sozinho a causa mecânica.",
+      "possible_causes": [
+        "Pressão de alimentação insuficiente",
+        "Vazamento ou restrição",
+        "Sensor, alimentação elétrica ou leitura incorreta"
+      ],
+      "recommended_checks": [
+        "Comparar PID37 e pressões dos circuitos de ar com dados válidos",
+        "Registrar momento, estado ativo/inativo e contador",
+        "Seguir o diagnóstico da I-Shift aplicável ao chassi"
+      ],
+      "sources": [
+        "SAE-J1587-2002",
+        "OPERATOR-REQUEST"
+      ],
+      "confidence": "SAE_COMPONENT_CANDIDATE_VOLVO",
+      "oem_confirmed": false,
+      "severity": "UNCLASSIFIED"
+    }
+  ],
+  "unknown_policy": {
+    "description_pt": "Significado específico OEM desconhecido; conservar código original e FMI genérico.",
+    "severity": "UNCLASSIFIED",
+    "oem_confirmed": false
+  }
+}

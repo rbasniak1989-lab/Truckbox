@@ -18,7 +18,7 @@ typedef struct {
     uint32_t raw_unsigned;
     /* For binary statuses, each field is: 0=off, 1=on, 2=error,
      * 3=not available; index 0 = bits 1-2, index 3 = bits 7-8. */
-    uint8_t status_fields[4];
+    uint8_t status_fields[8], status_count;
     bool numeric;
     bool bitmapped;
     double value;

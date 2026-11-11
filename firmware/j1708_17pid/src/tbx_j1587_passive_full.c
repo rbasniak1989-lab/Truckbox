@@ -53,7 +53,7 @@ static bool parse_dtcs(const uint8_t *bytes, uint8_t count,
         dtc->has_occurrences=(flags & 0x80u)!=0;
         dtc->active=(flags & 0x40u)==0;
         dtc->page2=(flags & 0x20u)==0;
-        dtc->sid=!dtc->page2 && (flags & 0x10u)!=0;
+        dtc->sid=(flags & 0x10u)!=0;
         dtc->identifier=(uint16_t)(identifier+(dtc->page2?256u:0u));
         dtc->fmi=(uint8_t)(flags&0x0fu);
         if (dtc->has_occurrences) {

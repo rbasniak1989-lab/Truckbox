@@ -54,12 +54,12 @@ jobs:
           sed -i 's/item.findValue(keys, depth + 1)/item.findValue(wantedKeys, depth + 1)/g' "$FILE"
 
       - name: Build debug APKs
-        run: gradle --no-daemon --stacktrace :app:assembleDebug :multimedia:assembleDebug
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug :multimedia:assembleDebug
 
       - name: Upload Motorista APK
         uses: actions/upload-artifact@v4
         with:
-          name: TruckBox-Motorista-v0.6.1-debug
+          name: TruckBox-Motorista-v0.6.2-diagnostics-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

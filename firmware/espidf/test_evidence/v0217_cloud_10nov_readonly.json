@@ -1,0 +1,166 @@
+{
+  "scope": "Read-only extraction, original value bytes; no full NEXIQ ZIP replay.",
+  "cloud_samples": [
+    {
+      "seq": 50193,
+      "ts": "2026-11-10 23:59:16.629+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-10T23:59:16.629Z",
+        "seq": 50193,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 290,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            1,
+            144
+          ],
+          "128": [
+            "F780",
+            4,
+            140
+          ],
+          "155": [
+            "FCDB",
+            7,
+            128
+          ],
+          "192": [
+            "FE22CFFC0405F60C1AF60419F649",
+            66,
+            216
+          ],
+          "194": [
+            "12B501",
+            0,
+            128
+          ]
+        },
+        "uptime_ms": 4980439,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "98": "%",
+          "106": "kPa absolute",
+          "128": "raw",
+          "155": "raw",
+          "192": "raw",
+          "194": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "j1587_quality": {
+          "192": "SEM_DECODIFICACAO"
+        },
+        "j1587_sensors": {
+          "98": [
+            100,
+            7,
+            128,
+            "C8"
+          ],
+          "106": [
+            93.096,
+            8,
+            128,
+            "36"
+          ]
+        },
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 50192,
+      "ts": "2026-11-10 23:59:16.615+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-10T23:59:16.615Z",
+        "seq": 50192,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 290,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            223
+          ],
+          "83": [
+            "7F",
+            0,
+            128
+          ],
+          "128": [
+            "AC80",
+            7,
+            144
+          ],
+          "194": [
+            "0235",
+            14,
+            136
+          ],
+          "251": [
+            "203B14",
+            1,
+            140
+          ],
+          "252": [
+            "280B29",
+            1,
+            140
+          ]
+        },
+        "uptime_ms": 4980425,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "83": "raw",
+          "96": "%",
+          "128": "raw",
+          "171": "C",
+          "194": "raw",
+          "245": "km",
+          "249": "revolutions",
+          "251": "raw",
+          "252": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "j1587_sensors": {
+          "96": [
+            86.5,
+            1,
+            140,
+            "AD"
+          ],
+          "171": [
+            13.88888888888889,
+            1,
+            140,
+            "E400"
+          ],
+          "245": [
+            1202668.403904,
+            8,
+            140,
+            "8B077200"
+          ],
+          "249": [
+            73728000,
+            59,
+            128,
+            "00200100"
+          ]
+        },
+        "schema_version": 2
+      }
+    }
+  ]
+}

@@ -45,6 +45,17 @@ static tbx_j1587_observation_quality_t passive_quality(tbx_passive_quality_t q)
 static const char *requested_name(uint16_t pid)
 {
     switch (pid) {
+    case 90:return "Temperatura do oleo PTO";
+    case 93:return "Torque de saida do motor";
+    case 94:return "Pressao de alimentacao de combustivel";
+    case 107:return "Restricao do filtro de ar";
+    case 153:return "Pressao interna do carter";
+    case 154:return "Entradas e saidas auxiliares #2";
+    case 161:return "Rotacao do eixo de entrada";
+    case 182:return "Combustivel parcial ECU (nao zera por viagem TruckBox)";
+    case 188:return "Rotacao nominal de marcha lenta";
+    case 244:return "Distancia parcial ECU (nao zera por viagem TruckBox)";
+    case 439:return "Pressao estendida do turbo #1";
     case 26: return "Percentual estimado da ventoinha";
     case 31: return "Posicao range";
     case 32: return "Posicao splitter";

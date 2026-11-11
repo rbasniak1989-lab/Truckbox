@@ -37,7 +37,8 @@ typedef struct {
     uint32_t j1708_timeout_ms, j1708_intervals_ms[17];
     uint32_t j1708_auto_intervals_ms[17],j1708_launch_intervals_ms[17];
     uint8_t j1708_local_mid,j1708_targets[17];
-    bool j1708_auto_enabled,j1708_topology_attested;
+    bool j1708_auto_enabled,j1708_topology_attested,j1708_expansion_enabled;
+    uint32_t j1708_stop_dwell_s,j1708_parked_capture_s;
     bool j1587_odometer_validated, j1587_fuel250_validated;
     uint8_t j1587_odometer_mid,j1587_fuel250_mid;
     uint64_t sequence_floor;

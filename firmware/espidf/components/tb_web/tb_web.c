@@ -638,7 +638,7 @@ esp_err_t tb_web_start(void)
     }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 10240;
-    config.max_uri_handlers = 32;
+    config.max_uri_handlers = 40;
     config.max_open_sockets = 6;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 8;

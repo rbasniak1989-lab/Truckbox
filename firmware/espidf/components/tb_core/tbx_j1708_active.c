@@ -1,6 +1,7 @@
 #include "tbx_j1708_active.h"
 #include <string.h>
 #include <stdio.h>
+#include "tbx_j1708_policy.h"
 
 static void event(tbx_j1708_active_t *c, const char *name, uint16_t pid, const char *detail)
 {
@@ -44,6 +45,11 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *c, const tbx_j1708_active_co
     c->scan_start_index = (cfg->sequential_scan || cfg->single_shot) ? scan_start_index : 0;
     c->scan_budget = cfg->single_shot?1:cfg->sequential_scan ? (uint8_t)(TBX_J1708_REQUEST_COUNT - scan_start_index) : 0;
     c->config=*cfg;
+    for(unsigned i=17;i<TBX_J1708_REQUEST_CAPACITY;i++){
+        uint8_t target=cfg->target_mid[i]?cfg->target_mid[i]:tbx_j1708_candidate_policy()[i-17].mid;
+        if(target<128 || target==cfg->local_mid)return false;
+        c->config.target_mid[i]=target;
+    }
     /* Conservative test policy: never reduce the idle guard below5ms.
      * (10+2*priority) bit times implements a priority-dependent minimum;
      * the larger guard gives the already-present nodes additional time. */
@@ -186,7 +192,7 @@ void tbx_j1708_active_note_link_error(tbx_j1708_active_t *c, const char *reason)
     if (was_tx) c->scheduler->pending=TBX_J1708_NO_PENDING;
     /* Retry the disputed PID only after a new idle guard AND existing spacing.
      * Do not wrap away from a failed request or transmit into the same burst. */
-    for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
+    for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)
         if(c->scheduler->pids[i].pid==c->tx_pid){c->scheduler->cursor=(uint8_t)i;
             if(c->scheduler->periodic)c->scheduler->pids[i].next_due_ms=(uint32_t)(c->now_us/1000u);}
     c->retry_after_us=c->now_us+20000u+
@@ -206,20 +212,21 @@ void tbx_j1708_active_note_link_error(tbx_j1708_active_t *c, const char *reason)
 static bool send_request(uint16_t pid, void *context)
 {
     tbx_j1708_active_t *c=context;
-    unsigned index=TBX_J1708_REQUEST_COUNT;
-    for (unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
+    unsigned index=TBX_J1708_REQUEST_CAPACITY;
+    for (unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)
         if (c->scheduler->pids[i].pid==pid) {index=i;break;}
-    if (index==TBX_J1708_REQUEST_COUNT || pid>255u) return false;
-    c->tx_frame[0]=c->config.local_mid;
-    c->tx_frame[1]=128; /* Proven component-specific request PID. */
-    c->tx_frame[2]=(uint8_t)pid;
-    c->tx_frame[3]=c->config.target_mid[index];
-    c->tx_frame[4]=(uint8_t)(0u-c->tx_frame[0]-c->tx_frame[1]-c->tx_frame[2]-c->tx_frame[3]);
+    if(index==TBX_J1708_REQUEST_CAPACITY || pid>511u)return false;
+    size_t position=0;c->tx_frame[position++]=c->config.local_mid;
+    if(pid>255u)c->tx_frame[position++]=255; /* PID384, SAE A.384: page-2 targeted read. */
+    c->tx_frame[position++]=128;c->tx_frame[position++]=(uint8_t)pid;
+    c->tx_frame[position++]=c->config.target_mid[index];
+    uint8_t sum=0;for(size_t j=0;j<position;j++)sum=(uint8_t)(sum+c->tx_frame[j]);
+    c->tx_frame[position++]=(uint8_t)(0u-sum);c->tx_length=(uint8_t)position;
     c->tx_pid=pid;
     c->echo_position=0;
     c->tx_started_us=c->now_us;
     c->tx_active=true;
-    const tbx_j1708_tx_result_t result=c->ops.begin_tx(c->tx_frame,sizeof(c->tx_frame),c->context);
+    const tbx_j1708_tx_result_t result=c->ops.begin_tx(c->tx_frame,c->tx_length,c->context);
     if(result==TBX_J1708_TX_DEFERRED){
         c->tx_active=false;
         c->scheduler->send_deferred=true;
@@ -261,7 +268,7 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
     }
     if (!c->scheduler->armed) return;
     uint32_t previous_timeouts=c->scheduler->timeout_total;
-    uint16_t pending_pid=c->scheduler->pending<TBX_J1708_REQUEST_COUNT?
+    uint16_t pending_pid=c->scheduler->pending<TBX_J1708_REQUEST_CAPACITY?
         c->scheduler->pids[c->scheduler->pending].pid:0;
     /* Deadline processing is independent of bus availability; a busy bus
      * cannot be mistaken for a failed send or suppress response timeouts. */
@@ -323,7 +330,7 @@ void tbx_j1708_active_note_rx(tbx_j1708_active_t *c, const uint8_t *bytes, size_
             tbx_j1708_active_note_link_error(c,detail);
             return;
         }
-        if (++c->echo_position==sizeof(c->tx_frame)) {
+        if (++c->echo_position==c->tx_length) {
             ++c->echo_ok;
             tbx_j1708_field_echo(c);
             if(!c->work_mode)c->scheduler->link_error_count=0; /* Travel resets after matching reply. */
@@ -336,7 +343,7 @@ void tbx_j1708_active_note_rx(tbx_j1708_active_t *c, const uint8_t *bytes, size_
 bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t pid, uint64_t now_us)
 {
     if (!c || !c->scheduler || !c->scheduler->armed || c->tx_active ||
-        c->scheduler->pending>=TBX_J1708_REQUEST_COUNT) return false;
+        c->scheduler->pending>=TBX_J1708_REQUEST_CAPACITY) return false;
     if (now_us >= c->lease_deadline_us) {
         ++c->lease_expirations;
         tbx_j1708_active_stop(c, "AUTHORIZATION_LEASE_EXPIRED");
@@ -357,7 +364,7 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
 
 bool tbx_j1708_active_is_tx_echo(const tbx_j1708_active_t *c, const uint8_t *frame, size_t length, uint64_t now_us)
 {
-    return c && frame && c->echo_position==sizeof(c->tx_frame) && length==sizeof(c->tx_frame) &&
+    return c && frame && c->tx_length>=5 && c->echo_position==c->tx_length && length==c->tx_length &&
         now_us>=c->tx_started_us && now_us-c->tx_started_us<=UINT64_C(30000) &&
-        memcmp(frame,c->tx_frame,sizeof(c->tx_frame))==0;
+        memcmp(frame,c->tx_frame,c->tx_length)==0;
 }

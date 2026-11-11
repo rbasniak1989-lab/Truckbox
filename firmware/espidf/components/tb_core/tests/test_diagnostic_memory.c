@@ -83,7 +83,7 @@ static void compact_and_pagination(void)
 {
     heap_reset();cJSON *full=cJSON_CreateObject();tb_capture_add_json(full);
     size_t full_bytes=heap_used;
-    cJSON *requests=field(field(full,"j1708"),"requests");assert(cJSON_GetArraySize(field(requests,"stats"))==17);
+    cJSON *requests=field(field(full,"j1708"),"requests");assert(cJSON_GetArraySize(field(requests,"stats"))==TBX_J1708_REQUEST_CAPACITY);
     char *expected=cJSON_PrintUnformatted(full);assert(expected);
     size_t normal_peak=heap_peak;cJSON_free(expected);
     /* Reproduce pressure in the original state print; new path needs no spare cJSON buffer. */
@@ -96,7 +96,7 @@ static void compact_and_pagination(void)
     assert(!strcmp(field(small,"capture_profile")->valuestring,"J1708_ONLY"));
     assert(compact_bytes<full_bytes*2/3);cJSON_Delete(small);assert(!heap_used);
     unsigned seen=0;
-    for(unsigned offset=0;offset<17;offset+=8){
+    for(unsigned offset=0;offset<TBX_J1708_REQUEST_CAPACITY;offset+=8){
         heap_reset();cJSON *page=tb_capture_request_stats_json(offset,8);assert(cJSON_IsTrue(field(page,"ok")));
         cJSON *rows=field(page,"stats");assert(cJSON_GetArraySize(rows)<=8);
         for(int i=0;i<cJSON_GetArraySize(rows);i++){
@@ -105,10 +105,10 @@ static void compact_and_pagination(void)
         }
         assert(heap_peak<full_bytes);cJSON_Delete(page);assert(!heap_used);
     }
-    assert(seen==17);
+    assert(seen==TBX_J1708_REQUEST_CAPACITY);
     heap_reset();cJSON *empty=tb_capture_request_stats_json(UINT32_MAX,UINT32_MAX);assert(field(empty,"count")->valueint==0);cJSON_Delete(empty);
     mutex_available=false;empty=tb_capture_request_stats_json(0,8);assert(cJSON_IsFalse(field(empty,"ok")));cJSON_Delete(empty);mutex_available=true;assert(!heap_used);
-    printf("Production diagnostics native cJSON: full tree %zu bytes; old print peak %zu; compact tree %zu (%.1f%% smaller); 17 stats fetched in pages <=8\n",full_bytes,normal_peak,compact_bytes,100.0*(full_bytes-compact_bytes)/full_bytes);
+    printf("Production diagnostics native cJSON: full tree %zu bytes; old print peak %zu; compact tree %zu (%.1f%% smaller); 27 stats fetched in pages <=8\n",full_bytes,normal_peak,compact_bytes,100.0*(full_bytes-compact_bytes)/full_bytes);
 }
 static cJSON *batch(void)
 {

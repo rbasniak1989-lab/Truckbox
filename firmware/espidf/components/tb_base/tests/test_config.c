@@ -11,6 +11,7 @@
 static char *persisted;
 static char *pending;
 static char *extension_saved,*extension_pending,*auto_saved,*auto_pending;
+static char *extra_saved,*extra_pending;
 static bool target_mac;
 static esp_err_t flash_error;
 static esp_err_t write_error;
@@ -67,6 +68,10 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v217")){
+        if(!extra_saved)return ESP_ERR_NVS_NOT_FOUND;
+        size_t n=strlen(extra_saved)+1;if(value){assert(*size>=n);memcpy(value,extra_saved,n);}*size=n;return ESP_OK;
+    }
     if(!strcmp(key,"v216")){
         if(!auto_saved)return ESP_ERR_NVS_NOT_FOUND;
         size_t n=strlen(auto_saved)+1;if(value){assert(*size>=n);memcpy(value,auto_saved,n);}*size=n;return ESP_OK;
@@ -92,6 +97,7 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v217")){if(write_error!=ESP_OK)return write_error;free(extra_pending);extra_pending=strdup(value);assert(extra_pending);return ESP_OK;}
     if(!strcmp(key,"v216")){if(write_error!=ESP_OK)return write_error;free(auto_pending);auto_pending=strdup(value);assert(auto_pending);return ESP_OK;}
     if(!strcmp(key,"v212")){if(write_error!=ESP_OK)return write_error;free(extension_pending);extension_pending=strdup(value);assert(extension_pending);return ESP_OK;}
     assert(!strcmp(key,"config"));
@@ -107,6 +113,7 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if(extra_pending){free(extra_saved);extra_saved=extra_pending;extra_pending=NULL;}
     if(auto_pending){free(auto_saved);auto_saved=auto_pending;auto_pending=NULL;}
     if(extension_pending){free(extension_saved);extension_saved=extension_pending;extension_pending=NULL;}
     free(persisted);
@@ -132,6 +139,7 @@ static void clear_storage(void)
 {
     free(persisted);
     free(pending);free(extension_saved);free(extension_pending);extension_saved=extension_pending=NULL;
+    free(extra_saved);free(extra_pending);extra_saved=extra_pending=NULL;
     free(auto_saved);free(auto_pending);auto_saved=auto_pending=NULL;target_mac=false;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;

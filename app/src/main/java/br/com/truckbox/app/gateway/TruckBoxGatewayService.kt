@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import br.com.truckbox.app.diagnostics.DiagnosticClient
 import br.com.truckbox.app.cloud.TruckBoxCloudClient
 import br.com.truckbox.app.operations.OperationsStore
 import br.com.truckbox.app.preferences.TruckBoxPreferences
@@ -54,6 +55,13 @@ class TruckBoxGatewayService : Service(), LocationListener {
         scope.launch { liveLoop() }
         scope.launch { gpsCloudLoop() }
         scope.launch { operationalSyncLoop() }
+        scope.launch {
+            val diagnostics = DiagnosticClient(this@TruckBoxGatewayService, prefs)
+            while (currentCoroutineContext().isActive) {
+                diagnostics.flushOneBoundary() // Only queued trip events; never enables J1708.
+                delay(10000)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY

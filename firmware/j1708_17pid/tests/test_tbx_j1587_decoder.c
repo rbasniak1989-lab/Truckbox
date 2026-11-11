@@ -28,6 +28,15 @@ int main(void) {
     check(235,k,4,192.8,0.0001);
     check(236,l,4,922*0.473176473,0.000001);
     check(250,m,4,62791*0.473176473,0.000001);
+    /* New scales are SAE-reference synthetic vectors, not fabricated field readings. */
+    const uint8_t negative[]={0xfe},negative16[]={0x00,0xff},fifty[]={50},shaft[]={0xa0,0x0f},extended[]={0x40,0x06},tripkm[]={10,0,0,0};
+    check(93,negative,1,-54.2,0.0001);check(94,fifty,1,1.725,0.0001);
+    check(107,fifty,1,2.49,0.0001);check(153,negative16,2,-2.0,0.0001);
+    check(161,shaft,2,1000,0.0001);check(182,shaft,2,4000*0.473176473,0.000001);
+    check(244,tripkm,4,1.609344,0.000001);check(439,extended,2,2.0,0.0001);
+    tbx_j1587_decoded_t auxiliary;const uint8_t aux[]={0xe4,0x1b};
+    assert(tbx_j1587_decode(128,154,aux,2,&auxiliary) && auxiliary.status_count==8);
+    for(unsigned q=0;q<8;q++)assert(auxiliary.status_fields[q]==((0x1be4u>>(2*q))&3u));
     tbx_j1587_decoded_t d34,d62,d63,invalid;
     const uint8_t zero[]={0x00}, na[]={0xFF};
     assert(tbx_j1587_decode(130,34,zero,1,&d34) && d34.bitmapped);

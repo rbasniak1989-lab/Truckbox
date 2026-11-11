@@ -1,0 +1,4 @@
+# Source preparation only. No function is deployed by firmware build/push.
+[functions.truckbox-diagnostics]
+verify_jwt = false
+# Device UID/token SHA-256 and active truck scope are validated in the handler.

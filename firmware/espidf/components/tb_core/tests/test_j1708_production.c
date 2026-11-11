@@ -8,14 +8,15 @@ typedef struct {
     tbx_j1708_active_t c;tbx_j1708_request_scheduler_t s;tbx_j1708_auto_t automatic;
     tbx_j1708_auto_env_t env;tbx_transmission_t transmission;
     uint64_t now,last_write;unsigned writes,aborts,credit;
-    bool no_reply,bad_echo,busy;uint8_t tx[5];
+    bool no_reply,bad_echo,busy;uint8_t tx[6],tx_length;
 }fixture_t;
 static tbx_j1708_tx_result_t write_tx(const uint8_t *bytes,size_t n,void *ctx)
 {
-    fixture_t *f=ctx;if(f->busy)return TBX_J1708_TX_DEFERRED;assert(n==5 && bytes[0]==172 && bytes[1]==128);
-    unsigned checksum=0;for(unsigned i=0;i<5;i++)checksum+=bytes[i];assert(!(checksum&255));
+    fixture_t *f=ctx;if(f->busy)return TBX_J1708_TX_DEFERRED;assert((n==5 || n==6) && bytes[0]==172 && bytes[n==6?2:1]==128);
+    if(n==6){const uint8_t expected[]={0xac,0xff,0x80,0xb7,0x80,0x9e};assert(!memcmp(bytes,expected,6));}
+    unsigned checksum=0;for(unsigned i=0;i<n;i++)checksum+=bytes[i];assert(!(checksum&255));
     if(f->writes)assert(f->now-f->last_write>=500000);
-    f->last_write=f->now;++f->writes;memcpy(f->tx,bytes,5);return TBX_J1708_TX_STARTED;
+    f->last_write=f->now;++f->writes;memcpy(f->tx,bytes,n);f->tx_length=(uint8_t)n;return TBX_J1708_TX_STARTED;
 }
 static void abort_tx(void *ctx){++((fixture_t *)ctx)->aborts;}
 static void initialize(fixture_t *f)
@@ -31,12 +32,12 @@ static void step(fixture_t *f)
     while(f->credit>=100){tbx_j1708_field_note_frame_kind(&f->c,128,TBX_RX_VALID,f->now);f->credit-=100;}
     if(f->c.tx_active){
         if(f->bad_echo){uint8_t wrong=0;tbx_j1708_active_note_rx(&f->c,&wrong,1,f->now);}
-        else tbx_j1708_active_note_rx(&f->c,f->tx,5,f->now);
+        else tbx_j1708_active_note_rx(&f->c,f->tx,f->tx_length,f->now);
     }
-    if(!f->no_reply && f->s.pending<17 && !f->c.tx_active && f->now-f->c.tx_started_us>=210000){
+    if(!f->no_reply && f->s.pending<TBX_J1708_REQUEST_CAPACITY && !f->c.tx_active && f->now-f->c.tx_started_us>=210000){
         unsigned i=f->s.pending;
         assert(!tbx_j1708_active_note_response(&f->c,255,f->s.pids[i].pid,f->now));
-        assert(tbx_j1708_active_note_response(&f->c,f->env.targets[i],f->s.pids[i].pid,f->now));
+        assert(tbx_j1708_active_note_response(&f->c,f->c.config.target_mid[i],f->s.pids[i].pid,f->now));
     }
     tbx_j1708_auto_tick(&f->automatic,&f->c,&f->env,f->transmission.launch,f->now);
     tbx_j1708_active_tick(&f->c,f->now);
@@ -62,6 +63,15 @@ static void automatic_and_cadences(void)
     seconds(&f,60);assert(f.writes==writes);
     /* Reboot reloads the persisted enabled policy, not a volatile test lease. */
     initialize(&f);seconds(&f,45);assert(f.c.production_mode && f.writes);
+}
+static void expansion_in_one_scheduler(void)
+{
+    fixture_t f;initialize(&f);f.env.extended=true;seconds(&f,180);
+    assert(f.c.production_mode && f.s.answered_total && !f.s.timeout_total);
+    for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)assert(f.s.pids[i].sent && f.s.pids[i].answered);
+    assert(f.s.pids[26].pid==439 && f.c.config.target_mid[26]==128);
+    /* Requested scopes remain candidate, never external electrical evidence. */
+    assert(!f.c.physical_validated && !f.c.field.confirmed);
 }
 static void launch_transition_with_pending_request(void)
 {
@@ -126,7 +136,7 @@ static void transmission_launch_and_candidates(void)
 }
 int main(void)
 {
-    automatic_and_cadences();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
+    automatic_and_cadences();expansion_in_one_scheduler();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
     puts("Production J1708: automatic boot/reboot, all17, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
     return 0;
 }

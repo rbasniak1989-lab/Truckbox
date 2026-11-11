@@ -11,8 +11,8 @@ android {
         applicationId = "br.com.truckbox.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 61
-        versionName = "0.6.1-driver-gateway"
+        versionCode = 62
+        versionName = "0.6.2-driver-diagnostics"
     }
 
     buildFeatures {
@@ -26,6 +26,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
 

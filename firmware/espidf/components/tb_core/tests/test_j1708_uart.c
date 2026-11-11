@@ -43,7 +43,7 @@ static int uart_set_pin(int port,int tx,int rx,int rts,int cts){
     return ESP_OK;
 }
 static int uart_tx_chars(int port,const char *bytes,unsigned n){
-    assert(port==1 && bytes && n==5);++writes;return (int)n;
+    assert(port==1 && bytes && (n==5 || n==6));++writes;return (int)n;
 }
 #include "capture_uart_under_test.h"
 static void reset(void){
@@ -73,6 +73,10 @@ int main(void){
     reset();assert(request_begin_tx(frame,5,NULL)==TBX_J1708_TX_STARTED);
     assert(writes==1 && s.last_tx_uart_us==now && threshold==1);
     request_abort_tx(NULL);assert(releases && threshold==64);
+    const uint8_t extended[]={0xac,0xff,0x80,0xb7,0x80,0x9e};reset();
+    assert(request_begin_tx(extended,sizeof(extended),NULL)==TBX_J1708_TX_STARTED && writes==1);
+    request_abort_tx(NULL);assert(releases && threshold==64);
+    uint8_t invalid[6]={0xac,0xff,0xc3,0,0,0};reset();assert(request_begin_tx(invalid,6,NULL)==TBX_J1708_TX_FAULT && !writes);
     puts("Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed");
     return 0;
 }
