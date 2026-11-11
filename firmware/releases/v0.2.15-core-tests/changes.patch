@@ -223,7 +223,7 @@ index 0000000..0120ce6
 +Rollback preservado: aplicação OTA anterior **0.2.14/0.2.13/0.2.12**, manualmente e somente após autorização, sem apagar NVS/flash ou gravar tabela de partições. A 0.2.14 também restaura o comportamento antigo da proteção. Para 0.2.11 ou anterior, drenar a fila e seguir o procedimento de compatibilidade de armazenamento da 0.2.12. Não executar scripts USB que gravem partições como se fossem atualização OTA. O bootloader mantém rollback habilitado, que cobre falha de inicialização; isso não substitui reversão manual de regressão operacional.
 diff --git a/firmware/espidf/TESTES_v0.2.15.md b/firmware/espidf/TESTES_v0.2.15.md
 new file mode 100644
-index 0000000..af70967
+index 0000000..e99f411
 --- /dev/null
 +++ b/firmware/espidf/TESTES_v0.2.15.md
 @@ -0,0 +1,83 @@
@@ -262,7 +262,7 @@ index 0000000..af70967
 +| I — resposta espontânea | MID/PID igual dentro da janela pode contar uma candidata; segunda contagem é rejeitada; MID errado não pareia; nenhum teste transforma o resultado em comprovação externa. PASS |
 +| J — baseline antigo | `before_frames` histórico alterado para 1/UINT32_MAX não afeta a proteção atual. Referência atrasada é descartada/reaprendida. PASS |
 +
-+Também passaram: relógio começando em zero, reversão do monotônico bloqueando TX, referência de três janelas contíguas, janela atrasada não contada como três janelas, trava de falha sem rearme após recuperação, manutenção das cadências/MIDs e de 1,2 s entre pedidos.
++Também passaram: relógio começando em zero, primeiro quadro timestampado antes da inicialização concorrente do monitor sem falso alarme de relógio, reversão real do monotônico bloqueando TX, referência de três janelas contíguas, janela atrasada não contada como três janelas, trava de falha sem rearme após recuperação, manutenção das cadências/MIDs e de 1,2 s entre pedidos.
 +
 +## UART e diagnóstico — código real exercitado
 +
@@ -737,10 +737,10 @@ index 2955711..51334ad 100644
  void tbx_j1708_field_sent(struct tbx_j1708_active *);
 diff --git a/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c
 new file mode 100644
-index 0000000..0030bd5
+index 0000000..b1c0136
 --- /dev/null
 +++ b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,208 @@
 +#include "tbx_j1708_active.h"
 +#include <math.h>
 +#include <string.h>
@@ -771,15 +771,19 @@ index 0000000..0030bd5
 +static void start(tbx_j1708_rx_guard_t *g,uint64_t now)
 +{
 +    if(g->initialized)return;
-+    g->initialized=true;g->start_us=g->last_observed_us=now;
++    g->initialized=true;g->start_us=now;
 +    g->boundary=g->total;
 +}
 +void tbx_j1708_rx_note(tbx_j1708_active_t *c,tbx_rx_kind_t kind,uint64_t now)
 +{
 +    if(!c)return;
 +    tbx_j1708_rx_guard_t *g=&c->rx_guard;start(g,now);
-+    if(now<g->last_observed_us)g->clock_fault=true;
++    /* The first frame may have been timestamped just before a concurrent
++     * monitor tick initialized the guard while the RX task waited for its lock.
++     * Compare RX timestamps with RX timestamps, not that initialization tick. */
++    if(g->observed && now<g->last_observed_us)g->clock_fault=true;
 +    else g->last_observed_us=now;
++    g->observed=true;
 +    switch(kind){
 +        case TBX_RX_VALID:++g->total.valid;g->last_valid_us=now;g->seen_valid=true;break;
 +        case TBX_RX_CHECKSUM:++g->total.checksum;break;
@@ -947,7 +951,7 @@ index 0000000..0030bd5
 +}
 diff --git a/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.h b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.h
 new file mode 100644
-index 0000000..06c8c82
+index 0000000..96c2c1e
 --- /dev/null
 +++ b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.h
 @@ -0,0 +1,60 @@
@@ -997,7 +1001,7 @@ index 0000000..06c8c82
 +    tbx_rx_window_t reference[TBX_RX_REFERENCE_WINDOWS],last_window;
 +    uint64_t start_us,last_valid_us,last_observed_us;
 +    uint8_t reference_count,reference_cursor,suspect_streak;
-+    bool initialized,seen_valid,clock_fault,warned,fault_latched,decision_pending;
++    bool initialized,observed,seen_valid,clock_fault,warned,fault_latched,decision_pending;
 +    tbx_guard_cause_t last_failure;
 +    tbx_rx_decision_t decision;
 +} tbx_j1708_rx_guard_t;
@@ -1404,10 +1408,10 @@ index 3237014..42d0db8 100644
      assert(!f.s.armed && f.a.lease_expirations==1);
 diff --git a/firmware/espidf/components/tb_core/tests/test_j1708_rx_guard.c b/firmware/espidf/components/tb_core/tests/test_j1708_rx_guard.c
 new file mode 100644
-index 0000000..05eaa91
+index 0000000..9efac14
 --- /dev/null
 +++ b/firmware/espidf/components/tb_core/tests/test_j1708_rx_guard.c
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,175 @@
 +/* Synthetic clock/bus and labelled reconstruction compatible with HEALTH
 + * aggregates. This is NOT a replay of unavailable 10 s field counters. */
 +#include "tbx_j1708_active.h"
@@ -1554,6 +1558,11 @@ index 0000000..05eaa91
 +    initialize(&f);f.now=0;frame(&f,TBX_RX_VALID);seconds(&f,31,60);
 +    assert(f.a.rx_guard.reference_count==3);
 +    assert(f.a.rx_guard.reference[0].start_us==0);
++    /* First-frame capture preceding monitor initialization is normal lock
++     * ordering, not a backwards hardware clock. Later RX reversal still fails. */
++    initialize(&f);tbx_j1708_rx_tick(&f.a,f.now+100);
++    frame(&f,TBX_RX_VALID);assert(!f.a.rx_guard.clock_fault);
++    f.now+=200;tbx_j1708_rx_tick(&f.a,f.now);assert(!f.a.rx_guard.clock_fault);
 +}
 +static void spontaneous_candidates_and_old_counterexample(void)
 +{
@@ -1652,29 +1661,32 @@ index 0000000..469865b
 +PASS configuration server errors stay visible without claiming successful save
 diff --git a/firmware/espidf/test_evidence/v0215_build_core.txt b/firmware/espidf/test_evidence/v0215_build_core.txt
 new file mode 100644
-index 0000000..7616729
+index 0000000..e413c5a
 --- /dev/null
 +++ b/firmware/espidf/test_evidence/v0215_build_core.txt
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,32 @@
 +Executing action: all (aliases: build)
 +Running ninja in directory /workspace/work/Truckbox-v0215/firmware/espidf/build-core
 +Executing "ninja all"...
-+[1/9] Performing build step for 'bootloader'
++[1/12] Building C object esp-idf/tb_core/CMakeFiles/__idf_tb_core.dir/tbx_j1708_field.c.obj
++[2/12] Building C object esp-idf/tb_core/CMakeFiles/__idf_tb_core.dir/tbx_j1708_active.c.obj
++[3/12] Building C object esp-idf/tb_core/CMakeFiles/__idf_tb_core.dir/tbx_j1708_rx_guard.c.obj
++[4/12] Performing build step for 'bootloader'
 +[1/1] cd /workspace/work/Truckbox-v0215/firmware/espidf/build-core/bootloader/esp-idf/esptool_py && /workspace/work/idf-tools/python_env/idf5.5_py3.12_env/bin/python /workspace/work/esp-idf-v5.5.2/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /workspace/work/Truckbox-v0215/firmware/espidf/build-core/bootloader/bootloader.bin
 +Bootloader binary size 0x3990 bytes. 0x4670 bytes (55%) free.
-+[2/9] No install step for 'bootloader'
-+[3/9] Completed 'bootloader'
-+[4/9] Building C object esp-idf/tb_core/CMakeFiles/__idf_tb_core.dir/tbx_j1708_field.c.obj
-+[5/9] Linking C static library esp-idf/tb_core/libtb_core.a
-+[6/9] Generating esp-idf/esp_system/ld/sections.ld
-+[7/9] Linking CXX executable truckbox_core.elf
-+[8/9] Generating binary image from built executable
++[5/12] No install step for 'bootloader'
++[6/12] Completed 'bootloader'
++[7/12] Building C object esp-idf/tb_core/CMakeFiles/__idf_tb_core.dir/capture.c.obj
++[8/12] Linking C static library esp-idf/tb_core/libtb_core.a
++[9/12] Generating esp-idf/esp_system/ld/sections.ld
++[10/12] Linking CXX executable truckbox_core.elf
++[11/12] Generating binary image from built executable
 +esptool.py v4.13.0
 +Creating esp32c6 image...
 +Merged 1 ELF section
 +Successfully created esp32c6 image.
 +Generated /workspace/work/Truckbox-v0215/firmware/espidf/build-core/truckbox_core.bin
-+[9/9] cd /workspace/work/Truckbox-v0215/firmware/espidf/build-core/esp-idf/esptool_py && /workspace/work/idf-tools/python_env/idf5.5_py3.12_env/bin/python /workspace/work/esp-idf-v5.5.2/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /workspace/work/Truckbox-v0215/firmware/espidf/build-core/partition_table/partition-table.bin /workspace/work/Truckbox-v0215/firmware/espidf/build-core/truckbox_core.bin
++[12/12] cd /workspace/work/Truckbox-v0215/firmware/espidf/build-core/esp-idf/esptool_py && /workspace/work/idf-tools/python_env/idf5.5_py3.12_env/bin/python /workspace/work/esp-idf-v5.5.2/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /workspace/work/Truckbox-v0215/firmware/espidf/build-core/partition_table/partition-table.bin /workspace/work/Truckbox-v0215/firmware/espidf/build-core/truckbox_core.bin
 +truckbox_core.bin binary size 0x16e500 bytes. Smallest app partition is 0x300000 bytes. 0x191b00 bytes (52%) free.
 +
 +Project build complete. To flash, run:
@@ -2020,7 +2032,7 @@ index 0000000..f9834d5
 +}
 diff --git a/firmware/espidf/test_evidence/v0215_host.txt b/firmware/espidf/test_evidence/v0215_host.txt
 new file mode 100644
-index 0000000..18e74ea
+index 0000000..8a8dc3d
 --- /dev/null
 +++ b/firmware/espidf/test_evidence/v0215_host.txt
 @@ -0,0 +1,95 @@
@@ -2107,7 +2119,7 @@ index 0000000..18e74ea
 +test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
 +
 +----------------------------------------------------------------------
-+Ran 24 tests in 2.816s
++Ran 24 tests in 2.681s
 +
 +OK
 +Offline source: clock=0 virtual_seconds=7200 frames=433624 records=5904 requests=1624 response_candidates=1624 latest=65 RAW_writes=0
@@ -2121,20 +2133,20 @@ index 0000000..18e74ea
 +Host tests passed; ESP32 physical tests remain pending.
 diff --git a/firmware/espidf/test_evidence/v0215_image.json b/firmware/espidf/test_evidence/v0215_image.json
 new file mode 100644
-index 0000000..8a616ce
+index 0000000..39e752b
 --- /dev/null
 +++ b/firmware/espidf/test_evidence/v0215_image.json
 @@ -0,0 +1,12 @@
 +{
 +  "size": 1500416,
-+  "sha256": "3b0a00f707932bc5ab6a7e4ecdd1c40fb9083588a38875e4d717e12c845f4fcc",
++  "sha256": "879c717907aa805a30bfc4824d718b3a92b45ee3d8831be30ea95ddfdc948c3c",
 +  "version": "0.2.15",
 +  "project": "truckbox_core",
 +  "idf": "v5.5.2",
 +  "chip_id": 13,
 +  "flash_mb": 8,
 +  "ota_partition_bytes": 3145728,
-+  "app_elf_sha256": "c169cf762d32465cabb67182f58a5dcfa2fb8b1411556f2054f59a6fe23d92ee",
++  "app_elf_sha256": "b9442d27f9851e9072e804fc42fde2469ee5631dcbeb7d103faf60a465204654",
 +  "partitions_sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832"
 +}
 diff --git a/firmware/espidf/test_evidence/v0215_memory.json b/firmware/espidf/test_evidence/v0215_memory.json

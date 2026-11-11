@@ -2,19 +2,19 @@
 
 Não instalada. Não houve OTA, reset, alteração de configuração, ativação de TX ou deploy. Base 0.2.14 preservada; Link e viagens da Cloud não foram alterados. A aplicação candidata requer aprovação antes de qualquer instalação ou teste no veículo.
 
-Fonte: commit `31f0b482e37be3f6bd945a03c66b0b78894c0ab4`, branch `fix/revb1-v0215-j1708-guard`. ESP32-C6, ESP-IDF 5.5.2, flash 8 MB. Não muda a tabela de partições. A versão funcional v0.1.0-b1 está preservada.
+Fonte: commit `dd8832c1f7f3ac1bc2505455dd3a281e13167b01`, branch `fix/revb1-v0215-j1708-guard`. ESP32-C6, ESP-IDF 5.5.2, flash 8 MB. Não muda a tabela de partições. A versão funcional v0.1.0-b1 está preservada.
 
 | Download | Conteúdo |
 |---|---|
-| [Pacote completo](https://raw.githubusercontent.com/rbasniak1989-lab/Truckbox/fix/revb1-v0215-j1708-guard/firmware/releases/v0.2.15-core-tests/Truckbox_Core_B1_0.2.15_CANDIDATA.zip) | Fontes, Core OTA, bootloader/partições para recuperação, ELF/map, scripts Windows e documentação; 7.756.057 bytes |
+| [Pacote completo](https://raw.githubusercontent.com/rbasniak1989-lab/Truckbox/fix/revb1-v0215-j1708-guard/firmware/releases/v0.2.15-core-tests/Truckbox_Core_B1_0.2.15_CANDIDATA.zip) | Fontes, Core OTA, bootloader/partições para recuperação, ELF/map, scripts Windows e documentação; 7.756.771 bytes |
 | [Aplicação OTA do Core](https://raw.githubusercontent.com/rbasniak1989-lab/Truckbox/fix/revb1-v0215-j1708-guard/firmware/releases/v0.2.15-core-tests/truckbox_core_0.2.15_ota.bin) | 1.500.416 bytes, somente Core, não gravada |
 | [Fontes completos](truckbox_firmware_source.zip) | `firmware/espidf`, J1708 e J1939, testes, referências e proveniência |
-| [Diff das alterações](changes.patch) | Base 94cd01a → fonte 31f0b48, sem binários |
+| [Diff das alterações](changes.patch) | Base 94cd01a → fonte dd8832c, sem binários |
 | [SHA256](SHA256SUMS.txt) | Conferência dos arquivos publicados |
 
-OTA SHA256: `3b0a00f707932bc5ab6a7e4ecdd1c40fb9083588a38875e4d717e12c845f4fcc`.
+OTA SHA256: `879c717907aa805a30bfc4824d718b3a92b45ee3d8831be30ea95ddfdc948c3c`.
 
-ZIP completo SHA256: `a8121de219592977ef247693b0e42bde0e943b7829e8ecdac6040c62d90816c5`.
+ZIP completo SHA256: `c3903c6a0a7a3387de1fc9ddf6d8d9885321691a31e9eb72b8a54de8d4359a70`.
 
 Leia [a auditoria com a condição antiga e as evidências](../../espidf/REV_B1_0.2.15_AUDITORIA.md), [testes e limites](../../espidf/TESTES_v0.2.15.md) e [changelog](../../espidf/CHANGELOG_v0.2.15.md). As 17 cadências/MIDs não mudam. Respostas permanecem candidatas e a validação operacional permanece indireta.
 

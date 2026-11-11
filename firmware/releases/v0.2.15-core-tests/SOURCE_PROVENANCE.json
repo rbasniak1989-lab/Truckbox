@@ -13,7 +13,7 @@
   "esp_idf": "v5.5.2",
   "development": {
     "branch": "fix/revb1-v0215-j1708-guard",
-    "commit": "31f0b482e37be3f6bd945a03c66b0b78894c0ab4",
+    "commit": "dd8832c1f7f3ac1bc2505455dd3a281e13167b01",
     "dirty": false,
     "integration_base_branch": "feature/revb1-v0214-field-validation",
     "integration_base_commit": "94cd01a7a64f24e742ce27a03ca3b547b340f129",

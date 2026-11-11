@@ -23,7 +23,7 @@
         {
           "offset": "0x20000",
           "file": "images/core/truckbox_core.bin",
-          "sha256": "3b0a00f707932bc5ab6a7e4ecdd1c40fb9083588a38875e4d717e12c845f4fcc",
+          "sha256": "879c717907aa805a30bfc4824d718b3a92b45ee3d8831be30ea95ddfdc948c3c",
           "size": 1500416
         },
         {
@@ -40,23 +40,23 @@
         }
       ],
       "ota_file": "truckbox_core_0.2.15_ota.bin",
-      "ota_sha256": "3b0a00f707932bc5ab6a7e4ecdd1c40fb9083588a38875e4d717e12c845f4fcc",
+      "ota_sha256": "879c717907aa805a30bfc4824d718b3a92b45ee3d8831be30ea95ddfdc948c3c",
       "ota_size": 1500416,
       "debug_symbols": [
         {
           "file": "symbols/core/truckbox_core.elf",
-          "sha256": "c169cf762d32465cabb67182f58a5dcfa2fb8b1411556f2054f59a6fe23d92ee"
+          "sha256": "b9442d27f9851e9072e804fc42fde2469ee5631dcbeb7d103faf60a465204654"
         },
         {
           "file": "symbols/core/truckbox_core.map",
-          "sha256": "c38b9bc3fe332e4a3c9ab7817a9c2b0605db73689054df2e2f6127c2288697cf"
+          "sha256": "8269c5f4d8ff5fd1bfa167bee58834c0c0a458ca211c60050da9e4a65cf542b7"
         }
       ]
     }
   },
   "source": {
     "file": "truckbox_firmware_source.zip",
-    "sha256": "6a2e3946c078455dd8c6db00f89240f72bd02a964f788678da450f04f212c389",
+    "sha256": "40e4aa0b0e4b4cf8954376afb2a37556ed501e4bf4290cf63bfe1ac189f789e3",
     "layout": "firmware/espidf + firmware/j1708_17pid + firmware/j1939"
   }
 }
