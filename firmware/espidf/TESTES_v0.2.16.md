@@ -19,7 +19,7 @@ Executada em 11/11/2026, Linux, ESP-IDF **5.5.2**, ESP32-C6/flash 8 MB. Não for
 | NVS sem espaço/falha de gravação | Nova migração bloqueada; configuração base válida/passiva preservada; política não é tratada como persistida |
 | Boot sem aplicativo/internet | Início após três janelas saudáveis; nenhum parâmetro Wi-Fi/Android participa do controlador |
 | Permanência | Relógio avançado 13 horas, sem renovação de autorização; produção segue ativa, sem expiração de lease |
-| Cadências/prioridade | Todos os 17 respondem, prioridade 31/33 em arrancada, normal/rápido conforme tabela; sem PID duplicado |
+| Cadências/prioridade | Todos os 17 respondem, prioridade 31/33 em arrancada, normal/rápido conforme tabela, inclusive mudança durante um pedido pendente; sem PID duplicado |
 | Limite e arbitragem | Pelo menos 500 ms entre inícios; um pendente; backend ocupado adia sem erro de TX ou perda da leitura passiva |
 | Respostas | MID errado rejeitado; MID/PID/prazo corretos contam candidata; latência registrada; não define validação externa |
 | Falhas | Três timeouts/erros de eco suspendem; sem novas escritas TX no backoff; volta somente após espera e janelas saudáveis novas |
@@ -33,14 +33,14 @@ Persistência é teste do **código real de configuração**, com a API física 
 
 ## Duas horas offline na carga nova
 
-7.200 segundos virtuais, aproximadamente 60 quadros passivos/s, **6.780 requisições e 6.780 candidatas**, janelas aceleradas de 30 s em cada 120 s. Decoders, cache e construtores de registros reais. Autorização/controle e persistência são testados em camadas separadas; os 14 resets abaixo são da camada de arquivos, não restauração de sessão ativa.
+7.200 segundos virtuais, aproximadamente 60 quadros passivos/s, **6.751 requisições e 6.751 candidatas**, janelas aceleradas de 30 s em cada 120 s. Decoders, cache e construtores de registros reais. Autorização/controle e persistência são testados em camadas separadas; os 14 resets abaixo são da camada de arquivos, não restauração de sessão ativa.
 
 | Relógio | Registros | Bytes físicos | Orçamento | Resets simulados | Sincronização |
 |---|---:|---:|---:|---:|---|
-| Sem UTC | 3256 | 1281076 | 1818624 | 14 | 3256 únicos, 3264 entregas incluindo retries; sem duplicação ou válidos pendentes |
-| Com UTC | 3256 | 1379760 | 1818624 | 14 | 3256 únicos, 3264 entregas incluindo retries; sem duplicação ou válidos pendentes |
+| Sem UTC | 3256 | 1281531 | 1818624 | 14 | 3256 únicos, 3264 entregas incluindo retries; sem duplicação ou válidos pendentes |
+| Com UTC | 3256 | 1380052 | 1818624 | 14 | 3256 únicos, 3264 entregas incluindo retries; sem duplicação ou válidos pendentes |
 
-438.780 quadros processados, 65 leituras em cache, **zero gravações RAW contínuas**, zero perda por lotação e erros de escrita no cenário. Menos registros que a versão anterior é consequência da agregação de sucessos, não de reduzir a recepção/pedidos. Todos os sensores passivos e os 17 solicitados aparecem nos registros. Evidências de arquivo isoladas continuam preservadas após ACK e ocupam espaço futuro; não foram apagadas.
+438.751 quadros processados, 65 leituras em cache, **zero gravações RAW contínuas**, zero perda por lotação e erros de escrita no cenário. Menos registros que a versão anterior é consequência da agregação de sucessos, não de reduzir a recepção/pedidos. Todos os sensores passivos e os 17 solicitados aparecem nos registros. Evidências de arquivo isoladas continuam preservadas após ACK e ocupam espaço futuro; não foram apagadas.
 
 Este resultado comprova duas horas **na carga especificada**, não autonomia ilimitada ou em uma flash já cheia. Mais eventos/ocupação anterior podem reduzir a margem. Não há cartão SD habilitado.
 

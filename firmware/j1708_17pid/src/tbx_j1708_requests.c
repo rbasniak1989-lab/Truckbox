@@ -33,7 +33,7 @@ void tbx_j1708_request_production(tbx_j1708_request_scheduler_t *s,const uint32_
         if(initial){
             uint32_t offset=p->pid==31?0:p->pid==33?500:p->pid==34?1000:p->pid==63?1500:p->pid==37?2000:p->pid==32?2500:p->pid==160?3000:4000+i*500;
             p->next_due_ms=now+offset;p->retries=0;
-        }else if(p->period_ms!=before && s->pending!=i){
+        }else if(p->period_ms!=before){
             p->next_due_ms=p->sent?p->last_sent_ms+p->period_ms:now;
         }
     }

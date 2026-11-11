@@ -63,6 +63,19 @@ static void automatic_and_cadences(void)
     /* Reboot reloads the persisted enabled policy, not a volatile test lease. */
     initialize(&f);seconds(&f,45);assert(f.c.production_mode && f.writes);
 }
+static void launch_transition_with_pending_request(void)
+{
+    fixture_t f;initialize(&f);seconds(&f,45);unsigned i=index_of(&f,31);
+    while(f.s.pending!=i)step(&f);
+    assert(f.s.pids[i].period_ms==10000);
+    f.transmission.launch=true;
+    for(unsigned p=0;p<17;p++)f.env.periods[p]=tbx_j1708_production_period(f.s.pids[p].pid,true);
+    unsigned writes=f.writes;
+    tbx_j1708_auto_tick(&f.automatic,&f.c,&f.env,true,f.now);
+    assert(f.s.pending==i && f.writes==writes);
+    assert(f.s.pids[i].next_due_ms==f.s.pids[i].last_sent_ms+2000);
+    unsigned sent=f.s.pids[i].sent;seconds(&f,3);assert(f.s.pids[i].sent>sent);
+}
 static void faults_recovery_and_interlocks(void)
 {
     fixture_t f;initialize(&f);seconds(&f,60);assert(f.c.production_mode);
@@ -113,7 +126,7 @@ static void transmission_launch_and_candidates(void)
 }
 int main(void)
 {
-    automatic_and_cadences();faults_recovery_and_interlocks();transmission_launch_and_candidates();
+    automatic_and_cadences();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
     puts("Production J1708: automatic boot/reboot, all17, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
     return 0;
 }

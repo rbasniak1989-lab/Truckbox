@@ -83,15 +83,15 @@ test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_scri
 test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
 
 ----------------------------------------------------------------------
-Ran 24 tests in 2.690s
+Ran 24 tests in 2.998s
 
 OK
-Offline source: clock=0 virtual_seconds=7200 frames=438780 records=3256 requests=6780 response_candidates=6780 latest=65 RAW_writes=0
-Offline storage: duration=7200s input_records=3256 original_JSON_bytes=2193894 physical_bytes=1281076 budget_bytes=1818624 segments=27 reboots=14 dropped_full=0
-Preserved archive evidence after ACK: 684659 bytes; remains on disk and reduces future offline space until explicit review
+Offline source: clock=0 virtual_seconds=7200 frames=438751 records=3256 requests=6751 response_candidates=6751 latest=65 RAW_writes=0
+Offline storage: duration=7200s input_records=3256 original_JSON_bytes=2193717 physical_bytes=1281531 budget_bytes=1818624 segments=27 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 684812 bytes; remains on disk and reduces future offline space until explicit review
 Reconnect: unique_Cloud_rows=3256 deliveries_including_retries=3264 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
-Offline source: clock=1 virtual_seconds=7200 frames=438780 records=3256 requests=6780 response_candidates=6780 latest=65 RAW_writes=0
-Offline storage: duration=7200s input_records=3256 original_JSON_bytes=2276035 physical_bytes=1379760 budget_bytes=1818624 segments=29 reboots=14 dropped_full=0
-Preserved archive evidence after ACK: 685019 bytes; remains on disk and reduces future offline space until explicit review
+Offline source: clock=1 virtual_seconds=7200 frames=438751 records=3256 requests=6751 response_candidates=6751 latest=65 RAW_writes=0
+Offline storage: duration=7200s input_records=3256 original_JSON_bytes=2275858 physical_bytes=1380052 budget_bytes=1818624 segments=29 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 685189 bytes; remains on disk and reduces future offline space until explicit review
 Reconnect: unique_Cloud_rows=3256 deliveries_including_retries=3264 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
 Host tests passed; ESP32 physical tests remain pending.
