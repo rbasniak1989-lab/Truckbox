@@ -79,7 +79,7 @@ def source_entries(project_root: Path) -> dict[str, Path]:
     # App and read-only Cloud sources are part of the same incremental delivery.
     # Android needs its sibling module/settings; no APK/build or credential files.
     repository=firmware_root.parent
-    for name in ("app","multimedia","cloud/diagnostics","supabase","gradle"):
+    for name in ("app","multimedia","cloud/diagnostics","supabase","gradle","scripts",".github/workflows"):
         directory=repository/name
         if not directory.is_dir():continue
         for path in sorted(directory.rglob("*")):
@@ -87,7 +87,7 @@ def source_entries(project_root: Path) -> dict[str, Path]:
             if not path.is_file() or path.is_symlink() or any(p in EXCLUDED_PARTS or p in {"build",".gradle"} or p.startswith("build-") for p in rel.parts):continue
             if path.suffix.lower() in EXCLUDED_SUFFIXES or path.name.startswith(".env") or path.name=="local.properties":continue
             entries[rel.as_posix()]=path
-    for name in ("build.gradle.kts","settings.gradle.kts","gradle.properties","gradlew","gradlew.bat"):
+    for name in ("build.gradle.kts","settings.gradle.kts","gradle.properties","gradlew","gradlew.bat","README.md"):
         path=repository/name
         if path.is_file():entries[name]=path
     contract = firmware_root / "REV_B1_CODEX_IMPLEMENTATION.md"

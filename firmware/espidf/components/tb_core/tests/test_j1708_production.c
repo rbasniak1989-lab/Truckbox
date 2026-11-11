@@ -137,6 +137,6 @@ static void transmission_launch_and_candidates(void)
 int main(void)
 {
     automatic_and_cadences();expansion_in_one_scheduler();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
-    puts("Production J1708: automatic boot/reboot, all17, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
+    puts("Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
     return 0;
 }

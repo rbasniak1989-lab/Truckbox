@@ -180,8 +180,11 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
     snprintf(item.detail,sizeof(item.detail),"%s",detail?detail:"");
     if(s.active.configured){
         item.local_mid=s.active.config.local_mid;
-        for(unsigned i=0;i<TBX_J1708_REQUEST_COUNT;i++)
-            if(s.requests.pids[i].pid==pid){item.target_mid=s.active.config.target_mid[i];item.field_pid=s.active.field.pids[i];}
+        for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)
+            if(s.requests.pids[i].pid==pid){
+                item.target_mid=s.active.config.target_mid[i];
+                if(i<TBX_J1708_REQUEST_COUNT)item.field_pid=s.active.field.pids[i];
+            }
         if(item.field && !pid){
             const tbx_j1708_field_t *f=&s.active.field;
             item.field_health=(tbx_j1708_field_health_t){.before_frames=f->before_frames,.after_frames=f->after_frames,
@@ -515,7 +518,7 @@ static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *value
                 const size_t rawlen=value->raw_len<=21u?value->raw_len:21u;
                 for(size_t k=0;k<rawlen;k++)snprintf(rawhex+2u*k,3u,"%02X",value->raw[k]);
                 cJSON_AddStringToObject(row,"parameter_hex",rawhex);
-                for(unsigned k=0;k<TBX_J1708_REQUEST_COUNT;k++)
+                for(unsigned k=0;k<TBX_J1708_REQUEST_CAPACITY;k++)
                     if(s.requests.pids[k].pid==value->pid){
                         cJSON_AddNumberToObject(row,"target_mid",s.active.config.target_mid[k]);
                         const uint32_t sent_ms=s.requests.pids[k].last_sent_ms;
@@ -865,7 +868,7 @@ static void snapshot_task(void *unused)
                 tbx_j1708_auto_t automatic=s.automatic;bool launch=s.transmission.launch;uint32_t flags=s.transmission.candidate_flags;
                 uint16_t last_pid=s.active.last_sent_pid,response_pid=s.active.last_response_pid;
                 uint8_t response_mid=s.active.last_response_mid;uint64_t response_us=s.active.last_response_us;
-                uint32_t latency=0;for(unsigned i=0;i<17;i++)if(s.requests.pids[i].pid==response_pid)latency=s.requests.pids[i].last_latency_ms;
+                uint32_t latency=0;for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)if(s.requests.pids[i].pid==response_pid)latency=s.requests.pids[i].last_latency_ms;
                 xSemaphoreGive(s.lock);
                 cJSON_AddStringToObject(status,"state",tbx_j1708_auto_phase_name(automatic.phase));
                 cJSON_AddStringToObject(status,"reason",automatic.reason?automatic.reason:"WAITING_PASSIVE_RX");

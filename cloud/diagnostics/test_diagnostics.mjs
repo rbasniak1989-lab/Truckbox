@@ -65,9 +65,11 @@ test('counter resets, MID changes, missing time, jumps and independent collectio
   assert.equal(counterDelta(a, { ...b, boot: 2 }, 0).quality, 'TIME_INTERVAL_UNKNOWN');
   assert.equal(counterDelta(a, { ...b, raw: 10000000 }, 0).quality, 'IMPLAUSIBLE_JUMP');
   const reading = (pid, raw, ms) => [pid, 128, [0, 8, 16, 24].map(n => ((raw >>> n) & 255).toString(16).padStart(2, '0')).join(''), 0, pid === 235 ? 'h' : 'L', 1, ms, null, 'ECU_COUNTER_EM_VALIDACAO'];
-  const start = { id: 1, raw: { event: 'COUNTER_CAPTURE', reason: 4, capture_id: 1, trip_client_uid: 'trip1', counters: [reading(250, 1000, 1000), reading(236, 100, 2000), reading(235, 100, 3000)] } };
-  const end = { id: 2, raw: { event: 'COUNTER_CAPTURE', reason: 5, capture_id: 2, trip_client_uid: 'trip1', counters: [reading(250, 1010, 3601000), reading(236, 102, 3602000), reading(235, 101, 3603000)] } };
-  const result = tripCounterReference([start, end], 'trip1'); assert.ok(result.fuel_l > 4.73); assert.ok(result.nonidle_fuel_l > 3.78); assert.equal(result.simultaneous, false);
+  const start = { id: 1, raw: { event: 'COUNTER_CAPTURE', reason: 4, capture_id: 1, boundary_delay_ms: 1000, trip_client_uid: 'trip1', counters: [reading(250, 1000, 1000), reading(236, 100, 2000), reading(235, 100, 3000)] } };
+  const end = { id: 2, raw: { event: 'COUNTER_CAPTURE', reason: 5, capture_id: 2, boundary_delay_ms: 2000, trip_client_uid: 'trip1', counters: [reading(250, 1010, 3601000), reading(236, 102, 3602000), reading(235, 101, 3603000)] } };
+  const result = tripCounterReference([start, end], 'trip1'); assert.ok(result.fuel_l > 4.73); assert.ok(result.nonidle_fuel_l > 3.78); assert.equal(result.simultaneous, false); assert.equal(result.financial_primary_allowed, true);
+  end.raw.boundary_delay_ms = 90000; assert.equal(tripCounterReference([start, end], 'trip1').financial_primary_allowed, false);
+  assert.equal(tripCounterReference([start, end], 'trip1').source, 'ESTIMATED_TRIP_FROM_COUNTER_INTERVAL'); end.raw.boundary_delay_ms = 2000;
   end.raw.counters[1][6] += 10000; assert.equal(tripCounterReference([start, end], 'trip1').nonidle_fuel_l, null);
   assert.equal(tripCounterReference([start], 'trip1').missing_boundary, true);
 });
@@ -93,4 +95,18 @@ test('read-only handler requires device auth and scopes every query to its truck
 test('bundled Android cache is the exact versioned small catalog', () => {
   const cached = JSON.parse(readFileSync(new URL('../../app/src/main/assets/volvo-diagnostics-cache.json', import.meta.url)));
   assert.deepEqual(cached, catalog);
+});
+
+test('trip endpoint lookup is independent of current history page and keeps auth scope', async () => {
+  const token = 'test-only-boundary-token-123';
+  const hash = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))).toString('hex');
+  const queried = [];
+  const call = diagnosticsHandler({
+    device: async () => ({active: true, truck_id: 'owner-truck', token_hash: hash}),
+    trip: async (truck, uid) => ({ id: uid }), page: async () => [],
+    boundaries: async (truck, uid) => { queried.push([truck, uid]); return []; },
+  }, catalog);
+  const response = await call(new Request('https://local.invalid', {method: 'POST', body: JSON.stringify({device_uid:'test', token, trip_client_uid:'old-trip'})}));
+  assert.equal(response.status, 200); assert.deepEqual(queried, [['owner-truck', 'old-trip']]);
+  assert.equal((await response.json()).counter_reference.missing_boundary, true);
 });

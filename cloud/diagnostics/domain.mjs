@@ -128,20 +128,37 @@ export function counterSamples(rows) {
 }
 export function tripCounterReference(rows, uid) {
   const captures = counterSamples(rows).filter(x => x.trip_client_uid === uid);
-  const starts = captures.filter(x => x.reason === 4).sort((a, b) => compare({ ...(a.readings.find(Boolean) ?? {}), seq: a.row_seq }, { ...(b.readings.find(Boolean) ?? {}), seq: b.row_seq }));
-  const ends = captures.filter(x => x.reason === 5).sort((a, b) => compare({ ...(b.readings.find(Boolean) ?? {}), seq: b.row_seq }, { ...(a.readings.find(Boolean) ?? {}), seq: a.row_seq }));
-  const start = starts[0], end = ends[0];
-  if (!start || !end) return { fuel_l: null, idle_fuel_l: null, idle_hours: null, nonidle_fuel_l: null,
+  const byTime = (a, b) => compare({ ...(a.readings.find(Boolean) ?? {}), seq: a.row_seq }, { ...(b.readings.find(Boolean) ?? {}), seq: b.row_seq });
+  // A retry fills a missing value, never replaces an earlier valid endpoint.
+  const starts = captures.filter(x => x.reason === 4).sort(byTime);
+  const ends = captures.filter(x => x.reason === 5).sort(byTime);
+  if (!starts.length || !ends.length) return { fuel_l: null, idle_fuel_l: null, idle_hours: null, nonidle_fuel_l: null,
     source: 'INTEGRATED_OR_ESTIMATED_FALLBACK_REQUIRED', missing_boundary: true };
-  const delta = [250, 236, 235].map((pid, i) => counterDelta(start.readings.find(x => x?.pid === pid), end.readings.find(x => x?.pid === pid), i));
-  const aligned = (readings) => {
-    const p = [250, 236].map(pid => readings.find(x => x?.pid === pid));
-    return p.every(Boolean) && p[0].boot === p[1].boot && Math.abs(p[0].uptime_ms - p[1].uptime_ms) <= 5000;
+  const select = list => [250, 236, 235].map(pid => {
+    for (const capture of list) {
+      const reading = capture.readings.find(x => x?.pid === pid && x.raw !== 0xFFFFFFFF);
+      if (reading) return { ...reading, capture };
+    }
+    return null;
+  });
+  const a = select(starts), b = select(ends);
+  const delta = [250, 236, 235].map((pid, i) => counterDelta(a[i], b[i], i));
+  const aligned = readings => readings[0] && readings[1] && readings[0].boot === readings[1].boot &&
+    Math.abs(readings[0].uptime_ms - readings[1].uptime_ms) <= 5000;
+  const delay = reading => {
+    if (!reading) return null;
+    const c = reading.capture;
+    if (finite(c.boundary_unix_ms) && finite(reading.unix_ms) && reading.unix_ms >= c.boundary_unix_ms) return reading.unix_ms - c.boundary_unix_ms;
+    return finite(c.boundary_delay_ms) && c.boundary_delay_ms >= 0 ? c.boundary_delay_ms : null;
   };
-  const nonidle = aligned(start.readings) && aligned(end.readings) && delta[0].value !== null && delta[1].value !== null && delta[0].value >= delta[1].value ? delta[0].value - delta[1].value : null;
+  const startDelay = delay(a[0]), endDelay = delay(b[0]);
+  const close = startDelay !== null && endDelay !== null && startDelay <= 30000 && endDelay <= 30000;
+  const nonidle = aligned(a) && aligned(b) && delta[0].value !== null && delta[1].value !== null && delta[0].value >= delta[1].value ? delta[0].value - delta[1].value : null;
   return { fuel_l: delta[0].value, idle_fuel_l: delta[1].value, idle_hours: delta[2].value, nonidle_fuel_l: nonidle,
-    source: delta[0].value == null ? 'INTEGRATED_OR_ESTIMATED_FALLBACK_REQUIRED' : 'ECU_BOUNDARY_CAPTURE_INTERVAL',
+    source: delta[0].value == null ? 'INTEGRATED_OR_ESTIMATED_FALLBACK_REQUIRED' : close ? 'ECU_BOUNDARY_CAPTURE_INTERVAL' : 'ESTIMATED_TRIP_FROM_COUNTER_INTERVAL',
     qualities: delta.map(x => x.quality), missing_boundary: false, simultaneous: false,
-    start_capture: start.capture_id, end_capture: end.capture_id,
-    boundary_precision: 'READINGS_AFTER_EVENT_NOT_EXACT_INSTANT' };
+    start_capture: a[0]?.capture.capture_id ?? null, end_capture: b[0]?.capture.capture_id ?? null,
+    start_capture_delay_ms: startDelay, end_capture_delay_ms: endDelay,
+    boundary_precision: close ? 'READINGS_AFTER_EVENT_NOT_EXACT_INSTANT' : 'LATE_OR_UNCERTAIN_BOUNDARIES_ESTIMATED',
+    financial_primary_allowed: close && delta[0].value !== null };
 }

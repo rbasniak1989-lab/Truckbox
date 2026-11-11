@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 typedef struct {uint8_t value[8192],pending[8192];size_t size,pending_size;}blob_t;
-static blob_t blobs[2][2];static unsigned writes,records,notifications;static uint64_t now_ms;static uint32_t boot=306;static bool write_error,store_error;
+static blob_t blobs[2][2];static unsigned writes,records,notifications,peak_record;static uint64_t now_ms;static uint32_t boot=306;static bool write_error,store_error;
 int64_t esp_timer_get_time(void){return (int64_t)(now_ms*1000);}
 uint32_t tb_boot_id(void){return boot;}
 const char *tb_device_uid(void){return "tb-c6-d40592b9190c";}
@@ -21,7 +21,7 @@ int nvs_open(const char *name,int mode,nvs_handle_t *h){assert(mode==1);*h=!strc
 int nvs_get_blob(nvs_handle_t h,const char *key,void *out,size_t *size){blob_t *b=&blobs[h][!strcmp(key,"b")];if(!b->size)return ESP_FAIL;assert(*size>=b->size);memcpy(out,b->value,b->size);*size=b->size;return ESP_OK;}
 int nvs_set_blob(nvs_handle_t h,const char *key,const void *p,size_t n){if(write_error)return ESP_FAIL;blob_t *b=&blobs[h][!strcmp(key,"b")];assert(n<=sizeof(b->pending));memcpy(b->pending,p,n);b->pending_size=n;return ESP_OK;}
 int nvs_commit(nvs_handle_t h){if(write_error)return ESP_FAIL;for(unsigned i=0;i<2;i++){blob_t *b=&blobs[h][i];if(b->pending_size){memcpy(b->value,b->pending,b->pending_size);b->size=b->pending_size;b->pending_size=0;}}++writes;return ESP_OK;}
-int tb_store_submit(const char *p){assert(strlen(p)<TB_RECORD_MAX);if(store_error)return ESP_FAIL;cJSON *j=cJSON_Parse(p);assert(j);assert(!strcmp(cJSON_GetObjectItemCaseSensitive(j,"sample_kind")->valuestring,"J1708_REQUEST_EVENT"));++records;const cJSON *notify=cJSON_GetObjectItemCaseSensitive(j,"notify");if(cJSON_IsTrue(notify))++notifications;cJSON_Delete(j);return ESP_OK;}
+int tb_store_submit(const char *p){assert(strlen(p)<TB_RECORD_MAX);if(strlen(p)>peak_record)peak_record=(unsigned)strlen(p);if(store_error)return ESP_FAIL;cJSON *j=cJSON_Parse(p);assert(j);assert(!strcmp(cJSON_GetObjectItemCaseSensitive(j,"sample_kind")->valuestring,"J1708_REQUEST_EVENT"));++records;const cJSON *notify=cJSON_GetObjectItemCaseSensitive(j,"notify");if(cJSON_IsTrue(notify))++notifications;cJSON_Delete(j);return ESP_OK;}
 static void diagnostic(const tbx_j1587_observation_t *o,void *unused){(void)unused;tb_diagnostics_observe(o,UINT64_C(1794430000000),NULL);}
 static void diagnostic_frame(uint8_t mid,const uint8_t *data,size_t length)
 {
@@ -81,6 +81,12 @@ static void counters_and_reboot(void)
     b.raw=1;assert(tbx_ecu_counter_delta(&a,&b,0,&delta)==2);b=a;b.mid=130;assert(tbx_ecu_counter_delta(&a,&b,0,&delta)==2);
     b=a;b.boot=2;assert(tbx_ecu_counter_delta(&a,&b,0,&delta)==3);
     b=a;b.raw=1000000;b.uptime_ms+=1000;assert(tbx_ecu_counter_delta(&a,&b,0,&delta)==3);
+    char uid[65];memset(uid,'a',64);uid[64]=0;
+    count=records;assert(tb_ecu_counters_boundary(true,uid));counter_capture(&scheduler,2000);
+    j=tb_ecu_counters_json();assert(!strcmp(cJSON_GetObjectItemCaseSensitive(j,"trip_client_uid")->valuestring,uid));
+    assert(cJSON_GetObjectItemCaseSensitive(j,"store_errors")->valuedouble==0 && records>count);cJSON_Delete(j);
+    write_error=true;assert(!tb_ecu_counters_boundary(false,uid));write_error=false;
+    assert(tb_ecu_counters_boundary(false,uid));counter_capture(&scheduler,2001);
 }
 static void operating_sample(tbx_volvo_operating_t *v,unsigned pid,double value,uint64_t ms,const char *text)
 {
@@ -128,6 +134,6 @@ static void counter_missing_read_retry(void)
 int main(void)
 {
     diagnostics_persistence();counters_and_reboot();counter_missing_read_retry();volvo_derived_signals();
-    printf("Volvo real modules: PID194 wire length/Cloud bytes, dedup, A/B NVS/torn checkpoint, offline store retry, counter capture/start/end/reboot, unchanged suppression and reset/MID/time/range guards PASS (%u bounded records)\n",records);
+    printf("Volvo real modules: PID194 wire length/Cloud bytes, dedup, A/B NVS/torn checkpoint, offline store retry, counter capture/start/end/reboot, unchanged suppression and reset/MID/time/range guards PASS (%u bounded records, peak %u bytes)\n",records,peak_record);
     return 0;
 }

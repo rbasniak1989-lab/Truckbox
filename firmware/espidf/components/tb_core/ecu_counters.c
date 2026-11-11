@@ -26,6 +26,15 @@ static struct {
     uint32_t recorded_raw[3];uint8_t recorded_mask;
 } ec;
 static portMUX_TYPE counter_mux=portMUX_INITIALIZER_UNLOCKED;
+static bool checkpoint_valid(const tbx_ecu_counters_t *state)
+{
+    if(state->queued>4 || state->phase>3 || !memchr(state->trip_uid,0,sizeof(state->trip_uid)))return false;
+    const tbx_counter_job_t *jobs[]={&state->job,&state->start_job,&state->waiting[0],&state->waiting[1],&state->waiting[2],&state->waiting[3]};
+    for(unsigned i=0;i<6;i++)if(!memchr(jobs[i]->trip_uid,0,sizeof(jobs[i]->trip_uid)) || jobs[i]->attempt>2 || jobs[i]->reason>TBX_COUNTER_TRIP_END)return false;
+    const tbx_ecu_counter_t *readings[]={state->latest,state->baseline,state->captured};
+    for(unsigned g=0;g<3;g++)for(unsigned i=0;i<3;i++)if(readings[g][i].valid && (readings[g][i].mid!=128 || readings[g][i].raw==UINT32_MAX))return false;
+    return true;
+}
 static uint64_t utc_ms(void)
 {
     struct timeval t;
@@ -40,7 +49,7 @@ void tb_ecu_counters_start(void)
     for(unsigned i=0;i<2;i++){
         size_t size=sizeof(*p);
         if(nvs_get_blob(ec.nvs,i?"b":"a",p,&size)!=ESP_OK || size!=sizeof(*p) || p->version!=1 ||
-           p->crc!=tb_store_crc32(p,offsetof(counter_checkpoint_t,crc)))continue;
+           p->crc!=tb_store_crc32(p,offsetof(counter_checkpoint_t,crc)) || !checkpoint_valid(&p->state))continue;
         if(!ec.restored || (int32_t)(p->generation-ec.generation)>0){ec.state=p->state;ec.generation=p->generation;ec.restored=true;}
     }
     free(p);
@@ -112,6 +121,15 @@ static bool synchronized(const tbx_ecu_counter_t *p)
     uint64_t a=p[0].uptime_ms,b=p[1].uptime_ms;
     return a>b?a-b<=5000:b-a<=5000;
 }
+static uint64_t boundary_delay(const tbx_counter_job_t *job,const tbx_ecu_counter_t *reading)
+{
+    if(!reading->valid)return UINT64_MAX;
+    if(job->requested_unix_ms && reading->unix_ms>=job->requested_unix_ms)
+        return reading->unix_ms-job->requested_unix_ms;
+    if(job->queue_age_ms!=UINT32_MAX && reading->boot==job->requested_boot && reading->uptime_ms>=job->requested_uptime_ms)
+        return (uint64_t)job->queue_age_ms+reading->uptime_ms-job->requested_uptime_ms;
+    return UINT64_MAX;
+}
 static void deltas(cJSON *row,const tbx_ecu_counters_t *state)
 {
     double delta[3]={0};unsigned status[3];
@@ -123,13 +141,7 @@ static void deltas(cJSON *row,const tbx_ecu_counters_t *state)
     if(!status[0] && !status[1] && delta[0]>=delta[1] && synchronized(state->baseline) && synchronized(state->captured))
         cJSON_AddNumberToObject(row,"ecu_trip_nonidle_fuel_l",delta[0]-delta[1]);
     else cJSON_AddNullToObject(row,"ecu_trip_nonidle_fuel_l");
-    uint64_t delay=UINT64_MAX;
-    if(state->baseline[0].valid){
-        if(state->start_job.requested_unix_ms && state->baseline[0].unix_ms>=state->start_job.requested_unix_ms)
-            delay=state->baseline[0].unix_ms-state->start_job.requested_unix_ms;
-        else if(state->start_job.queue_age_ms!=UINT32_MAX && state->baseline[0].boot==state->start_job.requested_boot && state->baseline[0].uptime_ms>=state->start_job.requested_uptime_ms)
-            delay=(uint64_t)state->start_job.queue_age_ms+state->baseline[0].uptime_ms-state->start_job.requested_uptime_ms;
-    }
+    uint64_t delay=boundary_delay(&state->start_job,&state->baseline[0]);
     cJSON_AddStringToObject(row,"interval_quality",status[0]?"AUSENTE_RESET_MID_TEMPO_OU_SALTO":delay<=30000?"DELTA_ECU_EM_VALIDACAO":"CAPTURA_TARDIA_OU_TEMPO_INDETERMINADO");
     if(delay!=UINT64_MAX)cJSON_AddNumberToObject(row,"start_capture_delay_ms",(double)delay);else cJSON_AddNullToObject(row,"start_capture_delay_ms");
 }
@@ -173,10 +185,18 @@ void tb_ecu_counters_flush(void)
     cJSON_AddNumberToObject(row,"capture_id",state.sequence);cJSON_AddNumberToObject(row,"reason",state.job.reason);cJSON_AddNumberToObject(row,"attempt",state.job.attempt);
     cJSON_AddStringToObject(row,"trip_client_uid",state.job.trip_uid);
     if(state.job.requested_unix_ms)cJSON_AddNumberToObject(row,"boundary_unix_ms",(double)state.job.requested_unix_ms);
+    if(state.job.reason>=TBX_COUNTER_TRIP_START){
+        uint64_t delay=boundary_delay(&state.job,&state.captured[0]);
+        if(delay!=UINT64_MAX)cJSON_AddNumberToObject(row,"boundary_delay_ms",(double)delay);else cJSON_AddNullToObject(row,"boundary_delay_ms");
+    }
     cJSON_AddBoolToObject(row,"same_instant",false);cJSON_AddNumberToObject(row,"missing_mask",state.missing);
     cJSON *captured=values(state.captured);if(!captured){cJSON_Delete(row);++ec.store_errors;return;}
     cJSON_AddItemToObject(row,"counters",captured);
-    char text[TB_RECORD_MAX];bool ok=time_ok && cJSON_PrintPreallocated(row,text,sizeof(text),false) && tb_store_submit(text)==ESP_OK;
+    char text[TB_RECORD_MAX];bool complete=time_ok && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"event")) &&
+        cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"sample_kind")) && cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"capture_id")) &&
+        cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"reason")) && cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"missing_mask")) &&
+        cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"trip_client_uid")) && cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(row,"same_instant"));
+    bool ok=complete && cJSON_PrintPreallocated(row,text,sizeof(text),false) && tb_store_submit(text)==ESP_OK;
     cJSON_Delete(row);
     if(ok){
         portENTER_CRITICAL(&counter_mux);if(ec.state.sequence==state.sequence)ec.state.record_ready=false;portEXIT_CRITICAL(&counter_mux);

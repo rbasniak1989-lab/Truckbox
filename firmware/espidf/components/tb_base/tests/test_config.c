@@ -331,8 +331,32 @@ static void test_automatic_persistence(void)
     clear_storage();
 }
 
+static void test_expansion_persistence(void)
+{
+    clear_storage();target_mac=true;assert(tb_config_init()==ESP_OK);
+    assert(extra_saved && !strstr(persisted,"j1708_expansion"));
+#if CONFIG_TB_ROLE_LINK
+    assert(!tb_config()->j1708_expansion_enabled);
+#else
+    assert(tb_config()->j1708_expansion_enabled);
+#endif
+    assert(tb_config()->j1708_stop_dwell_s==15 && tb_config()->j1708_parked_capture_s==300);
+    assert(apply("{\"j1708_expansion_enabled\":false,\"j1708_stop_dwell_s\":20,\"j1708_parked_capture_s\":600}")==ESP_OK);
+    unsigned count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    assert(!tb_config()->j1708_expansion_enabled && tb_config()->j1708_stop_dwell_s==20 && tb_config()->j1708_parked_capture_s==600);
+    assert(apply("{\"j1708_stop_dwell_s\":1}")==ESP_ERR_INVALID_ARG);
+    assert(apply("{\"j1708_parked_capture_s\":59}")==ESP_ERR_INVALID_ARG);
+    bool automatic=tb_config_j1708_auto_enabled();
+    free(extra_saved);extra_saved=strdup("{bad");reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    assert(!tb_config()->j1708_expansion_enabled && tb_config()->j1708_enabled && tb_config_j1708_auto_enabled()==automatic);
+    free(extra_saved);extra_saved=NULL;reboot();assert(tb_config_init()==ESP_OK && writes==count+1);
+    count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    clear_storage();
+}
+
 int main(void)
 {
+    test_expansion_persistence();
     test_automatic_persistence();
     test_v212_extension_rollback_compatibility();
     test_first_boot_and_public_data();

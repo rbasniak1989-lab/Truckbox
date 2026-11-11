@@ -33,6 +33,15 @@ static struct {
     bool nvs_open;
 } d;
 static portMUX_TYPE diagnostic_mux=portMUX_INITIALIZER_UNLOCKED;
+static bool checkpoint_valid(const tbx_dtc_history_t *history)
+{
+    for(unsigned i=0;i<TBX_DTC_HISTORY_CAPACITY;i++){
+        const tbx_dtc_history_entry_t *entry=&history->entries[i];
+        if(entry->used && (entry->mid<128 || entry->code.identifier>511 || entry->code.fmi>15 ||
+           entry->code.raw_length!=(entry->code.has_occurrences?3:2)))return false;
+    }
+    return true;
+}
 
 static void hex_bytes(char *out,const uint8_t *bytes,size_t n)
 {
@@ -104,7 +113,8 @@ void tb_diagnostics_start(void)
     for(unsigned slot=0;slot<2;slot++){
         size_t size=sizeof(*checkpoint);
         if(nvs_get_blob(d.nvs,slot?"b":"a",checkpoint,&size)!=ESP_OK || size!=sizeof(*checkpoint) ||
-           checkpoint->version!=1 || checkpoint->crc!=tb_store_crc32(checkpoint,offsetof(diagnostic_checkpoint_t,crc)))continue;
+           checkpoint->version!=1 || checkpoint->crc!=tb_store_crc32(checkpoint,offsetof(diagnostic_checkpoint_t,crc)) ||
+           !checkpoint_valid(&checkpoint->history))continue;
         if(!d.generation || (int32_t)(checkpoint->generation-d.generation)>0){
             d.history=checkpoint->history;memcpy(d.contexts,checkpoint->contexts,sizeof(d.contexts));d.generation=checkpoint->generation;
         }
