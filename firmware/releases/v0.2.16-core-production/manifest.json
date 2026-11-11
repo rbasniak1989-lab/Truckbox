@@ -1,0 +1,62 @@
+{
+  "hardware_revision": "B1",
+  "version": "0.2.16",
+  "state": "PRODUCAO_AGUARDANDO_INSTALACAO",
+  "validation": "PARTIAL",
+  "physical_validation": "pending",
+  "esp_idf": "v5.5.2",
+  "preserves_nvs_and_storage": true,
+  "automatic_flash": false,
+  "images": {
+    "core": {
+      "project": "truckbox_core",
+      "flash_size": "8MB",
+      "flash_mode": "dio",
+      "flash_freq": "80m",
+      "usb_files": [
+        {
+          "offset": "0x0",
+          "file": "images/core/bootloader.bin",
+          "sha256": "126cbddc43740b4d6f1198df88c426be30c4317437cc87146ec51c05f7dee405",
+          "size": 14736
+        },
+        {
+          "offset": "0x20000",
+          "file": "images/core/truckbox_core.bin",
+          "sha256": "14ceb8c41afdb42417001ad40fd09cbb86674dac67fc3b66c95266a400b02122",
+          "size": 1517168
+        },
+        {
+          "offset": "0x8000",
+          "file": "images/core/partition-table.bin",
+          "sha256": "e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044",
+          "size": 3072
+        },
+        {
+          "offset": "0xf000",
+          "file": "images/core/ota_data_initial.bin",
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f",
+          "size": 8192
+        }
+      ],
+      "ota_file": "truckbox_core_0.2.16_ota.bin",
+      "ota_sha256": "14ceb8c41afdb42417001ad40fd09cbb86674dac67fc3b66c95266a400b02122",
+      "ota_size": 1517168,
+      "debug_symbols": [
+        {
+          "file": "symbols/core/truckbox_core.elf",
+          "sha256": "6a5b47f59a2111f4ac5c9fd772105ebee8926a38f3903dc2f63add6a47ce365a"
+        },
+        {
+          "file": "symbols/core/truckbox_core.map",
+          "sha256": "02ec8e91ed55afa4701c0362faf55df6d0ead9d86e90453eb512228b0ccd1d3f"
+        }
+      ]
+    }
+  },
+  "source": {
+    "file": "truckbox_firmware_source.zip",
+    "sha256": "3b149adee51471839216c1b7fe048d2a7b28b5262c2b8c7dc01eabaf83d5126c",
+    "layout": "firmware/espidf + firmware/j1708_17pid + firmware/j1939"
+  }
+}

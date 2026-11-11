@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "verified_at_utc": "2026-11-11T15:18:31.349912+00:00",
+  "command": "bash firmware/espidf/tools/build_v020.sh core",
+  "scope": "Fresh build from the delivered source ZIP, no git metadata; compile only, not flashed",
+  "source_commit": "47c25a55bc2a40d3389007b0788af09f8d33bf1c",
+  "source_zip_sha256": "3b149adee51471839216c1b7fe048d2a7b28b5262c2b8c7dc01eabaf83d5126c",
+  "package_sha256": "3b0563a0119b5894f53c9bb8e697282698d97f794c004c76232ea820fb8e3d4e",
+  "package_checked_files": 133,
+  "partition_csv_sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832",
+  "delivered_image": {
+    "version": "0.2.16",
+    "project": "truckbox_core",
+    "idf": "v5.5.2",
+    "chip": "ESP32-C6",
+    "flash": "8MB",
+    "bytes": 1517168,
+    "ota_sha256": "14ceb8c41afdb42417001ad40fd09cbb86674dac67fc3b66c95266a400b02122",
+    "elf_sha256": "6a5b47f59a2111f4ac5c9fd772105ebee8926a38f3903dc2f63add6a47ce365a"
+  },
+  "rebuilt_image": {
+    "version": "0.2.16",
+    "project": "truckbox_core",
+    "idf": "v5.5.2",
+    "chip": "ESP32-C6",
+    "flash": "8MB",
+    "bytes": 1517168,
+    "ota_sha256": "b20881f73e1ac7a99df26f1ebbfe0c24cc471101c4bfa69edbc651f9754074f6",
+    "elf_sha256": "6ae2c577890c67509b92a6859661c281cb0c6a802f16c2f7c6af73ed938a6d73"
+  },
+  "bit_identical_claim": false,
+  "note": "Build paths/time may affect ELF and application hashes; both images verified for version, chip, flash, OTA fit and ESP-IDF."
+}
