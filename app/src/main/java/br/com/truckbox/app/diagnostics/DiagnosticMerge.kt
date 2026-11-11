@@ -30,7 +30,7 @@ object DiagnosticMerge {
             val first = if (old == null || compare(current.opt("first"), old.opt("first")) < 0) current.opt("first") else old.opt("first")
             byCode[key] = JSONObject(latest.toString()).apply { put("first", first ?: JSONObject.NULL) }
         }
-        return JSONArray(byCode.values.toList())
+        return JSONArray(byCode.values.sortedWith { a, b -> compare(b.opt("last"), a.opt("last")) })
     }
     fun fuelReference(value: JSONObject?, tripUid: String): Double? = value
         ?.takeIf { it.optString("trip_client_uid") == tripUid && it.optBoolean("ecu_reference_fresh") &&

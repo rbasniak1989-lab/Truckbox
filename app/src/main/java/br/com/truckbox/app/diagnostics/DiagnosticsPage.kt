@@ -88,7 +88,11 @@ fun DiagnosticsPage(client: DiagnosticClient, trips: List<TripRecord>) {
             Text("Esses sinais não confirmam patinação mecânica.")
         }
         val reference = snapshot?.optJSONObject("counter_reference")
-        if (reference != null) Text("Consumo de referência ECU: ${if (reference.isNull("fuel_l")) "sem extremidades suficientes; usar integração/estimativa identificada" else "${reference.optDouble("fuel_l")} L"}")
+        if (reference != null) {
+            Text("Consumo no intervalo ECU: ${if (reference.isNull("fuel_l")) "sem extremidades suficientes; usar integração/estimativa identificada" else "${reference.optDouble("fuel_l")} L"}")
+            Text(if (reference.optBoolean("financial_primary_allowed")) "Extremidades próximas aos eventos; escala em validação. Valores não foram alterados no cadastro da viagem."
+                else "Limites ausentes, tardios ou incertos: referência estimada; conservar integração e estimativas identificadas.")
+        }
         Text("Histórico por páginas e cache limitado. A biblioteca detalhada na nuvem depende da publicação do serviço de diagnóstico.")
     }
 }

@@ -80,6 +80,13 @@
       "publisher": "Operador TruckBox",
       "version": "Requisitos desta tarefa",
       "use": "Interpretações candidatas fornecidas pelo operador; não é confirmação OEM."
+    },
+    {
+      "id": "CLOUD-10NOV",
+      "publisher": "TruckBox",
+      "version": "Cloud seq50192/50193 10/11/2026",
+      "path": "firmware/espidf/test_evidence/v0217_cloud_10nov_readonly.json",
+      "use": "Consulta somente leitura confirma 0235 e 12B501; não equivale ao ZIP NEXIQ completo."
     }
   ],
   "definitions": [
@@ -111,7 +118,8 @@
         "TRUCKBOX-29OCT",
         "CLOUD-11NOV",
         "OPERATOR-REQUEST",
-        "VOLVO-VN-2007"
+        "VOLVO-VN-2007",
+        "CLOUD-10NOV"
       ],
       "confidence": "CANDIDATE_CONFLICTING_OEM_APPLICABILITY",
       "oem_confirmed": false,
@@ -144,7 +152,8 @@
       "sources": [
         "CLOUD-11NOV",
         "OPERATOR-REQUEST",
-        "SAE-J1587-2002"
+        "SAE-J1587-2002",
+        "CLOUD-10NOV"
       ],
       "confidence": "CANDIDATE_ABS_CONFIGURATION_REQUIRED",
       "oem_confirmed": false,

@@ -24,7 +24,13 @@ class DiagnosticClient(context: Context, private val prefs: TruckBoxPreferences)
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
             if (connection.responseCode !in 200..299) null else connection.inputStream.bufferedReader().use { reader ->
-                val text = reader.readText(); if (text.length > 262144) null else JSONObject(text).takeIf { it.optBoolean("ok") }
+                val text = StringBuilder(); val buffer = CharArray(4096)
+                while (true) {
+                    val n = reader.read(buffer); if (n < 0) break
+                    if (text.length + n > 262144) return null
+                    text.append(buffer, 0, n)
+                }
+                JSONObject(text.toString()).takeIf { it.optBoolean("ok") }
             }
         } catch (_: Exception) { null } finally { connection.disconnect() }
     }
@@ -93,7 +99,8 @@ class DiagnosticClient(context: Context, private val prefs: TruckBoxPreferences)
         return result
     }
     fun enqueueBoundary(start: Boolean, uid: String, atMs: Long) = synchronized(lock) {
-        val q = JSONArray(storage.getString("boundaries", "[]")); val event = if (start) "START" else "END"
+        val q = runCatching { JSONArray(storage.getString("boundaries", "[]")) }.getOrNull() ?: return@synchronized false
+        val event = if (start) "START" else "END"
         if ((0 until q.length()).any { q.getJSONObject(it).optString("trip_client_uid") == uid && q.getJSONObject(it).optString("event") == event }) return@synchronized true
         if (q.length() >= 64) return@synchronized false
         q.put(JSONObject().put("event", event).put("trip_client_uid", uid).put("requested_unix_ms", atMs))
@@ -102,7 +109,8 @@ class DiagnosticClient(context: Context, private val prefs: TruckBoxPreferences)
     fun flushOneBoundary() {
         val item = synchronized(lock) {
             if (flushing) return
-            val q = JSONArray(storage.getString("boundaries", "[]")); if (q.length() == 0) return
+            val q = runCatching { JSONArray(storage.getString("boundaries", "[]")) }.getOrNull() ?: return
+            if (q.length() == 0) return
             flushing = true; q.getJSONObject(0)
         }
         try {
@@ -112,7 +120,7 @@ class DiagnosticClient(context: Context, private val prefs: TruckBoxPreferences)
                 val reply = try { request(binder.openWifiHttp(URL("$base/api/counters/capture")), payload) } catch (_: Exception) { null }
                 if (reply?.optBoolean("durable") == true) {
                     synchronized(lock) {
-                        val q = JSONArray(storage.getString("boundaries", "[]"))
+                        val q = runCatching { JSONArray(storage.getString("boundaries", "[]")) }.getOrNull() ?: return
                         if (q.length() > 0 && q.getJSONObject(0).toString() == item.toString())
                             storage.edit().putString("boundaries", JSONArray((1 until q.length()).map { q.getJSONObject(it) }).toString()).commit()
                     }
