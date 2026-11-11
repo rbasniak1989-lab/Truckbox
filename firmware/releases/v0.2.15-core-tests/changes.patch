@@ -1,0 +1,2295 @@
+diff --git a/.github/workflows/core-v0215-j1708-guard.yml b/.github/workflows/core-v0215-j1708-guard.yml
+new file mode 100644
+index 0000000..61f6476
+--- /dev/null
++++ b/.github/workflows/core-v0215-j1708-guard.yml
+@@ -0,0 +1,68 @@
++name: TruckBox Core 0.2.15 candidate J1708 receiver guard audit
++on:
++  push:
++    branches: [fix/revb1-v0215-j1708-guard]
++    paths: ['firmware/**', '.github/workflows/core-v0215-j1708-guard.yml']
++  pull_request:
++    branches: [feature/revb1-v0214-field-validation]
++    paths: ['firmware/**', '.github/workflows/core-v0215-j1708-guard.yml']
++  workflow_dispatch:
++permissions:
++  contents: read
++jobs:
++  test-build:
++    runs-on: ubuntu-latest
++    timeout-minutes: 45
++    steps:
++      - uses: actions/checkout@v4
++      - name: Build ESP32-C6 with exact ESP-IDF and exercise all host/fault/offline tests
++        uses: espressif/esp-idf-ci-action@v1
++        with:
++          esp_idf_version: v5.5.2
++          target: esp32c6
++          path: firmware/espidf
++          command: bash tools/build_v020.sh core && sh tests/run_all.sh
++      - name: Check Core identity, OTA fit, profile and unchanged partition table
++        run: |
++          python3 - <<'PY'
++          from pathlib import Path
++          import struct,hashlib
++          p=Path('firmware/espidf/build-core')
++          data=(p/'truckbox_core.bin').read_bytes()
++          assert 512<len(data)<0x300000
++          text=lambda a,b:data[a:b].split(b'\0',1)[0].decode('ascii')
++          assert data[0]==0xe9 and data[3]>>4==3 and struct.unpack_from('<H',data,12)[0]==13
++          assert text(48,80)=='0.2.15' and text(80,112)=='truckbox_core' and text(144,176)=='v5.5.2'
++          assert hashlib.sha256(Path('firmware/espidf/partitions.csv').read_bytes()).hexdigest()=='5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832'
++          assert 'CONFIG_TB_J1708_ONLY=y' in (p/'sdkconfig').read_text()
++          PY
++      - uses: actions/upload-artifact@v4
++        with:
++          name: TruckBox-Core-0.2.15-CANDIDATA-NAO-INSTALADA
++          path: |
++            firmware/espidf/build-core/truckbox_core.bin
++            firmware/espidf/build-core/truckbox_core.elf
++            firmware/espidf/build-core/truckbox_core.map
++          retention-days: 30
++          if-no-files-found: error
++  browser:
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '22'
++      - name: Install browser test dependencies in runner temporary directory
++        run: |
++          npm install --prefix "$RUNNER_TEMP/tb-web" --no-audit --no-fund playwright
++          "$RUNNER_TEMP/tb-web/node_modules/.bin/playwright" install --with-deps chromium
++      - name: Exercise actual embedded HTML against local HTTP fixtures
++        run: NODE_PATH="$RUNNER_TEMP/tb-web/node_modules" node firmware/espidf/tests/web/test_flow.cjs
++      - uses: actions/upload-artifact@v4
++        with:
++          name: TruckBox-Core-0.2.15-painel-simulado
++          path: |
++            firmware/espidf/tests/web/result.json
++            firmware/espidf/tests/web/*.png
++          if-no-files-found: error
+diff --git a/firmware/espidf/CHANGELOG_v0.2.15.md b/firmware/espidf/CHANGELOG_v0.2.15.md
+new file mode 100644
+index 0000000..e4f8495
+--- /dev/null
++++ b/firmware/espidf/CHANGELOG_v0.2.15.md
+@@ -0,0 +1,12 @@
++# Core 0.2.15 — CANDIDATA, não instalada
++
++- Corrige a parada do modo ativo por uma única janela com erros ou por comparação da taxa atual com a calibração antiga.
++- Separa falhas de recepção, eco/TX, falta de resposta e conflito de MID. Erro de checksum não é prova de interferência do TruckBox.
++- Exige persistência em janelas recentes para degradação RX; mantém parada por perda de recepção durante TX, silêncio, conflito, falhas repetidas, fim da autorização e comando manual.
++- Registra os contadores, intervalos, limites, condição e estado do momento da decisão. Identifica números históricos e mantém respostas como candidatas.
++- Não rearma após reboot, Wi-Fi ou falha. Falha real exige reconfiguração explícita e nova autorização/validação.
++- Preserva os 17 PIDs, MIDs, cadências, leitura passiva, J1939, armazenamento, Link, Cloud, NVS e partições. Somente o Core recebe imagem candidata.
++- Acrescenta identificação do ELF no diagnóstico de boot para futuras auditorias.
++- Inclui testes de ruído isolado/persistente, mudanças de tráfego, UART real simulada, eco, timeout, reboot, conexão, resposta espontânea, referência antiga e regressões existentes.
++
++Leia [a auditoria](REV_B1_0.2.15_AUDITORIA.md) e [os testes](TESTES_v0.2.15.md). A causa física e o ramo exato do incidente de 10/11 permanecem indeterminados. Ensaios locais não validam eletricamente a Rev.B.1. OTA e ativação em campo dependem de aprovação explícita.
+diff --git a/firmware/espidf/CMakeLists.txt b/firmware/espidf/CMakeLists.txt
+index ad046df..0d67410 100644
+--- a/firmware/espidf/CMakeLists.txt
++++ b/firmware/espidf/CMakeLists.txt
+@@ -5,7 +5,7 @@ if(NOT TRUCKBOX_ROLE STREQUAL "core" AND NOT TRUCKBOX_ROLE STREQUAL "link")
+ endif()
+ set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
+ set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.${TRUCKBOX_ROLE}.defaults")
+-set(PROJECT_VER "0.2.14" CACHE STRING "Application version included in OTA images")
++set(PROJECT_VER "0.2.15" CACHE STRING "Application version included in OTA images")
+ set(IDF_TARGET "esp32c6")
+ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+ project(truckbox_${TRUCKBOX_ROLE})
+diff --git a/firmware/espidf/README.md b/firmware/espidf/README.md
+index f4c862a..61902c3 100644
+--- a/firmware/espidf/README.md
++++ b/firmware/espidf/README.md
+@@ -1,4 +1,6 @@
+-Core **0.2.14 — CANDIDATA**: [Validação supervisionada em campo, critérios e instruções](REV_B1_0.2.14_CANDIDATA.md). Alternativa operacional indireta ao analisador simultâneo; mantém validação externa independente e a correção de RAM. Somente Core; instalação manual.
++Core **0.2.15 — CANDIDATA, não instalada**: [auditoria e correção da proteção J1708](REV_B1_0.2.15_AUDITORIA.md), [testes](TESTES_v0.2.15.md) e [changelog](CHANGELOG_v0.2.15.md). Evita decidir com uma janela ruidosa ou taxa histórica; preserva proteções, 17 PIDs e validação indireta. OTA e ativação dependem de aprovação explícita.
++
++Core **0.2.14 — referência histórica**: [Validação supervisionada em campo, critérios e instruções originais](REV_B1_0.2.14_CANDIDATA.md). Seus critérios de supervisão em viagem foram revisados na candidata 0.2.15; o documento original permanece preservado.
+ 
+ Core **0.2.13 — CANDIDATA**: [correção de RAM do diagnóstico e instruções](REV_B1_0.2.13_CANDIDATA.md). Base 0.2.12 preservada; somente Core, Link instalado compatível. Não instalada automaticamente.
+ 
+diff --git a/firmware/espidf/REV_B1_0.2.15_AUDITORIA.md b/firmware/espidf/REV_B1_0.2.15_AUDITORIA.md
+new file mode 100644
+index 0000000..0120ce6
+--- /dev/null
++++ b/firmware/espidf/REV_B1_0.2.15_AUDITORIA.md
+@@ -0,0 +1,100 @@
++# Core Rev.B.1 0.2.15 — candidata: proteção das requisições J1708
++
++Investigação de 11/11/2026, dispositivo `tb-c6-d40592b9190c`, boot observado 290, Volvo FH 540 2013. Desenvolvimento separado em `fix/revb1-v0215-j1708-guard`. Não houve OTA, reset, alteração de configuração, transmissão real, deploy ou alteração de viagens. Consultas à Cloud foram somente de leitura.
++
++## Resultado comprovado e limites da investigação
++
++O fonte publicado da **0.2.14 foi localizado**, na branch `feature/revb1-v0214-field-validation`, commit de publicação `94cd01a7a64f24e742ce27a03ca3b547b340f129`, fonte `d7957a2b9cc4bc3ba9408579a805a0425d6064ce`. A comparação dos 281 caminhos do ZIP que existem na árvore local, incluindo 119 arquivos C/H/CMake/HTML, não encontrou divergências. SHA256 do ZIP de fontes: `974e60561dc4a4a3a486c7bd4bc8cd46f663927be4def6ab85699e876b49fe89`; aplicação OTA publicada: `03c50991a48854254ef6d31a71fce8ba7895467913ad9bf5dbfae45893f9ca72`. Evidência: `test_evidence/v0215_source_audit.json`.
++
++O histórico identifica firmware 0.2.14/boot 290 e reproduz o evento relatado. **Não é possível comprovar o hash da imagem efetivamente gravada**: a 0.2.14 não registrava essa identificação. A candidata acrescenta versão e SHA256 do ELF ao BOOT_DIAGNOSTIC para futuras comparações; esse SHA não é o SHA do arquivo `.bin` e não prova retroativamente o boot 290.
++
++Há dois problemas comprovados no software: uma única janela ruidosa podia interromper o modo ativo; e o evento não guardava os valores dessa janela, repetindo os números do ensaio estacionado. **Não há evidência suficiente para escolher qual ramo da condição disparou às 20:02:34, nem para atribuir os erros à transmissão elétrica do TruckBox.** Mudança normal de tráfego, agrupamento UART, ruído e interferência continuam hipóteses. Ausência de falha percebida pelo motorista não é prova elétrica.
++
++## Condição exata da 0.2.14
++
++[tbx_j1708_field.c, linhas 105–124 no commit auditado](https://github.com/rbasniak1989-lab/Truckbox/blob/94cd01a7a64f24e742ce27a03ca3b547b340f129/firmware/espidf/components/tb_core/tbx_j1708_field.c#L105):
++
++```c
++// A cada pelo menos 10 segundos, desde a última avaliação:
++frames = field.frames - field.watch_frames;
++errors = field.bad_frames - field.watch_errors;
++observed = frames * field.before_duration_us;
++expected = field.before_frames * (now - field.watch_at_us);
++stop = (errors > 3 && errors * 100 > frames)
++    || (field.before_frames && (observed * 4 < expected || observed > expected * 4));
++```
++
++O primeiro ramo usa contadores atuais de **todos os quadros inválidos**, não somente checksum. O segundo compara a taxa atual à taxa **histórica do ensaio inicial**, parando fora de 1/4 a 4 vezes essa referência. Não existia persistência de múltiplas janelas nesse teste; os contadores de três falhas de TX/timeout eram uma proteção diferente. Silêncio de 10 s e perda de auditoria também interrompiam, com outros motivos.
++
++`capture.c:169–176` copiava `before_frames`, `after_frames`, erros e durações da sessão antiga para o evento; `capture.c:207–210` os serializava. Logo, **1916/1809 quadros e 0/2 erros no FIELD_FAILED são contexto histórico**, não os contadores da decisão de parada. Ao mesmo tempo, `before_frames/before_duration_us` realmente participavam do segundo ramo acima. Os dois fatos não se contradizem.
++
++`capture.c:490–520` alimentava `bad_frames` tanto com checksum inválido quanto com quadro excessivo/agrupado, tamanho inadequado ou MID inválido. HEALTH separava parte desses casos. Por isso não se pode reconstituir `errors` a partir de `j1708_checksum_errors` por minuto.
++
++## Evidências da Cloud — horário de Brasília, 10/11/2026
++
++| Evento | Horário derivado da Cloud | Seq | Uptime ms |
++|---|---|---:|---:|
++| FIELD_SATISFACTORY | 19:40:51,573 | 47799 | 275323 |
++| FIELD_CONFIRMED | 19:41:01,044 | 47804 | 284521 |
++| WORK_ENABLED | 19:43:03,536 | 47856 | 406751 |
++| FIELD_FAILED | 20:02:34,006 | 48876 | 1577473 |
++| STOPPED | 20:02:33,813 | 48877 | 1577473 |
++
++Os dois últimos registros têm o mesmo uptime. A pequena inversão do horário derivado não muda a ordem de sequência: falha e depois parada. Os eventos anteriores ao STOP repetem os mesmos números do baseline.
++
++O boot contém 318 REQUEST e 318 RESPONSE_VALUE, cobrindo os 17 PIDs; 51 TX_ECHO, 51 RESPONSE_CANDIDATE e 51 RESPONSE_FRAME no ensaio inicial; nenhum evento TIMEOUT/LINK_ERROR encontrado. O código **suprime TX_ECHO e RESPONSE_CANDIDATE no modo de viagem** e grava RESPONSE_FRAME somente no ensaio. Portanto, 51 registros não significam que somente 51 ecos ocorreram.
++
++Nas sete janelas HEALTH de 19:59 a 20:05, há 3598/3617/3602/3608/3590/3565/3629 quadros válidos e 5/1/10/2/6/9/13 erros de checksum; overrun e perda de eventos são zero. Isso é compatível com recepção passiva contínua, mas não revela a distribuição dos erros nos dez segundos da proteção nem os inválidos de enquadramento. Não prova ausência de interferência. Dados restritos aos contadores estão em `test_evidence/v0215_cloud_readonly.json` e `v0215_health_readonly.json`; sem coordenadas, tokens ou conteúdo de viagens.
++
++## O que REQUEST, eco e resposta realmente demonstram
++
++- REQUEST: o backend aceitou/enfileirou o quadro na UART. Não é medição elétrica independente.
++- TX_ECHO: bytes recebidos pela UART coincidem integralmente com os cinco bytes esperados, dentro do prazo. É uma observação do receptor local, compartilhando controlador/caminho com TX.
++- RESPONSE_VALUE/RESPONSE_CANDIDATE: J1587 válido, MID e PID esperados, pedido pendente, eco concluído e resposta no timeout. Não existe identificador de transação no pareamento. Uma transmissão espontânea com o mesmo MID/PID nesse intervalo pode ser aceita uma vez como candidata.
++- Validação supervisionada continua **OPERATIONAL_INDIRECT**. Somente o caminho externo já existente, com confirmação explícita e evidência externa fornecida pelo operador, pode definir `physical_validated=true`. A candidata não preenche esses campos.
++
++O particionamento permanece por idle UART de 10 bits a 9600 baud, com separação especial do eco exato de cinco bytes e limite de 21 bytes. O teste de integração executa o `j1708_task` e o `finish_j1708` reais, além dos decodificadores; não é apenas uma cópia do algoritmo de teste.
++
++## Correção da candidata
++
++Novo módulo pequeno `tbx_j1708_rx_guard.c/.h`; integração localizada em `capture.c`, `tbx_j1708_active.c` e `tbx_j1708_field.c`:
++
++1. Contadores separados de quadros válidos, checksum, enquadramento, overrun, erro UART e falha de leitura. Um erro RX não incrementa automaticamente colisões/falhas TX.
++2. Janelas recentes de 10 s e referência de três janelas aceitas contíguas, independentes do ensaio histórico. Um erro isolado pode gerar advertência; não desarma por si só.
++3. Checksum/enquadramento são comparados separadamente pela proporção observada. Aumento suspeito requer mais de três erros na janela **e** limite inferior Wilson nominal de 99% atual maior que o limite superior da referência. Três janelas suspeitas consecutivas provocam parada; uma janela limpa zera a sequência. Falhas UART persistentes ou maioria de quadros inválidos também param, mesmo sem referência completa.
++4. Taxa de quadros isoladamente não desliga o modo de viagem. Mudanças de motor/carga/tráfego não demonstram problema de TX. Permanecem arbitragem por ociosidade, monitor de bordas, backoff, um pedido pendente, espaçamento de 1,2 s, timeout e três falhas consecutivas.
++5. Perder RX durante eco/TX libera e desarma imediatamente, sem inventar colisão; silêncio de 10 s, conflito de MID e relógio monotônico incoerente bloqueiam. Eco divergente libera TX imediatamente e conserva a política existente de repetição/parada. Auditoria perdida continua bloqueando validação/viagem indireta.
++6. Janela atrasada de pelo menos 30 s não vira três observações. A referência é reaprendida, sem usar a calibração antiga como substituta. Referência com mais de 60 s não sustenta comparação. Contadores e referência são deste boot, sem restauração de autorização.
++7. Falha real fica travada até reconfiguração explícita; configuração por si só não arma TX nem valida hardware. Parada manual/fim da autorização não são rotulados como defeito elétrico; exigem nova autorização. Wi-Fi, retomada de upload e reboot nunca ativam trabalho.
++8. Diagnóstico de proteção é copiado por valor antes da mudança do controlador e inclui o estado depois da parada. Gravação/JSON continuam fora do lock de RX/TX. Os campos históricos recebem `baseline_scope=HISTORICAL_VALIDATION` e `baseline_error_metric=ALL_INVALID_FRAMES`.
++
++**Justificativa e limites dos parâmetros:** 10 s preserva o intervalo/silêncio da proteção anterior; três observações reutilizam o princípio existente de três falhas e evitam decidir por um pico; o piso de mais de três erros mantém a tolerância anterior a poucos inválidos. A referência de 30 s acompanha o volume observado (~600 quadros por 10 s) e o período inicial já existente. O limite de idade de 60 s corresponde à aprendizagem mais a confirmação de três janelas. Wilson nominal de 99% explicita a incerteza amostral e substitui a suposição de que uma taxa fixa de 1% serve em toda condição. **99% é uma escolha de engenharia da candidata, não um valor SAE ou limiar calibrado eletricamente nos logs disponíveis.** Erros de rede podem ser correlacionados: não se declara probabilidade formal de falso alarme nem prova causal. O piso de maioria inválida é uma proteção de receptor inutilizável. A aprovação da candidata deve considerar esses parâmetros e o ensaio supervisionado; não existe log de dez segundos que permita calibrá-los retrospectivamente com certeza.
++
++## Diagnóstico compacto `GUARD_DECISION`, versão 1
++
++Mantém `sample_kind=J1708_REQUEST_EVENT`; usa `boot_id`, `uptime_ms` inteiro, `guard_id=boot:microssegundos`, `source=LIVE_PROTECTION_DECISION`, `reason`, `stopped`, `streak`, `fails`, `predicates`, `candidate_only=true`, `crc_hit`, `frame_hit`, `persist_hit` e, se aplicável, `pid/target_mid`. Não declara comprovação externa. Horário UTC continua sendo derivado pelo fluxo existente quando há âncora válida; boot/monotônico permanecem disponíveis sem internet/GPS.
++
++| Campo | Ordem dos elementos |
++|---|---|
++| `w` | início ms, fim ms, válidos, checksum, enquadramento, overrun, erro UART, falha de leitura |
++| `ref` | início ms, fim ms, válidos, checksum, enquadramento |
++| `totals` | válidos, checksum, enquadramento, overrun, erro UART, falha de leitura, pedidos, ecos, candidatas, timeouts, divergências/colisões, timeout de eco, falhas backend TX |
++| `ci_ppm` | limite inferior atual e superior da referência para checksum; nulo quando não houve comparação válida |
++| `policy` | janela ms, persistência, nível nominal %, idade máxima ms, piso de erros exclusivo, timeout resposta ms, espaçamento ms, timeout eco ms |
++| `mode` | flags antes e depois: armado=1, viagem=2, TX=4 |
++
++Taxas são reproduzíveis: `válidos*60000/(fim-início)` quadros/min; `checksum/(válidos+checksum)` e `enquadramento/(válidos+enquadramento)`; ignorar intervalo inválido/obsoleto. A comparação de enquadramento é reproduzida pelos contadores e mesma política Wilson; `ci_ppm` registra especificamente checksum.
++
++Máscara `predicates`: checksum elevado=1; enquadramento elevado=2; falha UART=4; maioria inválida=8; persistente=16; silêncio=32; relógio inválido=64; RX perdido em TX=128; três falhas de requisição=256; referência utilizável=512; janela obsoleta=1024. Parada por degradação ocorre quando há modo ativo e bit 16; os bits 32/64/128 identificam paradas imediatas. Os limites TX/MID/autorização continuam nos ramos existentes e são diferenciados por `reason`.
++
++Somente transições de advertência/recuperação e paradas geram esse registro; não há JSON/armazenamento de cada janela nem captura bruta contínua. A API local acrescenta `requests.rx_guard`, com contadores atuais e causa/uptime explicitamente identificados como snapshot da última decisão. O painel traduz os motivos e avisa sobre nova autorização.
++
++## Compatibilidade, teste e aprovação
++
++Não foram alterados GPIOs, topologia de transceiver, MIDs/cadências, bytes PID128, escalas, sensores, política de armazenamento, codec, NVS, credenciais, identidade, partições, protocolo Link/ACK ou histórico Cloud. O problema CAN/J1939 não foi investigado nem modificado. Seu código e testes permanecem. microSD, FRAM e SIM não foram habilitados. O Link instalado não precisa de nova imagem para esta correção do Core.
++
++Resultados e matriz A–J: [TESTES_v0.2.15.md](TESTES_v0.2.15.md). Changelog: [CHANGELOG_v0.2.15.md](CHANGELOG_v0.2.15.md). Diff integral e binários ficam no pacote candidato da branch separada.
++
++Após aprovação da versão, o ensaio físico deve ocorrer estacionado, com alimentação estável, verificação de MID/topologia e autorização explícita pelo painel. Repetir a validação supervisionada ou usar a externa independente, revisar os novos diagnósticos e somente então confirmar o modo de viagem. Não há necessidade de operar controles dirigindo. Nenhum teste deste trabalho concede essa autorização.
++
++Rollback preservado: aplicação OTA anterior **0.2.14/0.2.13/0.2.12**, manualmente e somente após autorização, sem apagar NVS/flash ou gravar tabela de partições. A 0.2.14 também restaura o comportamento antigo da proteção. Para 0.2.11 ou anterior, drenar a fila e seguir o procedimento de compatibilidade de armazenamento da 0.2.12. Não executar scripts USB que gravem partições como se fossem atualização OTA. O bootloader mantém rollback habilitado, que cobre falha de inicialização; isso não substitui reversão manual de regressão operacional.
+diff --git a/firmware/espidf/TESTES_v0.2.15.md b/firmware/espidf/TESTES_v0.2.15.md
+new file mode 100644
+index 0000000..af70967
+--- /dev/null
++++ b/firmware/espidf/TESTES_v0.2.15.md
+@@ -0,0 +1,83 @@
++# Testes — Core Rev.B.1 0.2.15 candidata
++
++Executados em 11/11/2026, Linux, ESP-IDF **5.5.2**, compilador RISC-V fornecido pelo IDF, ESP32-C6/flash 8 MB. Nenhuma conexão à placa, transmissão J1708 real, gravação OTA/USB, reset ou alteração em produção. Leituras da Cloud são históricas do boot 290, não testes da candidata instalada.
++
++## Execução e evidências
++
++```sh
++# Ativar a instalação ESP-IDF 5.5.2 antes destes comandos.
++bash firmware/espidf/tools/build_v020.sh core
++sh firmware/espidf/tests/run_all.sh
++# Playwright/Chromium devem estar instalados para este teste local.
++node firmware/espidf/tests/web/test_flow.cjs
++```
++
++A suíte principal concluiu com exit 0, sanitizadores AddressSanitizer/UndefinedBehaviorSanitizer nos testes nativos e 24 testes Python aprovados. Inclui `run_store_transactions.sh`, `run_store_format.sh`, `run_j1708_active.sh`, `run_legacy_profile.sh`, `run_capture_integration.sh`, `run_telemetry.sh`, `run_trip.sh`, `run_worker_fairness.sh`, ensaio de campo indireto, J1939, UART, transporte Wi-Fi do Link e teste offline. As alterações finais do painel passaram novamente nos dois testes Python específicos e nos **21 cenários do navegador**; não houve modificação funcional posterior do controlador testado.
++
++O teste local da função de ingestão v26, com Supabase/Deno/banco substituídos por mocks, passou com o novo GUARD_DECISION: payload preservado, ACK correto, nenhuma atualização de viagens, consumo ou `telemetry_latest`. Esse teste usa a cópia privada já disponível da função; ela não integra o pacote público por conter dados de autenticação. O executor e o novo caso de regressão estão no repositório. **Não foi feito deploy nem envio sintético à produção.**
++
++Logs sem credenciais reais: `test_evidence/v0215_host.txt`, `v0215_build_core.txt`, `v0215_browser.txt`, `v0215_browser.json`, `v0215_cloud_mock.txt` e `v0215_panel.txt`. Falhas encontradas durante desenvolvimento foram corrigidas antes dos resultados finais: expiração de autorização não deve ser confundida com falha elétrica travada; teste do navegador agora aguarda a atualização da fase, em vez de supor que a mensagem de aceite já contém o diagnóstico novo.
++
++## Matriz solicitada A–J
++
++| Caso | Verificação executada e resultado |
++|---|---|
++| A — tráfego estável com pedidos | Controlador real, relógio/barramento mock, ~60 quadros/s, agendamento dos 17 PIDs. Permanece armado e em viagem; teste de campo completo verifica separadamente as três rodadas e autorização. PASS |
++| B — checksum isolado | Pico sintético de seis inválidos e recuperação limpa. Não desarma; testes mantêm checksum separado de falha TX. PASS |
++| C — variação de taxa | 60 → 5 → 120 → 25 quadros/s, mantendo tráfego válido. Taxa isolada não desarma. PASS |
++| D — falhas persistentes/TX | Três janelas com 40 erros interrompem; falhas UART persistentes interrompem; overrun durante TX libera imediatamente; eco divergente libera TX e conta divergência, conservando política de repetição. Falha RX não inventa colisão/falha de backend. PASS |
++| E — timeout repetido | Três pedidos sem resposta candidata e três falhas de backend disparam as proteções existentes; diagnóstico identifica a categoria/PID. PASS |
++| F — parado/ligado/movimento | Variação de tráfego no controlador e testes existentes de movimento/velocidade recente: ensaio estacionado continua bloqueando movimento; modo de viagem autorizado não exige interação enquanto dirige. Estados e velocidades são simulados. PASS |
++| G — internet | Upload mock falha/retoma sem alterar autorização do controlador; testes reais do transporte Link com HTTP mock e offline/ACK complementam a independência. Não é ensaio de RF/roteador no caminhão. PASS |
++| H — reboot | Inicialização do controlador volta desarmada, sem trabalho; não restaura autorização. Testes de captura/NVS e recuperação verificam persistência separadamente. PASS |
++| I — resposta espontânea | MID/PID igual dentro da janela pode contar uma candidata; segunda contagem é rejeitada; MID errado não pareia; nenhum teste transforma o resultado em comprovação externa. PASS |
++| J — baseline antigo | `before_frames` histórico alterado para 1/UINT32_MAX não afeta a proteção atual. Referência atrasada é descartada/reaprendida. PASS |
++
++Também passaram: relógio começando em zero, reversão do monotônico bloqueando TX, referência de três janelas contíguas, janela atrasada não contada como três janelas, trava de falha sem rearme após recuperação, manutenção das cadências/MIDs e de 1,2 s entre pedidos.
++
++## UART e diagnóstico — código real exercitado
++
++O runner de integração extrai as funções efetivas `j1708_task` e `finish_j1708` do fonte e liga os protocolos/decodificadores reais. Mock UART entrega eco fragmentado, quadro dividido entre leituras/idle, checksum inválido, excesso/agrupamento de bytes, MID errado, mensagem espontânea e FIFO overflow durante TX. Verificados: eco próprio não vira MID conflitante, CRC/enquadramento ficam separados, candidato não duplica, TX para quando perde RX e recepção passiva continua. Não se altera o algoritmo de particionamento para obter respostas artificiais.
++
++O teste de auditoria extrai a serialização real. O registro guard representativo ocupa **522 bytes**; fixture de limites conservadores de contagem/uptime ocupa **731 bytes**, abaixo de 767. Falha em cada ponto de alocação cJSON foi injetada: arrays não perdem posições, não há vazamento e evidência incompleta não é gravada como sucesso. Perda de auditoria do caminho indireto mantém o bloqueio.
++
++O teste inclui uma cópia imutável apenas de `healthy()` da 0.2.14. Uma janela **sintética** de 599 válidos/6 inválidos satisfaz o ramo antigo e interrompe; a candidata não interrompe por esse pico isolado. **Não é replay do instante real das 20:02:34.** Os contadores de dez segundos necessários não existem no histórico persistido.
++
++## Duas horas offline e retorno
++
++Teste virtual de 7.200 s, 433.624 quadros de entrada, 65 sensores, 1.624 pedidos e 1.624 respostas candidatas; zero gravações RAW contínuas. Exportador usa os construtores reais de OPERATIONAL/HEALTH/eventos. Persistência/codec/ACK exercitados em camada separada, com 14 reinicializações simuladas e retransmissões. A autorização do controlador não foi restaurada por esses reboots da camada de armazenamento.
++
++| Cenário | Registros | Bytes físicos | Orçamento | Perda por lotação | Cloud mock após retorno |
++|---|---:|---:|---:|---:|---|
++| Sem UTC | 5904 | 1655121 | 1818624 | 0 | 5904 únicos, 5912 entregas com retries, 0 duplicados, 0 válidos pendentes |
++| Com UTC | 5904 | 1732153 | 1818624 | 0 | 5904 únicos, 5912 entregas com retries, 0 duplicados, 0 válidos pendentes |
++
++Os arquivos de evidência isolados após ACK foram preservados (685.617/686.537 bytes), como no código anterior; ocupam espaço em cenários futuros até revisão explícita. O teste não autoriza apagá-los e não promete duas horas adicionais quando a partição real já estiver ocupada. Não houve mudança no armazenamento nesta versão.
++
++## Compilação, RAM e imagem
++
++Build real do **Core**, ESP32-C6, ESP-IDF v5.5.2, aplicação 0.2.15, flash 8 MB, perfil J1708_ONLY. Aplicação cabe em OTA de 3.145.728 bytes. Tabela de partições continua com SHA256 `5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832`. Valores/hash finais estão em `test_evidence/v0215_image.json` e no manifesto do pacote.
++
++Medição dos ELF/DWARF da 0.2.14 e candidata:
++
++| Item | 0.2.14 | 0.2.15 | Diferença |
++|---|---:|---:|---:|
++| RAM estática, incluindo IRAM | 202148 | 202580 | +432 B |
++| Estrutura do controlador | 688 | 1120 | +432 B, já incluídos acima |
++| Item da fila de eventos | 232 | 392 | +160 B |
++| Fila, 16 itens | 3712 | 6272 | +2560 B no heap |
++| Acréscimo conhecido total | — | — | **2992 B** |
++
++Não houve economia de RAM: o acréscimo guarda contadores independentes e o snapshot fiel. A coleta RX/TX continua sem alocações cJSON, e a gravação não ocorre no lock de tempo crítico. Heap livre mínimo, pilhas e latência na **placa candidata** ainda não foram medidos; o mínimo histórico de 28.564 B do boot 290 não substitui essa medição. Não se declara ausência de regressão física de memória com base apenas em ELF/testes host.
++
++O Link não recebeu nova imagem; sua compatibilidade é coberta pelos testes existentes e pelo protocolo inalterado. Fontes J1939, escalas, MIDs/cadências, partições, codec, armazenamento/NVS, OTA e release funcional v0.1.0-b1 permanecem preservados.
++
++## Pendências reais para aprovação/ensaio
++
++- Não há captura externa simultânea nem medições elétricas da Rev.B.1. O diagnóstico continua indireto/candidato.
++- Não se conhece o ramo real do OR antigo nem a causa física dos inválidos do incidente. Não há ZIPs completos dos Logs Mãe reprocessados nesta tarefa.
++- Política estatística/persistência é proposta de engenharia documentada; não é certificação SAE nem ajuste comprovado em todas as condições de condução.
++- Testar heap/pilha, resposta manual de parada, fluxo Cloud/ACK e novos eventos na placa **somente depois da aprovação**, inicialmente estacionado. Não autorizar TX apenas porque 17/17 candidatas apareceram.
++- Nenhuma alteração foi feita para o problema separado de CAN/J1939.
++
++Procedimento/rollback estão na [auditoria](REV_B1_0.2.15_AUDITORIA.md). Pacote é candidato para revisão; não foi implantado.
+diff --git a/firmware/espidf/cloud/test_ingest_mock.mjs b/firmware/espidf/cloud/test_ingest_mock.mjs
+index 7e032cb..f0f8990 100644
+--- a/firmware/espidf/cloud/test_ingest_mock.mjs
++++ b/firmware/espidf/cloud/test_ingest_mock.mjs
+@@ -152,6 +152,21 @@ if (baselinePath) {
+   console.log('PASS: persistence failure prevents ACK and aggregate side effects');
+ }
+ console.log('Cloud ingest compatibility mock tests: PASS (local only; no deployment/network/database)');
++{
++  // New Core guard diagnostic remains a normal durable request event. All
++  // compact arrays/bit flags must survive ingest without trip/latest effects.
++  const guard={seq:21,sample_kind:'J1708_REQUEST_EVENT',event:'GUARD_DECISION',boot_id:55,uptime_ms:15000,
++    guard_v:1,guard_id:'55:15000000',mid:172,source:'LIVE_PROTECTION_DECISION',reason:'RX_ERROR_RATE_PERSISTENT',
++    stopped:true,predicates:529,streak:3,fails:0,candidate_only:true,crc_hit:true,frame_hit:false,persist_hit:true,
++    w:[5000,15000,599,40,0,0,0,0],ref:[0,3000,1800,1,0],totals:[9000,120,0,0,0,0,18,18,18,0,0,0,0],
++    ci_ppm:[0,0],policy:[10000,3,99,60000,3,450,1200,20],mode:[3,0]};
++  const got=await invoke(sourcePath,[guard]);
++  assert.equal(got.status,200);assert.equal(got.response.ack_seq,21);
++  assert.deepEqual(got.rows[0].raw,guard);assert.equal(got.rows[0].uptime_ms,15000);
++  assert.deepEqual(got.state.latest,got.initialLatest);assert.equal(got.rpcs.length,0);
++  assert.equal(got.rows[0].trip_id,null);assert.equal(got.rows[0].lat,null);assert.equal(got.rows[0].lon,null);
++  console.log('PASS: compact GUARD_DECISION persists unchanged and ACKs without trip/latest or external-validation effects');
++}
+ if (args.includes('--v25')) {
+   const got = await invoke(sourcePath, diagnostics);
+   for (const [index, row] of got.rows.entries()) {
+diff --git a/firmware/espidf/components/tb_core/CMakeLists.txt b/firmware/espidf/components/tb_core/CMakeLists.txt
+index 1363ac3..1027fbe 100644
+--- a/firmware/espidf/components/tb_core/CMakeLists.txt
++++ b/firmware/espidf/components/tb_core/CMakeLists.txt
+@@ -1,6 +1,6 @@
+ set(core_sources)
+ if(NOT CONFIG_TB_ROLE_LINK)
+-    list(APPEND core_sources "core.c" "capture.c" "store.c" "store_codec.c" "protocols.c" "fram.c" "telemetry.c" "tbx_j1939.c" "tbx_j1939_tp.c" "tbx_trip.c" "tbx_fuel_account.c" "tbx_fuel.c" "tbx_j1708_active.c" "tbx_j1708_field.c" "tbx_j1587_bridge.c"
++    list(APPEND core_sources "core.c" "capture.c" "store.c" "store_codec.c" "protocols.c" "fram.c" "telemetry.c" "tbx_j1939.c" "tbx_j1939_tp.c" "tbx_trip.c" "tbx_fuel_account.c" "tbx_fuel.c" "tbx_j1708_active.c" "tbx_j1708_field.c" "tbx_j1708_rx_guard.c" "tbx_j1587_bridge.c"
+         "../../../j1708_17pid/src/tbx_j1587_decoder.c"
+         "../../../j1708_17pid/src/tbx_j1587_passive.c"
+         "../../../j1708_17pid/src/tbx_j1587_passive_full.c"
+diff --git a/firmware/espidf/components/tb_core/capture.c b/firmware/espidf/components/tb_core/capture.c
+index 644e3fd..07641a6 100644
+--- a/firmware/espidf/components/tb_core/capture.c
++++ b/firmware/espidf/components/tb_core/capture.c
+@@ -24,6 +24,7 @@
+ #include "esp_intr_alloc.h"
+ #include "esp_log.h"
+ #include "esp_system.h"
++#include "esp_app_desc.h"
+ #include "esp_timer.h"
+ #include "esp_rom_gpio.h"
+ #include "soc/gpio_sig_map.h"
+@@ -137,8 +138,8 @@ typedef struct {
+     uint16_t pid;
+     uint8_t local_mid,target_mid,frame[5],response[21],response_size;
+     uint64_t field_started_us;
+-    union {tbx_j1708_field_pid_t field_pid;tbx_j1708_field_health_t field_health;};
+-    bool field,field_result;
++    union {tbx_j1708_field_pid_t field_pid;tbx_j1708_field_health_t field_health;tbx_rx_decision_t guard_decision;};
++    bool field,field_result,guard;
+     char event[24],detail[112];
+     bool work;
+ } request_event_t;
+@@ -163,7 +164,7 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
+     request_event_t item={.work=s.active.work_mode,.uptime_us=(uint64_t)esp_timer_get_time(),
+         .tx_start_us=s.last_tx_uart_us,.edges=s.rx_edges,.pid=pid,
+         .field=s.active.field.started_us!=0 && !s.active.physical_validated,.field_started_us=s.active.field.started_us,
+-        .field_result=!strcmp(event,"FIELD_PID_RESULT")};
++        .field_result=!strcmp(event,"FIELD_PID_RESULT"),.guard=!strcmp(event,"GUARD_DECISION")};
+     snprintf(item.event,sizeof(item.event),"%s",event);
+     snprintf(item.detail,sizeof(item.detail),"%s",detail?detail:"");
+     if(s.active.configured){
+@@ -175,6 +176,7 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
+             item.field_health=(tbx_j1708_field_health_t){.before_frames=f->before_frames,.after_frames=f->after_frames,
+                 .before_errors=f->before_errors,.after_errors=f->after_errors,.before_duration_us=f->before_duration_us,.after_duration_us=f->after_duration_us};
+         }
++        if(item.guard){item.guard_decision=s.active.rx_guard.decision;item.pid=item.guard_decision.pid;item.target_mid=item.guard_decision.target_mid;}
+         memcpy(item.frame,s.active.tx_frame,sizeof(item.frame));
+     }
+     if(!s.request_events || xQueueSend(s.request_events,&item,0)!=pdTRUE){
+@@ -183,8 +185,51 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
+     }
+ }
+ 
++static bool guard_values(cJSON *o,const char *name,const uint64_t *values,unsigned count)
++{
++    cJSON *a=cJSON_CreateArray();if(!a)return false;
++    for(unsigned i=0;i<count;i++)if(!tb_json_add_array(a,cJSON_CreateNumber((double)values[i]))){cJSON_Delete(a);return false;}
++    return tb_json_add_object(o,name,a);
++}
++static bool guard_record(cJSON *o,const tbx_rx_decision_t *d)
++{
++    const tbx_rx_counts_t *w=&d->window.count,*r=&d->reference.count,*t=&d->totals;
++    const uint64_t window[]={d->window.start_us/1000,d->window.end_us/1000,w->valid,w->checksum,w->framing,w->overruns,w->uart_frame,w->read_errors};
++    const uint64_t ref[]={d->reference.start_us/1000,d->reference.end_us/1000,r->valid,r->checksum,r->framing};
++    const uint64_t totals[]={t->valid,t->checksum,t->framing,t->overruns,t->uart_frame,t->read_errors,d->sent,d->echoes,d->candidates,d->timeouts,d->collisions,d->echo_timeouts,d->tx_errors};
++    const uint64_t intervals[]={d->current_lower_ppm,d->reference_upper_ppm};
++    const uint64_t policy[]={TBX_RX_WINDOW_US/1000,TBX_RX_PERSISTENCE,99,TBX_RX_REFERENCE_MAX_US/1000,TBX_RX_PERSISTENCE,d->timeout_ms,d->spacing_ms,TBX_J1708_ACTIVE_ECHO_TIMEOUT_US/1000};
++    const uint64_t modes[]={d->before_flags,d->after_flags};
++    bool ok=cJSON_AddNumberToObject(o,"guard_v",1) &&
++        cJSON_AddStringToObject(o,"source","LIVE_PROTECTION_DECISION") &&
++        cJSON_AddStringToObject(o,"reason",tbx_j1708_guard_cause_name(d->cause)) &&
++        cJSON_AddBoolToObject(o,"stopped",d->stopped) &&
++        cJSON_AddNumberToObject(o,"predicates",d->predicates) && cJSON_AddNumberToObject(o,"streak",d->streak) && cJSON_AddNumberToObject(o,"fails",d->request_failures) &&
++        cJSON_AddBoolToObject(o,"candidate_only",true) &&
++        cJSON_AddBoolToObject(o,"crc_hit",(d->predicates&TBX_GUARD_CRC_ELEVATED)!=0) &&
++        cJSON_AddBoolToObject(o,"frame_hit",(d->predicates&TBX_GUARD_FRAME_ELEVATED)!=0) &&
++        cJSON_AddBoolToObject(o,"persist_hit",(d->predicates&TBX_GUARD_PERSISTENT)!=0);
++    ok=ok && guard_values(o,"w",window,8) && guard_values(o,"ref",ref,5) && guard_values(o,"totals",totals,13) &&
++        ((d->predicates&TBX_GUARD_REFERENCE_READY)?guard_values(o,"ci_ppm",intervals,2):cJSON_AddNullToObject(o,"ci_ppm")!=NULL) && guard_values(o,"policy",policy,8) && guard_values(o,"mode",modes,2);
++    if(d->pid)ok=ok && cJSON_AddNumberToObject(o,"pid",d->pid) && cJSON_AddNumberToObject(o,"target_mid",d->target_mid);
++    return ok;
++}
++static void request_store_guard(const request_event_t *item)
++{
++    cJSON *o=cJSON_CreateObject();const tbx_rx_decision_t *d=&item->guard_decision;
++    char id[64];snprintf(id,sizeof(id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),d->at_us);
++    bool ok=o && cJSON_AddStringToObject(o,"sample_kind","J1708_REQUEST_EVENT") &&
++        cJSON_AddStringToObject(o,"event","GUARD_DECISION") && cJSON_AddNumberToObject(o,"boot_id",tb_boot_id()) &&
++        cJSON_AddNumberToObject(o,"uptime_ms",(double)(d->at_us/1000)) && cJSON_AddStringToObject(o,"guard_id",id) && cJSON_AddNumberToObject(o,"mid",item->local_mid) && guard_record(o,d);
++    char json[TB_RECORD_MAX];
++    ok=ok && cJSON_PrintPreallocated(o,json,sizeof(json),false) && tb_store_submit(json)==ESP_OK;
++    cJSON_Delete(o);
++    if(!ok){__atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);if(item->field)__atomic_store_n(&s.active.field.audit_lost,true,__ATOMIC_RELAXED);}
++}
++
+ static void request_store_event(const request_event_t *item)
+ {
++    if(item->guard){request_store_guard(item);return;}
+     cJSON *row = cJSON_CreateObject();
+     if (!row){__atomic_fetch_add(&s.request_event_dropped,1,__ATOMIC_RELAXED);if(item->field)__atomic_store_n(&s.active.field.audit_lost,true,__ATOMIC_RELAXED);return;}
+     cJSON_AddStringToObject(row, "sample_kind", "J1708_REQUEST_EVENT");
+@@ -206,6 +251,7 @@ static void request_store_event(const request_event_t *item)
+     }
+     if(item->field && !item->pid){
+         const tbx_j1708_field_health_t *v=&item->field_health;
++        if(v->before_duration_us){cJSON_AddStringToObject(row,"baseline_scope","HISTORICAL_VALIDATION");cJSON_AddStringToObject(row,"baseline_error_metric","ALL_INVALID_FRAMES");}
+         if(v->before_duration_us){cJSON_AddNumberToObject(row,"before_frames",v->before_frames);cJSON_AddNumberToObject(row,"before_checksum_errors",v->before_errors);cJSON_AddNumberToObject(row,"before_duration_ms",v->before_duration_us/1000.0);}
+         if(v->after_duration_us){cJSON_AddNumberToObject(row,"after_frames",v->after_frames);cJSON_AddNumberToObject(row,"after_checksum_errors",v->after_errors);cJSON_AddNumberToObject(row,"after_duration_ms",v->after_duration_us/1000.0);}
+     }
+@@ -493,12 +539,19 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
+     uint64_t captured_us = esp_timer_get_time();
+     xSemaphoreTake(s.lock, portMAX_DELAY);
+     bool echo = !oversize && tbx_j1708_active_is_tx_echo(&s.active, frame, size, captured_us);
+-    if(!echo)tbx_j1708_field_note_frame(&s.active,frame[0],!oversize && size<=21 && tb_protocol_j1708_checksum_valid(frame,size) && frame[0]>=128,captured_us);
++    if(!echo){
++        tbx_rx_kind_t kind=(oversize || size>21 || size<2 || frame[0]<128)?TBX_RX_FRAMING:
++            tb_protocol_j1708_checksum_valid(frame,size)?TBX_RX_VALID:TBX_RX_CHECKSUM;
++        tbx_j1708_field_note_frame_kind(&s.active,frame[0],kind,captured_us);
++    }
+     if (!echo && !oversize && size <= 21 && tb_protocol_j1708_checksum_valid(frame, size) && frame[0] >= 128) {
+         s.observed_mid[frame[0] >> 3] |= (uint8_t)(1u << (frame[0] & 7u));
+         if (s.active.configured && frame[0] == s.active.config.local_mid) {
+-            tbx_j1708_active_stop(&s.active, "LOCAL_MID_CONFLICT");
+-            s.requests.safety_stopped = true;s.active.physical_validated=false;
++            s.active.physical_validated=false;
++            if(!s.requests.safety_stopped || s.requests.armed || s.active.tx_active){
++                s.active.rx_guard.last_failure=TBX_GUARD_MID_CONFLICT;
++                s.requests.safety_stopped=true;tbx_j1708_active_stop(&s.active,"LOCAL_MID_CONFLICT");
++            }
+         }
+     }
+     xSemaphoreGive(s.lock);
+@@ -587,6 +640,9 @@ static void record_boot_diagnostic(void)
+     cJSON *sample=cJSON_CreateObject();
+     if(!sample)return;
+     add_sample_identity(sample,"BOOT_DIAGNOSTIC");
++    char image_sha[65];esp_app_get_elf_sha256(image_sha,sizeof(image_sha));
++    cJSON_AddStringToObject(sample,"firmware",tb_version());
++    cJSON_AddStringToObject(sample,"app_elf_sha256",image_sha);
+     cJSON_AddNumberToObject(sample,"reset_reason",(double)esp_reset_reason());
+     cJSON_AddNumberToObject(sample,"heap_free",esp_get_free_heap_size());
+     cJSON_AddNumberToObject(sample,"heap_minimum",esp_get_minimum_free_heap_size());
+@@ -712,6 +768,7 @@ static void snapshot_task(void *unused)
+ 
+ static void j1708_task(void *unused)
+ {
++    (void)unused;
+     uint8_t frame[64], chunk[64];
+     size_t length = 0;
+     bool oversize = false;
+@@ -742,7 +799,7 @@ static void j1708_task(void *unused)
+             ++s.uart_overruns; length = 0; oversize = false;
+             xSemaphoreTake(s.lock, portMAX_DELAY);
+             s.rx_partial=false;
+-            tbx_j1708_active_note_link_error(&s.active, "UART_OVERFLOW");
++            tbx_j1708_rx_uart_fault(&s.active,TBX_RX_OVERRUN,(uint64_t)esp_timer_get_time());
+             xSemaphoreGive(s.lock);
+             uart_flush_input(UART_NUM_1); xQueueReset(s.uart_events); s.rx_task_busy=false;continue;
+         }
+@@ -750,7 +807,7 @@ static void j1708_task(void *unused)
+             ++s.uart_overruns; length = 0; oversize = false;
+             xSemaphoreTake(s.lock, portMAX_DELAY);
+             s.rx_partial=false;
+-            tbx_j1708_active_note_link_error(&s.active, "UART_FRAME_OR_PARITY_ERROR");
++            tbx_j1708_rx_uart_fault(&s.active,TBX_RX_UART_FRAME,(uint64_t)esp_timer_get_time());
+             xSemaphoreGive(s.lock);
+             s.rx_task_busy=false;
+             continue;
+@@ -760,7 +817,12 @@ static void j1708_task(void *unused)
+         while (remaining) {
+             size_t requested = remaining < sizeof(chunk) ? remaining : sizeof(chunk);
+             int got = uart_read_bytes(UART_NUM_1, chunk, requested, pdMS_TO_TICKS(20));
+-            if (got <= 0) { ++s.uart_overruns; oversize = true; break; }
++            if (got <= 0) {
++                ++s.uart_overruns;oversize=true;
++                xSemaphoreTake(s.lock,portMAX_DELAY);
++                tbx_j1708_rx_uart_fault(&s.active,TBX_RX_READ_ERROR,(uint64_t)esp_timer_get_time());
++                xSemaphoreGive(s.lock);break;
++            }
+             remaining -= got;
+             xSemaphoreTake(s.lock, portMAX_DELAY);
+             s.rx_partial=true;
+@@ -1045,6 +1107,17 @@ static void capture_json_mode(cJSON *object,bool compact)
+     cJSON_AddNumberToObject(j1708,"frames_per_minute",s.frames_last_minute);
+     cJSON_AddStringToObject(requests,"physical_validation",s.active.physical_validated?"EXTERNAL_CAPTURE_CONFIRMED_BY_OPERATOR":"PENDING_EXTERNAL_CAPTURE");
+     cJSON_AddBoolToObject(requests,"physical_validated",s.active.physical_validated);
++    cJSON *guard=cJSON_AddObjectToObject(requests,"rx_guard");
++    const tbx_j1708_rx_guard_t *g=&s.active.rx_guard;
++    cJSON_AddBoolToObject(guard,"fault_latched",g->fault_latched);
++    cJSON_AddNumberToObject(guard,"suspect_windows",g->suspect_streak);
++    cJSON_AddNumberToObject(guard,"reference_windows",g->reference_count);
++    cJSON_AddStringToObject(guard,"last_cause",tbx_j1708_guard_cause_name(g->decision.cause));
++    if(g->decision.at_us){cJSON_AddNumberToObject(guard,"decision_uptime_ms",(double)(g->decision.at_us/1000));cJSON_AddStringToObject(guard,"decision_scope","SNAPSHOT_AT_DECISION");}
++    cJSON_AddNumberToObject(guard,"valid_total",g->total.valid);cJSON_AddNumberToObject(guard,"checksum_total",g->total.checksum);
++    cJSON_AddNumberToObject(guard,"framing_total",g->total.framing);cJSON_AddNumberToObject(guard,"overrun_total",g->total.overruns);
++    cJSON_AddNumberToObject(guard,"uart_frame_total",g->total.uart_frame);cJSON_AddNumberToObject(guard,"uart_read_total",g->total.read_errors);
++
+     cJSON_AddStringToObject(requests,"validation_method",s.active.physical_validated?"EXTERNAL_INDEPENDENT":s.active.field.confirmed?"SUPERVISED_FIELD_INDIRECT":"NONE");
+     const tbx_j1708_field_t *f=&s.active.field;
+     cJSON *field=cJSON_AddObjectToObject(requests,"field_validation");
+diff --git a/firmware/espidf/components/tb_core/tbx_j1708_active.c b/firmware/espidf/components/tb_core/tbx_j1708_active.c
+index a8a39a1..d2d9e95 100644
+--- a/firmware/espidf/components/tb_core/tbx_j1708_active.c
++++ b/firmware/espidf/components/tb_core/tbx_j1708_active.c
+@@ -50,6 +50,7 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *c, const tbx_j1708_active_co
+     uint32_t priority_guard=((10u+2u*cfg->priority)*1000000u+9599u)/9600u;
+     c->idle_guard_us=priority_guard>5000u?priority_guard:5000u;
+     c->configured=true;
++    tbx_j1708_rx_reconfigure(c);
+     memset(&c->field,0,sizeof(c->field));
+     c->physical_validated=false;c->last_response_us=0;c->consecutive_failures=0;
+     c->scheduler->periodic=false;
+@@ -67,7 +68,7 @@ bool tbx_j1708_active_arm(tbx_j1708_active_t *c, bool authorized, bool stationar
+         tbx_j1708_active_stop(c,"AUTHORIZATION_OR_OPERATION_MODE_MISSING");
+         return false;
+     }
+-    if (!c->configured || c->scheduler->safety_stopped) {
++    if (!c->configured || c->scheduler->safety_stopped || c->rx_guard.fault_latched) {
+         event(c,"ARM_REJECTED",0,"CONFIGURATION_MISSING_OR_SAFETY_STOPPED");
+         return false;
+     }
+@@ -97,7 +98,7 @@ bool tbx_j1708_active_work_ready(const tbx_j1708_active_t *c, uint64_t now_us)
+     /* Keep the first transmitter validation physically stationary; a passive
+      * matching MID/PID alone is not enough to establish working TX. */
+     if (!c || !c->scheduler || !c->configured ||
+-        c->scheduler->safety_stopped || c->work_mode || c->tx_active || !(c->physical_validated || c->field.confirmed) ||
++        c->scheduler->safety_stopped || c->rx_guard.fault_latched || c->work_mode || c->tx_active || !(c->physical_validated || c->field.confirmed) ||
+         c->scheduler->link_error_count ||
+         now_us >= (c->scheduler->armed ? c->lease_deadline_us : c->promotion_deadline_us) ||
+         c->echo_ok-c->trial_echo_base < 1u ||
+@@ -108,7 +109,7 @@ bool tbx_j1708_active_work_ready(const tbx_j1708_active_t *c, uint64_t now_us)
+ bool tbx_j1708_active_attest_physical(tbx_j1708_active_t *c,bool external_tx,bool external_reply,uint64_t now)
+ {
+     if(!c || !c->configured || !external_tx || !external_reply || c->tx_active ||
+-       c->scheduler->safety_stopped || c->scheduler->link_error_count ||
++       c->scheduler->safety_stopped || c->rx_guard.fault_latched || c->scheduler->link_error_count ||
+        !c->last_response_us || now<c->last_response_us || now-c->last_response_us>UINT64_C(900000000) ||
+        c->last_response_pid!=c->tx_pid || c->echo_ok==c->trial_echo_base)return false;
+     c->physical_validated=true;
+@@ -142,6 +143,8 @@ bool tbx_j1708_active_enable_work(tbx_j1708_active_t *c, uint64_t now_us)
+ void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
+ {
+     if (!c) return;
++    uint8_t before_flags=tbx_j1708_active_flags(c);
++    tbx_j1708_rx_prepare_stop(c,reason);
+     if(tbx_j1708_field_running(&c->field) ||
+        ((c->field.phase==TBX_FIELD_SATISFACTORY || c->field.confirmed) && (!reason || strcmp(reason,"FIELD_TEST_COMPLETE")))){
+         c->field.phase=TBX_FIELD_FAILED;c->field.confirmed=false;c->field.reason=reason?reason:"OPERATOR_STOP";
+@@ -155,6 +158,7 @@ void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
+         tbx_j1708_request_set_spacing(c->scheduler,250);
+     }
+     c->lease_deadline_us=0;
++    tbx_j1708_rx_stopped(c,reason,before_flags);
+     event(c,"STOPPED",c->tx_pid,reason?reason:"OPERATOR_STOP");
+ }
+ 
+@@ -209,6 +213,7 @@ static bool send_request(uint16_t pid, void *context)
+     }
+     if (result!=TBX_J1708_TX_STARTED) {
+         release_tx(c);
++        c->rx_guard.last_failure=TBX_GUARD_TX_DRIVER;
+         event(c,"TX_ERROR",pid,"BACKEND_REJECTED_REQUEST");
+         if(c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
+         if(tbx_j1708_field_running(&c->field))tbx_j1708_field_fail(c,"FIELD_TX_BACKEND_REJECTED");
+@@ -230,11 +235,12 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
+         tbx_j1708_active_stop(c,"AUTHORIZATION_LEASE_EXPIRED");
+         return;
+     }
++    tbx_j1708_rx_tick(c,now_us);
+     bool field_may_send=tbx_j1708_field_tick(c,now_us);
+     if(!c->scheduler->armed)return;
+     if (c->tx_active && now_us>=c->tx_started_us &&
+         now_us-c->tx_started_us>=TBX_J1708_ACTIVE_ECHO_TIMEOUT_US) {
+-        ++c->echo_timeouts;
++        ++c->echo_timeouts;c->rx_guard.last_failure=TBX_GUARD_ECHO_TIMEOUT;
+         tbx_j1708_active_note_link_error(c,"TX_ECHO_TIMEOUT");
+     }
+     if (!c->scheduler->armed) return;
+@@ -246,6 +252,7 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
+     tbx_j1708_request_tick(c->scheduler,(uint32_t)(now_us/1000u),NULL,NULL);
+     if (c->scheduler->timeout_total!=previous_timeouts) {
+         if(c->config.sequential_scan)++c->scan_completed;
++        c->rx_guard.last_failure=TBX_GUARD_REPLY_TIMEOUT;
+         event(c,"TIMEOUT",pending_pid,"NO_MATCHING_MID_PID_WITHIN_CONFIGURED_TIMEOUT");
+         if(tbx_j1708_field_running(&c->field)){tbx_j1708_field_fail(c,"FIELD_RESPONSE_TIMEOUT");return;}
+         if(c->work_mode && c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
+@@ -291,7 +298,7 @@ void tbx_j1708_active_note_rx(tbx_j1708_active_t *c, const uint8_t *bytes, size_
+     c->last_rx_us=now_us;
+     for (size_t i=0;i<length && c->tx_active;i++) {
+         if (bytes[i]!=c->tx_frame[c->echo_position]) {
+-            ++c->collisions;
++            ++c->collisions;c->rx_guard.last_failure=TBX_GUARD_ECHO_DIVERGENCE;
+             char detail[96];
+             snprintf(detail,sizeof(detail),
+                      "TX_ECHO_MISMATCH_OR_COLLISION index=%u expected=%02X received=%02X",
+@@ -324,7 +331,7 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
+     if (mid!=c->config.target_mid[index] || pid!=c->scheduler->pids[index].pid) return false;
+     if (!tbx_j1708_request_note_response(c->scheduler,pid,(uint32_t)(now_us/1000u))) return false;
+     if(c->config.sequential_scan)++c->scan_completed;
+-    c->now_us=now_us;
++    if(now_us>c->now_us)c->now_us=now_us;
+     c->consecutive_failures=0;c->scheduler->link_error_count=0;
+     c->last_response_pid=pid;c->last_response_mid=mid;c->last_response_us=now_us;
+     event(c,"RESPONSE_CANDIDATE",pid,"MID_PID_TIME_MATCH_IS_NOT_CAUSAL_PROOF");
+diff --git a/firmware/espidf/components/tb_core/tbx_j1708_active.h b/firmware/espidf/components/tb_core/tbx_j1708_active.h
+index 5e3e1b8..787f89a 100644
+--- a/firmware/espidf/components/tb_core/tbx_j1708_active.h
++++ b/firmware/espidf/components/tb_core/tbx_j1708_active.h
+@@ -5,6 +5,7 @@
+ #include <stdint.h>
+ #include "tbx_j1708_requests.h"
+ #include "tbx_j1708_field.h"
++#include "tbx_j1708_rx_guard.h"
+ 
+ #define TBX_J1708_ACTIVE_LEASE_US UINT64_C(60000000)
+ #define TBX_J1708_ACTIVE_ECHO_TIMEOUT_US UINT64_C(20000)
+@@ -56,6 +57,7 @@ typedef struct tbx_j1708_active {
+     uint64_t retry_after_us, promotion_deadline_us;
+     bool physical_validated;
+     tbx_j1708_field_t field;
++    tbx_j1708_rx_guard_t rx_guard;
+     uint8_t consecutive_failures;
+     uint16_t last_response_pid;
+     uint8_t last_response_mid;
+diff --git a/firmware/espidf/components/tb_core/tbx_j1708_field.c b/firmware/espidf/components/tb_core/tbx_j1708_field.c
+index 24417cb..83bdcb0 100644
+--- a/firmware/espidf/components/tb_core/tbx_j1708_field.c
++++ b/firmware/espidf/components/tb_core/tbx_j1708_field.c
+@@ -53,9 +53,16 @@ static void control_start(tbx_j1708_active_t *c,uint64_t now)
+ }
+ void tbx_j1708_field_note_frame(tbx_j1708_active_t *c,uint8_t mid,bool valid,uint64_t now)
+ {
+-    if(!c || (!tbx_j1708_field_running(&c->field) && c->field.phase!=TBX_FIELD_SATISFACTORY && !c->field.confirmed))return;
++    tbx_j1708_field_note_frame_kind(c,mid,valid?TBX_RX_VALID:TBX_RX_CHECKSUM,now);
++}
++void tbx_j1708_field_note_frame_kind(tbx_j1708_active_t *c,uint8_t mid,tbx_rx_kind_t kind,uint64_t now)
++{
++    if(!c)return;
++    c->now_us=now;
++    tbx_j1708_rx_note(c,kind,now);
++    if(!tbx_j1708_field_running(&c->field) && c->field.phase!=TBX_FIELD_SATISFACTORY && !c->field.confirmed)return;
+     tbx_j1708_field_t *f=&c->field;
+-    if(valid){
++    if(kind==TBX_RX_VALID){
+         ++f->frames;f->last_frame_us=now;
+         if(mid==c->config.local_mid){c->scheduler->safety_stopped=true;tbx_j1708_field_fail(c,"LOCAL_MID_CONFLICT");}
+     }else ++f->bad_frames;
+@@ -111,16 +118,8 @@ static bool healthy(tbx_j1708_active_t *c,uint64_t now)
+     if(__atomic_load_n(&f->audit_lost,__ATOMIC_RELAXED)){
+         tbx_j1708_field_fail(c,"FIELD_AUDIT_RECORD_LOST");return false;
+     }
+-    if(now-f->watch_at_us>=UINT64_C(10000000)){
+-        uint32_t frames=f->frames-f->watch_frames,errors=f->bad_frames-f->watch_errors;
+-        uint64_t observed=(uint64_t)frames*f->before_duration_us;
+-        uint64_t expected=(uint64_t)f->before_frames*(now-f->watch_at_us);
+-        if((errors>3u && (uint64_t)errors*100u>frames) ||
+-           (f->before_frames && (observed*4u<expected || observed>expected*4u))){
+-            tbx_j1708_field_fail(c,"PASSIVE_BUS_ERROR_OR_RATE_ANOMALY");return false;
+-        }
+-        f->watch_at_us=now;f->watch_frames=f->frames;f->watch_errors=f->bad_frames;
+-    }
++    /* Rolling RX quality is evaluated independently in rx_guard. The parked
++     * validation baseline below remains historical context, never a road-rate veto. */
+     return true;
+ }
+ bool tbx_j1708_field_tick(tbx_j1708_active_t *c,uint64_t now)
+@@ -184,7 +183,8 @@ bool tbx_j1708_field_confirm(tbx_j1708_active_t *c,uint64_t session_started,bool
+        __atomic_load_n(&c->field.audit_lost,__ATOMIC_RELAXED))return false;
+     c->field.confirmed=true;c->field.phase=TBX_FIELD_CONFIRMED;
+     c->field.reason="OPERATOR_CONFIRMED_OPERATIONAL_INDIRECT_NOT_EXTERNAL";
+-    /* Reset monitor window; the next work-mode tick uses fresh RX measurements. */
++    /* Legacy session bookkeeping only; the rolling protection owns separate
++     * current RX counters and reference windows in c->rx_guard. */
+     c->field.watch_at_us=now;c->field.watch_frames=c->field.frames;c->field.watch_errors=c->field.bad_frames;
+     emit(c,"FIELD_CONFIRMED",0,c->field.reason);return true;
+ }
+diff --git a/firmware/espidf/components/tb_core/tbx_j1708_field.h b/firmware/espidf/components/tb_core/tbx_j1708_field.h
+index 2955711..51334ad 100644
+--- a/firmware/espidf/components/tb_core/tbx_j1708_field.h
++++ b/firmware/espidf/components/tb_core/tbx_j1708_field.h
+@@ -3,6 +3,7 @@
+ #include <stdbool.h>
+ #include <stdint.h>
+ #include "tbx_j1708_requests.h"
++#include "tbx_j1708_rx_guard.h"
+ /* Explicit parked session, RAM only. A result is never electrical proof. */
+ #define TBX_J1708_FIELD_WINDOW_US UINT64_C(30000000)
+ #define TBX_J1708_FIELD_LEASE_US UINT64_C(600000000)
+@@ -43,6 +44,7 @@ bool tbx_j1708_field_start(struct tbx_j1708_active *,bool authorized,bool statio
+ bool tbx_j1708_field_confirm(struct tbx_j1708_active *,uint64_t session_started_us,bool acknowledged,uint64_t now_us);
+ /* Single existing active controller calls this gate; it is not a second sender. */
+ bool tbx_j1708_field_tick(struct tbx_j1708_active *,uint64_t now_us);
++void tbx_j1708_field_note_frame_kind(struct tbx_j1708_active *,uint8_t mid,tbx_rx_kind_t,uint64_t now_us);
+ void tbx_j1708_field_note_frame(struct tbx_j1708_active *,uint8_t mid,bool checksum_valid,uint64_t now_us);
+ void tbx_j1708_field_note_parameter(struct tbx_j1708_active *,uint8_t mid,uint16_t pid,uint64_t now_us);
+ void tbx_j1708_field_sent(struct tbx_j1708_active *);
+diff --git a/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c
+new file mode 100644
+index 0000000..0030bd5
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c
+@@ -0,0 +1,204 @@
++#include "tbx_j1708_active.h"
++#include <math.h>
++#include <string.h>
++
++static tbx_rx_counts_t difference(tbx_rx_counts_t a,tbx_rx_counts_t b)
++{
++    return (tbx_rx_counts_t){a.valid-b.valid,a.checksum-b.checksum,a.framing-b.framing,
++        a.overruns-b.overruns,a.uart_frame-b.uart_frame,a.read_errors-b.read_errors};
++}
++static void add(tbx_rx_counts_t *a,const tbx_rx_counts_t *b)
++{
++    a->valid+=b->valid;a->checksum+=b->checksum;a->framing+=b->framing;
++    a->overruns+=b->overruns;a->uart_frame+=b->uart_frame;a->read_errors+=b->read_errors;
++}
++uint8_t tbx_j1708_active_flags(const tbx_j1708_active_t *c)
++{
++    return (uint8_t)((c->scheduler && c->scheduler->armed?1:0)|(c->work_mode?2:0)|(c->tx_active?4:0));
++}
++const char *tbx_j1708_guard_cause_name(tbx_guard_cause_t cause)
++{
++    static const char *const names[]={"NONE","RX_ERROR_RATE_PERSISTENT","RX_UART_FAULTS_PERSISTENT",
++        "RX_MAJORITY_INVALID","RX_SILENCE","MONOTONIC_CLOCK_INVALID","RX_UNRELIABLE_DURING_TX",
++        "TX_DRIVER_FAILURE","TX_ECHO_TIMEOUT","TX_ECHO_DIVERGENCE_OR_COLLISION",
++        "MATCHING_RESPONSE_TIMEOUT","LOCAL_MID_CONFLICT","AUTHORIZATION_EXPIRED","OPERATOR_OR_OTA_STOP",
++        "AUDIT_RECORD_LOST","OTHER_INTERLOCK"};
++    return (unsigned)cause<sizeof(names)/sizeof(*names)?names[cause]:"OTHER_INTERLOCK";
++}
++static void start(tbx_j1708_rx_guard_t *g,uint64_t now)
++{
++    if(g->initialized)return;
++    g->initialized=true;g->start_us=g->last_observed_us=now;
++    g->boundary=g->total;
++}
++void tbx_j1708_rx_note(tbx_j1708_active_t *c,tbx_rx_kind_t kind,uint64_t now)
++{
++    if(!c)return;
++    tbx_j1708_rx_guard_t *g=&c->rx_guard;start(g,now);
++    if(now<g->last_observed_us)g->clock_fault=true;
++    else g->last_observed_us=now;
++    switch(kind){
++        case TBX_RX_VALID:++g->total.valid;g->last_valid_us=now;g->seen_valid=true;break;
++        case TBX_RX_CHECKSUM:++g->total.checksum;break;
++        case TBX_RX_FRAMING:++g->total.framing;break;
++        case TBX_RX_OVERRUN:++g->total.overruns;break;
++        case TBX_RX_UART_FRAME:++g->total.uart_frame;break;
++        case TBX_RX_READ_ERROR:++g->total.read_errors;break;
++    }
++}
++static tbx_rx_window_t reference(const tbx_j1708_rx_guard_t *g)
++{
++    tbx_rx_window_t result={0};
++    for(unsigned i=0;i<g->reference_count;i++){
++        const tbx_rx_window_t *w=&g->reference[i];
++        if(i==0 || w->start_us<result.start_us)result.start_us=w->start_us;
++        if(w->end_us>result.end_us)result.end_us=w->end_us;
++        add(&result.count,&w->count);
++    }
++    return result;
++}
++/* No assumed Poisson traffic rate or assumed independent ECU messages.
++ * Wilson bounds are an operational comparison of observed corrupt frames;
++ * shared noise/clock effects mean no electrical or causal proof follows. */
++static void bounds(uint32_t valid,uint32_t errors,double *lower,double *upper)
++{
++    double n=(double)valid+errors;
++    if(!n){*lower=0;*upper=1;return;}
++    double p=errors/n,z2=TBX_RX_WILSON_Z2,denom=1+z2/n;
++    double center=(p+z2/(2*n))/denom;
++    double margin=sqrt(z2*(p*(1-p)/n+z2/(4*n*n)))/denom;
++    *lower=fmax(0,center-margin);*upper=fmin(1,center+margin);
++}
++static tbx_rx_decision_t snapshot(tbx_j1708_active_t *c,tbx_rx_window_t window,uint64_t now)
++{
++    tbx_j1708_rx_guard_t *g=&c->rx_guard;
++    tbx_rx_decision_t d={.at_us=now,.window=window,.reference=reference(g),.totals=g->total,
++        .streak=g->suspect_streak,.before_flags=tbx_j1708_active_flags(c),.after_flags=tbx_j1708_active_flags(c),
++        .last_failure=g->last_failure,.echoes=c->echo_ok,.collisions=c->collisions,.echo_timeouts=c->echo_timeouts};
++    if(c->scheduler){
++        d.sent=c->scheduler->sent_total;d.candidates=c->scheduler->answered_total;
++        d.timeouts=c->scheduler->timeout_total;d.tx_errors=c->scheduler->tx_failure_total;
++        d.timeout_ms=c->scheduler->timeout_ms;d.spacing_ms=c->scheduler->min_spacing_ms;d.request_failures=c->consecutive_failures;
++        if(c->scheduler->pending<TBX_J1708_REQUEST_COUNT){
++            unsigned i=c->scheduler->pending;d.pid=c->scheduler->pids[i].pid;d.target_mid=c->config.target_mid[i];
++        }else if(c->tx_active){d.pid=c->tx_pid;for(unsigned i=0;i<17;i++)if(c->scheduler->pids[i].pid==c->tx_pid)d.target_mid=c->config.target_mid[i];}
++    }
++    return d;
++}
++static tbx_rx_window_t current(const tbx_j1708_rx_guard_t *g,uint64_t now)
++{
++    return (tbx_rx_window_t){g->start_us,now,difference(g->total,g->boundary)};
++}
++static void emit(tbx_j1708_active_t *c)
++{
++    if(c->ops.event)c->ops.event("GUARD_DECISION",c->rx_guard.decision.pid,
++        tbx_j1708_guard_cause_name(c->rx_guard.decision.cause),c->context);
++}
++static void trip(tbx_j1708_active_t *c,tbx_rx_decision_t d)
++{
++    tbx_j1708_rx_guard_t *g=&c->rx_guard;
++    if(g->fault_latched && !c->scheduler->armed && !c->tx_active)return;
++    g->decision=d;g->decision_pending=true;g->fault_latched=true;
++    const char *reason=tbx_j1708_guard_cause_name(d.cause);
++    if(tbx_j1708_field_running(&c->field) || c->field.phase==TBX_FIELD_SATISFACTORY || c->field.confirmed)
++        tbx_j1708_field_fail(c,reason);
++    else tbx_j1708_active_stop(c,reason);
++}
++void tbx_j1708_rx_uart_fault(tbx_j1708_active_t *c,tbx_rx_kind_t kind,uint64_t now)
++{
++    tbx_j1708_rx_note(c,kind,now);
++    /* Receiver faults do not increment collision/TX failure counters. Losing
++     * RX while echo is in flight requires immediate release, not a blind retry. */
++    if(c->tx_active){
++        c->now_us=now;tbx_rx_decision_t d=snapshot(c,current(&c->rx_guard,now),now);
++        d.cause=TBX_GUARD_RX_DURING_TX;d.predicates=TBX_GUARD_RX_BLIND_TX;trip(c,d);
++    }
++}
++void tbx_j1708_rx_reconfigure(tbx_j1708_active_t *c)
++{
++    /* Only an explicit new configuration clears the fault latch. Keep RX
++     * history measured in this boot; Wi-Fi/recovery never arms the scheduler. */
++    c->rx_guard.fault_latched=false;c->rx_guard.suspect_streak=0;c->rx_guard.warned=false;
++    c->rx_guard.last_failure=TBX_GUARD_NONE;
++}
++void tbx_j1708_rx_tick(tbx_j1708_active_t *c,uint64_t now)
++{
++    tbx_j1708_rx_guard_t *g=&c->rx_guard;start(g,now);
++    bool enabled=c->scheduler && (c->scheduler->armed || c->tx_active);
++    if(g->clock_fault || now<g->start_us || now<g->last_observed_us){
++        if(enabled){tbx_rx_decision_t d=snapshot(c,current(g,now),now);d.cause=TBX_GUARD_CLOCK;d.predicates=TBX_GUARD_CLOCK_INVALID;trip(c,d);}
++        return;
++    }
++    if(enabled && g->seen_valid && now-g->last_valid_us>=TBX_RX_WINDOW_US){
++        tbx_rx_decision_t d=snapshot(c,current(g,now),now);d.cause=TBX_GUARD_RX_SILENCE;d.predicates=TBX_GUARD_SILENT;trip(c,d);return;
++    }
++    if(now-g->start_us<TBX_RX_WINDOW_US)return;
++    tbx_rx_window_t w=current(g,now),r=reference(g);uint64_t duration=now-g->start_us;
++    bool fresh=g->reference_count==TBX_RX_REFERENCE_WINDOWS && now>=r.end_us && now-r.end_us<=TBX_RX_REFERENCE_MAX_US;
++    uint16_t flags=fresh?TBX_GUARD_REFERENCE_READY:0;
++    if(duration>=TBX_RX_WINDOW_US*TBX_RX_REFERENCE_WINDOWS){
++        flags=(uint16_t)((flags&~TBX_GUARD_REFERENCE_READY)|TBX_GUARD_WINDOW_STALE);
++        g->reference_count=g->reference_cursor=g->suspect_streak=0;fresh=false;
++    }
++    double low=0,high=1,ref_low=0,ref_high=1;
++    if(fresh){
++        bounds(w.count.valid,w.count.checksum,&low,&high);bounds(r.count.valid,r.count.checksum,&ref_low,&ref_high);
++        if(w.count.checksum>TBX_RX_PERSISTENCE && low>ref_high)flags|=TBX_GUARD_CRC_ELEVATED;
++        double a,b,x,y;bounds(w.count.valid,w.count.framing,&a,&b);bounds(r.count.valid,r.count.framing,&x,&y);
++        if(w.count.framing>TBX_RX_PERSISTENCE && a>y)flags|=TBX_GUARD_FRAME_ELEVATED;
++    }
++    if(w.count.overruns || w.count.uart_frame || w.count.read_errors)flags|=TBX_GUARD_UART_FAULT;
++    if((uint64_t)w.count.checksum+w.count.framing>=w.count.valid && (w.count.checksum || w.count.framing))flags|=TBX_GUARD_MAJORITY_INVALID;
++    bool suspect=(flags&(TBX_GUARD_CRC_ELEVATED|TBX_GUARD_FRAME_ELEVATED|TBX_GUARD_UART_FAULT|TBX_GUARD_MAJORITY_INVALID))!=0;
++    if(suspect && !(flags&TBX_GUARD_WINDOW_STALE)){if(g->suspect_streak<UINT8_MAX)++g->suspect_streak;}else g->suspect_streak=0;
++    if(g->suspect_streak>=TBX_RX_PERSISTENCE)flags|=TBX_GUARD_PERSISTENT;
++    tbx_rx_decision_t d=snapshot(c,w,now);d.predicates=flags;d.current_lower_ppm=(uint32_t)(low*1000000+0.5);
++    d.reference_upper_ppm=(uint32_t)(ref_high*1000000+0.5);d.streak=g->suspect_streak;
++    d.cause=(flags&TBX_GUARD_MAJORITY_INVALID)?TBX_GUARD_RX_UNUSABLE:(flags&TBX_GUARD_UART_FAULT)?TBX_GUARD_RX_UART:TBX_GUARD_RX_QUALITY;
++    g->last_window=w;g->start_us=now;g->boundary=g->total;
++    if(enabled && (flags&TBX_GUARD_PERSISTENT)){trip(c,d);return;}
++    /* Transition records only, not one record per window or raw frame. */
++    if(enabled && suspect && !g->warned){g->decision=d;emit(c);g->warned=true;}
++    else if(enabled && !suspect && g->warned){d.cause=TBX_GUARD_NONE;g->decision=d;emit(c);g->warned=false;}
++    if(!suspect && w.count.valid && !(flags&TBX_GUARD_WINDOW_STALE)){
++        if(g->reference_count && ((!fresh && g->reference_count==TBX_RX_REFERENCE_WINDOWS) || w.start_us!=r.end_us))g->reference_count=g->reference_cursor=0;
++        g->reference[g->reference_cursor]=w;g->reference_cursor=(uint8_t)((g->reference_cursor+1u)%TBX_RX_REFERENCE_WINDOWS);
++        if(g->reference_count<TBX_RX_REFERENCE_WINDOWS)++g->reference_count;
++    }
++}
++static bool completed_normally(const char *reason)
++{
++    return reason && (!strcmp(reason,"FIELD_TEST_COMPLETE") || !strcmp(reason,"PHYSICAL_TRIAL_COMPLETE") || !strcmp(reason,"SEQUENTIAL_SCAN_COMPLETE"));
++}
++void tbx_j1708_rx_prepare_stop(tbx_j1708_active_t *c,const char *reason)
++{
++    tbx_j1708_rx_guard_t *g=&c->rx_guard;
++    if(completed_normally(reason) || g->decision_pending || !tbx_j1708_active_flags(c))return;
++    uint64_t now=c->now_us;if(now<g->last_observed_us)now=g->last_observed_us;
++    g->decision=snapshot(c,current(g,now),now);
++    g->decision.cause=TBX_GUARD_OTHER;
++    if(reason && (!strcmp(reason,"THREE_CONSECUTIVE_REQUEST_FAILURES") || strstr(reason,"TX_LINK_ERROR") || strstr(reason,"BACKEND")))g->decision.cause=g->last_failure?g->last_failure:TBX_GUARD_OTHER;
++    if(reason && !strcmp(reason,"FIELD_RESPONSE_TIMEOUT"))g->decision.cause=TBX_GUARD_REPLY_TIMEOUT;
++    if(reason && !strcmp(reason,"PASSIVE_BUS_SILENCE")){g->decision.cause=TBX_GUARD_RX_SILENCE;g->decision.predicates|=TBX_GUARD_SILENT;}
++    if(reason && !strcmp(reason,"LOCAL_MID_CONFLICT"))g->decision.cause=TBX_GUARD_MID_CONFLICT;
++    if(reason && !strcmp(reason,"AUTHORIZATION_LEASE_EXPIRED"))g->decision.cause=TBX_GUARD_AUTHORITY;
++    if(reason && (!strcmp(reason,"OPERATOR_STOP") || !strcmp(reason,"OTA_BUSY")))g->decision.cause=TBX_GUARD_OPERATOR;
++    if(reason && strstr(reason,"AUDIT"))g->decision.cause=TBX_GUARD_AUDIT;
++    if(reason && !strcmp(reason,"THREE_CONSECUTIVE_REQUEST_FAILURES"))g->decision.predicates|=TBX_GUARD_REQUEST_FAILURES;
++    if(!g->decision.pid && (g->decision.cause==TBX_GUARD_TX_DRIVER || g->decision.cause==TBX_GUARD_ECHO_TIMEOUT || g->decision.cause==TBX_GUARD_ECHO_DIVERGENCE || g->decision.cause==TBX_GUARD_REPLY_TIMEOUT)){
++        g->decision.pid=c->tx_pid;
++        for(unsigned i=0;i<17;i++)if(c->scheduler->pids[i].pid==c->tx_pid)g->decision.target_mid=c->config.target_mid[i];
++    }
++    g->decision_pending=true;
++}
++void tbx_j1708_rx_stopped(tbx_j1708_active_t *c,const char *reason,uint8_t before)
++{
++    tbx_j1708_rx_guard_t *g=&c->rx_guard;
++    if(completed_normally(reason) || !g->decision_pending)return;
++    g->decision.before_flags=before;g->decision.after_flags=tbx_j1708_active_flags(c);g->decision.stopped=true;
++    /* An expired lease or an operator stop requires fresh authorization, but
++     * is not an electrical/RX fault. Real faults remain latched until an
++     * explicit reconfiguration; neither category is automatically rearmed. */
++    if((g->decision.cause>TBX_GUARD_NONE && g->decision.cause<=TBX_GUARD_MID_CONFLICT) || g->decision.cause==TBX_GUARD_AUDIT)g->fault_latched=true;
++    g->decision_pending=false;emit(c);
++}
+diff --git a/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.h b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.h
+new file mode 100644
+index 0000000..06c8c82
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tbx_j1708_rx_guard.h
+@@ -0,0 +1,60 @@
++#ifndef TBX_J1708_RX_GUARD_H
++#define TBX_J1708_RX_GUARD_H
++#include <stdbool.h>
++#include <stdint.h>
++/* Policy decisions, not SAE electrical limits: reuse the 10 s observation and
++ * three-failure persistence. Reference age = learning + confirmation horizon.
++ * Wilson 99% intervals compare observed error proportions, not TX causality. */
++#define TBX_RX_WINDOW_US UINT64_C(10000000)
++#define TBX_RX_REFERENCE_WINDOWS 3u
++#define TBX_RX_PERSISTENCE 3u
++#define TBX_RX_REFERENCE_MAX_US (TBX_RX_WINDOW_US*(TBX_RX_REFERENCE_WINDOWS+TBX_RX_PERSISTENCE))
++#define TBX_RX_WILSON_Z2 6.6348966010212145
++
++typedef enum { TBX_RX_VALID,TBX_RX_CHECKSUM,TBX_RX_FRAMING,TBX_RX_OVERRUN,TBX_RX_UART_FRAME,TBX_RX_READ_ERROR } tbx_rx_kind_t;
++typedef enum {
++    TBX_GUARD_NONE,TBX_GUARD_RX_QUALITY,TBX_GUARD_RX_UART,
++    TBX_GUARD_RX_UNUSABLE,TBX_GUARD_RX_SILENCE,TBX_GUARD_CLOCK,
++    TBX_GUARD_RX_DURING_TX,TBX_GUARD_TX_DRIVER,TBX_GUARD_ECHO_TIMEOUT,
++    TBX_GUARD_ECHO_DIVERGENCE,TBX_GUARD_REPLY_TIMEOUT,
++    TBX_GUARD_MID_CONFLICT,TBX_GUARD_AUTHORITY,TBX_GUARD_OPERATOR,
++    TBX_GUARD_AUDIT,TBX_GUARD_OTHER
++} tbx_guard_cause_t;
++enum { TBX_GUARD_CRC_ELEVATED=1,TBX_GUARD_FRAME_ELEVATED=2,
++    TBX_GUARD_UART_FAULT=4,TBX_GUARD_MAJORITY_INVALID=8,
++    TBX_GUARD_PERSISTENT=16,TBX_GUARD_SILENT=32,TBX_GUARD_CLOCK_INVALID=64,
++    TBX_GUARD_RX_BLIND_TX=128,TBX_GUARD_REQUEST_FAILURES=256,
++    TBX_GUARD_REFERENCE_READY=512,TBX_GUARD_WINDOW_STALE=1024 };
++typedef struct {uint32_t valid,checksum,framing,overruns,uart_frame,read_errors;}tbx_rx_counts_t;
++typedef struct {uint64_t start_us,end_us;tbx_rx_counts_t count;}tbx_rx_window_t;
++typedef struct {
++    uint64_t at_us;
++    tbx_rx_window_t window,reference;
++    tbx_rx_counts_t totals;
++    uint32_t sent,candidates,timeouts,echoes,collisions,echo_timeouts,tx_errors;
++    uint32_t current_lower_ppm,reference_upper_ppm;
++    uint16_t predicates,pid;
++    uint8_t target_mid,streak,before_flags,after_flags,request_failures;
++    uint32_t timeout_ms,spacing_ms;
++    tbx_guard_cause_t cause,last_failure;
++    bool stopped;
++} tbx_rx_decision_t;
++typedef struct {
++    tbx_rx_counts_t total,boundary;
++    tbx_rx_window_t reference[TBX_RX_REFERENCE_WINDOWS],last_window;
++    uint64_t start_us,last_valid_us,last_observed_us;
++    uint8_t reference_count,reference_cursor,suspect_streak;
++    bool initialized,seen_valid,clock_fault,warned,fault_latched,decision_pending;
++    tbx_guard_cause_t last_failure;
++    tbx_rx_decision_t decision;
++} tbx_j1708_rx_guard_t;
++struct tbx_j1708_active;
++void tbx_j1708_rx_note(struct tbx_j1708_active *,tbx_rx_kind_t,uint64_t now_us);
++void tbx_j1708_rx_tick(struct tbx_j1708_active *,uint64_t now_us);
++void tbx_j1708_rx_prepare_stop(struct tbx_j1708_active *,const char *reason);
++void tbx_j1708_rx_stopped(struct tbx_j1708_active *,const char *reason,uint8_t before_flags);
++void tbx_j1708_rx_reconfigure(struct tbx_j1708_active *);
++void tbx_j1708_rx_uart_fault(struct tbx_j1708_active *,tbx_rx_kind_t,uint64_t now_us);
++const char *tbx_j1708_guard_cause_name(tbx_guard_cause_t);
++uint8_t tbx_j1708_active_flags(const struct tbx_j1708_active *);
++#endif
+diff --git a/firmware/espidf/components/tb_core/tests/capture_host_stubs.h b/firmware/espidf/components/tb_core/tests/capture_host_stubs.h
+index 3599730..e97749c 100644
+--- a/firmware/espidf/components/tb_core/tests/capture_host_stubs.h
++++ b/firmware/espidf/components/tb_core/tests/capture_host_stubs.h
+@@ -42,7 +42,7 @@ static esp_err_t nvs_get_blob(nvs_handle_t, const char *, void *, size_t *);
+ static esp_err_t nvs_set_blob(nvs_handle_t, const char *, const void *, size_t);
+ static esp_err_t nvs_commit(nvs_handle_t);
+ 
+-static struct { bool j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated;uint8_t j1587_odometer_mid,j1587_fuel250_mid; } host_capture_config;
++static struct { bool full_decode_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated;uint8_t j1587_odometer_mid,j1587_fuel250_mid; } host_capture_config;
+ #define tb_config() (&host_capture_config)
+ 
+ #define pdTRUE 1
+@@ -52,3 +52,23 @@ static uint32_t tb_boot_id(void){return 42;}
+ #define GPIO_NUM_20 20
+ #define gpio_intr_enable(pin) ((void)(pin),ESP_OK)
+ #define tb_web_ota_busy() false
++
++/* Actual RX task driven by scripted UART interrupts in host integration tests. */
++#define UART_NUM_1 1
++#define UART_DATA 1
++#define UART_FIFO_OVF 2
++#define UART_BUFFER_FULL 3
++#define UART_FRAME_ERR 4
++#define UART_PARITY_ERR 5
++#define UART_LL_GET_HW(port) (port)
++typedef struct {int type;size_t size;bool timeout_flag;}uart_event_t;
++static bool xQueueReceive(QueueHandle_t,void *,unsigned);
++static bool xQueueSend(QueueHandle_t,const void *,unsigned);
++static void xQueueReset(QueueHandle_t);
++static int uart_read_bytes(int,void *,size_t,unsigned);
++static void uart_flush_input(int);
++static int gpio_get_level(int);
++static unsigned uart_ll_get_rxfifo_len(int);
++static int uart_get_buffered_data_len(int,size_t *);
++static bool tb_telemetry_j1708(const uint8_t *,size_t,uint64_t,bool);
++static bool tb_telemetry_j1708_echo(const uint8_t *,size_t,uint64_t,bool);
+diff --git a/firmware/espidf/components/tb_core/tests/fixtures/healthy_0214.h b/firmware/espidf/components/tb_core/tests/fixtures/healthy_0214.h
+new file mode 100644
+index 0000000..29a6520
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/fixtures/healthy_0214.h
+@@ -0,0 +1,22 @@
++/* Exact function from published 0.2.14 source d7957a2; renamed for comparison. */
++static bool healthy_0214(tbx_j1708_active_t *c,uint64_t now)
++{
++    tbx_j1708_field_t *f=&c->field;
++    if(now<f->last_frame_us || now-f->last_frame_us>=UINT64_C(10000000)){
++        tbx_j1708_field_fail(c,"PASSIVE_BUS_SILENCE");return false;
++    }
++    if(__atomic_load_n(&f->audit_lost,__ATOMIC_RELAXED)){
++        tbx_j1708_field_fail(c,"FIELD_AUDIT_RECORD_LOST");return false;
++    }
++    if(now-f->watch_at_us>=UINT64_C(10000000)){
++        uint32_t frames=f->frames-f->watch_frames,errors=f->bad_frames-f->watch_errors;
++        uint64_t observed=(uint64_t)frames*f->before_duration_us;
++        uint64_t expected=(uint64_t)f->before_frames*(now-f->watch_at_us);
++        if((errors>3u && (uint64_t)errors*100u>frames) ||
++           (f->before_frames && (observed*4u<expected || observed>expected*4u))){
++            tbx_j1708_field_fail(c,"PASSIVE_BUS_ERROR_OR_RATE_ANOMALY");return false;
++        }
++        f->watch_at_us=now;f->watch_frames=f->frames;f->watch_errors=f->bad_frames;
++    }
++    return true;
++}
+diff --git a/firmware/espidf/components/tb_core/tests/offline_export.c b/firmware/espidf/components/tb_core/tests/offline_export.c
+index f7c84fe..1cacd62 100644
+--- a/firmware/espidf/components/tb_core/tests/offline_export.c
++++ b/firmware/espidf/components/tb_core/tests/offline_export.c
+@@ -23,7 +23,7 @@ static struct {tbx_j1708_active_t active;tbx_j1708_request_scheduler_t requests;
+ static bool tb_core_append_gps(cJSON *o){return tb_core_append_gps_at(o,host_now_us);}
+ static unsigned esp_reset_reason(void){return 1;}
+ static unsigned esp_get_minimum_free_heap_size(void){return 100000;}
+-static const char *tb_version(void){return "0.2.14";}
++static const char *tb_version(void){return "0.2.15";}
+ 
+ static int simulated_gettimeofday(struct timeval *tv,void *zone)
+ {
+diff --git a/firmware/espidf/components/tb_core/tests/run_capture_integration.sh b/firmware/espidf/components/tb_core/tests/run_capture_integration.sh
+index 9cd1249..d3be6e6 100755
+--- a/firmware/espidf/components/tb_core/tests/run_capture_integration.sh
++++ b/firmware/espidf/components/tb_core/tests/run_capture_integration.sh
+@@ -21,8 +21,9 @@ state_start = source.index('static struct {')
+ state_end = source.index('} s;', state_start) + len('} s;')
+ typedefs = re.findall(r'typedef struct\s*\{[^}]*\}\s*trip_blob(?:_v1)?_t;', source)
+ assert len(typedefs) == 2
+-names = ['persist_trip', 'mirror_trip_locked', 'pgn_of', 'update_signals', 'update_j1587_signal_locked', 'tb_capture_reset_trip','evidence_hex','tb_capture_confirm_physical','tb_capture_request_enable_work','tb_capture_field_start','tb_capture_field_confirm']
+-chunks = [source[state_start:state_end], *typedefs, 'static void add_sample_identity(cJSON *o,const char *k){cJSON_AddStringToObject(o,"sample_kind",k);}', 'static void queue_sample(cJSON *o){assert(cJSON_GetObjectItemCaseSensitive(o,"tx_observed_hex"));++host_audits;cJSON_Delete(o);}']
++names = ['persist_trip', 'mirror_trip_locked', 'pgn_of', 'update_signals', 'update_j1587_signal_locked', 'tb_capture_reset_trip','evidence_hex','tb_capture_confirm_physical','tb_capture_request_enable_work','tb_capture_field_start','tb_capture_field_confirm','finish_j1708','j1708_task']
++event_end=source.index('} request_event_t;')+len('} request_event_t;');event_start=source.rfind('typedef struct {',0,event_end)
++chunks = [source[state_start:state_end],source[event_start:event_end], *typedefs, 'static void add_sample_identity(cJSON *o,const char *k){cJSON_AddStringToObject(o,"sample_kind",k);}', 'static void queue_sample(cJSON *o){assert(cJSON_GetObjectItemCaseSensitive(o,"tx_observed_hex"));++host_audits;cJSON_Delete(o);}']
+ # Host runner tests acquisition and signal arbitration; flash JSON serialization is
+ # exercised by the ESP-IDF build and the separate storage tests.
+ chunks += ['static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *v, uint64_t now) { (void)v; (void)now; }']
+@@ -44,7 +45,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wpedantic \
+     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+     -I"$IDF_PATH/components/json/cJSON" -I"$work_dir" -I"$test_dir" -I"$test_dir/.." \
+     -I"$test_dir/../../../../j1708_17pid/src" \
+-    "$IDF_PATH/components/json/cJSON/cJSON.c" "$test_dir/../protocols.c" "$test_dir/test_capture_integration.c" "$test_dir/../tbx_trip.c" "$test_dir/../tbx_fuel_account.c" "$test_dir/../tbx_fuel.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" \
++    "$IDF_PATH/components/json/cJSON/cJSON.c" "$test_dir/../protocols.c" "$test_dir/../tbx_j1587_bridge.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_decoder.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_passive.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_passive_full.c" "$test_dir/test_capture_integration.c" "$test_dir/../tbx_trip.c" "$test_dir/../tbx_fuel_account.c" "$test_dir/../tbx_fuel.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../tbx_j1708_rx_guard.c" \
+     "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \
+     -lm -o "$work_dir/test"
+ ASAN_OPTIONS=detect_leaks=0 "$work_dir/test"
+diff --git a/firmware/espidf/components/tb_core/tests/run_diagnostic_memory.sh b/firmware/espidf/components/tb_core/tests/run_diagnostic_memory.sh
+index 07e38d6..4869a2e 100644
+--- a/firmware/espidf/components/tb_core/tests/run_diagnostic_memory.sh
++++ b/firmware/espidf/components/tb_core/tests/run_diagnostic_memory.sh
+@@ -27,6 +27,6 @@ cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined -fno-o
+   -I"$test_dir" -I"$test_dir/.." -I"$work_dir" -I"$test_dir/../../tb_base/include" \
+   -I"$test_dir/../../../../j1708_17pid/src" -I"$IDF_PATH/components/json/cJSON" \
+   "$test_dir/test_diagnostic_memory.c" "$test_dir/../../tb_base/tb_json.c" \
+-  "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \
++  "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../tbx_j1708_rx_guard.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \
+   "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work_dir/test"
+ ASAN_OPTIONS=detect_leaks=1 "$work_dir/test"
+diff --git a/firmware/espidf/components/tb_core/tests/run_field_audit.sh b/firmware/espidf/components/tb_core/tests/run_field_audit.sh
+index 1095001..0252ebe 100644
+--- a/firmware/espidf/components/tb_core/tests/run_field_audit.sh
++++ b/firmware/espidf/components/tb_core/tests/run_field_audit.sh
+@@ -9,12 +9,14 @@ import re,sys
+ s=Path(sys.argv[1]).read_text()
+ end=s.index('} request_event_t;')+len('} request_event_t;');start=s.rfind('typedef struct {',0,end)
+ assert start>=0;out=s[start:end]+'\n'
+-m=re.search(r'^static void request_store_event\([^;]*?\)\s*\{',s,re.M);assert m
+-end=s.index('{',m.start())+1;depth=1
+-while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
+-Path(sys.argv[2]).write_text(out+s[m.start():end])
++for name in ['guard_values','guard_record','request_store_guard','request_store_event']:
++ m=re.search(r'^static (?:bool|void) '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
++ end=s.index('{',m.start())+1;depth=1
++ while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
++ out+=s[m.start():end]+'\n'
++Path(sys.argv[2]).write_text(out)
+ PY
+ cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+- -I"$work" -I"$test_dir/.." -I"$test_dir/../../../../j1708_17pid/src" -I"$IDF_PATH/components/json/cJSON" \
+- "$test_dir/test_field_audit.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/test"
++ -I"$work" -I"$test_dir/.." -I"$test_dir/../../tb_base/include" -I"$test_dir/../../../../j1708_17pid/src" -I"$IDF_PATH/components/json/cJSON" \
++ "$test_dir/test_field_audit.c" "$test_dir/../tbx_j1708_rx_guard.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/test"
+ ASAN_OPTIONS=detect_leaks=1 "$work/test"
+diff --git a/firmware/espidf/components/tb_core/tests/run_j1708_active.sh b/firmware/espidf/components/tb_core/tests/run_j1708_active.sh
+index e124c10..13f64a0 100755
+--- a/firmware/espidf/components/tb_core/tests/run_j1708_active.sh
++++ b/firmware/espidf/components/tb_core/tests/run_j1708_active.sh
+@@ -6,7 +6,7 @@ trap 'rm -f "$test_binary"' EXIT HUP INT TERM
+ cc -std=c11 -Wall -Wextra -Werror -Wpedantic \
+     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+     -I"$test_dir/.." -I"$test_dir/../../../../j1708_17pid/src" \
+-    "$test_dir/test_tbx_j1708_active.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" \
++    "$test_dir/test_tbx_j1708_active.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../tbx_j1708_rx_guard.c" \
+     "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \
+-    -o "$test_binary"
++    -lm -o "$test_binary"
+ ASAN_OPTIONS=detect_leaks=0 "$test_binary"
+diff --git a/firmware/espidf/components/tb_core/tests/run_j1708_field.sh b/firmware/espidf/components/tb_core/tests/run_j1708_field.sh
+index 1f906d7..11aa225 100644
+--- a/firmware/espidf/components/tb_core/tests/run_j1708_field.sh
++++ b/firmware/espidf/components/tb_core/tests/run_j1708_field.sh
+@@ -5,6 +5,6 @@ binary=$(mktemp /tmp/tb-j1708-field.XXXXXX)
+ trap 'rm -f "$binary"' EXIT HUP INT TERM
+ cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+  -I"$test_dir/.." -I"$test_dir/../../../../j1708_17pid/src" \
+- "$test_dir/test_j1708_field.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" \
+- "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" -o "$binary"
++ "$test_dir/test_j1708_field.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../tbx_j1708_rx_guard.c" \
++ "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" -lm -o "$binary"
+ ASAN_OPTIONS=detect_leaks=1 "$binary"
+diff --git a/firmware/espidf/components/tb_core/tests/run_j1708_rx_guard.sh b/firmware/espidf/components/tb_core/tests/run_j1708_rx_guard.sh
+new file mode 100644
+index 0000000..cb22a2e
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/run_j1708_rx_guard.sh
+@@ -0,0 +1,10 @@
++#!/bin/sh
++set -eu
++test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
++binary=$(mktemp /tmp/tb-j1708-rx-guard.XXXXXX)
++trap 'rm -f "$binary"' EXIT HUP INT TERM
++cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined -fno-omit-frame-pointer -g \
++ -I"$test_dir/.." -I"$test_dir/../../../../j1708_17pid/src" \
++ "$test_dir/test_j1708_rx_guard.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../tbx_j1708_rx_guard.c" \
++ "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" -lm -o "$binary"
++ASAN_OPTIONS=detect_leaks=1 "$binary"
+diff --git a/firmware/espidf/components/tb_core/tests/run_offline_2h.sh b/firmware/espidf/components/tb_core/tests/run_offline_2h.sh
+index cbb2429..fc091dc 100644
+--- a/firmware/espidf/components/tb_core/tests/run_offline_2h.sh
++++ b/firmware/espidf/components/tb_core/tests/run_offline_2h.sh
+@@ -11,8 +11,8 @@ import re,sys
+ s=Path(sys.argv[1]).read_text();chunks=[]
+ end=s.index('} request_event_t;')+len('} request_event_t;');start=s.rfind('typedef struct {',0,end);assert start>=0
+ chunks.append(s[start:end])
+-for name in ['add_sample_identity','queue_sample','request_store_event','tb_j1708_store_matched_response']:
+- m=re.search(r'^static void '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
++for name in ['add_sample_identity','queue_sample','guard_values','guard_record','request_store_guard','request_store_event','tb_j1708_store_matched_response']:
++ m=re.search(r'^static (?:void|bool) '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
+  end=s.index('{',m.start())+1;depth=1
+  while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
+  chunks.append(re.sub(r'\bs\.', 'capture_fixture.',s[m.start():end]))
+@@ -32,7 +32,7 @@ cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
+  -I"$work" -I"$core" -I"$module" -I"$IDF_PATH/components/json/cJSON" \
+  "$test_dir/offline_export.c" "$core/protocols.c" "$core/tbx_j1587_bridge.c" \
+  "$module/tbx_j1587_decoder.c" "$module/tbx_j1587_passive.c" "$module/tbx_j1587_passive_full.c" \
+- "$module/tbx_j1708_requests.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/export"
++ "$module/tbx_j1708_requests.c" "$core/tbx_j1708_rx_guard.c" "$core/tbx_j1708_active.c" "$core/tbx_j1708_field.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/export"
+ cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
+  -fsanitize=address,undefined -fno-omit-frame-pointer -g -I"$core" -I"$IDF_PATH/components/json/cJSON" \
+  "$test_dir/offline_storage.c" "$core/store_codec.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/store"
+diff --git a/firmware/espidf/components/tb_core/tests/test_capture_integration.c b/firmware/espidf/components/tb_core/tests/test_capture_integration.c
+index 947275a..167d5e2 100644
+--- a/firmware/espidf/components/tb_core/tests/test_capture_integration.c
++++ b/firmware/espidf/components/tb_core/tests/test_capture_integration.c
+@@ -3,6 +3,7 @@
+ #include "capture_host_stubs.h"
+ #include <assert.h>
+ #include <stdlib.h>
++#include <setjmp.h>
+ static int64_t host_now_us;
+ static uint8_t host_nvs[256];
+ static size_t host_nvs_size;
+@@ -10,6 +11,10 @@ static unsigned char slot_a[512],slot_b[512];
+ static size_t slot_sizes[2];
+ static unsigned host_commits, host_mutexes;
+ static unsigned host_held,host_audits;
++typedef struct {int type;const uint8_t *bytes;size_t length;bool timeout;uint32_t delay_us;}host_rx_event_t;
++static host_rx_event_t host_rx_events[16];
++static unsigned host_rx_count,host_rx_cursor,host_rx_offset,host_rx_flushes;
++static jmp_buf host_rx_done;
+ #include "capture_under_test.h"
+ 
+ static SemaphoreHandle_t xSemaphoreCreateMutex(void)
+@@ -29,6 +34,33 @@ static void xSemaphoreGive(SemaphoreHandle_t mutex)
+     host_held &= ~bit;
+ }
+ static int64_t esp_timer_get_time(void) { return host_now_us; }
++static bool xQueueReceive(QueueHandle_t queue,void *item,unsigned ticks)
++{
++    (void)queue;(void)ticks;
++    if(host_rx_cursor==host_rx_count)longjmp(host_rx_done,1);
++    const host_rx_event_t *e=&host_rx_events[host_rx_cursor++];host_now_us+=e->delay_us;
++    host_rx_offset=0;if(!e->type)return false;
++    *(uart_event_t *)item=(uart_event_t){e->type,e->length,e->timeout};
++    if(e->type==UART_DATA)s.rx_edge_us=(uint32_t)host_now_us;
++    return true;
++}
++static bool xQueueSend(QueueHandle_t q,const void *v,unsigned t){(void)q;(void)v;(void)t;return true;}
++static void xQueueReset(QueueHandle_t q){(void)q;}
++static int uart_read_bytes(int port,void *out,size_t count,unsigned ticks)
++{
++    (void)ticks;assert(port==1);const host_rx_event_t *e=&host_rx_events[host_rx_cursor-1];
++    assert(host_rx_offset+count<=e->length);memcpy(out,e->bytes+host_rx_offset,count);host_rx_offset+=(unsigned)count;return (int)count;
++}
++static void uart_flush_input(int p){assert(p==1);++host_rx_flushes;}
++static int gpio_get_level(int p){assert(p==20);return 1;}
++static unsigned uart_ll_get_rxfifo_len(int p){assert(p==1);return 0;}
++static int uart_get_buffered_data_len(int p,size_t *n){assert(p==1);*n=0;return 0;}
++static bool tb_telemetry_j1708(const uint8_t *b,size_t n,uint64_t t,bool o){(void)b;(void)n;(void)t;(void)o;return true;}
++static bool tb_telemetry_j1708_echo(const uint8_t *b,size_t n,uint64_t t,bool o){(void)b;(void)n;(void)t;(void)o;return true;}
++static void run_rx(void)
++{
++    host_rx_cursor=host_rx_offset=0;if(!setjmp(host_rx_done))j1708_task(NULL);assert(!host_held);
++}
+ static esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
+ { (void)mode; assert(!strcmp(name, "tb_trip")); *handle = 1; return ESP_OK; }
+ static esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *buffer, size_t *size)
+@@ -322,6 +354,44 @@ static void test_field_owner_speed_nonce_and_no_external_evidence(void)
+     cJSON_Delete(body);assert(!host_held);
+ }
+ 
++static void test_production_uart_partitioning_and_candidates(void)
++{
++    boot_with_checkpoint(NULL,0);host_rx_flushes=0;s.j1708_ready=true;
++    const tbx_j1708_active_ops_t ops={.begin_tx=proof_begin,.abort_tx=proof_abort};
++    tbx_j1708_active_init(&s.active,&s.requests,&ops,NULL);
++    tbx_j1708_active_config_t cfg={.local_mid=172,.priority=8,.inverted_de21_attested=true,.single_shot=true};
++    for(unsigned i=0;i<17;i++)cfg.target_mid[i]=128;
++    assert(tbx_j1708_active_configure(&s.active,&cfg));
++    host_now_us=1000000;assert(tbx_j1708_active_arm(&s.active,true,true,host_now_us));
++    host_now_us+=5000;tbx_j1708_active_tick(&s.active,host_now_us);assert(s.active.tx_active);
++    uint8_t echo[5];memcpy(echo,s.active.tx_frame,5);
++    const uint8_t bad[]={128,26,1,100},wrong_mid[]={130,26,1,99},matching[]={128,26,1,101};
++    const uint8_t oversized[22]={128};
++    host_rx_event_t script[]={
++        {UART_DATA,echo,1,false,1100},{UART_DATA,echo+1,4,false,4400},
++        {UART_DATA,bad,4,true,6000},{UART_DATA,oversized,22,true,23000},
++        {UART_DATA,wrong_mid,4,true,6000},{UART_DATA,matching,4,true,200000},
++        {UART_DATA,matching,2,false,20000},{UART_DATA,matching+2,2,false,2200},
++        {0,NULL,0,false,20000}};
++    memcpy(host_rx_events,script,sizeof(script));host_rx_count=sizeof(script)/sizeof(*script);run_rx();
++    assert(s.active.echo_ok==1 && s.requests.answered_total==1);
++    assert(s.j1708_frames==3 && s.j1708_checksum_errors==1 && s.j1708_oversize==1);
++    assert(s.active.rx_guard.total.valid==3 && s.active.rx_guard.total.checksum==1 && s.active.rx_guard.total.framing==1);
++    assert(!(s.observed_mid[172>>3]&(1u<<(172&7))));
++    assert(!s.active.physical_validated); /* Matching spontaneous data still only a candidate. */
++    /* Actual receiver overflow path: stop blind TX, then keep passive RX alive. */
++    tbx_j1708_active_stop(&s.active,"OPERATOR_STOP");
++    assert(tbx_j1708_active_configure(&s.active,&cfg));host_now_us+=1000000;
++    assert(tbx_j1708_active_arm(&s.active,true,true,host_now_us));host_now_us+=5000;
++    tbx_j1708_active_tick(&s.active,host_now_us);assert(s.active.tx_active);
++    host_rx_events[0]=(host_rx_event_t){UART_FIFO_OVF,NULL,0,false,1000};
++    host_rx_events[1]=(host_rx_event_t){UART_DATA,matching,4,true,6000};host_rx_count=2;run_rx();
++    assert(!s.requests.armed && !s.active.tx_active && s.j1708_ready && host_rx_flushes==1);
++    assert(s.active.rx_guard.total.overruns==1 && !s.active.collisions);
++    assert(s.j1708_frames==4 && s.requests.answered_total==1);
++    puts("Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS");
++}
++
+ static void test_reupgrade_imports_legacy_trip_advanced_after_rollback(void)
+ {
+     trip_blob_t base={.version=2,.distance=10,.fuel=2,.distance_valid=true,.fuel_valid=true};
+@@ -362,6 +432,7 @@ static void test_validated_counter_mids_and_real_checkpoint_restore(void)
+ int main(void)
+ {
+     test_validated_counter_mids_and_real_checkpoint_restore();
++    test_production_uart_partitioning_and_candidates();
+     test_external_evidence_owner();
+     test_field_owner_speed_nonce_and_no_external_evidence();
+     test_reupgrade_imports_legacy_trip_advanced_after_rollback();
+diff --git a/firmware/espidf/components/tb_core/tests/test_field_audit.c b/firmware/espidf/components/tb_core/tests/test_field_audit.c
+index 6cb5eef..6003842 100644
+--- a/firmware/espidf/components/tb_core/tests/test_field_audit.c
++++ b/firmware/espidf/components/tb_core/tests/test_field_audit.c
+@@ -1,4 +1,5 @@
+ #include "tbx_j1708_active.h"
++#include "tb_json.h"
+ #include "../../tb_base/tests/json_heap.h"
+ #include <inttypes.h>
+ #include <stdio.h>
+@@ -19,6 +20,43 @@ static void assert_no_external_fields(void)
+     assert(!cJSON_GetObjectItemCaseSensitive(o,"response_observed_hex"));
+     assert(!cJSON_GetObjectItemCaseSensitive(o,"external_capture_verified"));cJSON_Delete(o);
+ }
++static void test_guard_diagnostic(void)
++{
++    heap_reset();request_event_t item={.guard=true,.field=true};
++    tbx_rx_decision_t *d=&item.guard_decision;
++    d->at_us=1577473000;d->window=(tbx_rx_window_t){1567473000,1577473000,{599,6,0,0,0,0}};
++    d->reference=(tbx_rx_window_t){1537473000,1567473000,{1800,1,0,0,0,0}};
++    d->cause=TBX_GUARD_RX_QUALITY;d->streak=3;d->before_flags=3;d->stopped=true;
++    d->predicates=TBX_GUARD_CRC_ELEVATED|TBX_GUARD_PERSISTENT|TBX_GUARD_REFERENCE_READY;
++    d->sent=318;d->echoes=318;d->candidates=318;d->totals.valid=90000;
++    stored_rows=0;request_store_event(&item);assert(stored_rows==1 && !heap_used);
++    size_t bytes=strlen(stored),calls=heap_calls;
++    cJSON *o=cJSON_Parse(stored);assert(o);
++    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(o,"source")->valuestring,"LIVE_PROTECTION_DECISION"));
++    assert(!cJSON_GetObjectItemCaseSensitive(o,"before_frames"));
++    assert(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(o,"w"),2)->valueint==599);
++    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o,"crc_hit")));
++    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o,"candidate_only")));
++    cJSON_Delete(o);assert(!heap_used);
++    for(size_t fail=1;fail<=calls;fail++){
++        heap_reset();heap_fail_call=fail;stored_rows=0;s.active.field.audit_lost=false;
++        request_store_event(&item);assert(!heap_used);
++        if(!stored_rows)assert(s.active.field.audit_lost);
++    }
++    heap_reset();
++    /* Deliberately generous per-window input counts for 9600 baud, with
++     * cumulative uint32 wrap extremes and a long monotonic uptime. */
++    d->at_us=UINT64_C(9007199254740991);d->window.start_us=d->at_us-10000000;d->window.end_us=d->at_us;
++    d->reference.start_us=d->at_us-40000000;d->reference.end_us=d->at_us-10000000;
++    d->window.count=(tbx_rx_counts_t){10000,10000,10000,10000,10000,10000};
++    d->reference.count=(tbx_rx_counts_t){30000,30000,30000,30000,30000,30000};
++    d->totals=(tbx_rx_counts_t){UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
++    d->sent=d->candidates=d->timeouts=d->echoes=d->collisions=d->echo_timeouts=d->tx_errors=UINT32_MAX;
++    d->pid=250;d->target_mid=255;item.local_mid=172;d->timeout_ms=5000;d->spacing_ms=1200;d->request_failures=3;
++    stored_rows=0;request_store_event(&item);assert(stored_rows==1 && !heap_used);
++    printf("Guard upper-range fixture fits %zu bytes (limit 767); ",strlen(stored));
++    heap_reset();printf("Guard record: %zu bytes, live/ref counters and actual predicate/mode flags, atomic arrays and allocation failure ownership PASS\n",bytes);
++}
+ int main(void)
+ {
+     heap_reset();request_event_t item={.field=true,.field_started_us=1000000,.uptime_us=2000000,.pid=26,.local_mid=172,.target_mid=128};
+@@ -41,5 +79,5 @@ int main(void)
+         if(!stored_rows)assert(s.active.field.audit_lost);else{heap_fail_call=0;assert_no_external_fields();assert(!heap_used);}
+     }
+     printf("Actual field audit: %zu-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS\n",bytes);
+-    return 0;
++    test_guard_diagnostic();return 0;
+ }
+diff --git a/firmware/espidf/components/tb_core/tests/test_j1708_field.c b/firmware/espidf/components/tb_core/tests/test_j1708_field.c
+index 3237014..42d0db8 100644
+--- a/firmware/espidf/components/tb_core/tests/test_j1708_field.c
++++ b/firmware/espidf/components/tb_core/tests/test_j1708_field.c
+@@ -113,7 +113,7 @@ static void supervision_health_and_expiration(void)
+         if(i%100==0)passive(&f,false);
+         f.now+=10000;tbx_j1708_active_tick(&f.a,f.now);
+     }
+-    assert(f.a.field.phase==TBX_FIELD_FAILED && !f.s.armed);
++    assert(f.a.field.phase==TBX_FIELD_BEFORE && f.s.armed); /* Isolated receiver noise is not a TX fault. */
+     init(&f);assert(tbx_j1708_field_start(&f.a,true,true,f.now));
+     f.now+=TBX_J1708_FIELD_LEASE_US;passive(&f,false);tbx_j1708_active_tick(&f.a,f.now);
+     assert(!f.s.armed && f.a.lease_expirations==1);
+diff --git a/firmware/espidf/components/tb_core/tests/test_j1708_rx_guard.c b/firmware/espidf/components/tb_core/tests/test_j1708_rx_guard.c
+new file mode 100644
+index 0000000..05eaa91
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/test_j1708_rx_guard.c
+@@ -0,0 +1,170 @@
++/* Synthetic clock/bus and labelled reconstruction compatible with HEALTH
++ * aggregates. This is NOT a replay of unavailable 10 s field counters. */
++#include "tbx_j1708_active.h"
++#include "tbx_j1708_policy.h"
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++#include "fixtures/healthy_0214.h"
++typedef struct {
++    tbx_j1708_active_t a;tbx_j1708_request_scheduler_t s;
++    uint64_t now;unsigned writes,aborts,decisions,stops,credit,upload_ok,upload_failed;
++    bool no_reply,driver_fault,wifi_online;
++    uint8_t tx[5];
++}fixture_t;
++static tbx_j1708_tx_result_t tx(const uint8_t *data,size_t n,void *context)
++{
++    fixture_t *f=context;assert(n==5);if(f->driver_fault)return TBX_J1708_TX_FAULT;
++    unsigned sum=0;for(unsigned i=0;i<n;i++)sum+=data[i];assert(!(sum&255));
++    memcpy(f->tx,data,n);++f->writes;return TBX_J1708_TX_STARTED;
++}
++static void abort_tx(void *ctx){++((fixture_t *)ctx)->aborts;}
++static void event(const char *name,uint16_t pid,const char *detail,void *ctx)
++{
++    fixture_t *f=ctx;(void)pid;(void)detail;
++    if(!strcmp(name,"GUARD_DECISION"))++f->decisions;
++    if(!strcmp(name,"STOPPED"))++f->stops;
++}
++static void initialize(fixture_t *f)
++{
++    memset(f,0,sizeof(*f));f->now=1000000;f->wifi_online=true;
++    const tbx_j1708_active_ops_t ops={tx,abort_tx,event};tbx_j1708_active_init(&f->a,&f->s,&ops,f);
++    tbx_j1708_active_config_t cfg={.local_mid=172,.priority=8,.inverted_de21_attested=true};
++    for(unsigned i=0;i<17;i++)cfg.target_mid[i]=tbx_j1708_policy()[i].mid;
++    assert(tbx_j1708_active_configure(&f->a,&cfg));
++    /* Authorization boundary fixture; full parked validation is tested by run_j1708_field. */
++    f->a.field.phase=TBX_FIELD_CONFIRMED;f->a.field.confirmed=true;f->a.field.started_us=1;
++    f->a.field.before_frames=1916;f->a.field.before_duration_us=30000787;
++    f->a.echo_ok=1;f->s.answered_total=1;f->a.promotion_deadline_us=f->now+900000000;
++}
++static void frame(fixture_t *f,tbx_rx_kind_t kind)
++{
++    tbx_j1708_field_note_frame_kind(&f->a,128,kind,f->now);
++}
++static void step(fixture_t *f,unsigned fps)
++{
++    f->now+=10000;f->credit+=fps;
++    while(f->credit>=100){frame(f,TBX_RX_VALID);f->credit-=100;}
++    if(f->a.tx_active)tbx_j1708_active_note_rx(&f->a,f->tx,5,f->now);
++    if(!f->no_reply && f->s.pending<17 && !f->a.tx_active && f->now-f->a.tx_started_us>=210000){
++        unsigned i=f->s.pending;frame(f,TBX_RX_VALID);
++        assert(tbx_j1708_active_note_response(&f->a,f->a.config.target_mid[i],f->s.pids[i].pid,f->now));
++    }
++    if(f->now%1000000==0){if(f->wifi_online)++f->upload_ok;else ++f->upload_failed;}
++    tbx_j1708_active_tick(&f->a,f->now);
++}
++static void seconds(fixture_t *f,unsigned seconds,unsigned fps)
++{
++    for(unsigned i=0;i<seconds*100;i++)step(f,fps);
++}
++static void warm_and_enable(fixture_t *f)
++{
++    initialize(f);seconds(f,31,60);assert(f->a.rx_guard.reference_count==3);
++    assert(tbx_j1708_active_enable_work(&f->a,f->now));assert(!f->a.physical_validated);
++}
++static void normal_conditions(void)
++{
++    fixture_t f;warm_and_enable(&f);seconds(&f,120,60);
++    assert(f.s.armed && f.a.work_mode && f.s.sent_total>17 && !f.a.physical_validated);
++    /* B: isolated errors, including a >1% burst resembling the old guard trigger. */
++    for(unsigned n=0;n<6;n++)frame(&f,TBX_RX_CHECKSUM);
++    seconds(&f,10,59);assert(f.s.armed);seconds(&f,40,60);assert(f.s.armed);
++    /* C/F: engine off -> engine running -> moving, ordinary traffic changes.
++     * No electrical claim or assumption that the calibrated frame rate is fixed. */
++    seconds(&f,40,5);seconds(&f,40,120);seconds(&f,40,25);assert(f.s.armed && f.a.work_mode);
++    /* G: connectivity is deliberately outside the controller. Time/RX continue. */
++    f.wifi_online=false;seconds(&f,30,60);f.wifi_online=true;seconds(&f,30,60);
++    assert(f.s.armed && f.a.work_mode && f.upload_failed && f.upload_ok);
++    /* J: historical calibration changes cannot enter the road guard decision. */
++    f.a.field.before_frames=1;f.a.field.before_duration_us=30000000;
++    seconds(&f,40,60);assert(f.s.armed);
++    f.a.field.before_frames=UINT32_MAX;seconds(&f,40,60);assert(f.s.armed);
++    /* H: reset returns to a disarmed state and never restores authority. */
++    fixture_t reboot;initialize(&reboot);assert(!reboot.s.armed && !reboot.a.work_mode);
++    seconds(&reboot,40,60);assert(!reboot.s.armed && !reboot.writes);
++}
++static void persistent_errors_and_faults(void)
++{
++    fixture_t f;warm_and_enable(&f);
++    for(unsigned window=0;window<4 && f.s.armed;window++){
++        for(unsigned i=0;i<40;i++)frame(&f,TBX_RX_CHECKSUM);
++        seconds(&f,10,60);
++    }
++    assert(!f.s.armed && f.a.rx_guard.fault_latched);
++    assert(f.a.rx_guard.decision.predicates&TBX_GUARD_PERSISTENT);
++    assert(f.a.rx_guard.decision.streak==3 && f.a.rx_guard.decision.stopped);
++    assert((f.a.rx_guard.decision.before_flags&3)==3 && !f.a.rx_guard.decision.after_flags);
++    unsigned writes=f.writes;seconds(&f,60,60);assert(f.writes==writes && !f.s.armed);
++    assert(!tbx_j1708_active_arm(&f.a,true,true,f.now));
++    /* D: RX faults do not invent a collision/TX fault, but loss of RX during TX releases immediately. */
++    warm_and_enable(&f);while(!f.a.tx_active)step(&f,60);
++    tbx_j1708_rx_uart_fault(&f.a,TBX_RX_OVERRUN,f.now);
++    assert(!f.a.tx_active && !f.s.armed && f.aborts && f.a.rx_guard.total.overruns==1);
++    assert(f.a.collisions==0 && f.s.tx_failure_total==0 && f.a.rx_guard.decision.cause==TBX_GUARD_RX_DURING_TX);
++    warm_and_enable(&f);while(!f.a.tx_active)step(&f,60);
++    uint8_t wrong=0;tbx_j1708_active_note_rx(&f.a,&wrong,1,f.now+1000);
++    assert(!f.a.tx_active && f.a.collisions==1); /* Existing immediate electrical release + retry policy. */
++    /* E: three missing response candidates still disarm. */
++    warm_and_enable(&f);f.no_reply=true;seconds(&f,30,60);
++    assert(!f.s.armed && f.s.timeout_total>=3 && f.a.rx_guard.decision.last_failure==TBX_GUARD_REPLY_TIMEOUT);
++    warm_and_enable(&f);f.driver_fault=true;seconds(&f,30,60);
++    assert(!f.s.armed && f.s.tx_failure_total>=3 && f.a.rx_guard.decision.last_failure==TBX_GUARD_TX_DRIVER);
++    assert(f.a.rx_guard.decision.pid && f.a.rx_guard.decision.spacing_ms==1200);
++}
++static void windows_and_fault_classification(void)
++{
++    fixture_t f;warm_and_enable(&f);
++    /* An isolated UART fault while not transmitting is RX evidence, not a
++     * fabricated collision; repeated loss of reliable RX still stops TX. */
++    for(unsigned i=0;i<3;i++){
++        assert(!f.a.tx_active);
++        tbx_j1708_rx_uart_fault(&f.a,TBX_RX_UART_FRAME,f.now);
++        seconds(&f,10,60);
++    }
++    assert(!f.s.armed && f.a.rx_guard.decision.cause==TBX_GUARD_RX_UART);
++    assert(!f.a.collisions && !f.s.tx_failure_total && f.a.rx_guard.total.uart_frame==3);
++    /* A delayed sampler cannot turn a long, incomparable interval into three
++     * observations. The recent reference is relearned from contiguous windows. */
++    warm_and_enable(&f);f.now+=30000000;
++    for(unsigned i=0;i<50;i++)frame(&f,TBX_RX_CHECKSUM);
++    frame(&f,TBX_RX_VALID);tbx_j1708_rx_tick(&f.a,f.now);
++    assert(f.s.armed && !f.a.rx_guard.reference_count && !f.a.rx_guard.suspect_streak);
++    seconds(&f,31,60);assert(f.s.armed && f.a.rx_guard.reference_count==3);
++    uint64_t begin=UINT64_MAX,end=0;
++    for(unsigned i=0;i<3;i++){
++        tbx_rx_window_t w=f.a.rx_guard.reference[i];
++        if(w.start_us<begin)begin=w.start_us;
++        if(w.end_us>end)end=w.end_us;
++    }
++    assert(end-begin>=30000000 && end-begin<30100000);
++    /* A real monotonic-time reversal must never be treated as a normal rate change. */
++    tbx_j1708_rx_tick(&f.a,f.now-1);
++    assert(!f.s.armed && f.a.rx_guard.decision.cause==TBX_GUARD_CLOCK);
++    /* Time zero is a valid start; it must not be used as an empty reference marker. */
++    initialize(&f);f.now=0;frame(&f,TBX_RX_VALID);seconds(&f,31,60);
++    assert(f.a.rx_guard.reference_count==3);
++    assert(f.a.rx_guard.reference[0].start_us==0);
++}
++static void spontaneous_candidates_and_old_counterexample(void)
++{
++    fixture_t f;warm_and_enable(&f);
++    while(!f.a.tx_active)step(&f,60);
++    f.now+=6000;tbx_j1708_active_note_rx(&f.a,f.tx,5,f.now);unsigned i=f.s.pending;assert(i<17);
++    /* I: identical broadcast within a request window remains only a candidate. */
++    f.now+=20000;frame(&f,TBX_RX_VALID);
++    assert(tbx_j1708_active_note_response(&f.a,f.a.config.target_mid[i],f.s.pids[i].pid,f.now));
++    assert(!f.a.physical_validated && f.a.last_response_mid==f.a.config.target_mid[i]);
++    assert(!tbx_j1708_active_note_response(&f.a,f.a.config.target_mid[i],f.s.pids[i].pid,f.now));
++    /* A labelled synthetic counterexample, not an inference of the actual incident. */
++    initialize(&f);f.s.armed=true;f.a.work_mode=true;f.a.field.frames=599;f.a.field.bad_frames=6;
++    f.a.field.watch_at_us=f.now;f.a.field.last_frame_us=f.now+10000000;
++    assert(!healthy_0214(&f.a,f.now+10000000));assert(!f.s.armed);
++    warm_and_enable(&f);for(unsigned n=0;n<6;n++)frame(&f,TBX_RX_CHECKSUM);seconds(&f,10,59);
++    assert(f.s.armed);seconds(&f,30,60);assert(f.s.armed);
++    puts("0.2.14 synthetic 599 valid/6 invalid window stops; 0.2.15 isolated burst does not. Incident branch itself remains unidentifiable from minute aggregates.");
++}
++int main(void)
++{
++    normal_conditions();persistent_errors_and_faults();windows_and_fault_classification();spontaneous_candidates_and_old_counterexample();
++    puts("RX guard A-J: stable traffic, isolated noise, traffic/engine changes, persistent RX faults, TX faults, repeated timeouts, offline/reconnect, reboot, spontaneous candidates and stale calibration PASS");return 0;
++}
+diff --git a/firmware/espidf/components/tb_web/index.html b/firmware/espidf/components/tb_web/index.html
+index 6d9b23f..7adaff0 100644
+--- a/firmware/espidf/components/tb_web/index.html
++++ b/firmware/espidf/components/tb_web/index.html
+@@ -581,6 +581,7 @@
+     const j1708 = lastState && lastState.j1708 || {};
+     const status = j1708.requests || {};
+     const field = status.field_validation || {};
++    const guard = status.rx_guard || {};
+     const numbers = v => Number.isFinite(Number(v)) ? String(v) : '—';
+     text('j1708-sent', numbers(status.sent));
+     text('j1708-echo', numbers(status.echo_ok));
+@@ -604,7 +605,7 @@
+     const speed = lastState && lastState.speedKph;
+     const stopped = typeof speed === 'number' && Number.isFinite(speed) && speed <= 0.1;
+     const online = role === 'core' && !!token && !!lastState &&
+-      j1708.ready === true && !lastState.ota_busy && !uploadBusy;
++      j1708.ready === true && !lastState.ota_busy && !uploadBusy && !guard.fault_latched;
+     $('j1708-test').disabled = !online || j1708Busy || !!status.armed || !!field.running ||
+       !stopped || !selected || midInUse || presetConflict ||
+       !$('j1708-topology').checked || !!status.safety_stopped;
+@@ -614,7 +615,9 @@
+     const reasons={MEASURING_PASSIVE_BEFORE:'Observando antes de transmitir',OPERATIONAL_INDIRECT_OPERATOR_CONFIRMATION_REQUIRED:'Confirmação do operador pendente',RESPONSES_NOT_DISTINGUISHABLE_FROM_PASSIVE:'Sem contraste suficiente com mensagens espontâneas',OPERATOR_CONFIRMED_OPERATIONAL_INDIRECT_NOT_EXTERNAL:'Aceite operacional indireto registrado',PASSIVE_BUS_SILENCE:'Sem quadros válidos há dez segundos',FIELD_AUDIT_RECORD_LOST:'Falha ao registrar evidência; repita após recuperar o armazenamento',PASSIVE_BUS_ERROR_OR_RATE_ANOMALY:'Erros ou alteração anormal do tráfego',PASSIVE_BASELINE_INSUFFICIENT_OR_NOISY:'Poucos quadros válidos ou excesso de erros na referência',PASSIVE_BEFORE_AFTER_RATE_CHANGED:'Tráfego posterior difere da referência',LOCAL_MID_CONFLICT:'MID local em conflito',FIELD_REQUIRES_FRESH_STATIONARY_SPEED:'Caminhão em movimento ou velocidade sem atualização recente',VEHICLE_MOVEMENT_J1587:'Caminhão entrou em movimento',FIELD_RESPONSE_TIMEOUT:'Sem resposta no prazo',FIELD_TX_LINK_ERROR:'Falha de eco, colisão ou erro UART',FIELD_TX_BACKEND_REJECTED:'Transmissão recusada pelo driver',FIELD_INCOMPLETE_PID_COVERAGE:'Nem todos os PIDs concluíram as três rodadas',AUTHORIZATION_LEASE_EXPIRED:'Autorização expirou',OTA_BUSY:'Atualização em andamento',OPERATOR_STOP:'Parada solicitada pelo operador'};
+     text('j1708-field-status',(phases[field.phase] || 'Nenhuma sessão medida')+(field.session_id?' · '+field.completed_trials+'/'+field.total_trials+' ensaios · '+field.contrasting_pids+' PIDs com contraste · '+(reasons[field.reason] || field.reason || ''):'')+' · Sem comprovação elétrica externa');
+     $('j1708-confirm').disabled = !online || j1708Busy || !stopped || !!status.armed || !status.single_shot || !status.echo_ok || !status.responses || !!status.physical_validated || !$('j1708-external-proof').checked || !$('j1708-tx-proof').value.trim() || !$('j1708-rx-proof').value.trim();
+-    text('j1708-block',(status.block_reason || '')+(status.last_response_pid?' · Última resposta candidata: MID '+status.last_response_mid+', PID '+status.last_response_pid+', '+Math.floor(status.last_response_age_ms/1000)+' s atrás':''));
++    const guardNames={RX_ERROR_RATE_PERSISTENT:'degradação persistente do receptor',RX_UART_FAULTS_PERSISTENT:'falhas persistentes de recepção UART',RX_MAJORITY_INVALID:'maioria dos quadros inválida',RX_SILENCE:'sem recepção válida',MONOTONIC_CLOCK_INVALID:'referência de tempo inválida',RX_UNRELIABLE_DURING_TX:'recepção perdida durante TX',TX_DRIVER_FAILURE:'falha do driver de transmissão',TX_ECHO_TIMEOUT:'eco TX não recebido no prazo',TX_ECHO_DIVERGENCE_OR_COLLISION:'eco divergente ou possível colisão',MATCHING_RESPONSE_TIMEOUT:'sem resposta candidata no prazo',LOCAL_MID_CONFLICT:'conflito de MID',AUTHORIZATION_EXPIRED:'autorização expirada',OPERATOR_OR_OTA_STOP:'parada do operador ou atualização',AUDIT_RECORD_LOST:'registro de auditoria indisponível',OTHER_INTERLOCK:'intertravamento de segurança'};
++    const guardText=guard.last_cause && guard.last_cause!=='NONE'?' · Última proteção: '+(guardNames[guard.last_cause] || guard.last_cause)+(guard.fault_latched?' (requer reconfiguração e nova autorização)':''):'';
++    text('j1708-block',(status.block_reason || '')+guardText+(status.last_response_pid?' · Última resposta candidata: MID '+status.last_response_mid+', PID '+status.last_response_pid+', '+Math.floor(status.last_response_age_ms/1000)+' s atrás':''));
+     const stats=Array.isArray(status.stats)?status.stats:[];
+     $('j1708-cadences').textContent=stats.map(p=>'PID '+p.pid+' / MID '+p.target_mid+': '+(p.interval_ms/60000)+' min · envios '+p.sent+' · respostas candidatas '+p.response_candidates+' · timeouts '+p.timeouts+(p.field?' · teste: antes/depois '+p.field.before+'/'+p.field.after+', controles '+p.field.control_hits+'/'+p.field.controls+', eco/respostas '+p.field.echoes+'/'+p.field.replies+', latência '+(p.field.latency_min_us===null?'—':p.field.latency_min_us/1000)+'–'+(p.field.latency_max_us===null?'—':p.field.latency_max_us/1000)+' ms':'')).join(' | ');
+     $('j1708-work').disabled = !online || j1708Busy || !stopped ||
+diff --git a/firmware/espidf/test_evidence/v0215_browser.json b/firmware/espidf/test_evidence/v0215_browser.json
+new file mode 100644
+index 0000000..7d99f28
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_browser.json
+@@ -0,0 +1,7 @@
++{
++  "scope": "Browser against local mock only; not physical OTA or production Supabase.",
++  "failed": [],
++  "browserErrors": [],
++  "passed_checks": 21,
++  "requests_are_local_mocks": true
++}
+diff --git a/firmware/espidf/test_evidence/v0215_browser.txt b/firmware/espidf/test_evidence/v0215_browser.txt
+new file mode 100644
+index 0000000..469865b
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_browser.txt
+@@ -0,0 +1,21 @@
++PASS public status stays read-only and renders untrusted JSON as text
++PASS wrong administrator key leaves configuration locked
++PASS authenticated login enables Core controls without persisting its key
++PASS configuration submits only dirty fields and omits emptied secrets
++PASS explicit open-network checkbox clears Wi-Fi password
++PASS existing-cloud sequence accepts the largest safe JSON integer
++PASS pairing data is authenticated and copyable
++PASS OTA rejects extension, short file, oversized file and invalid magic before upload
++PASS server role rejection is shown and local OTA sends authenticated raw binary
++PASS Core forwards Link OTA to its dedicated route and presents progress
++PASS J1708 timeout and validated source MIDs submit numeric configuration
++PASS J1708 one-shot, external evidence gate, explicit travel activation and stop
++PASS supervised field path requires parked authorization and separate indirect confirmation; external fields remain empty
++PASS compact diagnostics paginate all 17 PID statistics without the large full-state response
++PASS latched RX fault explains the stop and blocks new TX controls while manual stop stays available
++PASS RAM failure shows partial health, preserves OTA access and stop, and never enables a stale active test
++PASS mobile page has no horizontal overflow
++PASS logout clears pairing and removes authorization from future state requests
++PASS Link profile shows pairing/GPS/modem and hides Core forwarding/capture
++PASS Link submits separate GPS credentials and pairing then clears secret inputs
++PASS configuration server errors stay visible without claiming successful save
+diff --git a/firmware/espidf/test_evidence/v0215_build_core.txt b/firmware/espidf/test_evidence/v0215_build_core.txt
+new file mode 100644
+index 0000000..7616729
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_build_core.txt
+@@ -0,0 +1,29 @@
++Executing action: all (aliases: build)
++Running ninja in directory /workspace/work/Truckbox-v0215/firmware/espidf/build-core
++Executing "ninja all"...
++[1/9] Performing build step for 'bootloader'
++[1/1] cd /workspace/work/Truckbox-v0215/firmware/espidf/build-core/bootloader/esp-idf/esptool_py && /workspace/work/idf-tools/python_env/idf5.5_py3.12_env/bin/python /workspace/work/esp-idf-v5.5.2/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /workspace/work/Truckbox-v0215/firmware/espidf/build-core/bootloader/bootloader.bin
++Bootloader binary size 0x3990 bytes. 0x4670 bytes (55%) free.
++[2/9] No install step for 'bootloader'
++[3/9] Completed 'bootloader'
++[4/9] Building C object esp-idf/tb_core/CMakeFiles/__idf_tb_core.dir/tbx_j1708_field.c.obj
++[5/9] Linking C static library esp-idf/tb_core/libtb_core.a
++[6/9] Generating esp-idf/esp_system/ld/sections.ld
++[7/9] Linking CXX executable truckbox_core.elf
++[8/9] Generating binary image from built executable
++esptool.py v4.13.0
++Creating esp32c6 image...
++Merged 1 ELF section
++Successfully created esp32c6 image.
++Generated /workspace/work/Truckbox-v0215/firmware/espidf/build-core/truckbox_core.bin
++[9/9] cd /workspace/work/Truckbox-v0215/firmware/espidf/build-core/esp-idf/esptool_py && /workspace/work/idf-tools/python_env/idf5.5_py3.12_env/bin/python /workspace/work/esp-idf-v5.5.2/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /workspace/work/Truckbox-v0215/firmware/espidf/build-core/partition_table/partition-table.bin /workspace/work/Truckbox-v0215/firmware/espidf/build-core/truckbox_core.bin
++truckbox_core.bin binary size 0x16e500 bytes. Smallest app partition is 0x300000 bytes. 0x191b00 bytes (52%) free.
++
++Project build complete. To flash, run:
++ idf.py flash
++or
++ idf.py -p PORT flash
++or
++ python -m esptool --chip esp32c6 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 8MB --flash_freq 80m 0x0 firmware/espidf/build-core/bootloader/bootloader.bin 0x8000 firmware/espidf/build-core/partition_table/partition-table.bin 0xf000 firmware/espidf/build-core/ota_data_initial.bin 0x20000 firmware/espidf/build-core/truckbox_core.bin
++or from the "/workspace/work/Truckbox-v0215/firmware/espidf/build-core" directory
++ python -m esptool --chip esp32c6 -b 460800 --before default_reset --after hard_reset write_flash "@flash_args"
+diff --git a/firmware/espidf/test_evidence/v0215_cloud_mock.txt b/firmware/espidf/test_evidence/v0215_cloud_mock.txt
+new file mode 100644
+index 0000000..e01fbc1
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_cloud_mock.txt
+@@ -0,0 +1,12 @@
++(node:95235) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
++(Use `node --trace-warnings ...` to show where the warning was created)
++PASS: RAW/DECODED/request events persist and ACK without latest/trip/runtime side effects
++PASS: mixed batches update aggregates from OPERATIONAL only, ACKing every persisted sequence
++PASS: legacy samples without sample_kind retain operational behavior
++PASS: previous-boot monotonic samples keep original time quality and no invented GPS
++PASS: persistence failure prevents ACK and aggregate side effects
++Cloud ingest compatibility mock tests: PASS (local only; no deployment/network/database)
++PASS: compact GUARD_DECISION persists unchanged and ACKs without trip/latest or external-validation effects
++PASS: v25 preserves diagnostic kinds, NULLs and health provenance; malformed sequences/auth/storage errors never ACK
++PASS: v25 fractional uptime reproduces PostgreSQL bigint rejection before ACK
++PASS: v26 writes integer/null milliseconds and preserves original microseconds without GPS
+diff --git a/firmware/espidf/test_evidence/v0215_cloud_readonly.json b/firmware/espidf/test_evidence/v0215_cloud_readonly.json
+new file mode 100644
+index 0000000..67fb80a
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_cloud_readonly.json
+@@ -0,0 +1,164 @@
++{
++  "scope": "READ_ONLY_BOOT_290_HISTORY_NOT_PHYSICAL_TX_PROOF",
++  "device_uid": "tb-c6-d40592b9190c",
++  "boot_id": 290,
++  "firmware_observed": "0.2.14",
++  "flash_image_hash_verified": false,
++  "classification": "OPERATIONAL_INDIRECT",
++  "response_classification": "RESPONSE_CANDIDATE",
++  "events": [
++    {
++      "n": 1,
++      "event": "ARMED",
++      "distinct_pids": 0
++    },
++    {
++      "n": 1,
++      "event": "CONFIGURED",
++      "distinct_pids": 1
++    },
++    {
++      "n": 1,
++      "event": "FIELD_AFTER",
++      "distinct_pids": 0
++    },
++    {
++      "n": 1,
++      "event": "FIELD_CONFIRMED",
++      "distinct_pids": 0
++    },
++    {
++      "n": 51,
++      "event": "FIELD_CONTROL",
++      "distinct_pids": 17
++    },
++    {
++      "n": 1,
++      "event": "FIELD_FAILED",
++      "distinct_pids": 0
++    },
++    {
++      "n": 17,
++      "event": "FIELD_PID_RESULT",
++      "distinct_pids": 17
++    },
++    {
++      "n": 1,
++      "event": "FIELD_SATISFACTORY",
++      "distinct_pids": 0
++    },
++    {
++      "n": 1,
++      "event": "FIELD_STARTED",
++      "distinct_pids": 0
++    },
++    {
++      "n": 318,
++      "event": "REQUEST",
++      "distinct_pids": 17
++    },
++    {
++      "n": 51,
++      "event": "RESPONSE_CANDIDATE",
++      "distinct_pids": 17
++    },
++    {
++      "n": 51,
++      "event": "RESPONSE_FRAME",
++      "distinct_pids": 17
++    },
++    {
++      "n": 318,
++      "event": "RESPONSE_VALUE",
++      "distinct_pids": 17
++    },
++    {
++      "n": 2,
++      "event": "STOPPED",
++      "distinct_pids": 2
++    },
++    {
++      "n": 51,
++      "event": "TX_ECHO",
++      "distinct_pids": 17
++    },
++    {
++      "n": 1,
++      "event": "WORK_ENABLED",
++      "distinct_pids": 0
++    }
++  ],
++  "timeline": [
++    {
++      "ts": "2026-11-10T22:40:51.573+00:00",
++      "seq": 47799,
++      "event": "FIELD_SATISFACTORY",
++      "detail": "OPERATIONAL_INDIRECT_OPERATOR_CONFIRMATION_REQUIRED",
++      "uptime_ms": "275323",
++      "after_errors": "2",
++      "after_frames": "1809",
++      "before_errors": "0",
++      "before_frames": "1916"
++    },
++    {
++      "ts": "2026-11-10T22:40:51.573+00:00",
++      "seq": 47800,
++      "event": "STOPPED",
++      "detail": "FIELD_TEST_COMPLETE",
++      "uptime_ms": "275323",
++      "after_errors": null,
++      "after_frames": null,
++      "before_errors": null,
++      "before_frames": null
++    },
++    {
++      "ts": "2026-11-10T22:41:01.044+00:00",
++      "seq": 47804,
++      "event": "FIELD_CONFIRMED",
++      "detail": "OPERATOR_CONFIRMED_OPERATIONAL_INDIRECT_NOT_EXTERNAL",
++      "uptime_ms": "284521",
++      "after_errors": "2",
++      "after_frames": "1809",
++      "before_errors": "0",
++      "before_frames": "1916"
++    },
++    {
++      "ts": "2026-11-10T22:43:03.536+00:00",
++      "seq": 47856,
++      "event": "WORK_ENABLED",
++      "detail": "SUPERVISED_FIELD_OPERATIONAL_INDIRECT_OPERATOR_CONFIRMED",
++      "uptime_ms": "406751",
++      "after_errors": "2",
++      "after_frames": "1809",
++      "before_errors": "0",
++      "before_frames": "1916"
++    },
++    {
++      "ts": "2026-11-10T23:02:34.006+00:00",
++      "seq": 48876,
++      "event": "FIELD_FAILED",
++      "detail": "PASSIVE_BUS_ERROR_OR_RATE_ANOMALY",
++      "uptime_ms": "1577473",
++      "after_errors": "2",
++      "after_frames": "1809",
++      "before_errors": "0",
++      "before_frames": "1916"
++    },
++    {
++      "ts": "2026-11-10T23:02:33.813+00:00",
++      "seq": 48877,
++      "event": "STOPPED",
++      "detail": "PASSIVE_BUS_ERROR_OR_RATE_ANOMALY",
++      "uptime_ms": "1577473",
++      "after_errors": null,
++      "after_frames": null,
++      "before_errors": null,
++      "before_frames": null
++    }
++  ],
++  "limits": [
++    "No 10-second decision-window counters were stored in firmware 0.2.14",
++    "before/after values are historical field validation measurements",
++    "Cloud timestamps are derived; use seq and monotonic uptime for ordering"
++  ]
++}
+diff --git a/firmware/espidf/test_evidence/v0215_health_readonly.json b/firmware/espidf/test_evidence/v0215_health_readonly.json
+new file mode 100644
+index 0000000..f9834d5
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_health_readonly.json
+@@ -0,0 +1,139 @@
++{
++  "scope": "READ_ONLY_MINUTE_AGGREGATES_NOT_A_REPLAY_OF_DECISION_WINDOWS",
++  "device_uid": "tb-c6-d40592b9190c",
++  "health": [
++    {
++      "seq": 48711,
++      "window_end": "2026-11-10 22:59:16.492+00",
++      "boot_id": "290",
++      "metrics": {
++        "heap_minimum": 28564,
++        "j1708_frames": 3598,
++        "uart_overruns": 0,
++        "j1708_request_sent": 17,
++        "j1708_checksum_errors": 5,
++        "request_event_dropped": 0,
++        "j1708_request_answered": 17,
++        "j1708_request_timeouts": 0
++      },
++      "firmware": "0.2.14",
++      "work_mode": "true",
++      "start_uptime_ms": "1320333",
++      "end_uptime_ms": "1380333"
++    },
++    {
++      "seq": 48762,
++      "window_end": "2026-11-10 23:00:16.496+00",
++      "boot_id": "290",
++      "metrics": {
++        "heap_minimum": 28564,
++        "j1708_frames": 3617,
++        "uart_overruns": 0,
++        "j1708_request_sent": 13,
++        "j1708_checksum_errors": 1,
++        "request_event_dropped": 0,
++        "j1708_request_answered": 13,
++        "j1708_request_timeouts": 0
++      },
++      "firmware": "0.2.14",
++      "work_mode": "true",
++      "start_uptime_ms": "1380333",
++      "end_uptime_ms": "1440333"
++    },
++    {
++      "seq": 48813,
++      "window_end": "2026-11-10 23:01:16.498+00",
++      "boot_id": "290",
++      "metrics": {
++        "heap_minimum": 28564,
++        "j1708_frames": 3602,
++        "uart_overruns": 0,
++        "j1708_request_sent": 13,
++        "j1708_checksum_errors": 10,
++        "request_event_dropped": 0,
++        "j1708_request_answered": 13,
++        "j1708_request_timeouts": 0
++      },
++      "firmware": "0.2.14",
++      "work_mode": "true",
++      "start_uptime_ms": "1440333",
++      "end_uptime_ms": "1500333"
++    },
++    {
++      "seq": 48864,
++      "window_end": "2026-11-10 23:02:16.493+00",
++      "boot_id": "290",
++      "metrics": {
++        "heap_minimum": 28564,
++        "j1708_frames": 3608,
++        "uart_overruns": 0,
++        "j1708_request_sent": 13,
++        "j1708_checksum_errors": 2,
++        "request_event_dropped": 0,
++        "j1708_request_answered": 13,
++        "j1708_request_timeouts": 0
++      },
++      "firmware": "0.2.14",
++      "work_mode": "true",
++      "start_uptime_ms": "1500333",
++      "end_uptime_ms": "1560333"
++    },
++    {
++      "seq": 48899,
++      "window_end": "2026-11-10 23:03:16.507+00",
++      "boot_id": "290",
++      "metrics": {
++        "heap_minimum": 28564,
++        "j1708_frames": 3590,
++        "uart_overruns": 0,
++        "j1708_request_sent": 4,
++        "j1708_checksum_errors": 6,
++        "request_event_dropped": 0,
++        "j1708_request_answered": 4,
++        "j1708_request_timeouts": 0
++      },
++      "firmware": "0.2.14",
++      "work_mode": "false",
++      "start_uptime_ms": "1560333",
++      "end_uptime_ms": "1620333"
++    },
++    {
++      "seq": 48924,
++      "window_end": "2026-11-10 23:04:16.484+00",
++      "boot_id": "290",
++      "metrics": {
++        "heap_minimum": 28564,
++        "j1708_frames": 3565,
++        "uart_overruns": 0,
++        "j1708_request_sent": 0,
++        "j1708_checksum_errors": 9,
++        "request_event_dropped": 0,
++        "j1708_request_answered": 0,
++        "j1708_request_timeouts": 0
++      },
++      "firmware": "0.2.14",
++      "work_mode": "false",
++      "start_uptime_ms": "1620333",
++      "end_uptime_ms": "1680333"
++    },
++    {
++      "seq": 48949,
++      "window_end": "2026-11-10 23:05:16.502+00",
++      "boot_id": "290",
++      "metrics": {
++        "heap_minimum": 28564,
++        "j1708_frames": 3629,
++        "uart_overruns": 0,
++        "j1708_request_sent": 0,
++        "j1708_checksum_errors": 13,
++        "request_event_dropped": 0,
++        "j1708_request_answered": 0,
++        "j1708_request_timeouts": 0
++      },
++      "firmware": "0.2.14",
++      "work_mode": "false",
++      "start_uptime_ms": "1680333",
++      "end_uptime_ms": "1740333"
++    }
++  ]
++}
+diff --git a/firmware/espidf/test_evidence/v0215_host.txt b/firmware/espidf/test_evidence/v0215_host.txt
+new file mode 100644
+index 0000000..18e74ea
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_host.txt
+@@ -0,0 +1,95 @@
++config host tests passed (core)
++config host tests passed (link)
++config host tests passed (core)
++JSON memory: 25624-byte native tree / 14401-byte wire output: old print fails with 256 free bytes; streaming uses zero new cJSON allocations
++JSON equivalence, references, all sink failures, depth/size limits, OOM and insertion ownership passed
++Production diagnostics native cJSON: full tree 24155 bytes; old print peak 38234; compact tree 8149 (66.3% smaller); 17 stats fetched in pages <=8
++Production capture full: 616 individual allocation failures leave no orphan nodes
++Production capture compact: 216 individual allocation failures leave no orphan nodes
++Production diagnostics native cJSON: full tree 37787 bytes; old print peak 54565; compact tree 9354 (75.2% smaller); 17 stats fetched in pages <=8
++Production capture full: 987 individual allocation failures leave no orphan nodes
++Production capture compact: 247 individual allocation failures leave no orphan nodes
++Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
++Production HTTP: chunked wire equivalence, maximum 1024-byte staging, zero serializer allocations and all client disconnect points free the tree
++Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved
++Network peer cache: same LAN/private AP, own/foreign address rejection, DHCP change and stale fallback passed
++Real sockets: v0.2.2 IPv4-on-IPv6 regression reproduced; mapped IPv4 and native IPv4 learned; native IPv6/invalid FD rejected
++image policy: valid roles, malformed/truncated images, chip, hash and string boundaries passed
++Protocol tests passed
++Validated 4000 generated records with an independent JSON parser
++Storage record CRC and interrupted-tail tests passed
++FRAM codec tests passed: golden CRC, 512 corruptions, sequence bounds, generation wrap, 65 interrupted writes, NVS-reset checkpoint
++Independent Python CRC/serialization golden vector passed
++Storage transactions: no GPS/offline/reboot, late GPS immutability, ACK gaps/idempotence/NVS fault, fsync fault, torn tail, corruption, capacity and startup queue passed
++Storage codec: UTF-8/key tokens, lossless roundtrip, output bounds, all truncations, malformed base64/backreferences and 3000 deterministic fuzz inputs PASS
++Power cuts: 90 byte boundaries, CRC-valid completion without newline, append/reboot after every cut PASS
++0.2.11-compatible non-final/oversized/CRC corruption, repeated resets, suffix salvage, ACK refusal and immutable evidence PASS
++Real writer loop: retry uncommitted row, avoid duplicate after ambiguous fsync, repeated read-only recovery, drain barrier and maintenance pause PASS
++tb_decode: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++storage_task: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++OK: LEGACY=6/60 state snapshots; FULL=60/60
++J1939: 76 catalog rows / 29 PGNs; 55 evidenced mappings, 15 partial/raw, 6 pending/unavailable; SAE status, source isolation and delta tests PASS
++J1939 TP.BAM: complete30/19byte, interleaving, bounds, seq, timeout, capacity PASS
++OK: J1939 inventory 76 signal rows / 29 PGNs; 46 observed PGNs; confidence tags
++J1939 C/PythonV1: 80 scalar/component equivalence checks + explicit safety differences PASS; constructed Master vectors, no full Logs Mae replay
++OK: 17 PIDs, authorization, spacing, replies and cutoffs
++OK: 17 PID scales, raw retention, status bits, unavailable and malformed frames
++OK: 48 passive PIDs; numeric/raw/invalid/unavailable
++OK: 31/31 passive PID decoder paths, physical units, masks, codes and time
++OK: J1587 bridge48+17, multiparameter/page2, checksum/bounds/NA, counter deltas, hardware TX inhibit
++Trip: checkpoint/reboot, source priority, counter reset/jump/gap and fallback overlap PASS
++Accounting: validated odometer recovery, speed overlap replacement, isolated estimates, PID250 reconciliation/no duplication, unknown gap and CRC fallback PASS
++Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS
++Actual capture functions passed: v1 migration/v2 reboot, GPS-independent trip/source selection, gap/reset rebasing, unavailable readings, NVS outside RX lock, canonical C0 derived fuel/fallback boundaries
++Actual Core GPS functions passed: absent GPS, no invented coordinates/time, receipt-vs-aged fix guard, no retroactive queued/history fixes, expiry/restart, source speed preservation
++J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
++OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
++J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed
++Field J1708: baseline/control/3x17/after, measured latency/echo, indirect operator confirmation, ambiguity rejection, conflicts/faults/stop/reboot and existing travel cadence PASS
++0.2.14 synthetic 599 valid/6 invalid window stops; 0.2.15 isolated burst does not. Incident branch itself remains unidentifiable from minute aggregates.
++RX guard A-J: stable traffic, isolated noise, traffic/engine changes, persistent RX faults, TX faults, repeated timeouts, offline/reconnect, reboot, spontaneous candidates and stale calibration PASS
++Actual field audit: 482-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS
++Guard upper-range fixture fits 731 bytes (limit 767); Guard record: 522 bytes, live/ref counters and actual predicate/mode flags, atomic arrays and allocation failure ownership PASS
++J1708 event persistence policy: PASSED
++Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed
++Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed
++NMEA parser tests passed
++GPS outbox tests passed
++test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
++test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
++test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
++test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
++test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
++test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
++test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
++test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
++test_diff_cannot_overwrite_source_or_private_review (test_cloud_patch.CloudPatchTests.test_diff_cannot_overwrite_source_or_private_review) ... ok
++test_input_cannot_be_overwritten (test_cloud_patch.CloudPatchTests.test_input_cannot_be_overwritten) ... ok
++test_missing_or_duplicate_fragments_rejected (test_cloud_patch.CloudPatchTests.test_missing_or_duplicate_fragments_rejected) ... ok
++test_only_reviewed_fragments_change (test_cloud_patch.CloudPatchTests.test_only_reviewed_fragments_change) ... ok
++test_public_diff_contains_no_authentication_block (test_cloud_patch.CloudPatchTests.test_public_diff_contains_no_authentication_block) ... ok
++test_wrong_source_hash_leaves_input_and_output_untouched (test_cloud_patch.CloudPatchTests.test_wrong_source_hash_leaves_input_and_output_untouched) ... ok
++test_corrupt_file_rejected_before_usb (test_flash_package.FlashPackageTests.test_corrupt_file_rejected_before_usb) ... ok
++test_manifest_cannot_write_nvs (test_flash_package.FlashPackageTests.test_manifest_cannot_write_nvs) ... ok
++test_path_escape_rejected (test_flash_package.FlashPackageTests.test_path_escape_rejected) ... ok
++test_success_preserves_nvs_and_uses_argument_list (test_flash_package.FlashPackageTests.test_success_preserves_nvs_and_uses_argument_list) ... ok
++test_wrong_flash_size_never_writes (test_flash_package.FlashPackageTests.test_wrong_flash_size_never_writes) ... ok
++test_wrong_role_binary_rejected_even_with_matching_hash (test_flash_package.FlashPackageTests.test_wrong_role_binary_rejected_even_with_matching_hash) ... ok
++test_missing_invalid_reset_and_source_change_skip_intervals (test_fuel_equivalence.FuelEquivalence.test_missing_invalid_reset_and_source_change_skip_intervals) ... ok
++test_python_c_1000_generated_valid_samples (test_fuel_equivalence.FuelEquivalence.test_python_c_1000_generated_valid_samples) ... ok
++test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
++test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
++
++----------------------------------------------------------------------
++Ran 24 tests in 2.816s
++
++OK
++Offline source: clock=0 virtual_seconds=7200 frames=433624 records=5904 requests=1624 response_candidates=1624 latest=65 RAW_writes=0
++Offline storage: duration=7200s input_records=5904 original_JSON_bytes=2991346 physical_bytes=1655121 budget_bytes=1818624 segments=34 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 685617 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=5904 deliveries_including_retries=5912 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Offline source: clock=1 virtual_seconds=7200 frames=433624 records=5904 requests=1624 response_candidates=1624 latest=65 RAW_writes=0
++Offline storage: duration=7200s input_records=5904 original_JSON_bytes=3055751 physical_bytes=1732153 budget_bytes=1818624 segments=36 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 686537 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=5904 deliveries_including_retries=5912 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Host tests passed; ESP32 physical tests remain pending.
+diff --git a/firmware/espidf/test_evidence/v0215_image.json b/firmware/espidf/test_evidence/v0215_image.json
+new file mode 100644
+index 0000000..8a616ce
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_image.json
+@@ -0,0 +1,12 @@
++{
++  "size": 1500416,
++  "sha256": "3b0a00f707932bc5ab6a7e4ecdd1c40fb9083588a38875e4d717e12c845f4fcc",
++  "version": "0.2.15",
++  "project": "truckbox_core",
++  "idf": "v5.5.2",
++  "chip_id": 13,
++  "flash_mb": 8,
++  "ota_partition_bytes": 3145728,
++  "app_elf_sha256": "c169cf762d32465cabb67182f58a5dcfa2fb8b1411556f2054f59a6fe23d92ee",
++  "partitions_sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832"
++}
+diff --git a/firmware/espidf/test_evidence/v0215_memory.json b/firmware/espidf/test_evidence/v0215_memory.json
+new file mode 100644
+index 0000000..5f134fc
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_memory.json
+@@ -0,0 +1,41 @@
++{
++  "baseline": {
++    "sections": {
++      ".iram0.text": 127464,
++      ".iram0.data": 8,
++      ".iram0.bss": 0,
++      ".dram0.data": 14788,
++      ".noinit": 0,
++      ".dram0.bss": 59888,
++      "static_ram": 202148
++    },
++    "types": {
++      "tbx_j1708_active_t": 688,
++      "request_event_t": 232
++    }
++  },
++  "candidate": {
++    "sections": {
++      ".iram0.text": 127468,
++      ".iram0.data": 4,
++      ".iram0.bss": 0,
++      ".dram0.data": 14788,
++      ".noinit": 0,
++      ".dram0.bss": 60320,
++      "static_ram": 202580
++    },
++    "types": {
++      "tbx_j1708_rx_guard_t": 432,
++      "tbx_j1708_active_t": 1120,
++      "request_event_t": 392
++    }
++  },
++  "baseline_version": "0.2.14",
++  "candidate_version": "0.2.15",
++  "source": "ELF sections and DWARF ESP32-C6 type sizes",
++  "event_queue_capacity": 16,
++  "static_added_bytes": 432,
++  "queue_added_bytes": 2560,
++  "physical_heap": "NOT_MEASURED_FOR_CANDIDATE",
++  "known_added_ram_bytes": 2992
++}
+diff --git a/firmware/espidf/test_evidence/v0215_panel.txt b/firmware/espidf/test_evidence/v0215_panel.txt
+new file mode 100644
+index 0000000..3a7c24c
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_panel.txt
+@@ -0,0 +1,7 @@
++test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
++test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
++
++----------------------------------------------------------------------
++Ran 2 tests in 0.113s
++
++OK
+diff --git a/firmware/espidf/test_evidence/v0215_source_audit.json b/firmware/espidf/test_evidence/v0215_source_audit.json
+new file mode 100644
+index 0000000..e8b24b9
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0215_source_audit.json
+@@ -0,0 +1,14 @@
++{
++  "baseline_branch": "feature/revb1-v0214-field-validation",
++  "baseline_commit": "94cd01a7a64f24e742ce27a03ca3b547b340f129",
++  "source_commit": "d7957a2b9cc4bc3ba9408579a805a0425d6064ce",
++  "source_zip_sha256": "974e60561dc4a4a3a486c7bd4bc8cd46f663927be4def6ab85699e876b49fe89",
++  "all_existing_source_archive_paths_compared": 281,
++  "c_h_cmake_html_compared": 119,
++  "differences": [],
++  "baseline_app_sha256": "03c50991a48854254ef6d31a71fce8ba7895467913ad9bf5dbfae45893f9ca72",
++  "legacy_v010_zip_sha256": "43ec5b71d8c3346e0a6d4667c182080d8a900ea55bc526c9b1acf896fe0da1a5",
++  "flash_binary_identity_verified": false,
++  "cloud_reported_version": "0.2.14",
++  "observed_boot": 290
++}
+diff --git a/firmware/espidf/tests/run_all.sh b/firmware/espidf/tests/run_all.sh
+index 3fdabc4..90f59cb 100755
+--- a/firmware/espidf/tests/run_all.sh
++++ b/firmware/espidf/tests/run_all.sh
+@@ -32,6 +32,7 @@ sh components/tb_core/tests/run_core_gps.sh
+ sh components/tb_core/tests/run_telemetry.sh
+ sh components/tb_core/tests/run_j1708_active.sh
+ sh components/tb_core/tests/run_j1708_field.sh
++sh components/tb_core/tests/run_j1708_rx_guard.sh
+ sh components/tb_core/tests/run_field_audit.sh
+ sh components/tb_core/tests/run_request_event_policy.sh
+ sh components/tb_core/tests/run_j1708_uart.sh
+diff --git a/firmware/espidf/tests/web/test_flow.cjs b/firmware/espidf/tests/web/test_flow.cjs
+index f967998..ab9c544 100644
+--- a/firmware/espidf/tests/web/test_flow.cjs
++++ b/firmware/espidf/tests/web/test_flow.cjs
+@@ -248,6 +248,9 @@ async function file(page,name,size=512,magic=0xe9){
+       assert.equal(await page.locator('#j1708-field-start').isDisabled(),true);
+       await page.locator('#j1708-field-authorize').check();
+       await page.locator('#j1708-field-start').click();await page.locator('#j1708-message').filter({hasText:'supervisionada iniciada'}).waitFor();
++      // Command acknowledgement precedes its diagnostic refresh. Wait for
++      // the actual new phase, not a 150 ms guess or the earlier external proof.
++      await page.locator('#j1708-field-status').filter({hasText:'Medindo tráfego passivo anterior'}).waitFor();
+       assert.equal(await page.locator('#j1708-work').isDisabled(),true);assert.equal(await page.locator('#j1708-field-confirm').isDisabled(),true);
+       Object.assign(simulatedJ1708.j1708.requests,{armed:false});
+       Object.assign(simulatedJ1708.j1708.requests.field_validation,{phase:'INCONCLUSIVE',running:false,completed_trials:51});
+@@ -272,6 +275,12 @@ async function file(page,name,size=512,magic=0xe9){
+       for(const offset of [0,4,8,12,16])assert(requests.slice(before).some(r=>r.url==='/api/j1708/requests?offset='+offset+'&limit=4'));
+       assert(!requests.slice(before).some(r=>r.url==='/api/state'));
+     });
++    await check('latched RX fault explains the stop and blocks new TX controls while manual stop stays available',async()=>{
++      simulatedJ1708.j1708.requests.rx_guard={fault_latched:true,last_cause:'RX_ERROR_RATE_PERSISTENT',decision_uptime_ms:60000};
++      await page.locator('#refresh').click();await page.locator('#j1708-block').filter({hasText:'reconfiguração e nova autorização'}).waitFor();
++      for(const id of ['j1708-test','j1708-field-start','j1708-confirm','j1708-work'])assert.equal(await page.locator('#'+id).isDisabled(),true);
++      assert.equal(await page.locator('#j1708-stop').isDisabled(),false);
++    });
+     await check('RAM failure shows partial health, preserves OTA access and stop, and never enables a stale active test',async()=>{
+       diagnosticOOM=true;await page.locator('#refresh').click();
+       await page.locator('#connection').filter({hasText:'Online · diagnóstico parcial'}).waitFor();
+diff --git a/firmware/espidf/tools/build_release.py b/firmware/espidf/tools/build_release.py
+index d488b24..0ad561d 100644
+--- a/firmware/espidf/tools/build_release.py
++++ b/firmware/espidf/tools/build_release.py
+@@ -14,7 +14,7 @@ import zipfile
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-VERSION = "0.2.14"
++VERSION = "0.2.15"
+ EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
+ REQUIRED_SOURCE = (
+     "firmware/espidf/CMakeLists.txt",
+@@ -123,8 +123,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
+         "branch": git_value(project_root, "branch", "--show-current"),
+         "commit": git_value(project_root, "rev-parse", "HEAD"),
+         "dirty": bool(git_value(project_root, "status", "--porcelain")),
+-        "integration_base_branch": "fix/revb1-v0213-http-memory",
+-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "34f3c87536f9e10fa4608b3036036dd22511ccb2"),
++        "integration_base_branch": "feature/revb1-v0214-field-validation",
++        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "94cd01a7a64f24e742ce27a03ca3b547b340f129"),
+         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
+     }
+     result["builds"] = {}
+diff --git a/firmware/espidf/tools/build_v020.sh b/firmware/espidf/tools/build_v020.sh
+index b98ac71..f8f4a8c 100755
+--- a/firmware/espidf/tools/build_v020.sh
++++ b/firmware/espidf/tools/build_v020.sh
+@@ -20,7 +20,7 @@ if [[ "$idf_version" != 'ESP-IDF v5.5.2' ]]; then
+   exit 2
+ fi
+ for build_role in "${roles[@]}"; do
+-  project_version=0.2.14
++  project_version=0.2.15
+   idf.py -C "$project_root" -B "$project_root/build-$build_role" \
+     -DTRUCKBOX_ROLE="$build_role" -DPROJECT_VER="$project_version" build
+ done

@@ -1,0 +1,32 @@
+{
+  "original_release": {
+    "branch": "firmware-revb1-ota-v0.1.0-b1",
+    "commit": "82e839fd46d31fb112598a6e6eb9ff3bd9737f93",
+    "file": "firmware/releases/v0.1.0-b1/truckbox-b1.zip",
+    "sha256": "43ec5b71d8c3346e0a6d4667c182080d8a900ea55bc526c9b1acf896fe0da1a5",
+    "embedded_source_sha256": "4b083447237e0adaae434457d0a7238972976de8c851a8892a632eb89bd9b178"
+  },
+  "version": "0.2.15",
+  "state": "VERSAO_DE_TESTES",
+  "validation": "PARTIAL",
+  "physical_validation": "PENDING",
+  "esp_idf": "v5.5.2",
+  "development": {
+    "branch": "fix/revb1-v0215-j1708-guard",
+    "commit": "31f0b482e37be3f6bd945a03c66b0b78894c0ab4",
+    "dirty": false,
+    "integration_base_branch": "feature/revb1-v0214-field-validation",
+    "integration_base_commit": "94cd01a7a64f24e742ce27a03ca3b547b340f129",
+    "reference_material_commit": "3d0a637f39261082bfa0152ac22ab1d3945e2aa0"
+  },
+  "builds": {
+    "core": {
+      "project": "truckbox_core",
+      "version": "0.2.15",
+      "target": "esp32c6",
+      "idf_revision": "v5.5.2",
+      "esp_idf_commit": "30aaf64524299d3bde422ca9a2848090d1bc5d0f",
+      "compiler": "riscv32-esp-elf-gcc"
+    }
+  }
+}
