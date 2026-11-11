@@ -11,8 +11,8 @@ import re,sys
 s=Path(sys.argv[1]).read_text();chunks=[]
 end=s.index('} request_event_t;')+len('} request_event_t;');start=s.rfind('typedef struct {',0,end);assert start>=0
 chunks.append(s[start:end])
-for name in ['add_sample_identity','queue_sample','request_store_event','tb_j1708_store_matched_response']:
- m=re.search(r'^static void '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
+for name in ['add_sample_identity','queue_sample','guard_values','guard_record','request_store_guard','request_store_event','tb_j1708_store_matched_response']:
+ m=re.search(r'^static (?:void|bool) '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
  end=s.index('{',m.start())+1;depth=1
  while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
  chunks.append(re.sub(r'\bs\.', 'capture_fixture.',s[m.start():end]))
@@ -32,7 +32,7 @@ cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
  -I"$work" -I"$core" -I"$module" -I"$IDF_PATH/components/json/cJSON" \
  "$test_dir/offline_export.c" "$core/protocols.c" "$core/tbx_j1587_bridge.c" \
  "$module/tbx_j1587_decoder.c" "$module/tbx_j1587_passive.c" "$module/tbx_j1587_passive_full.c" \
- "$module/tbx_j1708_requests.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/export"
+ "$module/tbx_j1708_requests.c" "$core/tbx_j1708_rx_guard.c" "$core/tbx_j1708_active.c" "$core/tbx_j1708_field.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/export"
 cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
  -fsanitize=address,undefined -fno-omit-frame-pointer -g -I"$core" -I"$IDF_PATH/components/json/cJSON" \
  "$test_dir/offline_storage.c" "$core/store_codec.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/store"

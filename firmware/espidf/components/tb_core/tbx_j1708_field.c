@@ -53,9 +53,16 @@ static void control_start(tbx_j1708_active_t *c,uint64_t now)
 }
 void tbx_j1708_field_note_frame(tbx_j1708_active_t *c,uint8_t mid,bool valid,uint64_t now)
 {
-    if(!c || (!tbx_j1708_field_running(&c->field) && c->field.phase!=TBX_FIELD_SATISFACTORY && !c->field.confirmed))return;
+    tbx_j1708_field_note_frame_kind(c,mid,valid?TBX_RX_VALID:TBX_RX_CHECKSUM,now);
+}
+void tbx_j1708_field_note_frame_kind(tbx_j1708_active_t *c,uint8_t mid,tbx_rx_kind_t kind,uint64_t now)
+{
+    if(!c)return;
+    c->now_us=now;
+    tbx_j1708_rx_note(c,kind,now);
+    if(!tbx_j1708_field_running(&c->field) && c->field.phase!=TBX_FIELD_SATISFACTORY && !c->field.confirmed)return;
     tbx_j1708_field_t *f=&c->field;
-    if(valid){
+    if(kind==TBX_RX_VALID){
         ++f->frames;f->last_frame_us=now;
         if(mid==c->config.local_mid){c->scheduler->safety_stopped=true;tbx_j1708_field_fail(c,"LOCAL_MID_CONFLICT");}
     }else ++f->bad_frames;
@@ -111,16 +118,8 @@ static bool healthy(tbx_j1708_active_t *c,uint64_t now)
     if(__atomic_load_n(&f->audit_lost,__ATOMIC_RELAXED)){
         tbx_j1708_field_fail(c,"FIELD_AUDIT_RECORD_LOST");return false;
     }
-    if(now-f->watch_at_us>=UINT64_C(10000000)){
-        uint32_t frames=f->frames-f->watch_frames,errors=f->bad_frames-f->watch_errors;
-        uint64_t observed=(uint64_t)frames*f->before_duration_us;
-        uint64_t expected=(uint64_t)f->before_frames*(now-f->watch_at_us);
-        if((errors>3u && (uint64_t)errors*100u>frames) ||
-           (f->before_frames && (observed*4u<expected || observed>expected*4u))){
-            tbx_j1708_field_fail(c,"PASSIVE_BUS_ERROR_OR_RATE_ANOMALY");return false;
-        }
-        f->watch_at_us=now;f->watch_frames=f->frames;f->watch_errors=f->bad_frames;
-    }
+    /* Rolling RX quality is evaluated independently in rx_guard. The parked
+     * validation baseline below remains historical context, never a road-rate veto. */
     return true;
 }
 bool tbx_j1708_field_tick(tbx_j1708_active_t *c,uint64_t now)
@@ -184,7 +183,8 @@ bool tbx_j1708_field_confirm(tbx_j1708_active_t *c,uint64_t session_started,bool
        __atomic_load_n(&c->field.audit_lost,__ATOMIC_RELAXED))return false;
     c->field.confirmed=true;c->field.phase=TBX_FIELD_CONFIRMED;
     c->field.reason="OPERATOR_CONFIRMED_OPERATIONAL_INDIRECT_NOT_EXTERNAL";
-    /* Reset monitor window; the next work-mode tick uses fresh RX measurements. */
+    /* Legacy session bookkeeping only; the rolling protection owns separate
+     * current RX counters and reference windows in c->rx_guard. */
     c->field.watch_at_us=now;c->field.watch_frames=c->field.frames;c->field.watch_errors=c->field.bad_frames;
     emit(c,"FIELD_CONFIRMED",0,c->field.reason);return true;
 }

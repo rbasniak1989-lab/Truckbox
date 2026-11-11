@@ -1,0 +1,14 @@
+{
+  "baseline_branch": "feature/revb1-v0214-field-validation",
+  "baseline_commit": "94cd01a7a64f24e742ce27a03ca3b547b340f129",
+  "source_commit": "d7957a2b9cc4bc3ba9408579a805a0425d6064ce",
+  "source_zip_sha256": "974e60561dc4a4a3a486c7bd4bc8cd46f663927be4def6ab85699e876b49fe89",
+  "all_existing_source_archive_paths_compared": 281,
+  "c_h_cmake_html_compared": 119,
+  "differences": [],
+  "baseline_app_sha256": "03c50991a48854254ef6d31a71fce8ba7895467913ad9bf5dbfae45893f9ca72",
+  "legacy_v010_zip_sha256": "43ec5b71d8c3346e0a6d4667c182080d8a900ea55bc526c9b1acf896fe0da1a5",
+  "flash_binary_identity_verified": false,
+  "cloud_reported_version": "0.2.14",
+  "observed_boot": 290
+}

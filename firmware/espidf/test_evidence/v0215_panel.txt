@@ -1,0 +1,7 @@
+test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
+test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.113s
+
+OK

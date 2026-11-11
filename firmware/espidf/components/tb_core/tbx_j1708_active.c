@@ -50,6 +50,7 @@ bool tbx_j1708_active_configure(tbx_j1708_active_t *c, const tbx_j1708_active_co
     uint32_t priority_guard=((10u+2u*cfg->priority)*1000000u+9599u)/9600u;
     c->idle_guard_us=priority_guard>5000u?priority_guard:5000u;
     c->configured=true;
+    tbx_j1708_rx_reconfigure(c);
     memset(&c->field,0,sizeof(c->field));
     c->physical_validated=false;c->last_response_us=0;c->consecutive_failures=0;
     c->scheduler->periodic=false;
@@ -67,7 +68,7 @@ bool tbx_j1708_active_arm(tbx_j1708_active_t *c, bool authorized, bool stationar
         tbx_j1708_active_stop(c,"AUTHORIZATION_OR_OPERATION_MODE_MISSING");
         return false;
     }
-    if (!c->configured || c->scheduler->safety_stopped) {
+    if (!c->configured || c->scheduler->safety_stopped || c->rx_guard.fault_latched) {
         event(c,"ARM_REJECTED",0,"CONFIGURATION_MISSING_OR_SAFETY_STOPPED");
         return false;
     }
@@ -97,7 +98,7 @@ bool tbx_j1708_active_work_ready(const tbx_j1708_active_t *c, uint64_t now_us)
     /* Keep the first transmitter validation physically stationary; a passive
      * matching MID/PID alone is not enough to establish working TX. */
     if (!c || !c->scheduler || !c->configured ||
-        c->scheduler->safety_stopped || c->work_mode || c->tx_active || !(c->physical_validated || c->field.confirmed) ||
+        c->scheduler->safety_stopped || c->rx_guard.fault_latched || c->work_mode || c->tx_active || !(c->physical_validated || c->field.confirmed) ||
         c->scheduler->link_error_count ||
         now_us >= (c->scheduler->armed ? c->lease_deadline_us : c->promotion_deadline_us) ||
         c->echo_ok-c->trial_echo_base < 1u ||
@@ -108,7 +109,7 @@ bool tbx_j1708_active_work_ready(const tbx_j1708_active_t *c, uint64_t now_us)
 bool tbx_j1708_active_attest_physical(tbx_j1708_active_t *c,bool external_tx,bool external_reply,uint64_t now)
 {
     if(!c || !c->configured || !external_tx || !external_reply || c->tx_active ||
-       c->scheduler->safety_stopped || c->scheduler->link_error_count ||
+       c->scheduler->safety_stopped || c->rx_guard.fault_latched || c->scheduler->link_error_count ||
        !c->last_response_us || now<c->last_response_us || now-c->last_response_us>UINT64_C(900000000) ||
        c->last_response_pid!=c->tx_pid || c->echo_ok==c->trial_echo_base)return false;
     c->physical_validated=true;
@@ -142,6 +143,8 @@ bool tbx_j1708_active_enable_work(tbx_j1708_active_t *c, uint64_t now_us)
 void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
 {
     if (!c) return;
+    uint8_t before_flags=tbx_j1708_active_flags(c);
+    tbx_j1708_rx_prepare_stop(c,reason);
     if(tbx_j1708_field_running(&c->field) ||
        ((c->field.phase==TBX_FIELD_SATISFACTORY || c->field.confirmed) && (!reason || strcmp(reason,"FIELD_TEST_COMPLETE")))){
         c->field.phase=TBX_FIELD_FAILED;c->field.confirmed=false;c->field.reason=reason?reason:"OPERATOR_STOP";
@@ -155,6 +158,7 @@ void tbx_j1708_active_stop(tbx_j1708_active_t *c, const char *reason)
         tbx_j1708_request_set_spacing(c->scheduler,250);
     }
     c->lease_deadline_us=0;
+    tbx_j1708_rx_stopped(c,reason,before_flags);
     event(c,"STOPPED",c->tx_pid,reason?reason:"OPERATOR_STOP");
 }
 
@@ -209,6 +213,7 @@ static bool send_request(uint16_t pid, void *context)
     }
     if (result!=TBX_J1708_TX_STARTED) {
         release_tx(c);
+        c->rx_guard.last_failure=TBX_GUARD_TX_DRIVER;
         event(c,"TX_ERROR",pid,"BACKEND_REJECTED_REQUEST");
         if(c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
         if(tbx_j1708_field_running(&c->field))tbx_j1708_field_fail(c,"FIELD_TX_BACKEND_REJECTED");
@@ -230,11 +235,12 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
         tbx_j1708_active_stop(c,"AUTHORIZATION_LEASE_EXPIRED");
         return;
     }
+    tbx_j1708_rx_tick(c,now_us);
     bool field_may_send=tbx_j1708_field_tick(c,now_us);
     if(!c->scheduler->armed)return;
     if (c->tx_active && now_us>=c->tx_started_us &&
         now_us-c->tx_started_us>=TBX_J1708_ACTIVE_ECHO_TIMEOUT_US) {
-        ++c->echo_timeouts;
+        ++c->echo_timeouts;c->rx_guard.last_failure=TBX_GUARD_ECHO_TIMEOUT;
         tbx_j1708_active_note_link_error(c,"TX_ECHO_TIMEOUT");
     }
     if (!c->scheduler->armed) return;
@@ -246,6 +252,7 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
     tbx_j1708_request_tick(c->scheduler,(uint32_t)(now_us/1000u),NULL,NULL);
     if (c->scheduler->timeout_total!=previous_timeouts) {
         if(c->config.sequential_scan)++c->scan_completed;
+        c->rx_guard.last_failure=TBX_GUARD_REPLY_TIMEOUT;
         event(c,"TIMEOUT",pending_pid,"NO_MATCHING_MID_PID_WITHIN_CONFIGURED_TIMEOUT");
         if(tbx_j1708_field_running(&c->field)){tbx_j1708_field_fail(c,"FIELD_RESPONSE_TIMEOUT");return;}
         if(c->work_mode && c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
@@ -291,7 +298,7 @@ void tbx_j1708_active_note_rx(tbx_j1708_active_t *c, const uint8_t *bytes, size_
     c->last_rx_us=now_us;
     for (size_t i=0;i<length && c->tx_active;i++) {
         if (bytes[i]!=c->tx_frame[c->echo_position]) {
-            ++c->collisions;
+            ++c->collisions;c->rx_guard.last_failure=TBX_GUARD_ECHO_DIVERGENCE;
             char detail[96];
             snprintf(detail,sizeof(detail),
                      "TX_ECHO_MISMATCH_OR_COLLISION index=%u expected=%02X received=%02X",
@@ -324,7 +331,7 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
     if (mid!=c->config.target_mid[index] || pid!=c->scheduler->pids[index].pid) return false;
     if (!tbx_j1708_request_note_response(c->scheduler,pid,(uint32_t)(now_us/1000u))) return false;
     if(c->config.sequential_scan)++c->scan_completed;
-    c->now_us=now_us;
+    if(now_us>c->now_us)c->now_us=now_us;
     c->consecutive_failures=0;c->scheduler->link_error_count=0;
     c->last_response_pid=pid;c->last_response_mid=mid;c->last_response_us=now_us;
     event(c,"RESPONSE_CANDIDATE",pid,"MID_PID_TIME_MATCH_IS_NOT_CAUSAL_PROOF");

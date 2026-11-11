@@ -21,8 +21,9 @@ state_start = source.index('static struct {')
 state_end = source.index('} s;', state_start) + len('} s;')
 typedefs = re.findall(r'typedef struct\s*\{[^}]*\}\s*trip_blob(?:_v1)?_t;', source)
 assert len(typedefs) == 2
-names = ['persist_trip', 'mirror_trip_locked', 'pgn_of', 'update_signals', 'update_j1587_signal_locked', 'tb_capture_reset_trip','evidence_hex','tb_capture_confirm_physical','tb_capture_request_enable_work','tb_capture_field_start','tb_capture_field_confirm']
-chunks = [source[state_start:state_end], *typedefs, 'static void add_sample_identity(cJSON *o,const char *k){cJSON_AddStringToObject(o,"sample_kind",k);}', 'static void queue_sample(cJSON *o){assert(cJSON_GetObjectItemCaseSensitive(o,"tx_observed_hex"));++host_audits;cJSON_Delete(o);}']
+names = ['persist_trip', 'mirror_trip_locked', 'pgn_of', 'update_signals', 'update_j1587_signal_locked', 'tb_capture_reset_trip','evidence_hex','tb_capture_confirm_physical','tb_capture_request_enable_work','tb_capture_field_start','tb_capture_field_confirm','finish_j1708','j1708_task']
+event_end=source.index('} request_event_t;')+len('} request_event_t;');event_start=source.rfind('typedef struct {',0,event_end)
+chunks = [source[state_start:state_end],source[event_start:event_end], *typedefs, 'static void add_sample_identity(cJSON *o,const char *k){cJSON_AddStringToObject(o,"sample_kind",k);}', 'static void queue_sample(cJSON *o){assert(cJSON_GetObjectItemCaseSensitive(o,"tx_observed_hex"));++host_audits;cJSON_Delete(o);}']
 # Host runner tests acquisition and signal arbitration; flash JSON serialization is
 # exercised by the ESP-IDF build and the separate storage tests.
 chunks += ['static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *v, uint64_t now) { (void)v; (void)now; }']
@@ -44,7 +45,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wpedantic \
     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
     -I"$IDF_PATH/components/json/cJSON" -I"$work_dir" -I"$test_dir" -I"$test_dir/.." \
     -I"$test_dir/../../../../j1708_17pid/src" \
-    "$IDF_PATH/components/json/cJSON/cJSON.c" "$test_dir/../protocols.c" "$test_dir/test_capture_integration.c" "$test_dir/../tbx_trip.c" "$test_dir/../tbx_fuel_account.c" "$test_dir/../tbx_fuel.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" \
+    "$IDF_PATH/components/json/cJSON/cJSON.c" "$test_dir/../protocols.c" "$test_dir/../tbx_j1587_bridge.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_decoder.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_passive.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_passive_full.c" "$test_dir/test_capture_integration.c" "$test_dir/../tbx_trip.c" "$test_dir/../tbx_fuel_account.c" "$test_dir/../tbx_fuel.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../tbx_j1708_rx_guard.c" \
     "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \
     -lm -o "$work_dir/test"
 ASAN_OPTIONS=detect_leaks=0 "$work_dir/test"

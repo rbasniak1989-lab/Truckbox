@@ -581,6 +581,7 @@
     const j1708 = lastState && lastState.j1708 || {};
     const status = j1708.requests || {};
     const field = status.field_validation || {};
+    const guard = status.rx_guard || {};
     const numbers = v => Number.isFinite(Number(v)) ? String(v) : '—';
     text('j1708-sent', numbers(status.sent));
     text('j1708-echo', numbers(status.echo_ok));
@@ -604,7 +605,7 @@
     const speed = lastState && lastState.speedKph;
     const stopped = typeof speed === 'number' && Number.isFinite(speed) && speed <= 0.1;
     const online = role === 'core' && !!token && !!lastState &&
-      j1708.ready === true && !lastState.ota_busy && !uploadBusy;
+      j1708.ready === true && !lastState.ota_busy && !uploadBusy && !guard.fault_latched;
     $('j1708-test').disabled = !online || j1708Busy || !!status.armed || !!field.running ||
       !stopped || !selected || midInUse || presetConflict ||
       !$('j1708-topology').checked || !!status.safety_stopped;
@@ -614,7 +615,9 @@
     const reasons={MEASURING_PASSIVE_BEFORE:'Observando antes de transmitir',OPERATIONAL_INDIRECT_OPERATOR_CONFIRMATION_REQUIRED:'Confirmação do operador pendente',RESPONSES_NOT_DISTINGUISHABLE_FROM_PASSIVE:'Sem contraste suficiente com mensagens espontâneas',OPERATOR_CONFIRMED_OPERATIONAL_INDIRECT_NOT_EXTERNAL:'Aceite operacional indireto registrado',PASSIVE_BUS_SILENCE:'Sem quadros válidos há dez segundos',FIELD_AUDIT_RECORD_LOST:'Falha ao registrar evidência; repita após recuperar o armazenamento',PASSIVE_BUS_ERROR_OR_RATE_ANOMALY:'Erros ou alteração anormal do tráfego',PASSIVE_BASELINE_INSUFFICIENT_OR_NOISY:'Poucos quadros válidos ou excesso de erros na referência',PASSIVE_BEFORE_AFTER_RATE_CHANGED:'Tráfego posterior difere da referência',LOCAL_MID_CONFLICT:'MID local em conflito',FIELD_REQUIRES_FRESH_STATIONARY_SPEED:'Caminhão em movimento ou velocidade sem atualização recente',VEHICLE_MOVEMENT_J1587:'Caminhão entrou em movimento',FIELD_RESPONSE_TIMEOUT:'Sem resposta no prazo',FIELD_TX_LINK_ERROR:'Falha de eco, colisão ou erro UART',FIELD_TX_BACKEND_REJECTED:'Transmissão recusada pelo driver',FIELD_INCOMPLETE_PID_COVERAGE:'Nem todos os PIDs concluíram as três rodadas',AUTHORIZATION_LEASE_EXPIRED:'Autorização expirou',OTA_BUSY:'Atualização em andamento',OPERATOR_STOP:'Parada solicitada pelo operador'};
     text('j1708-field-status',(phases[field.phase] || 'Nenhuma sessão medida')+(field.session_id?' · '+field.completed_trials+'/'+field.total_trials+' ensaios · '+field.contrasting_pids+' PIDs com contraste · '+(reasons[field.reason] || field.reason || ''):'')+' · Sem comprovação elétrica externa');
     $('j1708-confirm').disabled = !online || j1708Busy || !stopped || !!status.armed || !status.single_shot || !status.echo_ok || !status.responses || !!status.physical_validated || !$('j1708-external-proof').checked || !$('j1708-tx-proof').value.trim() || !$('j1708-rx-proof').value.trim();
-    text('j1708-block',(status.block_reason || '')+(status.last_response_pid?' · Última resposta candidata: MID '+status.last_response_mid+', PID '+status.last_response_pid+', '+Math.floor(status.last_response_age_ms/1000)+' s atrás':''));
+    const guardNames={RX_ERROR_RATE_PERSISTENT:'degradação persistente do receptor',RX_UART_FAULTS_PERSISTENT:'falhas persistentes de recepção UART',RX_MAJORITY_INVALID:'maioria dos quadros inválida',RX_SILENCE:'sem recepção válida',MONOTONIC_CLOCK_INVALID:'referência de tempo inválida',RX_UNRELIABLE_DURING_TX:'recepção perdida durante TX',TX_DRIVER_FAILURE:'falha do driver de transmissão',TX_ECHO_TIMEOUT:'eco TX não recebido no prazo',TX_ECHO_DIVERGENCE_OR_COLLISION:'eco divergente ou possível colisão',MATCHING_RESPONSE_TIMEOUT:'sem resposta candidata no prazo',LOCAL_MID_CONFLICT:'conflito de MID',AUTHORIZATION_EXPIRED:'autorização expirada',OPERATOR_OR_OTA_STOP:'parada do operador ou atualização',AUDIT_RECORD_LOST:'registro de auditoria indisponível',OTHER_INTERLOCK:'intertravamento de segurança'};
+    const guardText=guard.last_cause && guard.last_cause!=='NONE'?' · Última proteção: '+(guardNames[guard.last_cause] || guard.last_cause)+(guard.fault_latched?' (requer reconfiguração e nova autorização)':''):'';
+    text('j1708-block',(status.block_reason || '')+guardText+(status.last_response_pid?' · Última resposta candidata: MID '+status.last_response_mid+', PID '+status.last_response_pid+', '+Math.floor(status.last_response_age_ms/1000)+' s atrás':''));
     const stats=Array.isArray(status.stats)?status.stats:[];
     $('j1708-cadences').textContent=stats.map(p=>'PID '+p.pid+' / MID '+p.target_mid+': '+(p.interval_ms/60000)+' min · envios '+p.sent+' · respostas candidatas '+p.response_candidates+' · timeouts '+p.timeouts+(p.field?' · teste: antes/depois '+p.field.before+'/'+p.field.after+', controles '+p.field.control_hits+'/'+p.field.controls+', eco/respostas '+p.field.echoes+'/'+p.field.replies+', latência '+(p.field.latency_min_us===null?'—':p.field.latency_min_us/1000)+'–'+(p.field.latency_max_us===null?'—':p.field.latency_max_us/1000)+' ms':'')).join(' | ');
     $('j1708-work').disabled = !online || j1708Busy || !stopped ||

@@ -113,7 +113,7 @@ static void supervision_health_and_expiration(void)
         if(i%100==0)passive(&f,false);
         f.now+=10000;tbx_j1708_active_tick(&f.a,f.now);
     }
-    assert(f.a.field.phase==TBX_FIELD_FAILED && !f.s.armed);
+    assert(f.a.field.phase==TBX_FIELD_BEFORE && f.s.armed); /* Isolated receiver noise is not a TX fault. */
     init(&f);assert(tbx_j1708_field_start(&f.a,true,true,f.now));
     f.now+=TBX_J1708_FIELD_LEASE_US;passive(&f,false);tbx_j1708_active_tick(&f.a,f.now);
     assert(!f.s.armed && f.a.lease_expirations==1);

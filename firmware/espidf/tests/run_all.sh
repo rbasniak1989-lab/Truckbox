@@ -32,6 +32,7 @@ sh components/tb_core/tests/run_core_gps.sh
 sh components/tb_core/tests/run_telemetry.sh
 sh components/tb_core/tests/run_j1708_active.sh
 sh components/tb_core/tests/run_j1708_field.sh
+sh components/tb_core/tests/run_j1708_rx_guard.sh
 sh components/tb_core/tests/run_field_audit.sh
 sh components/tb_core/tests/run_request_event_policy.sh
 sh components/tb_core/tests/run_j1708_uart.sh

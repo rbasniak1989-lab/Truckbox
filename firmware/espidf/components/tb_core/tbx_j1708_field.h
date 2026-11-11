@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "tbx_j1708_requests.h"
+#include "tbx_j1708_rx_guard.h"
 /* Explicit parked session, RAM only. A result is never electrical proof. */
 #define TBX_J1708_FIELD_WINDOW_US UINT64_C(30000000)
 #define TBX_J1708_FIELD_LEASE_US UINT64_C(600000000)
@@ -43,6 +44,7 @@ bool tbx_j1708_field_start(struct tbx_j1708_active *,bool authorized,bool statio
 bool tbx_j1708_field_confirm(struct tbx_j1708_active *,uint64_t session_started_us,bool acknowledged,uint64_t now_us);
 /* Single existing active controller calls this gate; it is not a second sender. */
 bool tbx_j1708_field_tick(struct tbx_j1708_active *,uint64_t now_us);
+void tbx_j1708_field_note_frame_kind(struct tbx_j1708_active *,uint8_t mid,tbx_rx_kind_t,uint64_t now_us);
 void tbx_j1708_field_note_frame(struct tbx_j1708_active *,uint8_t mid,bool checksum_valid,uint64_t now_us);
 void tbx_j1708_field_note_parameter(struct tbx_j1708_active *,uint8_t mid,uint16_t pid,uint64_t now_us);
 void tbx_j1708_field_sent(struct tbx_j1708_active *);

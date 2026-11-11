@@ -1,0 +1,139 @@
+{
+  "scope": "READ_ONLY_MINUTE_AGGREGATES_NOT_A_REPLAY_OF_DECISION_WINDOWS",
+  "device_uid": "tb-c6-d40592b9190c",
+  "health": [
+    {
+      "seq": 48711,
+      "window_end": "2026-11-10 22:59:16.492+00",
+      "boot_id": "290",
+      "metrics": {
+        "heap_minimum": 28564,
+        "j1708_frames": 3598,
+        "uart_overruns": 0,
+        "j1708_request_sent": 17,
+        "j1708_checksum_errors": 5,
+        "request_event_dropped": 0,
+        "j1708_request_answered": 17,
+        "j1708_request_timeouts": 0
+      },
+      "firmware": "0.2.14",
+      "work_mode": "true",
+      "start_uptime_ms": "1320333",
+      "end_uptime_ms": "1380333"
+    },
+    {
+      "seq": 48762,
+      "window_end": "2026-11-10 23:00:16.496+00",
+      "boot_id": "290",
+      "metrics": {
+        "heap_minimum": 28564,
+        "j1708_frames": 3617,
+        "uart_overruns": 0,
+        "j1708_request_sent": 13,
+        "j1708_checksum_errors": 1,
+        "request_event_dropped": 0,
+        "j1708_request_answered": 13,
+        "j1708_request_timeouts": 0
+      },
+      "firmware": "0.2.14",
+      "work_mode": "true",
+      "start_uptime_ms": "1380333",
+      "end_uptime_ms": "1440333"
+    },
+    {
+      "seq": 48813,
+      "window_end": "2026-11-10 23:01:16.498+00",
+      "boot_id": "290",
+      "metrics": {
+        "heap_minimum": 28564,
+        "j1708_frames": 3602,
+        "uart_overruns": 0,
+        "j1708_request_sent": 13,
+        "j1708_checksum_errors": 10,
+        "request_event_dropped": 0,
+        "j1708_request_answered": 13,
+        "j1708_request_timeouts": 0
+      },
+      "firmware": "0.2.14",
+      "work_mode": "true",
+      "start_uptime_ms": "1440333",
+      "end_uptime_ms": "1500333"
+    },
+    {
+      "seq": 48864,
+      "window_end": "2026-11-10 23:02:16.493+00",
+      "boot_id": "290",
+      "metrics": {
+        "heap_minimum": 28564,
+        "j1708_frames": 3608,
+        "uart_overruns": 0,
+        "j1708_request_sent": 13,
+        "j1708_checksum_errors": 2,
+        "request_event_dropped": 0,
+        "j1708_request_answered": 13,
+        "j1708_request_timeouts": 0
+      },
+      "firmware": "0.2.14",
+      "work_mode": "true",
+      "start_uptime_ms": "1500333",
+      "end_uptime_ms": "1560333"
+    },
+    {
+      "seq": 48899,
+      "window_end": "2026-11-10 23:03:16.507+00",
+      "boot_id": "290",
+      "metrics": {
+        "heap_minimum": 28564,
+        "j1708_frames": 3590,
+        "uart_overruns": 0,
+        "j1708_request_sent": 4,
+        "j1708_checksum_errors": 6,
+        "request_event_dropped": 0,
+        "j1708_request_answered": 4,
+        "j1708_request_timeouts": 0
+      },
+      "firmware": "0.2.14",
+      "work_mode": "false",
+      "start_uptime_ms": "1560333",
+      "end_uptime_ms": "1620333"
+    },
+    {
+      "seq": 48924,
+      "window_end": "2026-11-10 23:04:16.484+00",
+      "boot_id": "290",
+      "metrics": {
+        "heap_minimum": 28564,
+        "j1708_frames": 3565,
+        "uart_overruns": 0,
+        "j1708_request_sent": 0,
+        "j1708_checksum_errors": 9,
+        "request_event_dropped": 0,
+        "j1708_request_answered": 0,
+        "j1708_request_timeouts": 0
+      },
+      "firmware": "0.2.14",
+      "work_mode": "false",
+      "start_uptime_ms": "1620333",
+      "end_uptime_ms": "1680333"
+    },
+    {
+      "seq": 48949,
+      "window_end": "2026-11-10 23:05:16.502+00",
+      "boot_id": "290",
+      "metrics": {
+        "heap_minimum": 28564,
+        "j1708_frames": 3629,
+        "uart_overruns": 0,
+        "j1708_request_sent": 0,
+        "j1708_checksum_errors": 13,
+        "request_event_dropped": 0,
+        "j1708_request_answered": 0,
+        "j1708_request_timeouts": 0
+      },
+      "firmware": "0.2.14",
+      "work_mode": "false",
+      "start_uptime_ms": "1680333",
+      "end_uptime_ms": "1740333"
+    }
+  ]
+}

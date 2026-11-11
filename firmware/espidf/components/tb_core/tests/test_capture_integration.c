@@ -3,6 +3,7 @@
 #include "capture_host_stubs.h"
 #include <assert.h>
 #include <stdlib.h>
+#include <setjmp.h>
 static int64_t host_now_us;
 static uint8_t host_nvs[256];
 static size_t host_nvs_size;
@@ -10,6 +11,10 @@ static unsigned char slot_a[512],slot_b[512];
 static size_t slot_sizes[2];
 static unsigned host_commits, host_mutexes;
 static unsigned host_held,host_audits;
+typedef struct {int type;const uint8_t *bytes;size_t length;bool timeout;uint32_t delay_us;}host_rx_event_t;
+static host_rx_event_t host_rx_events[16];
+static unsigned host_rx_count,host_rx_cursor,host_rx_offset,host_rx_flushes;
+static jmp_buf host_rx_done;
 #include "capture_under_test.h"
 
 static SemaphoreHandle_t xSemaphoreCreateMutex(void)
@@ -29,6 +34,33 @@ static void xSemaphoreGive(SemaphoreHandle_t mutex)
     host_held &= ~bit;
 }
 static int64_t esp_timer_get_time(void) { return host_now_us; }
+static bool xQueueReceive(QueueHandle_t queue,void *item,unsigned ticks)
+{
+    (void)queue;(void)ticks;
+    if(host_rx_cursor==host_rx_count)longjmp(host_rx_done,1);
+    const host_rx_event_t *e=&host_rx_events[host_rx_cursor++];host_now_us+=e->delay_us;
+    host_rx_offset=0;if(!e->type)return false;
+    *(uart_event_t *)item=(uart_event_t){e->type,e->length,e->timeout};
+    if(e->type==UART_DATA)s.rx_edge_us=(uint32_t)host_now_us;
+    return true;
+}
+static bool xQueueSend(QueueHandle_t q,const void *v,unsigned t){(void)q;(void)v;(void)t;return true;}
+static void xQueueReset(QueueHandle_t q){(void)q;}
+static int uart_read_bytes(int port,void *out,size_t count,unsigned ticks)
+{
+    (void)ticks;assert(port==1);const host_rx_event_t *e=&host_rx_events[host_rx_cursor-1];
+    assert(host_rx_offset+count<=e->length);memcpy(out,e->bytes+host_rx_offset,count);host_rx_offset+=(unsigned)count;return (int)count;
+}
+static void uart_flush_input(int p){assert(p==1);++host_rx_flushes;}
+static int gpio_get_level(int p){assert(p==20);return 1;}
+static unsigned uart_ll_get_rxfifo_len(int p){assert(p==1);return 0;}
+static int uart_get_buffered_data_len(int p,size_t *n){assert(p==1);*n=0;return 0;}
+static bool tb_telemetry_j1708(const uint8_t *b,size_t n,uint64_t t,bool o){(void)b;(void)n;(void)t;(void)o;return true;}
+static bool tb_telemetry_j1708_echo(const uint8_t *b,size_t n,uint64_t t,bool o){(void)b;(void)n;(void)t;(void)o;return true;}
+static void run_rx(void)
+{
+    host_rx_cursor=host_rx_offset=0;if(!setjmp(host_rx_done))j1708_task(NULL);assert(!host_held);
+}
 static esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 { (void)mode; assert(!strcmp(name, "tb_trip")); *handle = 1; return ESP_OK; }
 static esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *buffer, size_t *size)
@@ -322,6 +354,44 @@ static void test_field_owner_speed_nonce_and_no_external_evidence(void)
     cJSON_Delete(body);assert(!host_held);
 }
 
+static void test_production_uart_partitioning_and_candidates(void)
+{
+    boot_with_checkpoint(NULL,0);host_rx_flushes=0;s.j1708_ready=true;
+    const tbx_j1708_active_ops_t ops={.begin_tx=proof_begin,.abort_tx=proof_abort};
+    tbx_j1708_active_init(&s.active,&s.requests,&ops,NULL);
+    tbx_j1708_active_config_t cfg={.local_mid=172,.priority=8,.inverted_de21_attested=true,.single_shot=true};
+    for(unsigned i=0;i<17;i++)cfg.target_mid[i]=128;
+    assert(tbx_j1708_active_configure(&s.active,&cfg));
+    host_now_us=1000000;assert(tbx_j1708_active_arm(&s.active,true,true,host_now_us));
+    host_now_us+=5000;tbx_j1708_active_tick(&s.active,host_now_us);assert(s.active.tx_active);
+    uint8_t echo[5];memcpy(echo,s.active.tx_frame,5);
+    const uint8_t bad[]={128,26,1,100},wrong_mid[]={130,26,1,99},matching[]={128,26,1,101};
+    const uint8_t oversized[22]={128};
+    host_rx_event_t script[]={
+        {UART_DATA,echo,1,false,1100},{UART_DATA,echo+1,4,false,4400},
+        {UART_DATA,bad,4,true,6000},{UART_DATA,oversized,22,true,23000},
+        {UART_DATA,wrong_mid,4,true,6000},{UART_DATA,matching,4,true,200000},
+        {UART_DATA,matching,2,false,20000},{UART_DATA,matching+2,2,false,2200},
+        {0,NULL,0,false,20000}};
+    memcpy(host_rx_events,script,sizeof(script));host_rx_count=sizeof(script)/sizeof(*script);run_rx();
+    assert(s.active.echo_ok==1 && s.requests.answered_total==1);
+    assert(s.j1708_frames==3 && s.j1708_checksum_errors==1 && s.j1708_oversize==1);
+    assert(s.active.rx_guard.total.valid==3 && s.active.rx_guard.total.checksum==1 && s.active.rx_guard.total.framing==1);
+    assert(!(s.observed_mid[172>>3]&(1u<<(172&7))));
+    assert(!s.active.physical_validated); /* Matching spontaneous data still only a candidate. */
+    /* Actual receiver overflow path: stop blind TX, then keep passive RX alive. */
+    tbx_j1708_active_stop(&s.active,"OPERATOR_STOP");
+    assert(tbx_j1708_active_configure(&s.active,&cfg));host_now_us+=1000000;
+    assert(tbx_j1708_active_arm(&s.active,true,true,host_now_us));host_now_us+=5000;
+    tbx_j1708_active_tick(&s.active,host_now_us);assert(s.active.tx_active);
+    host_rx_events[0]=(host_rx_event_t){UART_FIFO_OVF,NULL,0,false,1000};
+    host_rx_events[1]=(host_rx_event_t){UART_DATA,matching,4,true,6000};host_rx_count=2;run_rx();
+    assert(!s.requests.armed && !s.active.tx_active && s.j1708_ready && host_rx_flushes==1);
+    assert(s.active.rx_guard.total.overruns==1 && !s.active.collisions);
+    assert(s.j1708_frames==4 && s.requests.answered_total==1);
+    puts("Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS");
+}
+
 static void test_reupgrade_imports_legacy_trip_advanced_after_rollback(void)
 {
     trip_blob_t base={.version=2,.distance=10,.fuel=2,.distance_valid=true,.fuel_valid=true};
@@ -362,6 +432,7 @@ static void test_validated_counter_mids_and_real_checkpoint_restore(void)
 int main(void)
 {
     test_validated_counter_mids_and_real_checkpoint_restore();
+    test_production_uart_partitioning_and_candidates();
     test_external_evidence_owner();
     test_field_owner_speed_nonce_and_no_external_evidence();
     test_reupgrade_imports_legacy_trip_advanced_after_rollback();
