@@ -81,7 +81,7 @@ test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_scri
 test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
 
 ----------------------------------------------------------------------
-Ran 24 tests in 2.816s
+Ran 24 tests in 2.681s
 
 OK
 Offline source: clock=0 virtual_seconds=7200 frames=433624 records=5904 requests=1624 response_candidates=1624 latest=65 RAW_writes=0

@@ -144,6 +144,11 @@ static void windows_and_fault_classification(void)
     initialize(&f);f.now=0;frame(&f,TBX_RX_VALID);seconds(&f,31,60);
     assert(f.a.rx_guard.reference_count==3);
     assert(f.a.rx_guard.reference[0].start_us==0);
+    /* First-frame capture preceding monitor initialization is normal lock
+     * ordering, not a backwards hardware clock. Later RX reversal still fails. */
+    initialize(&f);tbx_j1708_rx_tick(&f.a,f.now+100);
+    frame(&f,TBX_RX_VALID);assert(!f.a.rx_guard.clock_fault);
+    f.now+=200;tbx_j1708_rx_tick(&f.a,f.now);assert(!f.a.rx_guard.clock_fault);
 }
 static void spontaneous_candidates_and_old_counterexample(void)
 {

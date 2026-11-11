@@ -28,15 +28,19 @@ const char *tbx_j1708_guard_cause_name(tbx_guard_cause_t cause)
 static void start(tbx_j1708_rx_guard_t *g,uint64_t now)
 {
     if(g->initialized)return;
-    g->initialized=true;g->start_us=g->last_observed_us=now;
+    g->initialized=true;g->start_us=now;
     g->boundary=g->total;
 }
 void tbx_j1708_rx_note(tbx_j1708_active_t *c,tbx_rx_kind_t kind,uint64_t now)
 {
     if(!c)return;
     tbx_j1708_rx_guard_t *g=&c->rx_guard;start(g,now);
-    if(now<g->last_observed_us)g->clock_fault=true;
+    /* The first frame may have been timestamped just before a concurrent
+     * monitor tick initialized the guard while the RX task waited for its lock.
+     * Compare RX timestamps with RX timestamps, not that initialization tick. */
+    if(g->observed && now<g->last_observed_us)g->clock_fault=true;
     else g->last_observed_us=now;
+    g->observed=true;
     switch(kind){
         case TBX_RX_VALID:++g->total.valid;g->last_valid_us=now;g->seen_valid=true;break;
         case TBX_RX_CHECKSUM:++g->total.checksum;break;

@@ -33,7 +33,7 @@ Logs sem credenciais reais: `test_evidence/v0215_host.txt`, `v0215_build_core.tx
 | I — resposta espontânea | MID/PID igual dentro da janela pode contar uma candidata; segunda contagem é rejeitada; MID errado não pareia; nenhum teste transforma o resultado em comprovação externa. PASS |
 | J — baseline antigo | `before_frames` histórico alterado para 1/UINT32_MAX não afeta a proteção atual. Referência atrasada é descartada/reaprendida. PASS |
 
-Também passaram: relógio começando em zero, reversão do monotônico bloqueando TX, referência de três janelas contíguas, janela atrasada não contada como três janelas, trava de falha sem rearme após recuperação, manutenção das cadências/MIDs e de 1,2 s entre pedidos.
+Também passaram: relógio começando em zero, primeiro quadro timestampado antes da inicialização concorrente do monitor sem falso alarme de relógio, reversão real do monotônico bloqueando TX, referência de três janelas contíguas, janela atrasada não contada como três janelas, trava de falha sem rearme após recuperação, manutenção das cadências/MIDs e de 1,2 s entre pedidos.
 
 ## UART e diagnóstico — código real exercitado
 

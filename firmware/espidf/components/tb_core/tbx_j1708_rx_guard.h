@@ -44,7 +44,7 @@ typedef struct {
     tbx_rx_window_t reference[TBX_RX_REFERENCE_WINDOWS],last_window;
     uint64_t start_us,last_valid_us,last_observed_us;
     uint8_t reference_count,reference_cursor,suspect_streak;
-    bool initialized,seen_valid,clock_fault,warned,fault_latched,decision_pending;
+    bool initialized,observed,seen_valid,clock_fault,warned,fault_latched,decision_pending;
     tbx_guard_cause_t last_failure;
     tbx_rx_decision_t decision;
 } tbx_j1708_rx_guard_t;
