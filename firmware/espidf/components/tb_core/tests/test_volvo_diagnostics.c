@@ -10,6 +10,8 @@
 #include <string.h>
 typedef struct {uint8_t value[8192],pending[8192];size_t size,pending_size;}blob_t;
 static blob_t blobs[2][2];static unsigned writes,records,notifications,peak_record;static uint64_t now_ms;static uint32_t boot=306;static bool write_error,store_error;
+static size_t allocations,fail_allocation;static bool in_store;
+static void *fault_malloc(size_t size){if(!in_store && ++allocations==fail_allocation)return NULL;return malloc(size);}
 int64_t esp_timer_get_time(void){return (int64_t)(now_ms*1000);}
 uint32_t tb_boot_id(void){return boot;}
 const char *tb_device_uid(void){return "tb-c6-d40592b9190c";}
@@ -21,7 +23,7 @@ int nvs_open(const char *name,int mode,nvs_handle_t *h){assert(mode==1);*h=!strc
 int nvs_get_blob(nvs_handle_t h,const char *key,void *out,size_t *size){blob_t *b=&blobs[h][!strcmp(key,"b")];if(!b->size)return ESP_FAIL;assert(*size>=b->size);memcpy(out,b->value,b->size);*size=b->size;return ESP_OK;}
 int nvs_set_blob(nvs_handle_t h,const char *key,const void *p,size_t n){if(write_error)return ESP_FAIL;blob_t *b=&blobs[h][!strcmp(key,"b")];assert(n<=sizeof(b->pending));memcpy(b->pending,p,n);b->pending_size=n;return ESP_OK;}
 int nvs_commit(nvs_handle_t h){if(write_error)return ESP_FAIL;for(unsigned i=0;i<2;i++){blob_t *b=&blobs[h][i];if(b->pending_size){memcpy(b->value,b->pending,b->pending_size);b->size=b->pending_size;b->pending_size=0;}}++writes;return ESP_OK;}
-int tb_store_submit(const char *p){assert(strlen(p)<TB_RECORD_MAX);if(strlen(p)>peak_record)peak_record=(unsigned)strlen(p);if(store_error)return ESP_FAIL;cJSON *j=cJSON_Parse(p);assert(j);assert(!strcmp(cJSON_GetObjectItemCaseSensitive(j,"sample_kind")->valuestring,"J1708_REQUEST_EVENT"));++records;const cJSON *notify=cJSON_GetObjectItemCaseSensitive(j,"notify");if(cJSON_IsTrue(notify))++notifications;cJSON_Delete(j);return ESP_OK;}
+int tb_store_submit(const char *p){assert(strlen(p)<TB_RECORD_MAX);if(strlen(p)>peak_record)peak_record=(unsigned)strlen(p);if(store_error)return ESP_FAIL;in_store=true;cJSON *j=cJSON_Parse(p);assert(j);assert(!strcmp(cJSON_GetObjectItemCaseSensitive(j,"sample_kind")->valuestring,"J1708_REQUEST_EVENT"));const cJSON *event=cJSON_GetObjectItemCaseSensitive(j,"event");assert(cJSON_IsString(event));if(!strcmp(event->valuestring,"DIAGNOSTIC_RAW") || !strcmp(event->valuestring,"DIAGNOSTIC_INVALID")){assert(cJSON_IsString(cJSON_GetObjectItemCaseSensitive(j,"parameter_hex")));assert(cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(j,"capture_ms")));assert(cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(j,"total_bytes")));assert(cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(j,"offset")));}++records;const cJSON *notify=cJSON_GetObjectItemCaseSensitive(j,"notify");if(cJSON_IsTrue(notify))++notifications;cJSON_Delete(j);in_store=false;return ESP_OK;}
 static void diagnostic(const tbx_j1587_observation_t *o,void *unused){(void)unused;tb_diagnostics_observe(o,UINT64_C(1794430000000),NULL);}
 static void diagnostic_frame(uint8_t mid,const uint8_t *data,size_t length)
 {
@@ -131,9 +133,20 @@ static void counter_missing_read_retry(void)
     tbx_ecu_counters_tick(&c,&scheduler,33000);assert(c.record_ready && !c.active && c.failed==1 && c.missing==7);
     bool retry=false;for(unsigned i=0;i<c.queued;i++)if(c.waiting[i].attempt==1){assert(c.waiting[i].not_before_ms>=93000);retry=true;}assert(retry);
 }
+static void diagnostic_allocation_failures(void)
+{
+    const uint8_t motor[]={0x12,0xb5,1};cJSON_Hooks hooks={fault_malloc,free};cJSON_InitHooks(&hooks);
+    tb_diagnostics_start();allocations=fail_allocation=0;diagnostic_frame(128,motor,3);tb_diagnostics_flush();size_t count=allocations;
+    for(size_t failure=1;failure<=count;failure++){
+        tb_diagnostics_start();allocations=0;fail_allocation=failure;diagnostic_frame(128,motor,3);tb_diagnostics_flush();
+        fail_allocation=0;diagnostic_frame(128,motor,3);tb_diagnostics_flush();
+    }
+    cJSON_InitHooks(NULL);printf("PID194 OOM: %zu allocation fault points; no partial kind/raw identity accepted by store PASS\n",count);
+}
 int main(void)
 {
     diagnostics_persistence();counters_and_reboot();counter_missing_read_retry();volvo_derived_signals();
+    diagnostic_allocation_failures();
     printf("Volvo real modules: PID194 wire length/Cloud bytes, dedup, A/B NVS/torn checkpoint, offline store retry, counter capture/start/end/reboot, unchanged suppression and reset/MID/time/range guards PASS (%u bounded records, peak %u bytes)\n",records,peak_record);
     return 0;
 }

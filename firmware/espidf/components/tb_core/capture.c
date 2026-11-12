@@ -728,13 +728,17 @@ static void request_metric_snapshot(void)
             tb_json_add_array(a,cJSON_CreateNumber(p->period_ms));
         if(complete)complete=tb_json_add_array(stats,a);else cJSON_Delete(a);
     }
+    complete=complete && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"sample_kind")) && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"event")) &&
+        cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"boot_id")) && cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"uptime_ms"));
     if(complete)queue_sample(row);else cJSON_Delete(row);
 }
 static void volvo_operating_snapshot(void)
 {
     cJSON *row=tb_telemetry_volvo_json();if(!row)return;
     cJSON_DeleteItemFromObjectCaseSensitive(row,"ok");add_sample_identity(row,"J1708_REQUEST_EVENT");
-    cJSON_AddStringToObject(row,"event","VOLVO_OPERATING");queue_sample(row);
+    bool complete=cJSON_AddStringToObject(row,"event","VOLVO_OPERATING") && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"sample_kind")) &&
+        cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"boot_id")) && cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"uptime_ms"));
+    if(complete)queue_sample(row);else cJSON_Delete(row);
 }
 
 static void snapshot_task(void *unused)

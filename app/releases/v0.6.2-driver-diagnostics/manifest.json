@@ -1,0 +1,13 @@
+{
+  "file": "TruckBox-Motorista-v0.6.2-diagnostics-debug.apk",
+  "sha256": "3de19ebf4f25ff568c04bbb22eaa7f07dadeb7deef68ada003d7f2f08e9fefea",
+  "size": 19025544,
+  "version": "0.6.2-driver-diagnostics",
+  "version_code": 62,
+  "application_id": "br.com.truckbox.driver",
+  "source_commit": "b46a10ba619bdfee61b6b465f0d43b8a808bc0ca",
+  "workflow": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43123525255",
+  "installed_automatically": false,
+  "hardware_UI_validation": "NOT_PERFORMED",
+  "signing": "CI_DEBUG_SIGNATURE_COMPATIBILITY_WITH_INSTALLED_APP_NOT_VERIFIED"
+}

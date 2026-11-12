@@ -52,10 +52,15 @@ static void hex_bytes(char *out,const uint8_t *bytes,size_t n)
 static bool submit(cJSON *row)
 {
     char text[TB_RECORD_MAX];
-    bool metadata=row && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"event")) &&
+    const cJSON *kind=cJSON_GetObjectItemCaseSensitive(row,"sample_kind");
+    const cJSON *event=cJSON_GetObjectItemCaseSensitive(row,"event");
+    bool metadata=row && cJSON_IsString(kind) && !strcmp(kind->valuestring,"J1708_REQUEST_EVENT") && cJSON_IsString(event) &&
         cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"mid")) && cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"boot_id")) &&
         cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"uptime_ms")) && cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(row,"time_valid")) &&
         cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"time_source"));
+    if(metadata && (!strcmp(event->valuestring,"DIAGNOSTIC_RAW") || !strcmp(event->valuestring,"DIAGNOSTIC_INVALID")))
+        metadata=cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"parameter_hex")) && cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"offset")) &&
+            cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"total_bytes")) && cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(row,"capture_ms"));
     bool ok=metadata && cJSON_PrintPreallocated(row,text,sizeof(text),false) && tb_store_submit(text)==ESP_OK;
     if(!ok)__atomic_fetch_add(&d.store_errors,1,__ATOMIC_RELAXED);
     cJSON_Delete(row);return ok;
