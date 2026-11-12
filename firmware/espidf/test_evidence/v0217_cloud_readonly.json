@@ -1,0 +1,537 @@
+{
+  "scope": "Read-only Cloud extraction, no device command. Value bytes, not full physical frames. No original NEXIQ ZIP replay claimed.",
+  "device_uid": "tb-c6-d40592b9190c",
+  "baseline": {
+    "seq": 57857,
+    "ts": "2026-11-11 21:38:52.165+00",
+    "sample_kind": "BOOT_DIAGNOSTIC",
+    "raw": {
+      "seq": 57857,
+      "boot_id": 306,
+      "firmware": "0.2.16",
+      "heap_free": 138904,
+      "uptime_ms": 547,
+      "time_valid": false,
+      "sample_kind": "BOOT_DIAGNOSTIC",
+      "time_source": "boot_monotonic",
+      "heap_minimum": 134228,
+      "reset_reason": 1,
+      "app_elf_sha256": "6a5b47f59a2111f4ac5c9fd772105ebee8926a38f3903dc2f63add6a47ce365a",
+      "schema_version": 2
+    }
+  },
+  "cloud_samples": [
+    {
+      "seq": 58611,
+      "ts": "2026-11-11 22:04:52.053+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:04:52.053Z",
+        "seq": 58611,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            144
+          ],
+          "71": [
+            "70",
+            0,
+            144
+          ],
+          "89": [
+            "00",
+            0,
+            144
+          ],
+          "150": [
+            "CFFF",
+            0,
+            144
+          ],
+          "194": [
+            "0235",
+            14,
+            136
+          ]
+        },
+        "uptime_ms": 1560670,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "71": "raw",
+          "89": "raw",
+          "150": "raw",
+          "194": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 58610,
+      "ts": "2026-11-11 22:04:52.046+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:04:52.046Z",
+        "seq": 58610,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            128
+          ],
+          "83": [
+            "7F",
+            0,
+            128
+          ],
+          "128": [
+            "AC80",
+            7,
+            144
+          ],
+          "194": [
+            "12B501",
+            0,
+            128
+          ],
+          "251": [
+            "B40413",
+            1,
+            140
+          ],
+          "252": [
+            "2C0B29",
+            1,
+            140
+          ]
+        },
+        "uptime_ms": 1560663,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "83": "raw",
+          "84": "km/h",
+          "128": "raw",
+          "194": "raw",
+          "249": "revolutions",
+          "251": "raw",
+          "252": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "j1587_sensors": {
+          "84": [
+            0,
+            0,
+            136,
+            "00"
+          ],
+          "249": [
+            73926000,
+            59,
+            128,
+            "C6200100"
+          ]
+        },
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 58582,
+      "ts": "2026-11-11 22:03:52.061+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:03:52.061Z",
+        "seq": 58582,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            144
+          ],
+          "71": [
+            "70",
+            0,
+            144
+          ],
+          "89": [
+            "00",
+            0,
+            144
+          ],
+          "150": [
+            "CFFF",
+            0,
+            144
+          ],
+          "194": [
+            "0235",
+            14,
+            136
+          ]
+        },
+        "uptime_ms": 1500675,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "71": "raw",
+          "89": "raw",
+          "150": "raw",
+          "194": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 58581,
+      "ts": "2026-11-11 22:03:52.033+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:03:52.033Z",
+        "seq": 58581,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            128
+          ],
+          "83": [
+            "7F",
+            0,
+            128
+          ],
+          "128": [
+            "AC80",
+            7,
+            144
+          ],
+          "194": [
+            "12B501",
+            0,
+            128
+          ],
+          "251": [
+            "A00313",
+            6,
+            140
+          ],
+          "252": [
+            "2C0B29",
+            6,
+            140
+          ]
+        },
+        "uptime_ms": 1500651,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "83": "raw",
+          "84": "km/h",
+          "128": "raw",
+          "194": "raw",
+          "249": "revolutions",
+          "251": "raw",
+          "252": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "j1587_sensors": {
+          "84": [
+            0,
+            0,
+            136,
+            "00"
+          ],
+          "249": [
+            73926000,
+            59,
+            128,
+            "C6200100"
+          ]
+        },
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 58553,
+      "ts": "2026-11-11 22:02:52.027+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:02:52.027Z",
+        "seq": 58553,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            144
+          ],
+          "71": [
+            "70",
+            0,
+            144
+          ],
+          "89": [
+            "00",
+            0,
+            144
+          ],
+          "150": [
+            "CFFF",
+            0,
+            144
+          ],
+          "194": [
+            "0235",
+            14,
+            136
+          ]
+        },
+        "uptime_ms": 1440645,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "71": "raw",
+          "89": "raw",
+          "150": "raw",
+          "194": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 58552,
+      "ts": "2026-11-11 22:02:52.018+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:02:52.018Z",
+        "seq": 58552,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            128
+          ],
+          "83": [
+            "7F",
+            0,
+            128
+          ],
+          "128": [
+            "AC80",
+            7,
+            144
+          ],
+          "194": [
+            "12B501",
+            0,
+            128
+          ],
+          "251": [
+            "B80213",
+            0,
+            140
+          ],
+          "252": [
+            "2C0B29",
+            0,
+            140
+          ]
+        },
+        "uptime_ms": 1440636,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "83": "raw",
+          "84": "km/h",
+          "128": "raw",
+          "194": "raw",
+          "249": "revolutions",
+          "251": "raw",
+          "252": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "j1587_sensors": {
+          "84": [
+            0,
+            0,
+            136,
+            "00"
+          ],
+          "249": [
+            73925000,
+            59,
+            128,
+            "C5200100"
+          ]
+        },
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 58524,
+      "ts": "2026-11-11 22:01:52.057+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:01:52.057Z",
+        "seq": 58524,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            144
+          ],
+          "71": [
+            "70",
+            0,
+            144
+          ],
+          "89": [
+            "00",
+            0,
+            144
+          ],
+          "150": [
+            "CFFF",
+            0,
+            144
+          ],
+          "194": [
+            "0235",
+            14,
+            136
+          ]
+        },
+        "uptime_ms": 1380674,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "71": "raw",
+          "89": "raw",
+          "150": "raw",
+          "194": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "schema_version": 2
+      }
+    },
+    {
+      "seq": 58523,
+      "ts": "2026-11-11 22:01:52.043+00",
+      "sample_kind": "J1708_FAST",
+      "raw": {
+        "ts": "2026-11-11T22:01:52.043Z",
+        "seq": 58523,
+        "origin": "PASSIVE_RX",
+        "source": "j1708",
+        "boot_id": 306,
+        "quality": "EM_VALIDACAO",
+        "j1587_raw": {
+          "44": [
+            "C0",
+            0,
+            128
+          ],
+          "83": [
+            "7F",
+            0,
+            128
+          ],
+          "128": [
+            "AC80",
+            7,
+            144
+          ],
+          "194": [
+            "12B501",
+            0,
+            128
+          ],
+          "251": [
+            "A40113",
+            5,
+            140
+          ],
+          "252": [
+            "2C0B29",
+            5,
+            140
+          ]
+        },
+        "uptime_ms": 1380660,
+        "interval_s": 60,
+        "time_valid": true,
+        "j1587_units": {
+          "44": "raw",
+          "83": "raw",
+          "84": "km/h",
+          "128": "raw",
+          "194": "raw",
+          "249": "revolutions",
+          "251": "raw",
+          "252": "raw"
+        },
+        "sample_kind": "J1708_FAST",
+        "time_source": "system_clock",
+        "j1587_sensors": {
+          "84": [
+            0,
+            0,
+            136,
+            "00"
+          ],
+          "249": [
+            73924000,
+            59,
+            128,
+            "C4200100"
+          ]
+        },
+        "schema_version": 2
+      }
+    }
+  ]
+}

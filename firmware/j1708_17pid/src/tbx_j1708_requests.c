@@ -41,6 +41,10 @@ void tbx_j1708_request_production(tbx_j1708_request_scheduler_t *s,const uint32_
 void tbx_j1708_request_init(tbx_j1708_request_scheduler_t *s) {
     if (!s) return;
     memset(s, 0, sizeof(*s));
+    for(unsigned i=17;i<TBX_J1708_REQUEST_CAPACITY;i++){
+        s->pids[i].pid=tbx_j1708_candidate_policy()[i-17].pid;
+        s->pids[i].period_ms=tbx_j1708_candidate_policy()[i-17].period_ms;
+    }
     s->pending = TBX_J1708_NO_PENDING;
     s->min_spacing_ms = 250; /* maximum 4 requests/s; waits can slow it */
     s->timeout_ms = 450; /* MID 140 brake sensors had ~205-210 ms mean reply latency in field capture */
@@ -69,7 +73,7 @@ bool tbx_j1708_request_arm(tbx_j1708_request_scheduler_t *s) {
 }
 bool tbx_j1708_request_enable_pid(tbx_j1708_request_scheduler_t *s, uint16_t pid, bool enabled) {
     if (!s) return false;
-    for (uint8_t i=0; i<TBX_J1708_REQUEST_COUNT; i++) {
+    for (uint8_t i=0; i<TBX_J1708_REQUEST_CAPACITY; i++) {
         if (s->pids[i].pid == pid) {
             s->pids[i].enabled = enabled;
             if (!enabled && s->pending == i) s->pending = TBX_J1708_NO_PENDING;
@@ -111,19 +115,20 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
     if (s->next_tx_valid && !time_due(now, s->next_tx_ms)) return;
     uint8_t selected=TBX_J1708_NO_PENDING;
     if(s->priority_polling){
-        for(uint8_t i=0;i<17;i++){
+        for(uint8_t i=0;i<TBX_J1708_REQUEST_CAPACITY;i++){
             const tbx_j1708_request_stat_t *p=&s->pids[i];
             if(!p->enabled || !time_due(now,p->next_due_ms))continue;
             /* Aging prevents an indefinitely late secondary request from
              * being starved by a continually busy launch priority group. */
-            unsigned priority=now-p->next_due_ms>=60000?0:p->priority;
-            unsigned old=selected==TBX_J1708_NO_PENDING?255:(now-s->pids[selected].next_due_ms>=60000?0:s->pids[selected].priority);
+            unsigned priority=p->expedited || now-p->next_due_ms>=60000?0:p->priority;
+            unsigned old=selected==TBX_J1708_NO_PENDING?255:(s->pids[selected].expedited || now-s->pids[selected].next_due_ms>=60000?0:s->pids[selected].priority);
             if(selected==TBX_J1708_NO_PENDING || priority<old || (priority==old && (int32_t)(p->next_due_ms-s->pids[selected].next_due_ms)<0))selected=i;
         }
         if(selected==TBX_J1708_NO_PENDING)return;
     }
-    for (uint8_t tries=0; tries<TBX_J1708_REQUEST_COUNT; tries++) {
-        uint8_t i = s->priority_polling?selected:(uint8_t)((s->cursor + tries) % TBX_J1708_REQUEST_COUNT);
+    const uint8_t capacity=s->priority_polling?TBX_J1708_REQUEST_CAPACITY:TBX_J1708_REQUEST_COUNT;
+    for (uint8_t tries=0; tries<capacity; tries++) {
+        uint8_t i = s->priority_polling?selected:(uint8_t)((s->cursor + tries) % capacity);
         if (!s->pids[i].enabled) continue;
         if(s->periodic && !time_due(now,s->pids[i].next_due_ms))continue;
         s->send_deferred = false;
@@ -148,8 +153,9 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
         s->pids[i].last_sent_ms = now;
         ++s->sent_total;
         s->pending = i;
+        s->pids[i].expedited=false;
         s->pending_since_ms = now;
-        s->cursor = (uint8_t)((i + 1) % TBX_J1708_REQUEST_COUNT);
+        s->cursor = (uint8_t)((i + 1) % capacity);
         s->next_tx_ms = now + s->min_spacing_ms;
         s->next_tx_valid = true;
         return;
@@ -171,4 +177,22 @@ bool tbx_j1708_request_note_response(tbx_j1708_request_scheduler_t *s, uint16_t 
     s->consecutive_timeouts = 0;
     s->pending = TBX_J1708_NO_PENDING;
     return true;
+}
+
+void tbx_j1708_request_expansion(tbx_j1708_request_scheduler_t *s,bool enabled,uint32_t now,bool initial)
+{
+    for(unsigned i=17;i<TBX_J1708_REQUEST_CAPACITY;i++){
+        tbx_j1708_request_stat_t *p=&s->pids[i];p->enabled=enabled;
+        p->priority=(p->pid==94 || p->pid==153 || p->pid==161)?1:2;
+        if(initial){p->next_due_ms=now+15000+(i-17)*1500;p->retries=0;}
+    }
+}
+bool tbx_j1708_request_expedite(tbx_j1708_request_scheduler_t *s,uint16_t pid,uint32_t now)
+{
+    if(!s || !s->priority_polling)return false;
+    for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)if(s->pids[i].pid==pid && s->pids[i].enabled){
+        if(s->pending!=i){s->pids[i].next_due_ms=now;s->pids[i].expedited=true;}
+        return true;
+    }
+    return false;
 }

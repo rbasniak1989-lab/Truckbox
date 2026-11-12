@@ -27,7 +27,19 @@ static const pid_spec_t specs[] = {
     {160, 2, 0.25, "rpm", false},
     {235, 4, 0.05, "h", false},
     {236, 4, 0.473176473, "L", false},
-    {250, 4, 0.473176473, "L", false}
+    {250, 4, 0.473176473, "L", false},
+    /* Additive candidates: SAE J1587 FEB2002 A.93/94/107/153/154/161/
+     * 182/188/244/439. Vehicle interpretation remains provisional. */
+    {90, 1, 2.0/3.0, "C", false},
+    {93, 1, 27.1, "Nm", false},
+    {94, 1, 0.0345, "bar", false},
+    {107, 1, 0.0498, "kPa", false},
+    {153, 2, 0.0078125, "kPa (gauge)", false},
+    {154, 2, 1.0, "estados", true},
+    {161, 2, 0.25, "rpm", false},
+    {182, 2, 0.473176473, "L", false},
+    {244, 4, 0.1609344, "km", false},
+    {439, 2, 0.00125, "bar (gauge)", false}
 };
 
 bool tbx_j1587_decode(uint8_t mid, uint16_t pid, const uint8_t *data,
@@ -54,9 +66,10 @@ bool tbx_j1587_decode(uint8_t mid, uint16_t pid, const uint8_t *data,
     for (uint8_t i=0; i<len; ++i) raw |= (uint32_t)data[i] << (8u*i);
     out->raw_unsigned = raw;
     if (spec->bitmapped) {
-        for (uint8_t i=0; i<4; ++i) out->status_fields[i] = (uint8_t)((raw >> (i*2u)) & 3u);
+        out->status_count=(uint8_t)(len*4);
+        for (uint8_t i=0; i<out->status_count; ++i) out->status_fields[i] = (uint8_t)((raw >> (i*2u)) & 3u);
         out->status = (pid == 62 && out->status_fields[0] == 3u) ||
-                      ((pid == 34 || pid == 63) && raw == 0xffu)
+                      ((pid == 34 || pid == 63) && raw == 0xffu) || (pid==154 && raw==0xffffu)
                     ? TBX_J1587_VALUE_INDISPONIVEL : TBX_J1587_VALUE_EM_VALIDACAO;
         return true;
     }
@@ -67,6 +80,9 @@ bool tbx_j1587_decode(uint8_t mid, uint16_t pid, const uint8_t *data,
         return true;
     }
     out->value = (double)raw * spec->factor;
+    if(pid==90)out->value-=160.0/9.0;
+    if(pid==93)out->value=(double)(int8_t)raw*spec->factor;
+    if(pid==153)out->value=(double)(int16_t)raw*spec->factor;
     out->status = TBX_J1587_VALUE_EM_VALIDACAO;
     return true;
 }

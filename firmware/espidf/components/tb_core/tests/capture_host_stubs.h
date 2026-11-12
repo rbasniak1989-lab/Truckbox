@@ -45,6 +45,7 @@ static esp_err_t nvs_get_blob(nvs_handle_t, const char *, void *, size_t *);
 static esp_err_t nvs_set_blob(nvs_handle_t, const char *, const void *, size_t);
 static esp_err_t nvs_commit(nvs_handle_t);
 
+static void tb_ecu_counters_observe(const tbx_j1587_observation_t *o,bool matched){(void)o;(void)matched;}
 static struct { bool full_decode_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated;uint8_t j1587_odometer_mid,j1587_fuel250_mid; } host_capture_config;
 #define tb_config() (&host_capture_config)
 

@@ -1,0 +1,77 @@
+pid,nome,grupo,status,validacao_veiculo,fonte,observacoes
+26,Percentual estimado da ventoinha,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+31,Posicao range,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+32,Posicao splitter,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+33,Posicao cilindro da embreagem,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+34,Estados de atuadores,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+36,Clutch plates wear condition,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+37,Pressao do ar da transmissao,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+43,Ignition switch,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+44,Warning/indicator lamps,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+46,Vehicle wet tank pressure,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+49,ABS control status,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+62,Estado de inibicao do retarder,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+63,Estados da transmissao,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+68,Limite de torque,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+70,Parking brake switch,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+71,Idle shutdown timer status,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+83,Road speed limit status,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+84,Road speed,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+85,Cruise control status,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+86,Cruise control set speed,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+89,Power takeoff status,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+90,Temperatura do oleo PTO,PASSIVA_ADICIONAL,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;CLOUD-11NOV,"Recebida em Cloud; escala SAE adicionada, sem consulta ativa."
+91,Accelerator pedal,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+92,Engine load,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+93,Torque de saida do motor,CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+94,Pressao de alimentacao de combustivel,CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+96,Fuel level,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+97,Water in fuel indicator,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+98,Engine oil level,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+100,Engine oil pressure,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+102,Boost pressure,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+105,Intake manifold temperature,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+106,Air inlet pressure,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+107,Restricao do filtro de ar,CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+108,Pressao atmosferica,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+110,Engine coolant temperature,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+111,Coolant level,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+117,Pressao do ar primario,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+118,Pressao do ar secundario,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+122,Engine retarder percentage,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+128,Component-specific parameter request (control),PASSIVA_48,PARCIAL,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Decodifica solicitação e destino; não é sensor nem comando a emitir.
+150,PTO engagement control status,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+151,ATC status,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+153,Pressao interna do carter,CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+154,Entradas e saidas auxiliares #2,CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,"Mapa de 8 pares de bits; associação candidata ao MID128, não comprovada pelo ZIP NEXIQ ausente."
+155,Auxiliary input/output #1,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+158,Tensao com chave,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+160,Rotacao do eixo principal,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+161,Rotacao do eixo de entrada,CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+162,Transmission range selected,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+163,Transmission range attained,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+168,Battery voltage,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+171,Ambient air temperature,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+174,Fuel temperature,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+175,Engine oil temperature,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+177,Transmission oil temperature,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+182,Combustivel parcial ECU (nao zera por viagem TruckBox),CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Contador parcial da ECU; não pressupõe reset por viagem TruckBox.
+183,Instantaneous fuel rate,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+184,Instantaneous fuel economy,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+185,Average fuel economy,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+187,PTO set speed,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+188,Rotacao nominal de marcha lenta,PASSIVA_48;CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Reutiliza decoder passivo; não cria escala/catálogo duplicado.
+190,Engine speed,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+192,Transmissão multisseção para PID194,TRANSPORTE_PASSIVO,VALIDADA,EM_VALIDACAO,SAE-J1587-2002,Reassemblagem PID194 testada em software; sem captura multisseção física disponível.
+194,Diagnostic trouble codes (variable),PASSIVA_48,VALIDADA,EM_VALIDACAO,SAE-J1587-2002;CLOUD-10NOV;CLOUD-11NOV,"VALIDADA refere-se ao parser e aos vetores, não ao diagnóstico OEM nem à transmissão elétrica."
+235,Horas acumuladas em marcha lenta,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+236,Litros acumulados em marcha lenta,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+244,Distancia parcial ECU (nao zera por viagem TruckBox),CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Contador parcial da ECU; não pressupõe reset por viagem TruckBox.
+245,Total vehicle distance,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+247,Total engine hours,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+249,Total engine revolutions,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+250,Litros totais acumulados na ECU,CONSULTA_17_PRESERVADA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+251,Clock,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+252,Date,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Conversão/estado SAE implementado; aplicação ao veículo não promovida automaticamente a validada.
+439,Pressao estendida do turbo #1,CONSULTA_10_CANDIDATA,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Página2: solicitação PID384; resposta página2/B7; transceiver e MID não certificados por teste unitário.
+440,Extended boost pressure #2,PASSIVA_48,CANDIDATA,EM_VALIDACAO,SAE-J1587-2002;TRUCKBOX-29OCT,Página2/B8; canal distinto de 439; alias de boost único no painel.

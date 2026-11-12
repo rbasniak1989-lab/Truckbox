@@ -11,6 +11,7 @@
 static char *persisted;
 static char *pending;
 static char *extension_saved,*extension_pending,*auto_saved,*auto_pending;
+static char *extra_saved,*extra_pending;
 static bool target_mac;
 static esp_err_t flash_error;
 static esp_err_t write_error;
@@ -67,6 +68,10 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v217")){
+        if(!extra_saved)return ESP_ERR_NVS_NOT_FOUND;
+        size_t n=strlen(extra_saved)+1;if(value){assert(*size>=n);memcpy(value,extra_saved,n);}*size=n;return ESP_OK;
+    }
     if(!strcmp(key,"v216")){
         if(!auto_saved)return ESP_ERR_NVS_NOT_FOUND;
         size_t n=strlen(auto_saved)+1;if(value){assert(*size>=n);memcpy(value,auto_saved,n);}*size=n;return ESP_OK;
@@ -92,6 +97,7 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v217")){if(write_error!=ESP_OK)return write_error;free(extra_pending);extra_pending=strdup(value);assert(extra_pending);return ESP_OK;}
     if(!strcmp(key,"v216")){if(write_error!=ESP_OK)return write_error;free(auto_pending);auto_pending=strdup(value);assert(auto_pending);return ESP_OK;}
     if(!strcmp(key,"v212")){if(write_error!=ESP_OK)return write_error;free(extension_pending);extension_pending=strdup(value);assert(extension_pending);return ESP_OK;}
     assert(!strcmp(key,"config"));
@@ -107,6 +113,7 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if(extra_pending){free(extra_saved);extra_saved=extra_pending;extra_pending=NULL;}
     if(auto_pending){free(auto_saved);auto_saved=auto_pending;auto_pending=NULL;}
     if(extension_pending){free(extension_saved);extension_saved=extension_pending;extension_pending=NULL;}
     free(persisted);
@@ -132,6 +139,7 @@ static void clear_storage(void)
 {
     free(persisted);
     free(pending);free(extension_saved);free(extension_pending);extension_saved=extension_pending=NULL;
+    free(extra_saved);free(extra_pending);extra_saved=extra_pending=NULL;
     free(auto_saved);free(auto_pending);auto_saved=auto_pending=NULL;target_mac=false;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;
@@ -323,8 +331,32 @@ static void test_automatic_persistence(void)
     clear_storage();
 }
 
+static void test_expansion_persistence(void)
+{
+    clear_storage();target_mac=true;assert(tb_config_init()==ESP_OK);
+    assert(extra_saved && !strstr(persisted,"j1708_expansion"));
+#if CONFIG_TB_ROLE_LINK
+    assert(!tb_config()->j1708_expansion_enabled);
+#else
+    assert(tb_config()->j1708_expansion_enabled);
+#endif
+    assert(tb_config()->j1708_stop_dwell_s==15 && tb_config()->j1708_parked_capture_s==300);
+    assert(apply("{\"j1708_expansion_enabled\":false,\"j1708_stop_dwell_s\":20,\"j1708_parked_capture_s\":600}")==ESP_OK);
+    unsigned count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    assert(!tb_config()->j1708_expansion_enabled && tb_config()->j1708_stop_dwell_s==20 && tb_config()->j1708_parked_capture_s==600);
+    assert(apply("{\"j1708_stop_dwell_s\":1}")==ESP_ERR_INVALID_ARG);
+    assert(apply("{\"j1708_parked_capture_s\":59}")==ESP_ERR_INVALID_ARG);
+    bool automatic=tb_config_j1708_auto_enabled();
+    free(extra_saved);extra_saved=strdup("{bad");reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    assert(!tb_config()->j1708_expansion_enabled && tb_config()->j1708_enabled && tb_config_j1708_auto_enabled()==automatic);
+    free(extra_saved);extra_saved=NULL;reboot();assert(tb_config_init()==ESP_OK && writes==count+1);
+    count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count);
+    clear_storage();
+}
+
 int main(void)
 {
+    test_expansion_persistence();
     test_automatic_persistence();
     test_v212_extension_rollback_compatibility();
     test_first_boot_and_public_data();

@@ -1,0 +1,8 @@
+Offline source: clock=0 virtual_seconds=7200 frames=441135 records=3789 requests=8175 response_candidates=8175 latest=76 RAW_writes=0
+Offline storage: duration=7200s input_records=3789 original_JSON_bytes=2473390 physical_bytes=1477083 budget_bytes=1818624 segments=31 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 684772 bytes; remains on disk and reduces future offline space until explicit review
+Reconnect: unique_Cloud_rows=3789 deliveries_including_retries=3797 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
+Offline source: clock=1 virtual_seconds=7200 frames=441135 records=3789 requests=8175 response_candidates=8175 latest=76 RAW_writes=0
+Offline storage: duration=7200s input_records=3789 original_JSON_bytes=2572474 physical_bytes=1595469 budget_bytes=1818624 segments=33 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 684788 bytes; remains on disk and reduces future offline space until explicit review
+Reconnect: unique_Cloud_rows=3789 deliveries_including_retries=3797 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved

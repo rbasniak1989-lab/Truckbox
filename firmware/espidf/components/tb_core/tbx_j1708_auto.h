@@ -12,7 +12,7 @@ typedef struct {
 typedef struct {
     bool enabled,persisted,interface_ready,local_conflict,ota_busy,operator_hold;
     uint8_t local_mid,targets[17];
-    bool topology_attested;
+    bool topology_attested,extended;
     uint32_t timeout_ms,periods[17];
 }tbx_j1708_auto_env_t;
 void tbx_j1708_auto_tick(tbx_j1708_auto_t *,tbx_j1708_active_t *,const tbx_j1708_auto_env_t *,bool launch,uint64_t now_us);

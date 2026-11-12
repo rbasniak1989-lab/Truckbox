@@ -229,3 +229,14 @@ if (args.includes('--v26')) {
   }
   console.log('PASS: v26 writes integer/null milliseconds and preserves original microseconds without GPS');
 }
+{
+  const events = ['DIAGNOSTIC_DTC', 'DIAGNOSTIC_RAW', 'COUNTER_CAPTURE', 'VOLVO_OPERATING', 'POLLING_PID_STATS'];
+  const samples = events.map((event,i)=>({seq:100+i,sample_kind:'J1708_REQUEST_EVENT',event,boot_id:55,uptime_ms:15000+i,
+    time_valid:false,mid:128,pid:194,parameter_hex:'12B501',trip_client_uid:'test-trip-candidate',
+    counters:[[250,128,'E8030000',473.176473,'L',55,15000,null,'ECU_COUNTER_EM_VALIDACAO']]}));
+  const got=await invoke(sourcePath,samples,{bigintContract:true});
+  assert.equal(got.status,200);assert.equal(got.response.ack_seq,104);
+  assert.deepEqual(got.state.latest,got.initialLatest);assert.equal(got.rpcs.length,0);
+  for(let i=0;i<samples.length;i++){assert.deepEqual(got.rows[i].raw,samples[i]);assert.equal(got.rows[i].trip_id,null);}
+  console.log('PASS: 0.2.17 DTC/raw-change/counter/Volvo/PID summary events retain data and ACK without changing existing trip/finance/latest');
+}

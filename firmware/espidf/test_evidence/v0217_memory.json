@@ -1,0 +1,46 @@
+{
+  "baseline": {
+    "sections": {
+      ".iram0.text": 127468,
+      ".iram0.data": 4,
+      ".iram0.bss": 0,
+      ".dram0.data": 14788,
+      ".noinit": 0,
+      ".dram0.bss": 61264
+    },
+    "ram_static_bytes": 203524,
+    "types": {
+      "tbx_j1708_request_scheduler_t": 868,
+      "tbx_j1708_active_t": 1136,
+      "tbx_j1708_auto_t": 48,
+      "request_event_t": 392
+    }
+  },
+  "candidate": {
+    "sections": {
+      ".iram0.text": 127468,
+      ".iram0.data": 4,
+      ".iram0.bss": 0,
+      ".dram0.data": 14788,
+      ".noinit": 0,
+      ".dram0.bss": 67824
+    },
+    "ram_static_bytes": 210084,
+    "types": {
+      "tbx_j1708_request_scheduler_t": 1348,
+      "tbx_j1708_active_t": 1144,
+      "tbx_j1708_auto_t": 48,
+      "request_event_t": 392,
+      "tbx_volvo_operating_t": 272,
+      "tbx_dtc_history_t": 2576,
+      "tbx_dtc_sections_t": 1072,
+      "diagnostic_checkpoint_t": 3232,
+      "tbx_ecu_counters_t": 1120,
+      "counter_checkpoint_t": 1136
+    }
+  },
+  "static_added_bytes": 6560,
+  "physical_free_heap": "NOT_MEASURED",
+  "partition_nvs_bytes": 24576,
+  "new_nvs_live_blob_bytes": 8736
+}

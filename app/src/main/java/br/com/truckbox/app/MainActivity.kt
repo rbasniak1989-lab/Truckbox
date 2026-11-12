@@ -1,5 +1,8 @@
 package br.com.truckbox.app
 
+import br.com.truckbox.app.diagnostics.DiagnosticMerge
+import br.com.truckbox.app.diagnostics.DiagnosticClient
+import br.com.truckbox.app.diagnostics.DiagnosticsPage
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -63,7 +66,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class DriverPage(val title: String) { STATUS("Status"), TRIP("Viagem"), ENTRIES("Lançamentos"), SETTINGS("Config") }
+private enum class DriverPage(val title: String) { STATUS("Status"), TRIP("Viagem"), ENTRIES("Lançamentos"), DIAGNOSTICS("Falhas"), SETTINGS("Config") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +75,7 @@ private fun DriverApp() {
     val prefs = remember { TruckBoxPreferences(context) }
     val store = remember { OperationsStore(context) }
     val cloud = remember { TruckBoxCloudClient(prefs) }
+    val diagnostics = remember { DiagnosticClient(context, prefs) }
     val scope = rememberCoroutineScope()
     val gateway by GatewayStatus.state.collectAsState()
     val operations by store.state.collectAsState()
@@ -94,7 +98,7 @@ private fun DriverApp() {
                     title = {
                         Column {
                             Text("TruckBox Motorista", fontWeight = FontWeight.Bold)
-                            Text("Gateway Android • v0.6.1", fontSize = 11.sp)
+                            Text("Gateway Android • v0.6.2", fontSize = 11.sp)
                         }
                     },
                     actions = {
@@ -111,6 +115,7 @@ private fun DriverApp() {
                             DriverPage.STATUS -> Icons.Default.Dashboard
                             DriverPage.TRIP -> Icons.Default.Route
                             DriverPage.ENTRIES -> Icons.Default.AddCircle
+                            DriverPage.DIAGNOSTICS -> Icons.Default.Build
                             DriverPage.SETTINGS -> Icons.Default.Settings
                         }
                         NavigationBarItem(
@@ -130,14 +135,19 @@ private fun DriverApp() {
                         active = operations.activeTrip,
                         odometerKm = gateway.odometerKm,
                         coreFuelLiters = gateway.coreFuelLiters,
+                        diagnostics = diagnostics,
                         onStart = { origin, destination, weight, rate ->
                             store.startTrip(origin, destination, weight, rate, gateway.odometerKm, gateway.coreFuelLiters ?: 0.0)
-                            store.state.value.activeTrip?.let { scope.launch(Dispatchers.IO) { cloud.syncTrip(it) } }
+                            store.state.value.activeTrip?.let { trip ->
+                                if (!diagnostics.enqueueBoundary(true, trip.clientUid, trip.startedAtMs)) GatewayStatus.update { it.copy(lastError = "Captura ECU pendente: fila local indisponível; viagem preservada") }
+                                scope.launch(Dispatchers.IO) { cloud.syncTrip(trip) }
+                            }
                         },
                         onEnd = {
                             val uid = store.state.value.activeTrip?.clientUid
                             store.endActiveTrip(gateway.odometerKm, gateway.coreFuelLiters ?: 0.0)
                             uid?.let { id -> store.state.value.trips.firstOrNull { it.clientUid == id } }?.let { ended ->
+                                if (!diagnostics.enqueueBoundary(false, ended.clientUid, ended.endedAtMs ?: System.currentTimeMillis())) GatewayStatus.update { it.copy(lastError = "Captura final ECU pendente; viagem preservada") }
                                 scope.launch(Dispatchers.IO) { cloud.endTrip(ended) }
                             }
                         },
@@ -158,6 +168,7 @@ private fun DriverApp() {
                             store.state.value.maintenance.firstOrNull()?.let { item -> scope.launch(Dispatchers.IO) { cloud.syncMaintenance(item) } }
                         },
                     )
+                    DriverPage.DIAGNOSTICS -> DiagnosticsPage(diagnostics, operations.trips)
                     DriverPage.SETTINGS -> SettingsPage(prefs)
                 }
             }
@@ -211,10 +222,20 @@ private fun TripPage(
     active: br.com.truckbox.app.operations.TripRecord?,
     odometerKm: Double?,
     coreFuelLiters: Double?,
+    diagnostics: DiagnosticClient,
     onStart: (String, String, Double?, Double?) -> Unit,
     onEnd: () -> Unit,
 ) {
     var showStart by remember { mutableStateOf(false) }
+    var ecuReference by remember { mutableStateOf<Double?>(null) }
+    LaunchedEffect(active?.clientUid) {
+        ecuReference = null
+        while (isActive && active != null) {
+            val current = withContext(Dispatchers.IO) { diagnostics.local("/api/counters") }
+            ecuReference = DiagnosticMerge.fuelReference(current, active.clientUid)
+            delay(15000)
+        }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Viagem", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (active == null) {
@@ -229,7 +250,7 @@ private fun TripPage(
                     val distanceKm = if (active.startOdometerKm != null && odometerKm != null) {
                         (odometerKm - active.startOdometerKm).coerceAtLeast(0.0)
                     } else active.distanceKm
-                    val tripFuelLiters = if (coreFuelLiters != null) {
+                    val tripFuelLiters = ecuReference ?: if (coreFuelLiters != null) {
                         (coreFuelLiters - active.startFuelCounterL).coerceAtLeast(0.0)
                     } else active.fuelLiters
                     val averageKml = if (distanceKm != null && tripFuelLiters != null && tripFuelLiters > 0.02) {
@@ -238,6 +259,7 @@ private fun TripPage(
                     Text("KM inicial: ${active.startOdometerKm?.let { String.format(Locale.US, "%.1f", it) } ?: "—"}")
                     Text("KM atual: ${odometerKm?.let { String.format(Locale.US, "%.1f", it) } ?: "—"}")
                     Text("Distância da viagem: ${distanceKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
+                    Text(if (ecuReference != null) "Referência principal: delta ECU PID250 (captura após evento; escala em validação)" else "Referência: integração/estimativa disponível; captura ECU insuficiente")
                     Text("Consumido na viagem: ${tripFuelLiters?.let { String.format(Locale.US, "%.1f L", it) } ?: "—"}")
                     Text("Média geral: ${averageKml?.let { String.format(Locale.US, "%.2f km/L", it) } ?: "—"}")
                 }

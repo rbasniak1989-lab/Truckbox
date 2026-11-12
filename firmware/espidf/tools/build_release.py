@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.16"
+VERSION = "0.2.17"
 EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
 REQUIRED_SOURCE = (
     "firmware/espidf/CMakeLists.txt",
@@ -33,7 +33,7 @@ REQUIRED_SOURCE = (
     "firmware/REV_B1_CODEX_IMPLEMENTATION.md",
 )
 EXCLUDED_PARTS = {"release", "releases", "managed_components", ".git", "__pycache__", "node_modules", "private", ".pytest_cache"}
-EXCLUDED_SUFFIXES = {".log", ".zip", ".bin", ".elf", ".pyc", ".o", ".obj", ".a"}
+EXCLUDED_SUFFIXES = {".log", ".zip", ".bin", ".elf", ".pyc", ".o", ".obj", ".a", ".apk", ".aab", ".jks", ".keystore"}
 
 
 def digest(path: Path) -> str:
@@ -76,6 +76,20 @@ def source_entries(project_root: Path) -> dict[str, Path]:
             if rel.parts[:3] == ("espidf", "tests", "web") and path.suffix in {".png", ".json"}:
                 continue
             entries["firmware/" + rel.as_posix()] = path
+    # App and read-only Cloud sources are part of the same incremental delivery.
+    # Android needs its sibling module/settings; no APK/build or credential files.
+    repository=firmware_root.parent
+    for name in ("app","multimedia","cloud/diagnostics","supabase","gradle","scripts",".github/workflows"):
+        directory=repository/name
+        if not directory.is_dir():continue
+        for path in sorted(directory.rglob("*")):
+            rel=path.relative_to(repository)
+            if not path.is_file() or path.is_symlink() or any(p in EXCLUDED_PARTS or p in {"build",".gradle"} or p.startswith("build-") for p in rel.parts):continue
+            if path.suffix.lower() in EXCLUDED_SUFFIXES or path.name.startswith(".env") or path.name=="local.properties":continue
+            entries[rel.as_posix()]=path
+    for name in ("build.gradle.kts","settings.gradle.kts","gradle.properties","gradlew","gradlew.bat","README.md"):
+        path=repository/name
+        if path.is_file():entries[name]=path
     contract = firmware_root / "REV_B1_CODEX_IMPLEMENTATION.md"
     if contract.is_file():
         entries["firmware/" + contract.name] = contract
@@ -117,14 +131,14 @@ def provenance(project_root: Path, builds: dict) -> dict:
         }
     if not result.get("original_release", {}).get("embedded_source_sha256"):
         raise ValueError("Original release/source provenance missing")
-    result.update({"version": VERSION, "state": "PRODUCAO_AGUARDANDO_INSTALACAO", "validation": "PARTIAL",
+    result.update({"version": VERSION, "state": "CANDIDATA_DIAGNOSTICO_AGUARDANDO_APROVACAO", "validation": "PARTIAL",
                    "physical_validation": "PENDING", "esp_idf": "v5.5.2"})
     result["development"] = {
         "branch": git_value(project_root, "branch", "--show-current"),
         "commit": git_value(project_root, "rev-parse", "HEAD"),
         "dirty": bool(git_value(project_root, "status", "--porcelain")),
-        "integration_base_branch": "fix/revb1-v0215-j1708-guard",
-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "4a6f2b7"),
+        "integration_base_branch": "feature/revb1-v0216-auto-j1708",
+        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "0bbc853"),
         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
     }
     result["builds"] = {}
@@ -192,7 +206,7 @@ def package_release(project_root: Path, output_dir: Path, package_path: Path, ro
     entries = source_entries(project_root)
     builds = {role: validate_build(project_root, role) for role in roles}
     origin = provenance(project_root, builds)
-    manifest = {"hardware_revision": "B1", "version": VERSION, "state": "PRODUCAO_AGUARDANDO_INSTALACAO",
+    manifest = {"hardware_revision": "B1", "version": VERSION, "state": "CANDIDATA_DIAGNOSTICO_AGUARDANDO_APROVACAO",
                 "validation": "PARTIAL", "physical_validation": "pending", "esp_idf": "v5.5.2",
                 "preserves_nvs_and_storage": True, "automatic_flash": False, "images": {}}
     output_dir.parent.mkdir(parents=True, exist_ok=True)

@@ -53,7 +53,7 @@ static const string_field_t STRING_FIELDS[] = {
 };
 
 static const bool_field_t BOOL_FIELDS[] = {
-    BOOL_FIELD(j1708_auto_enabled), BOOL_FIELD(j1708_topology_attested), BOOL_FIELD(j1587_odometer_validated), BOOL_FIELD(j1587_fuel250_validated), BOOL_FIELD(capture_enabled), BOOL_FIELD(can_enabled), BOOL_FIELD(j1708_enabled), BOOL_FIELD(full_decode_enabled), BOOL_FIELD(sd_enabled), BOOL_FIELD(fram_enabled),
+    BOOL_FIELD(j1708_expansion_enabled), BOOL_FIELD(j1708_auto_enabled), BOOL_FIELD(j1708_topology_attested), BOOL_FIELD(j1587_odometer_validated), BOOL_FIELD(j1587_fuel250_validated), BOOL_FIELD(capture_enabled), BOOL_FIELD(can_enabled), BOOL_FIELD(j1708_enabled), BOOL_FIELD(full_decode_enabled), BOOL_FIELD(sd_enabled), BOOL_FIELD(fram_enabled),
     BOOL_FIELD(modem_enabled), BOOL_FIELD(gnss_enabled), BOOL_FIELD(repaired_power_gates),
 };
 
@@ -151,6 +151,8 @@ static void defaults(tb_config_t *config)
 {
     memset(config, 0, sizeof(*config));
     config->j1708_timeout_ms=450;
+    config->j1708_expansion_enabled=tb_role()==TB_ROLE_CORE;
+    config->j1708_stop_dwell_s=15;config->j1708_parked_capture_s=300;
     config->j1708_auto_enabled=tb_role()==TB_ROLE_CORE;
     /* Previously observed operational-indirect profile, scoped to this Core.
      * Never import this as external electrical validation for any device. */
@@ -185,6 +187,10 @@ static void defaults(tb_config_t *config)
     bootloader_random_disable();
 }
 
+static bool v217_key(const char *name)
+{
+    return !strcmp(name,"j1708_expansion_enabled") || !strcmp(name,"j1708_stop_dwell_s") || !strcmp(name,"j1708_parked_capture_s");
+}
 static bool v216_key(const char *name)
 {
     return !strcmp(name,"j1708_auto_enabled") || !strcmp(name,"j1708_topology_attested") ||
@@ -206,7 +212,7 @@ static bool known_key(const char *name, bool loading)
             return true;
         }
     }
-    return v216_key(name) || strcmp(name,"j1587_odometer_mid")==0 || strcmp(name,"j1587_fuel250_mid")==0 || strcmp(name,"j1708_intervals_ms")==0 || strcmp(name,"j1708_timeout_ms")==0 || strcmp(name, "can_baud") == 0 || strcmp(name, "gnss_baud") == 0 ||
+    return v217_key(name) || v216_key(name) || strcmp(name,"j1587_odometer_mid")==0 || strcmp(name,"j1587_fuel250_mid")==0 || strcmp(name,"j1708_intervals_ms")==0 || strcmp(name,"j1708_timeout_ms")==0 || strcmp(name, "can_baud") == 0 || strcmp(name, "gnss_baud") == 0 ||
            strcmp(name, "sequence_floor") == 0 ||
            (loading && strcmp(name, "schema") == 0);
 }
@@ -328,6 +334,13 @@ static esp_err_t apply_fields(const cJSON *json, tb_config_t *config, bool loadi
         const cJSON *mid=cJSON_GetObjectItemCaseSensitive(json,mid_names[i]);if(!mid)continue;
         if(!cJSON_IsNumber(mid) || mid->valuedouble<128 || mid->valuedouble>255 || floor(mid->valuedouble)!=mid->valuedouble)return invalid(error,capacity,"MID do contador: inteiro128..255");
         *mids[i]=(uint8_t)mid->valueint;
+    }
+    const char *capture_names[]={"j1708_stop_dwell_s","j1708_parked_capture_s"};
+    uint32_t *capture_values[]={&config->j1708_stop_dwell_s,&config->j1708_parked_capture_s};
+    for(unsigned i=0;i<2;i++){
+        const cJSON *v=cJSON_GetObjectItemCaseSensitive(json,capture_names[i]);if(!v)continue;
+        if(!cJSON_IsNumber(v) || floor(v->valuedouble)!=v->valuedouble || v->valuedouble<(i?60:2) || v->valuedouble>(i?3600:120))return invalid(error,capacity,"Intervalo de captura parado invalido");
+        *capture_values[i]=(uint32_t)v->valuedouble;
     }
     const cJSON *timeout=cJSON_GetObjectItemCaseSensitive(json,"j1708_timeout_ms");
     if(timeout){
@@ -481,6 +494,32 @@ static bool load_auto_extension(void)
     cJSON_Delete(o);return false;
 }
 
+static cJSON *expansion_json(const tb_config_t *cfg)
+{
+    cJSON *o=cJSON_CreateObject();if(!o)return NULL;
+    bool ok=cJSON_AddBoolToObject(o,"j1708_expansion_enabled",cfg->j1708_expansion_enabled) &&
+        cJSON_AddNumberToObject(o,"j1708_stop_dwell_s",cfg->j1708_stop_dwell_s) &&
+        cJSON_AddNumberToObject(o,"j1708_parked_capture_s",cfg->j1708_parked_capture_s);
+    if(!ok){cJSON_Delete(o);return NULL;}return o;
+}
+static bool load_expansion(void)
+{
+    nvs_handle_t h;esp_err_t err=nvs_open(CONFIG_NAMESPACE,NVS_READONLY,&h);
+    if(err==ESP_ERR_NVS_NOT_FOUND)return true;
+    if(err!=ESP_OK){s_config.j1708_expansion_enabled=false;return false;}
+    size_t n=0;err=nvs_get_str(h,"v217",NULL,&n);
+    if(err==ESP_ERR_NVS_NOT_FOUND){nvs_close(h);return true;}
+    char *text=err==ESP_OK && n>=2 && n<=512?malloc(n):NULL;
+    cJSON *o=NULL;if(text && nvs_get_str(h,"v217",text,&n)==ESP_OK)o=cJSON_ParseWithLengthOpts(text,n,NULL,true);
+    free(text);nvs_close(h);
+    bool keys=cJSON_IsObject(o) && cJSON_GetArraySize(o)==3;const cJSON *entry;
+    cJSON_ArrayForEach(entry,o)if(!entry->string || !v217_key(entry->string))keys=false;
+    tb_config_t candidate=s_config;char error[96];
+    if(!keys || apply_fields(o,&candidate,true,error,sizeof(error))!=ESP_OK)s_config.j1708_expansion_enabled=false;
+    else s_config=candidate;
+    cJSON_Delete(o);return false;
+}
+
 static cJSON *private_json(const tb_config_t *config)
 {
     cJSON *json = cJSON_CreateObject();
@@ -501,7 +540,7 @@ static cJSON *private_json(const tb_config_t *config)
     }
     for (size_t i = 0; i < sizeof(BOOL_FIELDS) / sizeof(BOOL_FIELDS[0]); ++i) {
         const bool_field_t *field = &BOOL_FIELDS[i];
-        if(v212_key(field->name) || v216_key(field->name))continue;
+        if(v212_key(field->name) || v216_key(field->name) || v217_key(field->name))continue;
         if (cJSON_AddBoolToObject(json, field->name,
                                  *(const bool *)((const char *)config + field->offset)) == NULL) {
             cJSON_Delete(json);
@@ -533,12 +572,15 @@ static esp_err_t persist(const tb_config_t *config,bool save_auto)
     if(!ext){volatile char *clear=serialized;size_t size=strlen(serialized);for(size_t i=0;i<size;i++)clear[i]=0;free(serialized);return ESP_ERR_NO_MEM;}
     cJSON *automatic=auto_json(config,config->j1708_auto_enabled);char *auto_text=automatic?cJSON_PrintUnformatted(automatic):NULL;cJSON_Delete(automatic);
     if(!auto_text){free(serialized);free(ext);return ESP_ERR_NO_MEM;}
+    cJSON *expansion=expansion_json(config);char *extra_text=expansion?cJSON_PrintUnformatted(expansion):NULL;cJSON_Delete(expansion);
+    if(!extra_text){free(serialized);free(ext);free(auto_text);return ESP_ERR_NO_MEM;}
     nvs_handle_t handle;
     esp_err_t result = nvs_open(CONFIG_NAMESPACE, NVS_READWRITE, &handle);
     if (result == ESP_OK) {
         result = nvs_set_str(handle, CONFIG_KEY, serialized);
         if(result==ESP_OK)result=nvs_set_str(handle,"v212",ext);
         if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v216",auto_text);
+        if(result==ESP_OK)result=nvs_set_str(handle,"v217",extra_text);
         if (result == ESP_OK) {
             result = nvs_commit(handle);
         }
@@ -550,7 +592,7 @@ static esp_err_t persist(const tb_config_t *config,bool save_auto)
     for (size_t i = 0; i < length; ++i) {
         clear[i] = 0;
     }
-    free(serialized);free(ext);free(auto_text);
+    free(serialized);free(ext);free(auto_text);free(extra_text);
     return result;
 }
 
@@ -648,7 +690,7 @@ esp_err_t tb_config_init(void)
                     for (size_t i = 0; i < sizeof(BOOL_FIELDS) / sizeof(BOOL_FIELDS[0]); ++i) {
                         /* Missing opt-in flag means LEGACY; no extra NVS write
                          * solely to introduce a field on an existing board. */
-                        if (!v212_key(BOOL_FIELDS[i].name) && !v216_key(BOOL_FIELDS[i].name) && strcmp(BOOL_FIELDS[i].name, "full_decode_enabled") != 0)
+                        if (!v212_key(BOOL_FIELDS[i].name) && !v216_key(BOOL_FIELDS[i].name) && !v217_key(BOOL_FIELDS[i].name) && strcmp(BOOL_FIELDS[i].name, "full_decode_enabled") != 0)
                             upgrade |= cJSON_GetObjectItemCaseSensitive(json, BOOL_FIELDS[i].name) == NULL;
                     }
                     upgrade |= cJSON_GetObjectItemCaseSensitive(json, "can_baud") == NULL;
@@ -666,14 +708,16 @@ esp_err_t tb_config_init(void)
 
     load_extension();
     bool auto_migrate=load_auto_extension();
-    if (first_boot || upgrade || auto_migrate) {
+    bool expansion_migrate=load_expansion();
+    if (first_boot || upgrade || auto_migrate || expansion_migrate) {
         result = persist(&s_config,auto_migrate || s_auto_persisted);
         if (result != ESP_OK) {
-            if(!first_boot && !upgrade && auto_migrate){
+            if(!first_boot && !upgrade && (auto_migrate || expansion_migrate)){
                 /* A new optional policy must not brick a previously valid
                  * passive/Wi-Fi installation when NVS cannot accept migration. */
-                s_config.j1708_auto_enabled=false;s_auto_persisted=false;auto_migrate=false;
-                snprintf(extension_error,sizeof(extension_error),"v216 migration not saved; automatic TX blocked");
+                if(auto_migrate){s_config.j1708_auto_enabled=false;s_auto_persisted=false;auto_migrate=false;
+                    snprintf(extension_error,sizeof(extension_error),"v216 migration not saved; automatic TX blocked");}
+                s_config.j1708_expansion_enabled=false;
             }else return result;
         }
     }
@@ -742,6 +786,8 @@ cJSON *tb_config_public_json(void)
     cJSON_AddNumberToObject(json, "can_baud", s_config.can_baud);
     cJSON_AddNumberToObject(json, "gnss_baud", s_config.gnss_baud);
     add_j1708_periods(json,&s_config);
+    cJSON_AddNumberToObject(json,"j1708_stop_dwell_s",s_config.j1708_stop_dwell_s);
+    cJSON_AddNumberToObject(json,"j1708_parked_capture_s",s_config.j1708_parked_capture_s);
     cJSON *automatic=auto_json(&s_config,tb_config_j1708_auto_enabled());
     if(automatic){cJSON *item;while((item=cJSON_DetachItemFromArray(automatic,0))!=NULL){if(!tb_json_add_object(json,item->string,item))break;}cJSON_Delete(automatic);}
     cJSON_AddBoolToObject(json,"j1708_auto_persisted",s_auto_persisted);

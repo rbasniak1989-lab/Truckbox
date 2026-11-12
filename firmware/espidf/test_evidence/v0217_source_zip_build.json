@@ -1,0 +1,12 @@
+{
+  "source_commit": "ed24abe8dd5a6464d0444b56e8fd0a9e84d953c8",
+  "clean_source_archive_build": "PASS",
+  "version": "0.2.17",
+  "project": "truckbox_core",
+  "idf": "v5.5.2",
+  "chip_id": 13,
+  "size_bytes": 1545104,
+  "ota_fit": true,
+  "image_sha256": "11adfcdc77cc6d0531df9b9f4c897b5b94a05ca377be4692098547d25bce2b59",
+  "warning_count": 0
+}

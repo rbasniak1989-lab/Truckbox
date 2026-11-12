@@ -1,5 +1,7 @@
 #include "core_internal.h"
 #include "telemetry.h"
+#include "diagnostics.h"
+#include "ecu_counters.h"
 #include "tbx_j1939.h"
 #include "tbx_j1587_bridge.h"
 #include <errno.h>
@@ -468,6 +470,45 @@ static esp_err_t reset_handler(httpd_req_t *request)
     return tb_http_send_json(request, reply);
 }
 
+static esp_err_t volvo_handler(httpd_req_t *request)
+{
+    return tb_http_send_json(request,tb_telemetry_volvo_json());
+}
+static esp_err_t counters_handler(httpd_req_t *request)
+{
+    return tb_http_send_json(request,tb_ecu_counters_json());
+}
+static esp_err_t counter_boundary_handler(httpd_req_t *request)
+{
+    if(!legacy_write_origin_ok(request))return httpd_resp_send_err(request,HTTPD_403_FORBIDDEN,"cross-site write rejected");
+    cJSON *body=NULL;esp_err_t err=tb_http_read_json(request,224,&body);if(err!=ESP_OK)return err;
+    const cJSON *uid=cJSON_GetObjectItemCaseSensitive(body,"trip_client_uid"),*event=cJSON_GetObjectItemCaseSensitive(body,"event");
+    bool valid=cJSON_IsString(uid) && cJSON_IsString(event) && (!strcmp(event->valuestring,"START") || !strcmp(event->valuestring,"END"));
+    const cJSON *at=cJSON_GetObjectItemCaseSensitive(body,"requested_unix_ms");
+    if(at && (!cJSON_IsNumber(at) || !isfinite(at->valuedouble) || at->valuedouble<1704067200000.0 || at->valuedouble>253402300799999.0 || floor(at->valuedouble)!=at->valuedouble))valid=false;
+    const cJSON *age=cJSON_GetObjectItemCaseSensitive(body,"queue_age_ms");
+    if(age && (!cJSON_IsNumber(age) || !isfinite(age->valuedouble) || age->valuedouble<0 || age->valuedouble>UINT32_MAX || floor(age->valuedouble)!=age->valuedouble))valid=false;
+    bool ok=valid && tb_ecu_counters_boundary_at(!strcmp(event->valuestring,"START"),uid->valuestring,at?(uint64_t)at->valuedouble:0,age?(uint32_t)age->valuedouble:UINT32_MAX);
+    cJSON_Delete(body);
+    if(!valid)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"invalid trip boundary");
+    if(!ok){httpd_resp_set_status(request,"503 Service Unavailable");httpd_resp_set_type(request,"application/json");
+        return httpd_resp_sendstr(request,"{\"ok\":false,\"error\":\"capture_not_persisted_or_queue_full\"}");}
+    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);cJSON_AddStringToObject(reply,"result","READ_CAPTURE_QUEUED_NO_ECU_RESET");cJSON_AddBoolToObject(reply,"durable",true);
+    return tb_http_send_json(request,reply);
+}
+
+static esp_err_t diagnostics_handler(httpd_req_t *request)
+{
+    char query[96],value[20];unsigned offset=0;
+    if(httpd_req_get_url_query_str(request,query,sizeof(query))==ESP_OK &&
+       httpd_query_key_value(query,"offset",value,sizeof(value))==ESP_OK){
+        char *end;unsigned long n=strtoul(value,&end,10);
+        if(!value[0] || *end || n>32)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"invalid offset");
+        offset=(unsigned)n;
+    }
+    return tb_http_send_json(request,tb_diagnostics_json(offset,8));
+}
+
 static esp_err_t sensors_handler(httpd_req_t *request)
 {
     char query[96], value[20];
@@ -602,6 +643,10 @@ static esp_err_t requests_handler(httpd_req_t *request)
 esp_err_t tb_application_register_routes(httpd_handle_t server)
 {
     const httpd_uri_t routes[] = {
+        { .uri = "/api/volvo", .method = HTTP_GET, .handler = volvo_handler },
+        { .uri = "/api/counters", .method = HTTP_GET, .handler = counters_handler },
+        { .uri = "/api/counters/capture", .method = HTTP_POST, .handler = counter_boundary_handler },
+        { .uri = "/api/diagnostics", .method = HTTP_GET, .handler = diagnostics_handler },
         { .uri = "/api/sensors", .method = HTTP_GET, .handler = sensors_handler },
         { .uri = "/api/sensors/catalog", .method = HTTP_GET, .handler = sensor_catalog_handler },
         { .uri = "/api/j1708/requests", .method = HTTP_GET, .handler = request_stats_handler },

@@ -1,6 +1,8 @@
 #ifndef TB_TELEMETRY_HOST_TEST
 #include "telemetry.h"
 #include "core_internal.h"
+#include "diagnostics.h"
+#include "ecu_counters.h"
 #else
 #include "tests/telemetry_host_stubs.h"
 #endif
@@ -12,6 +14,7 @@
 #include "tbx_j1939_tp.h"
 #include "tbx_j1587_bridge.h"
 #include "tbx_transmission.h"
+#include "tbx_volvo_operating.h"
 
 #include <inttypes.h>
 #include <math.h>
@@ -66,6 +69,7 @@ static struct {
     tbx_j1939_t j1939;
     tbx_j1939_tp_t transport;
 #endif
+    tbx_volvo_operating_t operating;
     uint32_t transport_stats[11];
     latest_t latest[TELEMETRY_LATEST];
     size_t latest_count;
@@ -397,9 +401,32 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
 
 #endif
 
+#ifndef TB_TELEMETRY_HOST_TEST
+static void diagnostic_context(uint64_t at,tb_diagnostic_context_t *out)
+{
+    memset(out,0,sizeof(*out));uint64_t selected[5]={0};
+    portENTER_CRITICAL(&s_mux);
+    for(size_t i=0;i<s.latest_count;i++){
+        const latest_t *p=&s.latest[i];if(!p->used || p->can || at<p->captured_us || at-p->captured_us>5000000 || !p->quality || strcmp(p->quality,"EM_VALIDACAO"))continue;
+        unsigned index=p->signal==84?0:p->signal==190?1:p->signal==91?2:p->signal==163?3:p->signal==162?4:5;
+        if(index>=5 || p->captured_us<selected[index])continue;
+        if(index<3 && p->has_value){
+            float *value=index==0?&out->speed:index==1?&out->rpm:&out->pedal;*value=(float)p->value;out->valid|=(uint8_t)(1u<<index);selected[index]=p->captured_us;
+        }else if(index>=3 && p->text[0]){
+            memcpy(index==3?out->gear:out->selected,p->text,3);out->valid|=(uint8_t)(1u<<index);selected[index]=p->captured_us;
+        }
+    }
+    portEXIT_CRITICAL(&s_mux);
+}
+#endif
+
 static void j1587_observation(const tbx_j1587_observation_t *observation, void *context)
 {
     worker_t *worker = context;
+#ifndef TB_TELEMETRY_HOST_TEST
+    if(observation->pid==194 || observation->pid==192){tb_diagnostic_context_t nearby;diagnostic_context(worker->packet->captured_us,&nearby);tb_diagnostics_observe(observation,worker->packet->wall_ms,&nearby);}
+#endif
+    portENTER_CRITICAL(&s_mux);tbx_volvo_operating_observe(&s.operating,observation);portEXIT_CRITICAL(&s_mux);
     const char *quality = tbx_j1587_observation_quality_name(observation->quality);
     latest_t latest = { .used = true, .can = false, .signal = observation->pid,
         .address = observation->mid, .captured_us = worker->packet->captured_us,
@@ -438,7 +465,7 @@ static void j1587_observation(const tbx_j1587_observation_t *observation, void *
     }
     if (observation->requested.bitmapped) {
         cJSON *states = cJSON_AddArrayToObject(value, "state_pairs_lsb_first");
-        for (unsigned i = 0; i < 4; ++i) number_array(states, observation->requested.status_fields[i]);
+        for (unsigned i = 0; i < observation->requested.status_count; ++i) number_array(states, observation->requested.status_fields[i]);
     }
     const tbx_j1587_full_reading_t *full = &observation->passive;
     if (full->interpreted && full->kind == TBX_J1587_KIND_DTCS) {
@@ -560,6 +587,10 @@ esp_err_t tb_telemetry_start(void)
 #ifndef CONFIG_TB_J1708_ONLY
     tbx_j1939_init(&s.j1939);
     tbx_j1939_tp_init(&s.transport);
+#endif
+#ifndef TB_TELEMETRY_HOST_TEST
+    tb_diagnostics_start();
+    tb_ecu_counters_start();
 #endif
     s.queue = xQueueCreate(TELEMETRY_QUEUE, sizeof(packet_t));
     if (!s.queue) return ESP_ERR_NO_MEM;
@@ -732,6 +763,20 @@ bool tb_telemetry_append_j1587_operational(cJSON *sample)
             continue;
         }
         added = true;
+    }
+    /* Keep a single gear alias, from the documented ASCII range fields.
+     * A means automatic range, not a numeric gear. Unknown text remains raw. */
+    const uint16_t gears[]={163,162};const char *keys[]={"gear","selected_gear"};
+    for(unsigned i=0;i<2;i++){
+        if(cJSON_GetObjectItemCaseSensitive(sample,keys[i]))continue;
+        latest_t value={0};if(!j1587_cached(gears[i],now_us,5000000,&value) || !value.text[0])continue;
+        char *end;long gear=strtol(value.text,&end,10);bool valid=*end==0 && end!=value.text;
+        if(!strcmp(value.text,"N")){gear=0;valid=true;}
+        else if(!strcmp(value.text,"R")){gear=-1;valid=true;}
+        if(valid && gear>=-99 && gear<=99){
+            cJSON_AddNumberToObject(sample,keys[i],(double)gear);
+            if(!j1587_record_fits(sample))cJSON_DeleteItemFromObjectCaseSensitive(sample,keys[i]);else added=true;
+        }
     }
     return added;
 }
@@ -927,7 +972,7 @@ static bool transmission_selected(const latest_t *r)
     if(!r->used || r->component_index!=UINT8_MAX)return false;
     if(r->can)return r->signal==1 || r->signal==2 || r->signal==6 || r->signal==14 || (r->signal>=40 && r->signal<=46);
     switch(r->signal){case 31:case 33:case 34:case 37:case 63:case 32:case 160:
-        case 190:case 84:case 162:case 163:case 91:case 92:return true;default:return false;}
+        case 190:case 84:case 162:case 163:case 91:case 92:case 161:case 93:return true;default:return false;}
 }
 size_t tb_telemetry_transmission_snapshot(cJSON *record,size_t *cursor,uint64_t now)
 {
@@ -955,4 +1000,24 @@ size_t tb_telemetry_transmission_snapshot(cJSON *record,size_t *cursor,uint64_t 
         ++*cursor;++count;
     }
     return count;
+}
+
+cJSON *tb_telemetry_volvo_json(void)
+{
+    uint64_t now=(uint64_t)esp_timer_get_time()/1000;
+    portENTER_CRITICAL(&s_mux);tbx_volvo_operating_t value=s.operating;portEXIT_CRITICAL(&s_mux);
+    tbx_volvo_operating_tick(&value,now);
+    cJSON *row=cJSON_CreateObject();if(!row)return NULL;
+    cJSON_AddBoolToObject(row,"ok",true);cJSON_AddBoolToObject(row,"iroll_probable",value.iroll_probable);
+    cJSON_AddNumberToObject(row,"iroll_seconds",value.iroll_seconds);cJSON_AddNumberToObject(row,"iroll_distance_km",value.iroll_distance_km);
+    cJSON_AddNumberToObject(row,"iroll_estimated_fuel_l",value.iroll_fuel_l);
+    cJSON_AddBoolToObject(row,"iroll_fuel_complete",!value.iroll_fuel_gap);
+    cJSON_AddBoolToObject(row,"idle_reference_estimated",value.idle_reference_estimated);
+    cJSON_AddBoolToObject(row,"clutch_slip_candidate",value.slip_candidate);cJSON_AddBoolToObject(row,"slip_confirmed",false);
+    if(value.attained_ms && now>=value.attained_ms && now-value.attained_ms<=3000)cJSON_AddStringToObject(row,"gear_text",value.attained);
+    if(value.selected_ms && now>=value.selected_ms && now-value.selected_ms<=3000)cJSON_AddStringToObject(row,"selected_text",value.selected);
+    if(value.rpm_difference_valid)cJSON_AddNumberToObject(row,"engine_input_rpm_difference",value.rpm_difference);else cJSON_AddNullToObject(row,"engine_input_rpm_difference");
+    if(value.veb.valid && now>=value.veb.at_ms && now-value.veb.at_ms<=3000)cJSON_AddNumberToObject(row,"veb_pct",value.veb.value);else cJSON_AddNullToObject(row,"veb_pct");
+    cJSON_AddStringToObject(row,"quality","PROVAVEL_EM_VALIDACAO");
+    return row;
 }

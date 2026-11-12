@@ -29,3 +29,14 @@ static inline uint32_t tbx_j1708_production_period(uint16_t pid,bool launch)
     default:return 60000;
     }
 }
+/* Candidates supplied by the owner from NEXIQ 29/10. ECU association is a
+ * candidate, not proof of response. Low-rate additions share the same queue. */
+static inline const tbx_j1708_policy_t *tbx_j1708_candidate_policy(void)
+{
+    static const tbx_j1708_policy_t p[10]={
+        {93,128,60000},{94,128,30000},{107,128,300000},{153,128,30000},
+        {154,128,300000},{161,130,10000},{182,128,300000},{188,128,900000},
+        {244,128,300000},{439,128,300000}
+    };
+    return p;
+}

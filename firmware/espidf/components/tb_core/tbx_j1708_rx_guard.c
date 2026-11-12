@@ -83,9 +83,9 @@ static tbx_rx_decision_t snapshot(tbx_j1708_active_t *c,tbx_rx_window_t window,u
         d.sent=c->scheduler->sent_total;d.candidates=c->scheduler->answered_total;
         d.timeouts=c->scheduler->timeout_total;d.tx_errors=c->scheduler->tx_failure_total;
         d.timeout_ms=c->scheduler->timeout_ms;d.spacing_ms=c->scheduler->min_spacing_ms;d.request_failures=c->consecutive_failures;
-        if(c->scheduler->pending<TBX_J1708_REQUEST_COUNT){
+        if(c->scheduler->pending<TBX_J1708_REQUEST_CAPACITY){
             unsigned i=c->scheduler->pending;d.pid=c->scheduler->pids[i].pid;d.target_mid=c->config.target_mid[i];
-        }else if(c->tx_active){d.pid=c->tx_pid;for(unsigned i=0;i<17;i++)if(c->scheduler->pids[i].pid==c->tx_pid)d.target_mid=c->config.target_mid[i];}
+        }else if(c->tx_active){d.pid=c->tx_pid;for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)if(c->scheduler->pids[i].pid==c->tx_pid)d.target_mid=c->config.target_mid[i];}
     }
     return d;
 }
@@ -191,7 +191,7 @@ void tbx_j1708_rx_prepare_stop(tbx_j1708_active_t *c,const char *reason)
     if(reason && !strcmp(reason,"THREE_CONSECUTIVE_REQUEST_FAILURES"))g->decision.predicates|=TBX_GUARD_REQUEST_FAILURES;
     if(!g->decision.pid && (g->decision.cause==TBX_GUARD_TX_DRIVER || g->decision.cause==TBX_GUARD_ECHO_TIMEOUT || g->decision.cause==TBX_GUARD_ECHO_DIVERGENCE || g->decision.cause==TBX_GUARD_REPLY_TIMEOUT)){
         g->decision.pid=c->tx_pid;
-        for(unsigned i=0;i<17;i++)if(c->scheduler->pids[i].pid==c->tx_pid)g->decision.target_mid=c->config.target_mid[i];
+        for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)if(c->scheduler->pids[i].pid==c->tx_pid)g->decision.target_mid=c->config.target_mid[i];
     }
     g->decision_pending=true;
 }
