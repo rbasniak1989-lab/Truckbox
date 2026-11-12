@@ -1,0 +1,298 @@
+[
+  {
+    "conclusion": "success",
+    "databaseId": 43125419084,
+    "headSha": "ed24abe8dd5a6464d0444b56e8fd0a9e84d953c8",
+    "jobs": [
+      {
+        "completedAt": "2026-11-12T00:14:26Z",
+        "conclusion": "success",
+        "databaseId": 130876145882,
+        "name": "test-build",
+        "startedAt": "2026-11-12T00:11:15Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Build ESP32-C6 with exact ESP-IDF and exercise all host/fault/offline tests",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Check Core identity, OTA fit, profile and unchanged partition table",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@v4",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 10,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 11,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43125419084/job/130876145882"
+      },
+      {
+        "completedAt": "2026-11-12T00:11:23Z",
+        "conclusion": "success",
+        "databaseId": 130876145947,
+        "name": "diagnostics-cloud",
+        "startedAt": "2026-11-12T00:11:15Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v4",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run node --test cloud/diagnostics/test_diagnostics.mjs",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run node cloud/diagnostics/check_entry.mjs",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@v4",
+            "number": 9,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 10,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 11,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43125419084/job/130876145947"
+      },
+      {
+        "completedAt": "2026-11-12T00:12:26Z",
+        "conclusion": "success",
+        "databaseId": 130876146105,
+        "name": "browser",
+        "startedAt": "2026-11-12T00:11:15Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v4",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Install browser test dependencies in runner temporary directory",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Exercise actual embedded HTML against local HTTP fixtures",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@v4",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@v4",
+            "number": 11,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 12,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43125419084/job/130876146105"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43125419084"
+  },
+  {
+    "conclusion": "success",
+    "databaseId": 43125419072,
+    "headSha": "ed24abe8dd5a6464d0444b56e8fd0a9e84d953c8",
+    "jobs": [
+      {
+        "completedAt": "2026-11-12T00:12:50Z",
+        "conclusion": "success",
+        "databaseId": 130876124570,
+        "name": "build",
+        "startedAt": "2026-11-12T00:11:11Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Checkout",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Java 17",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Android SDK",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Install Android SDK 36",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Gradle 9.4.1",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Apply Multimedia fan sensor patch",
+            "number": 7,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Apply Multimedia compatibility fixes",
+            "number": 8,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Build debug APKs",
+            "number": 9,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Upload Motorista APK",
+            "number": 10,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Upload Multimedia APK",
+            "number": 11,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up Gradle 9.4.1",
+            "number": 20,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up Java 17",
+            "number": 21,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Checkout",
+            "number": 22,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 23,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43125419072/job/130876124570"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43125419072"
+  }
+]
