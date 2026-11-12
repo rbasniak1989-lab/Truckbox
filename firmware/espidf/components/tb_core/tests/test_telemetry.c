@@ -292,7 +292,7 @@ static void test_bam_grouped_components_and_latest_history(void)
     reset_records(); bam(65251, 5, engine, sizeof(engine), 1200);
     check_bam_records(65251, 5, engine, sizeof(engine), 1200, 10, engine_curve);
     bool truncated = false;
-    for (size_t offset = 0; offset < s.latest_count; offset += 32) {
+    for (size_t offset = 0; offset < s.latest_count; offset += 8) {
         cJSON *latest = tb_telemetry_sensors_json(offset, 32);
         const cJSON *item;
         cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(latest, "readings")) {
@@ -312,7 +312,7 @@ static void test_bam_grouped_components_and_latest_history(void)
     engine[19] = 0x54;
     reset_records(); bam(65251, 5, engine, sizeof(engine), 1300);
     bool profile_retained = false;
-    for (size_t offset = 0; offset < s.latest_count; offset += 32) {
+    for (size_t offset = 0; offset < s.latest_count; offset += 8) {
         cJSON *latest = tb_telemetry_sensors_json(offset, 32);
         const cJSON *item;
         cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(latest, "readings")) {
@@ -336,7 +336,7 @@ static void test_bam_grouped_components_and_latest_history(void)
     packet.capture_id++; packet.captured_us += 1000;
     process_packet(&packet);
     bool retained = false;
-    for (size_t offset = 0; offset < s.latest_count; offset += 32) {
+    for (size_t offset = 0; offset < s.latest_count; offset += 8) {
         cJSON *latest = tb_telemetry_sensors_json(offset, 32);
         const cJSON *item;
         cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(latest, "readings")) {
@@ -631,6 +631,26 @@ static void test_transmission_snapshot(void)
     puts("Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS");
 }
 
+static void sensor_pages_and_oom_are_bounded(void)
+{
+    s.latest_count=12;memset(s.latest,0,sizeof(s.latest));
+    for(unsigned i=0;i<12;i++)s.latest[i]=(latest_t){.used=true,.signal=(uint16_t)(90+i),.address=128,.name="fixture",.unit="raw",
+        .validation="EM_VALIDACAO",.quality="EM_VALIDACAO",.component_index=UINT8_MAX,.raw_length=1,.full_raw_length=1};
+    s.latest[0].can=s.latest[0].has_last_valid=s.latest[0].raw_only=true;
+    s.latest[0].component_index=0;s.latest[0].component_count=1;s.latest[0].component="fixture";s.latest[0].full_raw_length=64;
+    s.latest[0].last_valid_quality="EM_VALIDACAO";s.latest[0].last_valid_validation="EM_VALIDACAO";strcpy(s.latest[0].text,"fixture");
+    heap_reset();cJSON *o=tb_telemetry_sensors_json(0,32);assert(o);
+    assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(o,"readings"))==8 && cJSON_GetObjectItemCaseSensitive(o,"next_offset")->valueint==8);
+    size_t count=heap_calls;cJSON_Delete(o);assert(!heap_used);
+    o=tb_telemetry_sensors_json(8,32);assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(o,"readings"))==4);cJSON_Delete(o);
+    for(size_t fail=1;fail<=count;fail++){
+        heap_reset();heap_fail_call=fail;o=tb_telemetry_sensors_json(0,32);
+        if(o){assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(o,"readings"))==8);}
+        cJSON_Delete(o);assert(!heap_used);
+    }
+    heap_reset();cJSON_InitHooks(NULL);puts("Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS");
+}
+
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -643,6 +663,7 @@ int main(void)
     test_j1587_fast_dual_lane_and_boundaries();
     test_compact_sensor_allocation_failures_are_atomic();
     test_transmission_snapshot();
+    sensor_pages_and_oom_are_bounded();
     vQueueDelete(s.queue);
     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;

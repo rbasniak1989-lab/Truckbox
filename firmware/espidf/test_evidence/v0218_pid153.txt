@@ -1,0 +1,2 @@
+PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS
+Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS

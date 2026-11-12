@@ -1,0 +1,8 @@
+/tmp/tb-diagnostic-memory.Dsb5EC/capture_diagnostic.h:72:64: runtime error: index 18 out of bounds for type 'tbx_j1708_field_pid_t [17]'
+Production diagnostics native cJSON: full tree 36328 bytes; old print peak 53283; compact tree 9168 (74.8% smaller); 27 stats fetched in pages <=8
+Production capture full: 918 individual allocation failures leave no orphan nodes
+Production capture compact: 244 individual allocation failures leave no orphan nodes
+Production diagnostics native cJSON: full tree 57270 bytes; old print peak 86954; compact tree 10373 (81.9% smaller); 27 stats fetched in pages <=8
+Production capture full: 1489 individual allocation failures leave no orphan nodes
+Production capture compact: 275 individual allocation failures leave no orphan nodes
+Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes

@@ -10,6 +10,9 @@ typedef union { max_align_t alignment; struct { size_t size; uint32_t magic; } i
 static size_t heap_used,heap_peak,heap_calls,heap_fail_call,heap_budget=SIZE_MAX;
 static void *test_allocate(size_t size)
 {
+#ifdef TB_JSON_ALLOCATION_GUARD
+    TB_JSON_ALLOCATION_GUARD;
+#endif
     ++heap_calls;
     if((heap_fail_call && heap_calls==heap_fail_call) || size>heap_budget-heap_used)return NULL;
     allocation_header_t *h=malloc(sizeof(*h)+size);

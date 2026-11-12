@@ -1,0 +1,74 @@
+{
+  "versions": {
+    "0.2.16": {
+      "sections": {
+        ".iram0.text": 127468,
+        ".iram0.data": 4,
+        ".iram0.bss": 0,
+        ".dram0.data": 14788,
+        ".noinit": 0,
+        ".dram0.bss": 61264
+      },
+      "ram_static_bytes": 203524,
+      "types": {
+        "tbx_j1708_request_scheduler_t": 868,
+        "tbx_j1708_active_t": 1136,
+        "tbx_j1708_auto_t": 48,
+        "request_event_t": 392
+      }
+    },
+    "0.2.17": {
+      "sections": {
+        ".iram0.text": 127468,
+        ".iram0.data": 4,
+        ".iram0.bss": 0,
+        ".dram0.data": 14788,
+        ".noinit": 0,
+        ".dram0.bss": 67824
+      },
+      "ram_static_bytes": 210084,
+      "types": {
+        "tbx_j1708_request_scheduler_t": 1348,
+        "tbx_j1708_active_t": 1144,
+        "tbx_j1708_auto_t": 48,
+        "request_event_t": 392,
+        "tbx_volvo_operating_t": 272,
+        "tbx_dtc_history_t": 2576,
+        "tbx_dtc_sections_t": 1072,
+        "diagnostic_checkpoint_t": 3232,
+        "tbx_ecu_counters_t": 1120,
+        "counter_checkpoint_t": 1136
+      }
+    },
+    "0.2.18": {
+      "sections": {
+        ".iram0.text": 127468,
+        ".iram0.data": 4,
+        ".iram0.bss": 0,
+        ".dram0.data": 14788,
+        ".noinit": 0,
+        ".dram0.bss": 67824
+      },
+      "ram_static_bytes": 210084,
+      "types": {
+        "tbx_j1708_request_scheduler_t": 1348,
+        "tbx_j1708_active_t": 1144,
+        "tbx_j1708_auto_t": 48,
+        "request_event_t": 392,
+        "tbx_volvo_operating_t": 272,
+        "tbx_dtc_history_t": 2576,
+        "tbx_dtc_sections_t": 1072,
+        "diagnostic_checkpoint_t": 3232,
+        "tbx_ecu_counters_t": 1120,
+        "counter_checkpoint_t": 1136
+      }
+    }
+  },
+  "static_delta_18_vs_17": 0,
+  "static_delta_18_vs_16": 6560,
+  "physical_heap_18": "NOT_MEASURED",
+  "host_pressure_budget_bytes": 41596,
+  "host_pressure_compact_peak_bytes_including_upload_checkpoint": 22894,
+  "host_upload_buffer_bytes": 8192,
+  "host_checkpoint_buffer_bytes": 3232
+}

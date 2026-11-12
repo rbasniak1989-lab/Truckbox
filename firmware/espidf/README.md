@@ -1,3 +1,5 @@
+Core **0.2.18 — CANDIDATA, não instalada**: [auditoria de RAM, eco PID439 e timeout PID153](AUDITORIA_v0.2.18.md) e [changelog](CHANGELOG_v0.2.18.md). Diagnóstico compacto por padrão, páginas pequenas e separação de eco estendido; proteções preservadas. Nenhuma OTA ou reativação de requisições realizada.
+
 Core **0.2.17 — CANDIDATA, não instalada**: [guia e limitações](REV_B1_0.2.17_CANDIDATA.md), [testes e memória](TESTES_v0.2.17.md), [inventário J1587](../j1708_17pid/INVENTARIO_v0.2.17.csv) e [changelog](CHANGELOG_v0.2.17.md). Preserva as 17 consultas e acrescenta 10 candidatas, PID194 completo e capturas dos contadores ECU. Não houve OTA nem deploy Cloud. As instruções desta versão prevalecem sobre os textos históricos abaixo.
 
 Core **0.2.16 — PRODUÇÃO, aguardando instalação**: [polling permanente, NVS e frequências](PRODUCAO_v0.2.16.md), [testes](TESTES_v0.2.16.md) e [changelog](CHANGELOG_v0.2.16.md). Início automático após rede saudável; prioridade em arrancada; nenhuma OTA realizada.

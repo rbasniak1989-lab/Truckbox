@@ -1,0 +1,1110 @@
+{
+  "device_uid": "tb-c6-d40592b9190c",
+  "read_only": true,
+  "timezone_rows": "UTC",
+  "timezone_operator": "America/Sao_Paulo",
+  "operator_report": {
+    "boot_id": 308,
+    "heap_free": 41596,
+    "heap_minimum": 12,
+    "heap_largest_block": 14592,
+    "error": "Sem memoria RAM para diagnostico completo",
+    "source": "USER_PROVIDED_NOT_CLOUD_MEASUREMENT"
+  },
+  "boot": [
+    {
+      "id": "149518",
+      "seq": "59137",
+      "ts": "2026-11-12 00:32:11.199+00",
+      "sample_kind": "BOOT_DIAGNOSTIC",
+      "raw": {
+        "ts": "2026-11-12T00:32:11.199Z",
+        "seq": 59137,
+        "boot_id": 308,
+        "firmware": "0.2.17",
+        "heap_free": 159084,
+        "uptime_ms": 347,
+        "time_valid": true,
+        "sample_kind": "BOOT_DIAGNOSTIC",
+        "time_source": "system_clock",
+        "heap_minimum": 159024,
+        "reset_reason": 3,
+        "app_elf_sha256": "473639353c1e7ce986fdc9e341319cabf46e33f20956750de48624449b82b38b",
+        "schema_version": 2
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "149541",
+      "seq": "59160",
+      "ts": "2026-11-12 00:33:11.326+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:33:11.326Z",
+        "seq": 59160,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            26,
+            128,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            33,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            34,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            37,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            62,
+            144,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 60465,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149566",
+      "seq": "59186",
+      "ts": "2026-11-12 00:34:11.311+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:34:11.311Z",
+        "seq": 59186,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            68,
+            128,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            117,
+            140,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            118,
+            140,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            235,
+            128,
+            0,
+            0,
+            0,
+            null,
+            900000
+          ],
+          [
+            236,
+            128,
+            0,
+            0,
+            0,
+            null,
+            900000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 120450,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149591",
+      "seq": "59212",
+      "ts": "2026-11-12 00:35:11.312+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:35:11.312Z",
+        "seq": 59212,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            250,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ],
+          [
+            31,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            32,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            63,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            108,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 180451,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149616",
+      "seq": "59238",
+      "ts": "2026-11-12 00:36:11.312+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:36:11.312Z",
+        "seq": 59238,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            158,
+            128,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            160,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            93,
+            128,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            94,
+            128,
+            0,
+            0,
+            0,
+            null,
+            30000
+          ],
+          [
+            107,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 240451,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149641",
+      "seq": "59264",
+      "ts": "2026-11-12 00:37:11.325+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:37:11.325Z",
+        "seq": 59264,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            153,
+            128,
+            0,
+            0,
+            0,
+            null,
+            30000
+          ],
+          [
+            154,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ],
+          [
+            161,
+            130,
+            0,
+            0,
+            0,
+            null,
+            10000
+          ],
+          [
+            182,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ],
+          [
+            188,
+            128,
+            0,
+            0,
+            0,
+            null,
+            900000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 300464,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149662",
+      "seq": "59286",
+      "ts": "2026-11-12 00:38:11.093+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:38:11.093Z",
+        "seq": 59286,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            244,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ],
+          [
+            439,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ],
+          [
+            26,
+            128,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            33,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            34,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 360456,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149683",
+      "seq": "59308",
+      "ts": "2026-11-12 00:39:11.188+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:39:11.188Z",
+        "seq": 59308,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            37,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            62,
+            144,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            68,
+            128,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            117,
+            140,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            118,
+            140,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 420456,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149702",
+      "seq": "59328",
+      "ts": "2026-11-12 00:40:11.198+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:40:11.198Z",
+        "seq": 59328,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            235,
+            128,
+            0,
+            0,
+            0,
+            null,
+            900000
+          ],
+          [
+            236,
+            128,
+            0,
+            0,
+            0,
+            null,
+            900000
+          ],
+          [
+            250,
+            128,
+            0,
+            0,
+            0,
+            null,
+            300000
+          ],
+          [
+            31,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ],
+          [
+            32,
+            130,
+            0,
+            0,
+            0,
+            null,
+            60000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 480456,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149719",
+      "seq": "59346",
+      "ts": "2026-11-12 00:40:51.827+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "pid": 0,
+        "seq": 59346,
+        "event": "CONFIGURED",
+        "detail": "EXPLICIT_MIDS_AND_INVERTED_DE21_ATTESTED",
+        "boot_id": 308,
+        "rx_edges": 42429,
+        "local_mid": 172,
+        "uptime_ms": 520973,
+        "target_mid": 0,
+        "time_valid": false,
+        "validation": "EM_VALIDACAO",
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "boot_monotonic",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149720",
+      "seq": "59347",
+      "ts": "2026-11-12 00:40:51.827+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "pid": 0,
+        "seq": 59347,
+        "event": "AUTO_STARTED",
+        "detail": "PERSISTED_PRODUCTION_POLICY_OPERATIONAL_INDIRECT",
+        "boot_id": 308,
+        "local_mid": 172,
+        "uptime_ms": 520973,
+        "target_mid": 0,
+        "time_valid": false,
+        "validation": "EM_VALIDACAO",
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "boot_monotonic",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149727",
+      "seq": "59354",
+      "ts": "2026-11-12 00:41:11.196+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:41:11.196Z",
+        "seq": 59354,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            63,
+            130,
+            2,
+            2,
+            0,
+            54,
+            15000
+          ],
+          [
+            108,
+            128,
+            1,
+            1,
+            0,
+            19,
+            60000
+          ],
+          [
+            158,
+            128,
+            1,
+            1,
+            0,
+            17,
+            60000
+          ],
+          [
+            160,
+            130,
+            1,
+            1,
+            0,
+            28,
+            30000
+          ],
+          [
+            93,
+            128,
+            1,
+            1,
+            0,
+            29,
+            60000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 540442,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149729",
+      "seq": "59356",
+      "ts": "2026-11-12 00:41:11.202+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:41:11.202Z",
+        "seq": 59356,
+        "event": "AUTOMATIC_STATUS",
+        "state": "RUNNING",
+        "launch": false,
+        "pauses": 0,
+        "reason": "PERSISTENT_POLICY_OPERATIONAL_INDIRECT",
+        "starts": 1,
+        "boot_id": 308,
+        "last_pid": 107,
+        "uptime_ms": 540449,
+        "latency_ms": 29,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "response_mid": 128,
+        "response_pid": 107,
+        "schema_version": 2,
+        "candidate_flags": 0,
+        "response_age_ms": 1447
+      }
+    },
+    {
+      "id": "149737",
+      "seq": "59365",
+      "ts": "2026-11-12 00:41:12.024+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "pid": 153,
+        "seq": 59365,
+        "event": "TIMEOUT",
+        "detail": "NO_MATCHING_MID_PID_WITHIN_CONFIGURED_TIMEOUT",
+        "boot_id": 308,
+        "local_mid": 172,
+        "uptime_ms": 541092,
+        "target_mid": 128,
+        "time_valid": false,
+        "validation": "EM_VALIDACAO",
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "boot_monotonic",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149738",
+      "seq": "59366",
+      "ts": "2026-11-12 00:41:20.584+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "pid": 439,
+        "seq": 59366,
+        "event": "STOPPED",
+        "detail": "LOCAL_MID_CONFLICT",
+        "boot_id": 308,
+        "rx_edges": 74573,
+        "local_mid": 172,
+        "uptime_ms": 549652,
+        "target_mid": 128,
+        "time_valid": false,
+        "validation": "EM_VALIDACAO",
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "boot_monotonic",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149755",
+      "seq": "59383",
+      "ts": "2026-11-12 00:42:11.17+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:42:11.170Z",
+        "seq": 59383,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            94,
+            128,
+            1,
+            1,
+            0,
+            15,
+            30000
+          ],
+          [
+            107,
+            128,
+            1,
+            1,
+            0,
+            29,
+            300000
+          ],
+          [
+            153,
+            128,
+            2,
+            1,
+            1,
+            26,
+            30000
+          ],
+          [
+            154,
+            128,
+            1,
+            1,
+            0,
+            41,
+            300000
+          ],
+          [
+            161,
+            130,
+            1,
+            1,
+            0,
+            34,
+            10000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 600442,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149757",
+      "seq": "59385",
+      "ts": "2026-11-12 00:42:11.176+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:42:11.176Z",
+        "seq": 59385,
+        "event": "AUTOMATIC_STATUS",
+        "state": "DISABLED",
+        "launch": false,
+        "pauses": 0,
+        "reason": "OPERATOR_OR_MAINTENANCE_HOLD",
+        "starts": 1,
+        "boot_id": 308,
+        "last_pid": 439,
+        "uptime_ms": 600449,
+        "latency_ms": 34,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "response_mid": 128,
+        "response_pid": 244,
+        "schema_version": 2,
+        "candidate_flags": 0,
+        "response_age_ms": 52442
+      }
+    },
+    {
+      "id": "149775",
+      "seq": "59404",
+      "ts": "2026-11-12 00:43:11.177+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:43:11.177Z",
+        "seq": 59404,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            182,
+            128,
+            1,
+            1,
+            0,
+            31,
+            300000
+          ],
+          [
+            188,
+            128,
+            1,
+            1,
+            0,
+            29,
+            900000
+          ],
+          [
+            244,
+            128,
+            1,
+            1,
+            0,
+            34,
+            300000
+          ],
+          [
+            439,
+            128,
+            1,
+            0,
+            0,
+            null,
+            300000
+          ],
+          [
+            26,
+            128,
+            1,
+            1,
+            0,
+            37,
+            60000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 660432,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149777",
+      "seq": "59406",
+      "ts": "2026-11-12 00:43:11.191+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:43:11.191Z",
+        "seq": 59406,
+        "event": "AUTOMATIC_STATUS",
+        "state": "DISABLED",
+        "launch": false,
+        "pauses": 0,
+        "reason": "OPERATOR_OR_MAINTENANCE_HOLD",
+        "starts": 1,
+        "boot_id": 308,
+        "last_pid": 439,
+        "uptime_ms": 660446,
+        "latency_ms": 34,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "response_mid": 128,
+        "response_pid": 244,
+        "schema_version": 2,
+        "candidate_flags": 0,
+        "response_age_ms": 112440
+      }
+    },
+    {
+      "id": "149791",
+      "seq": "59421",
+      "ts": "2026-11-12 00:44:11.158+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:44:11.158Z",
+        "seq": 59421,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            33,
+            130,
+            6,
+            6,
+            0,
+            38,
+            5000
+          ],
+          [
+            34,
+            130,
+            2,
+            2,
+            0,
+            46,
+            15000
+          ],
+          [
+            37,
+            130,
+            1,
+            1,
+            0,
+            47,
+            30000
+          ],
+          [
+            62,
+            144,
+            1,
+            1,
+            0,
+            54,
+            60000
+          ],
+          [
+            68,
+            128,
+            1,
+            1,
+            0,
+            22,
+            60000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 720463,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149793",
+      "seq": "59423",
+      "ts": "2026-11-12 00:44:11.165+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:44:11.165Z",
+        "seq": 59423,
+        "event": "AUTOMATIC_STATUS",
+        "state": "DISABLED",
+        "launch": false,
+        "pauses": 0,
+        "reason": "OPERATOR_OR_MAINTENANCE_HOLD",
+        "starts": 1,
+        "boot_id": 308,
+        "last_pid": 439,
+        "uptime_ms": 720469,
+        "latency_ms": 34,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "response_mid": 128,
+        "response_pid": 244,
+        "schema_version": 2,
+        "candidate_flags": 0,
+        "response_age_ms": 172463
+      }
+    },
+    {
+      "id": "149808",
+      "seq": "59439",
+      "ts": "2026-11-12 00:45:11.204+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:45:11.204Z",
+        "seq": 59439,
+        "event": "POLLING_PID_STATS",
+        "stats": [
+          [
+            117,
+            140,
+            1,
+            1,
+            0,
+            193,
+            60000
+          ],
+          [
+            118,
+            140,
+            1,
+            1,
+            0,
+            298,
+            60000
+          ],
+          [
+            235,
+            128,
+            3,
+            3,
+            0,
+            39,
+            900000
+          ],
+          [
+            236,
+            128,
+            3,
+            3,
+            0,
+            19,
+            900000
+          ],
+          [
+            250,
+            128,
+            3,
+            3,
+            0,
+            19,
+            300000
+          ]
+        ],
+        "boot_id": 308,
+        "uptime_ms": 780457,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "classification": "RESPONSE_CANDIDATE",
+        "schema_version": 2
+      }
+    },
+    {
+      "id": "149810",
+      "seq": "59441",
+      "ts": "2026-11-12 00:45:11.221+00",
+      "sample_kind": "J1708_REQUEST_EVENT",
+      "raw": {
+        "ts": "2026-11-12T00:45:11.221Z",
+        "seq": 59441,
+        "event": "AUTOMATIC_STATUS",
+        "state": "DISABLED",
+        "launch": false,
+        "pauses": 0,
+        "reason": "OPERATOR_OR_MAINTENANCE_HOLD",
+        "starts": 1,
+        "boot_id": 308,
+        "last_pid": 439,
+        "uptime_ms": 780474,
+        "latency_ms": 34,
+        "time_valid": true,
+        "sample_kind": "J1708_REQUEST_EVENT",
+        "time_source": "system_clock",
+        "response_mid": 128,
+        "response_pid": 244,
+        "schema_version": 2,
+        "candidate_flags": 0,
+        "response_age_ms": 232468
+      }
+    }
+  ]
+}
