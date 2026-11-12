@@ -12,7 +12,9 @@ static const char *tb_role_name(void){return "core";}
 static const char *tb_device_uid(void){return "synthetic-device";}
 static const char *tb_version(void){return "0.2.13";}
 static int64_t esp_timer_get_time(void){return 123456789;}
-static unsigned esp_get_free_heap_size(void){return 67504;}
+static unsigned free_bytes=41596;
+static unsigned esp_get_free_heap_size(void){return free_bytes;}
+static uint32_t tb_boot_id(void){return 308;}
 static unsigned esp_get_minimum_free_heap_size(void){return 17848;}
 static size_t heap_caps_get_largest_free_block(int cap){(void)cap;return 16000;}
 static void httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value){(void)r;(void)key;(void)value;}
@@ -30,7 +32,7 @@ static esp_err_t httpd_resp_send_chunk(httpd_req_t *r,const char *bytes,size_t n
 static esp_err_t httpd_req_get_url_query_str(httpd_req_t *r,char *buffer,size_t n)
 {if(!r->query || strlen(r->query)>=n)return ESP_FAIL;strcpy(buffer,r->query);return ESP_OK;}
 static esp_err_t httpd_query_key_value(const char *q,const char *key,char *buffer,size_t n)
-{if(strcmp(key,"compact") || strcmp(q,"compact=1") || n<2)return ESP_FAIL;strcpy(buffer,"1");return ESP_OK;}
+{if(strcmp(key,"compact") || (strcmp(q,"compact=1") && strcmp(q,"compact=0")) || n<2)return ESP_FAIL;strcpy(buffer,q+8);return ESP_OK;}
 static void tb_base_add_json(cJSON *o){cJSON_AddStringToObject(o,"role","core");}
 static void tb_network_add_json(cJSON *o){cJSON_AddObjectToObject(o,"network");}
 static void tb_application_add_json(cJSON *o){cJSON_AddStringToObject(o,"mode","full");}
@@ -66,7 +68,9 @@ static void health_and_state(void)
     assert(r.status && !strcmp(r.status,"503 Service Unavailable") && strstr(r.response,"RAM") && strstr(r.response,"diagnostic_partial"));assert(!heap_used);
     heap_reset();r=(httpd_req_t){.query="compact=1"};assert(state_handler(&r)==ESP_OK);
     assert(strstr(r.response,"\"mode\":\"compact\"") && strstr(r.response,"\"diagnostic_compact\":true") && !heap_used);
-    r=(httpd_req_t){0};assert(state_handler(&r)==ESP_OK && strstr(r.response,"\"mode\":\"full\""));assert(!heap_used);
+    r=(httpd_req_t){0};assert(state_handler(&r)==ESP_OK && strstr(r.response,"\"mode\":\"compact\""));assert(!heap_used);
+    r=(httpd_req_t){.query="compact=0"};assert(state_handler(&r)==ESP_OK && strstr(r.response,"\"full_diagnostic_deferred\":true"));assert(!heap_used);
+    free_bytes=128*1024;r=(httpd_req_t){.query="compact=0"};assert(state_handler(&r)==ESP_OK && strstr(r.response,"\"mode\":\"full\""));assert(!heap_used);
     puts("Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved");
 }
 int main(void){chunked_equivalence_and_disconnect();health_and_state();return 0;}

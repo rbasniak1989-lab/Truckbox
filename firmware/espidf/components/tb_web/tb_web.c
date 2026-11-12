@@ -58,9 +58,9 @@ static esp_err_t health_reply(httpd_req_t *request,bool low_memory)
     /* No cJSON allocation: diagnostics remain possible after an allocation
      * failure, and report largest block as well as total/minimum free RAM. */
     char body[512];
-    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u}",
+    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"boot_id\":%u,\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u}",
         low_memory?"false":"true",low_memory?"Sem memoria RAM para diagnostico completo":"",tb_role_name(),tb_device_uid(),tb_version(),
-        (uint64_t)esp_timer_get_time()/1000u,(unsigned)esp_get_free_heap_size(),(unsigned)esp_get_minimum_free_heap_size(),
+        (unsigned)tb_boot_id(),(uint64_t)esp_timer_get_time()/1000u,(unsigned)esp_get_free_heap_size(),(unsigned)esp_get_minimum_free_heap_size(),
         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     if(n<=0 || (size_t)n>=sizeof(body))return ESP_FAIL;
     if(low_memory)httpd_resp_set_status(request,"503 Service Unavailable");
@@ -248,17 +248,30 @@ static esp_err_t home_handler(httpd_req_t *request)
 
 static esp_err_t state_handler(httpd_req_t *request)
 {
+    /* Default is bounded summary. Explicit full mode is best-effort only,
+     * never allowed to consume the last RAM used by acquisition/upload. */
+    char query[48],compact[4];
+    bool full=httpd_req_get_url_query_str(request,query,sizeof(query))==ESP_OK &&
+        httpd_query_key_value(query,"compact",compact,sizeof(compact))==ESP_OK && !strcmp(compact,"0");
+    const size_t full_tree_allowance=64u*1024u,working_reserve=16u*1024u;
+    const unsigned free_before=esp_get_free_heap_size(),minimum_before=esp_get_minimum_free_heap_size();
+    const size_t largest_before=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    bool small=!full || free_before<full_tree_allowance+working_reserve;
     cJSON *body = cJSON_CreateObject();
     if (!body) return health_reply(request,true);
     cJSON_AddBoolToObject(body, "ok", true);
     tb_base_add_json(body);
     tb_network_add_json(body);
-    char query[48],compact[4];
-    bool small=httpd_req_get_url_query_str(request,query,sizeof(query))==ESP_OK && httpd_query_key_value(query,"compact",compact,sizeof(compact))==ESP_OK && !strcmp(compact,"1");
     if(small)tb_application_add_json_compact(body);else tb_application_add_json(body);
     cJSON_AddBoolToObject(body,"diagnostic_compact",small);
-    cJSON_AddNumberToObject(body,"heap_largest_block",(double)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-    if(!cJSON_AddBoolToObject(body,"ota_busy",tb_web_ota_busy())){
+    cJSON_AddBoolToObject(body,"full_diagnostic_deferred",full && small);
+    if(full && small)cJSON_AddStringToObject(body,"diagnostic_reason","RAM_BUDGET_USE_PAGED_ENDPOINTS");
+    /* These metrics precede construction, so opening the page does not change
+     * the reported free/largest value by the size of its own JSON tree. */
+    cJSON *v=cJSON_GetObjectItemCaseSensitive(body,"heap_free");if(v)cJSON_SetNumberValue(v,free_before);else cJSON_AddNumberToObject(body,"heap_free",free_before);
+    v=cJSON_GetObjectItemCaseSensitive(body,"heap_minimum");if(v)cJSON_SetNumberValue(v,minimum_before);else cJSON_AddNumberToObject(body,"heap_minimum",minimum_before);
+    cJSON_AddNumberToObject(body,"heap_largest_block",(double)largest_before);
+    if(!cJSON_AddBoolToObject(body,"memory_before_diagnostic",true) || !cJSON_AddBoolToObject(body,"ota_busy",tb_web_ota_busy())){
         cJSON_Delete(body);return health_reply(request,true);
     }
     return tb_http_send_json(request, body);

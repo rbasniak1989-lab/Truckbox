@@ -73,6 +73,20 @@ static void expansion_in_one_scheduler(void)
     /* Requested scopes remain candidate, never external electrical evidence. */
     assert(!f.c.physical_validated && !f.c.field.confirmed);
 }
+static void pid153_transient_timeout_does_not_stop_passive_or_work(void)
+{
+    fixture_t f;initialize(&f);f.env.extended=true;
+    unsigned index=0;while(f.s.pids[index].pid!=153)++index;
+    for(unsigned tick=0;f.s.pending!=index && tick<20000;tick++)step(&f);
+    assert(f.s.pending==index);f.no_reply=true;
+    while(f.s.pids[index].timed_out==0)step(&f);
+    assert(f.c.work_mode && f.s.armed && !f.c.collisions);
+    f.no_reply=false;seconds(&f,5);
+    assert(f.s.pids[index].sent==2 && f.s.pids[index].answered==1 && f.s.pids[index].timed_out==1);
+    assert(f.c.work_mode && f.s.armed && f.c.rx_guard.total.valid && !f.c.physical_validated);
+    puts("PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS");
+}
+
 static void launch_transition_with_pending_request(void)
 {
     fixture_t f;initialize(&f);seconds(&f,45);unsigned i=index_of(&f,31);
@@ -136,7 +150,7 @@ static void transmission_launch_and_candidates(void)
 }
 int main(void)
 {
-    automatic_and_cadences();expansion_in_one_scheduler();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
+    automatic_and_cadences();expansion_in_one_scheduler();pid153_transient_timeout_does_not_stop_passive_or_work();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
     puts("Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
     return 0;
 }

@@ -5,6 +5,8 @@
 #include <string.h>
 #include <math.h>
 #include "tb_json.h"
+static bool diagnostic_lock_held;
+#define TB_JSON_ALLOCATION_GUARD assert(!diagnostic_lock_held)
 #include "../../tb_base/tests/json_heap.h"
 #include "tbx_j1708_active.h"
 #include "tbx_j1708_auto.h"
@@ -28,8 +30,8 @@ typedef void *QueueHandle_t;
 typedef unsigned nvs_handle_t;
 static bool mutex_available=true;
 static int64_t esp_timer_get_time(void){return 600000000;}
-static bool xSemaphoreTake(void *lock,unsigned timeout){(void)lock;(void)timeout;return mutex_available;}
-static void xSemaphoreGive(void *lock){(void)lock;}
+static bool xSemaphoreTake(void *lock,unsigned timeout){(void)lock;(void)timeout;assert(!diagnostic_lock_held);diagnostic_lock_held=mutex_available;return mutex_available;}
+static void xSemaphoreGive(void *lock){(void)lock;assert(diagnostic_lock_held);diagnostic_lock_held=false;}
 static uint32_t tb_boot_id(void){return 42;}
 static const struct {bool capture_enabled,can_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated,full_decode_enabled;uint32_t can_baud;} config={true,false,true,false,false,false,250000};
 #define tb_config() (&config)
@@ -130,9 +132,58 @@ static void bridge_memory(void)
     for(unsigned i=0;i<sizeof(invalid)/sizeof(*invalid);i++){assert(!prepare_bridge_batch(cJSON_Parse(invalid[i]),&result));assert(!heap_used && !result.count && !result.payload);}
     puts("Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes");
 }
+/* Real HTTP handler + real capture builder under the field RAM budget.
+ * Only the HTTP socket and base/network/store boundaries are synthetic. */
+#define ESP_OK 0
+#define ESP_FAIL -1
+#define MALLOC_CAP_8BIT 1
+typedef int esp_err_t;
+typedef struct {char response[24000];size_t used;const char *query,*status;}httpd_req_t;
+static const char *tb_role_name(void){return "core";}
+static const char *tb_device_uid(void){return "synthetic-device";}
+static const char *tb_version(void){return "0.2.18";}
+static unsigned esp_get_free_heap_size(void){assert(heap_used<=41596);return (unsigned)(41596-heap_used);}
+static unsigned esp_get_minimum_free_heap_size(void){return 12;}
+static size_t heap_caps_get_largest_free_block(int cap){(void)cap;return 14592;}
+static void httpd_resp_set_hdr(httpd_req_t *r,const char *k,const char *v){(void)r;(void)k;(void)v;}
+static void httpd_resp_set_type(httpd_req_t *r,const char *t){(void)r;(void)t;}
+static void httpd_resp_set_status(httpd_req_t *r,const char *v){r->status=v;}
+static esp_err_t httpd_resp_send(httpd_req_t *r,const char *b,size_t n){assert(r->used+n<sizeof(r->response));memcpy(r->response+r->used,b,n);r->used+=n;r->response[r->used]=0;return ESP_OK;}
+static esp_err_t httpd_resp_send_chunk(httpd_req_t *r,const char *b,size_t n){return n?httpd_resp_send(r,b,n):ESP_OK;}
+static esp_err_t httpd_req_get_url_query_str(httpd_req_t *r,char *b,size_t n){if(!r->query || strlen(r->query)>=n)return ESP_FAIL;strcpy(b,r->query);return ESP_OK;}
+static esp_err_t httpd_query_key_value(const char *q,const char *k,char *b,size_t n){if(strcmp(k,"compact") || strncmp(q,"compact=",8) || n<2)return ESP_FAIL;snprintf(b,n,"%s",q+8);return ESP_OK;}
+static void tb_base_add_json(cJSON *o){cJSON_AddStringToObject(o,"role","core");cJSON_AddNumberToObject(o,"boot_id",42);}
+static void tb_network_add_json(cJSON *o){cJSON_AddObjectToObject(o,"network");}
+static void tb_application_add_json(cJSON *o){tb_capture_add_json(o);}
+static void tb_application_add_json_compact(cJSON *o){tb_capture_add_json_compact(o);}
+static bool tb_web_ota_busy(void){return false;}
+#include "http_json.h"
+static void http_pressure_and_diagnostic_isolation(void)
+{
+    setup_capture();s.active.field.started_us=1000000;s.active.field.reason="HISTORICAL_ONLY";
+    heap_reset();heap_budget=41596;cJSON *full=cJSON_CreateObject();tb_capture_add_json(full);
+    size_t unbounded_peak=heap_peak;assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(field(field(full,"j1708"),"requests"),"diagnostic_partial")));
+    cJSON_Delete(full);assert(!heap_used);
+    heap_reset();heap_budget=41596;
+    void *upload=test_allocate(8192),*checkpoint=test_allocate(3232);assert(upload && checkpoint);
+    const size_t resident=heap_used;
+    for(unsigned i=0;i<200;i++){
+        httpd_req_t r={.query=i&1?"compact=0":NULL};assert(state_handler(&r)==ESP_OK && !r.status && heap_used==resident);
+        cJSON *o=cJSON_Parse(r.response);assert(o);
+        assert(cJSON_IsTrue(field(o,"ok")) && cJSON_IsTrue(field(o,"diagnostic_compact")));
+        assert(field(o,"heap_free")->valueint==41596-(int)resident && field(o,"heap_largest_block")->valueint==14592 && field(o,"heap_minimum")->valueint==12);
+        assert(cJSON_IsFalse(field(field(field(o,"j1708"),"requests"),"armed")));
+        cJSON_Delete(o);assert(heap_used==resident && !diagnostic_lock_held && s.j1708_ready && s.j1708_frames==37525);
+    }
+    size_t bounded_peak=heap_peak;test_free(upload);test_free(checkpoint);assert(!heap_used);
+    heap_reset();heap_budget=0;httpd_req_t health={0};assert(health_handler(&health)==ESP_OK && heap_calls==0);
+    assert(strstr(health.response,"\"boot_id\":42") && strstr(health.response,"heap_free") && strstr(health.response,"heap_largest_block"));
+    heap_reset();printf("Real HTTP pressure: field budget41596, unbounded full peak%zu (incomplete), compact peak%zu including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS\n",unbounded_peak,bounded_peak);
+}
+
 int main(void)
 {
     setup_capture();compact_and_pagination();fault_every_allocation();
     s.active.field.started_us=1000000;s.active.field.phase=TBX_FIELD_SATISFACTORY;s.active.field.reason="SYNTHETIC_DIAGNOSTIC_FIXTURE";
-    compact_and_pagination();fault_every_allocation();bridge_memory();return 0;
+    compact_and_pagination();fault_every_allocation();bridge_memory();http_pressure_and_diagnostic_isolation();return 0;
 }

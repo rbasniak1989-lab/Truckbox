@@ -1,0 +1,2 @@
+test: /workspace/work/Truckbox-v0218/firmware/espidf/components/tb_core/tests/test_capture_integration.c:417: test_extended_echo_then_reply_same_uart_event: Assertion `s.active.echo_ok==1 && s.requests.answered_total==1 && s.requests.armed' failed.
+Aborted

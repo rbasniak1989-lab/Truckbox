@@ -632,7 +632,7 @@ void tb_telemetry_add_json(cJSON *object)
     cJSON_AddNumberToObject(telemetry, "latest_readings", latest_count);
     cJSON_AddNumberToObject(telemetry, "latest_capacity", TELEMETRY_LATEST);
     cJSON_AddNumberToObject(telemetry, "latest_evictions", (double)evictions);
-    cJSON_AddStringToObject(telemetry, "latest_endpoint", "/api/sensors?offset=0&limit=16");
+    cJSON_AddStringToObject(telemetry, "latest_endpoint", "/api/sensors?offset=0&limit=8");
     cJSON_AddStringToObject(telemetry, "acquisition", "PASSIVE");
     cJSON *transport = cJSON_AddObjectToObject(telemetry, "j1939_tp_bam");
     static const char *const names[] = {
@@ -890,9 +890,9 @@ void tb_telemetry_append_j1587_health(cJSON *health)
 cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit)
 {
     if (limit < 1) limit = 1;
-    if (limit > 32) limit = 32;
-    latest_t *snapshot = calloc(limit, sizeof(*snapshot));
-    if (!snapshot) return NULL;
+    if (limit > 8) limit = 8;
+    /* A fixed small page avoids a contiguous allocation and limits the JSON tree. */
+    latest_t snapshot[8];
     size_t copied = 0, total;
     portENTER_CRITICAL(&s_mux);
     total = s.latest_count;
@@ -901,7 +901,7 @@ cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit)
     }
     portEXIT_CRITICAL(&s_mux);
     cJSON *result = cJSON_CreateObject();
-    if (!result) { free(snapshot); return NULL; }
+    if (!result) return NULL;
     cJSON_AddBoolToObject(result, "ok", true);
     cJSON_AddNumberToObject(result, "schema_version", TELEMETRY_SCHEMA);
     cJSON_AddNumberToObject(result, "offset", offset);
@@ -951,7 +951,30 @@ cJSON *tb_telemetry_sensors_json(size_t offset, size_t limit)
         if (reading->full_raw_length > reading->raw_length)
             cJSON_AddBoolToObject(entry, "raw_truncated_in_latest", true);
     }
-    free(snapshot);
+    /* Never return a successful page with missing value/MID/raw/quality after
+     * one failed allocation. The caller can return the allocation-free health. */
+    static const char *required[]={"source","name","unit","validation","quality","capture_id","boot_id","uptime_us","age_ms","stale","value","raw","raw_length"};
+    bool complete=cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result,"ok")) &&
+        cJSON_GetObjectItemCaseSensitive(result,"schema_version") && cJSON_GetObjectItemCaseSensitive(result,"offset") &&
+        cJSON_GetObjectItemCaseSensitive(result,"count") && cJSON_GetObjectItemCaseSensitive(result,"observed_count") &&
+        cJSON_GetObjectItemCaseSensitive(result,"next_offset") && cJSON_IsArray(readings) && (size_t)cJSON_GetArraySize(readings)==copied;
+    for(size_t i=0;complete && i<copied;i++){
+        const cJSON *entry=cJSON_GetArrayItem(readings,(int)i);
+        for(unsigned key=0;key<sizeof(required)/sizeof(*required);key++)if(!cJSON_GetObjectItemCaseSensitive(entry,required[key]))complete=false;
+        if(!cJSON_GetObjectItemCaseSensitive(entry,snapshot[i].can?"sid":"pid") || !cJSON_GetObjectItemCaseSensitive(entry,snapshot[i].can?"sa":"mid"))complete=false;
+        const latest_t *r=&snapshot[i];
+        if(r->can && !cJSON_GetObjectItemCaseSensitive(entry,"pgn"))complete=false;
+        if(r->component_index!=UINT8_MAX && (!cJSON_GetObjectItemCaseSensitive(entry,"component_index") || !cJSON_GetObjectItemCaseSensitive(entry,"component")))complete=false;
+        if(r->component_count && !cJSON_GetObjectItemCaseSensitive(entry,"component_count"))complete=false;
+        if(r->raw_only && !cJSON_GetObjectItemCaseSensitive(entry,"raw_only"))complete=false;
+        if(r->text[0] && !cJSON_GetObjectItemCaseSensitive(entry,"text"))complete=false;
+        if(r->full_raw_length>r->raw_length && !cJSON_GetObjectItemCaseSensitive(entry,"raw_truncated_in_latest"))complete=false;
+        if(r->has_last_valid){
+            static const char *last[]={"last_valid_value","last_valid_age_ms","last_valid_stale","last_valid_quality","last_valid_validation"};
+            for(unsigned key=0;key<sizeof(last)/sizeof(*last);key++)if(!cJSON_GetObjectItemCaseSensitive(entry,last[key]))complete=false;
+        }
+    }
+    if(!complete){cJSON_Delete(result);return NULL;}
     return result;
 }
 

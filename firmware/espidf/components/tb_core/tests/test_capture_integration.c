@@ -392,6 +392,40 @@ static void test_production_uart_partitioning_and_candidates(void)
     puts("Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS");
 }
 
+static void test_extended_echo_then_reply_same_uart_event(void)
+{
+    for(unsigned split=0;split<6;split++){
+        boot_with_checkpoint(NULL,0);host_now_us=1000000;
+        const tbx_j1708_active_ops_t ops={.begin_tx=proof_begin,.abort_tx=proof_abort};
+        tbx_j1708_active_init(&s.active,&s.requests,&ops,NULL);
+        tbx_j1708_active_config_t cfg={.local_mid=172,.priority=8,.inverted_de21_attested=true};
+        for(unsigned i=0;i<17;i++)cfg.target_mid[i]=128;
+        assert(tbx_j1708_active_configure(&s.active,&cfg));
+        assert(tbx_j1708_active_arm(&s.active,true,true,host_now_us));
+        uint32_t periods[17];for(unsigned i=0;i<17;i++)periods[i]=60000;
+        tbx_j1708_request_production(&s.requests,periods,false,1000,true);
+        tbx_j1708_request_expansion(&s.requests,true,1000,true);
+        for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++){s.requests.pids[i].enabled=s.requests.pids[i].pid==439;s.requests.pids[i].next_due_ms=1000;}
+        host_now_us+=5000;tbx_j1708_active_tick(&s.active,host_now_us);
+        assert(s.active.tx_active && s.active.tx_length==6 && s.active.tx_pid==439);
+        uint8_t both[12];memcpy(both,s.active.tx_frame,6);
+        const uint8_t reply[]={128,255,183,64,6,132};memcpy(both+6,reply,6);
+        host_rx_count=0;
+        if(split)host_rx_events[host_rx_count++]=(host_rx_event_t){UART_DATA,both,split,false,1100*split};
+        host_rx_events[host_rx_count++]=(host_rx_event_t){UART_DATA,both+split,12-split,true,1100*(6-split)};
+        run_rx();
+        assert(s.active.echo_ok==1 && s.requests.answered_total==1 && s.requests.armed);
+        assert(!(s.observed_mid[172>>3]&(1u<<(172&7))) && !s.active.collisions && !s.requests.timeout_total);
+        assert(s.j1708_frames==1 && !s.active.physical_validated);
+        const uint8_t foreign[]={172,26,1,57};
+        host_rx_events[0]=(host_rx_event_t){UART_DATA,foreign,4,true,40000};host_rx_count=1;run_rx();
+        assert(s.requests.safety_stopped && !s.requests.armed && (s.observed_mid[172>>3]&(1u<<(172&7))));
+        host_rx_events[0]=(host_rx_event_t){UART_DATA,reply,6,true,6000};run_rx();
+        assert(s.j1708_frames==3); /* Passive acquisition survives the real conflict. */
+    }
+    puts("Actual UART PID439: six echo fragmentations + adjacent reply never self-conflict; genuine MID172 conflict still stops TX and keeps passive RX PASS");
+}
+
 static void test_reupgrade_imports_legacy_trip_advanced_after_rollback(void)
 {
     trip_blob_t base={.version=2,.distance=10,.fuel=2,.distance_valid=true,.fuel_valid=true};
@@ -431,6 +465,7 @@ static void test_validated_counter_mids_and_real_checkpoint_restore(void)
 
 int main(void)
 {
+    test_extended_echo_then_reply_same_uart_event();
     test_validated_counter_mids_and_real_checkpoint_restore();
     test_production_uart_partitioning_and_candidates();
     test_external_evidence_owner();

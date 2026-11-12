@@ -250,7 +250,7 @@ static void request_store_event(const request_event_t *item)
     cJSON_AddNumberToObject(row, "schema_version", 2);
     cJSON_AddNumberToObject(row, "boot_id", tb_boot_id());
     cJSON_AddNumberToObject(row, "uptime_ms", item->uptime_us / 1000);
-    bool tx_record=!strcmp(item->event,"REQUEST") || !strcmp(item->event,"TX_ECHO") || !strcmp(item->event,"RESPONSE_CANDIDATE") || item->response_size;
+    bool tx_record=!strcmp(item->event,"TIMEOUT") || !strcmp(item->event,"MID_CONFLICT_FRAME") || !strcmp(item->event,"REQUEST") || !strcmp(item->event,"TX_ECHO") || !strcmp(item->event,"RESPONSE_CANDIDATE") || item->response_size;
     if(tx_record)cJSON_AddNumberToObject(row,"tx_start_us",(double)item->tx_start_us);
     if(!item->work && !item->field)cJSON_AddNumberToObject(row,"rx_edges",item->edges);
     cJSON_AddBoolToObject(row, "time_valid", false);
@@ -603,6 +603,14 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
             s.active.physical_validated=false;
             if(!s.requests.safety_stopped || s.requests.armed || s.active.tx_active){
                 s.active.rx_guard.last_failure=TBX_GUARD_MID_CONFLICT;
+                if(s.active.ops.event){
+                    char raw[43],detail[112];
+                    for(size_t i=0;i<size;i++)snprintf(raw+2*i,3,"%02X",frame[i]);
+                    snprintf(detail,sizeof(detail),"rx=%s bytes=%u echo=%u/%u tx_age_us=%llu",raw,(unsigned)size,
+                        (unsigned)s.active.echo_position,(unsigned)s.active.tx_length,
+                        (unsigned long long)(captured_us>=s.active.tx_started_us?captured_us-s.active.tx_started_us:0));
+                    s.active.ops.event("MID_CONFLICT_FRAME",s.active.tx_pid,detail,s.active.context);
+                }
                 s.requests.safety_stopped=true;tbx_j1708_active_stop(&s.active,"LOCAL_MID_CONFLICT");
             }
         }
@@ -972,7 +980,7 @@ static void j1708_task(void *unused)
             for (int i = 0; i < got; ++i) {
                 if (length < sizeof(frame)) frame[length++] = chunk[i];
                 else oversize = true;
-                if (length == 5 && !oversize) {
+                if (length >= 5 && length <= sizeof(s.active.tx_frame) && !oversize) {
                     xSemaphoreTake(s.lock, portMAX_DELAY);
                     bool echo = tbx_j1708_active_is_tx_echo(&s.active, frame, length, esp_timer_get_time());
                     xSemaphoreGive(s.lock);
@@ -1145,17 +1153,18 @@ static void add_signal_field(cJSON *object, const char *name, bool valid, double
     else cJSON_AddNullToObject(object, name);
 }
 
-static void request_stats_locked(cJSON *requests,unsigned offset,unsigned limit)
+static void request_stats_snapshot(cJSON *requests,unsigned offset,unsigned limit,
+    const tbx_j1708_request_scheduler_t *schedule,const tbx_j1708_active_t *active)
 {
     cJSON *stats = cJSON_AddArrayToObject(requests, "stats");
     if(!stats)return;
     for(unsigned i=offset;i<TBX_J1708_REQUEST_CAPACITY && i<offset+limit;i++){
-        const tbx_j1708_request_stat_t *stat = &s.requests.pids[i];
+        const tbx_j1708_request_stat_t *stat = &schedule->pids[i];
         cJSON *row = cJSON_CreateObject();
         if(!row)break;
         cJSON_AddNumberToObject(row, "pid", stat->pid);
         cJSON_AddBoolToObject(row, "enabled", stat->enabled);
-        cJSON_AddNumberToObject(row,"target_mid",s.active.configured?s.active.config.target_mid[i]:(i<17?tbx_j1708_policy()[i].mid:tbx_j1708_candidate_policy()[i-17].mid));
+        cJSON_AddNumberToObject(row,"target_mid",active->configured?active->config.target_mid[i]:(i<17?tbx_j1708_policy()[i].mid:tbx_j1708_candidate_policy()[i-17].mid));
         cJSON_AddNumberToObject(row, "sent", stat->sent);
         cJSON_AddNumberToObject(row, "response_candidates", stat->answered);
         cJSON_AddNumberToObject(row, "timeouts", stat->timed_out);
@@ -1167,8 +1176,8 @@ static void request_stats_locked(cJSON *requests,unsigned offset,unsigned limit)
         if(cJSON_GetArraySize(row)!=10){cJSON_Delete(row);break;}
         if(stat->sent)cJSON_AddNumberToObject(row,"response_rate_pct",100.0*stat->answered/stat->sent);else cJSON_AddNullToObject(row,"response_rate_pct");
         if(stat->answered){cJSON_AddNumberToObject(row,"latency_ms",stat->last_latency_ms);}
-        if(s.active.field.started_us){
-            const tbx_j1708_field_pid_t *v=&s.active.field.pids[i];cJSON *field=cJSON_AddObjectToObject(row,"field");
+        if(active->field.started_us && i<TBX_J1708_REQUEST_COUNT){
+            const tbx_j1708_field_pid_t *v=&active->field.pids[i];cJSON *field=cJSON_AddObjectToObject(row,"field");
             cJSON_AddNumberToObject(field,"before",v->before);cJSON_AddNumberToObject(field,"after",v->after);
             cJSON_AddNumberToObject(field,"controls",v->controls);cJSON_AddNumberToObject(field,"control_hits",v->control_hits);
             cJSON_AddNumberToObject(field,"sent",v->sent);cJSON_AddNumberToObject(field,"echoes",v->echoes);cJSON_AddNumberToObject(field,"replies",v->replies);
@@ -1184,32 +1193,36 @@ static void capture_json_mode(cJSON *object,bool compact)
 {
     uint64_t now = esp_timer_get_time() / 1000;
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return;
-    add_signal_field(object, "rpm", s.rpm_at && now - s.rpm_at <= 5000, s.rpm);
-    add_signal_field(object, "speedKph", s.speed_at && now - s.speed_at <= 5000, s.speed);
-    add_signal_field(object, "distanceTotalKm", s.total_at && now - s.total_at <= 30000, s.distance_total);
-    add_signal_field(object, "distanceTestKm", s.distance_trip_valid, s.distance_trip);
-    add_signal_field(object, "fuelLitersTest", s.fuel_trip_valid, s.fuel_trip);
-    tb_accounting_json(object,&s.fuel_account);
+    /* Fixed snapshot only; JSON allocation/serialization must not hold the RX/TX mutex. */
+    __typeof__(s) view=s;
+    view.active.scheduler=&view.requests;
+    xSemaphoreGive(s.lock);
+    add_signal_field(object, "rpm", view.rpm_at && now - view.rpm_at <= 5000, view.rpm);
+    add_signal_field(object, "speedKph", view.speed_at && now - view.speed_at <= 5000, view.speed);
+    add_signal_field(object, "distanceTotalKm", view.total_at && now - view.total_at <= 30000, view.distance_total);
+    add_signal_field(object, "distanceTestKm", view.distance_trip_valid, view.distance_trip);
+    add_signal_field(object, "fuelLitersTest", view.fuel_trip_valid, view.fuel_trip);
+    tb_accounting_json(object,&view.fuel_account);
     cJSON_AddBoolToObject(object,"odometer_validated",tb_config()->j1587_odometer_validated);
     cJSON_AddBoolToObject(object,"fuel250_validated",tb_config()->j1587_fuel250_validated);
-    cJSON_AddStringToObject(object, "trip_distance_quality", s.trip.quality);
-    cJSON_AddNumberToObject(object, "trip_distance_gaps", s.trip.gaps);
-    cJSON_AddNumberToObject(object, "trip_counter_resets", s.trip.resets);
-    cJSON_AddNumberToObject(object, "trip_counter_range_errors", s.trip.implausible);
+    cJSON_AddStringToObject(object, "trip_distance_quality", view.trip.quality);
+    cJSON_AddNumberToObject(object, "trip_distance_gaps", view.trip.gaps);
+    cJSON_AddNumberToObject(object, "trip_counter_resets", view.trip.resets);
+    cJSON_AddNumberToObject(object, "trip_counter_range_errors", view.trip.implausible);
     cJSON_AddNullToObject(object, "combinationWeightKg");
     cJSON *can = cJSON_AddObjectToObject(object, "can");
     cJSON_AddBoolToObject(can,"enabled",tb_config()->capture_enabled && tb_config()->can_enabled);
     cJSON_AddStringToObject(object,"capture_profile",tb_config()->can_enabled?"DUAL":"J1708_ONLY");
-    cJSON_AddBoolToObject(can, "ready", s.can_ready);
+    cJSON_AddBoolToObject(can, "ready", view.can_ready);
     cJSON_AddBoolToObject(can, "listen_only", true);
     cJSON_AddNumberToObject(can, "baud", tb_config()->can_baud);
-    cJSON_AddNumberToObject(can, "frames", s.can_frames);
-    cJSON_AddNumberToObject(can, "remote_frames", s.can_rtr);
-    cJSON_AddNumberToObject(can, "read_errors", s.can_errors);
-    cJSON_AddStringToObject(can, "error", s.can_error);
+    cJSON_AddNumberToObject(can, "frames", view.can_frames);
+    cJSON_AddNumberToObject(can, "remote_frames", view.can_rtr);
+    cJSON_AddNumberToObject(can, "read_errors", view.can_errors);
+    cJSON_AddStringToObject(can, "error", view.can_error);
 #ifndef CONFIG_TB_J1708_ONLY
     twai_status_info_t status;
-    if (s.can_ready && twai_get_status_info(&status) == ESP_OK) {
+    if (view.can_ready && twai_get_status_info(&status) == ESP_OK) {
         cJSON_AddNumberToObject(can, "rx_missed", status.rx_missed_count);
         cJSON_AddNumberToObject(can, "rx_overrun", status.rx_overrun_count);
         cJSON_AddNumberToObject(can, "bus_errors", status.bus_error_count);
@@ -1217,56 +1230,56 @@ static void capture_json_mode(cJSON *object,bool compact)
  #endif
     cJSON *j1708 = cJSON_AddObjectToObject(object, "j1708");
     cJSON_AddBoolToObject(j1708,"enabled",tb_config()->capture_enabled && tb_config()->j1708_enabled);
-    cJSON_AddBoolToObject(j1708, "ready", s.j1708_ready);
+    cJSON_AddBoolToObject(j1708, "ready", view.j1708_ready);
     cJSON_AddStringToObject(j1708, "framing", "uart_idle_10bits_checksum_validated");
-    cJSON_AddStringToObject(j1708, "error", s.j1708_error);
-    cJSON_AddNumberToObject(j1708, "frames", s.j1708_frames);
-    cJSON_AddNumberToObject(j1708, "checksum_errors", s.j1708_checksum_errors);
-    cJSON_AddNumberToObject(j1708, "oversize_or_coalesced", s.j1708_oversize);
-    cJSON_AddNumberToObject(j1708, "uart_overruns", s.uart_overruns);
+    cJSON_AddStringToObject(j1708, "error", view.j1708_error);
+    cJSON_AddNumberToObject(j1708, "frames", view.j1708_frames);
+    cJSON_AddNumberToObject(j1708, "checksum_errors", view.j1708_checksum_errors);
+    cJSON_AddNumberToObject(j1708, "oversize_or_coalesced", view.j1708_oversize);
+    cJSON_AddNumberToObject(j1708, "uart_overruns", view.uart_overruns);
     /* MIDs actually observed during this boot, to help the operator choose
      * a source address. Not observed != guaranteed free on the entire bus. */
     cJSON *observed = cJSON_AddArrayToObject(j1708, "observed_mids");
     if (observed) {
         for (unsigned mid = 128; mid <= 255; ++mid)
-            if (s.observed_mid[mid >> 3] & (1u << (mid & 7u)))
+            if (view.observed_mid[mid >> 3] & (1u << (mid & 7u)))
                 if(!tb_json_add_array(observed,cJSON_CreateNumber(mid)))break;
     }
-    if (s.j1708_at) {
-        cJSON_AddNumberToObject(j1708, "last_frame_age_ms", (double)(now - s.j1708_at));
-        if(!compact){cJSON *last=cJSON_Parse(s.j1708_last);if(last)tb_json_add_object(j1708,"last_frame",last);}
+    if (view.j1708_at) {
+        cJSON_AddNumberToObject(j1708, "last_frame_age_ms", (double)(now - view.j1708_at));
+        if(!compact){cJSON *last=cJSON_Parse(view.j1708_last);if(last)tb_json_add_object(j1708,"last_frame",last);}
     }
     cJSON *requests = cJSON_AddObjectToObject(j1708, "requests");
-    cJSON_AddBoolToObject(requests, "armed", s.requests.armed);
-    cJSON_AddBoolToObject(requests,"hardware_tx_available",s.j1708_ready && s.edge_ready);
+    cJSON_AddBoolToObject(requests, "armed", view.requests.armed);
+    cJSON_AddBoolToObject(requests,"hardware_tx_available",view.j1708_ready && view.edge_ready);
     cJSON_AddStringToObject(requests,"hardware_tx_validation","EM_VALIDACAO");
-    cJSON_AddBoolToObject(requests,"rx_edge_monitor_ready",s.edge_ready);
-    cJSON_AddNumberToObject(requests,"rx_edges",s.rx_edges);
-    cJSON_AddNumberToObject(requests,"bus_deferrals",s.requests.deferred_total);
-    cJSON_AddNumberToObject(requests,"event_dropped",s.request_event_dropped);
-    cJSON_AddNumberToObject(requests,"uart_start_faults",s.uart_start_faults);
-    cJSON_AddNumberToObject(requests,"consecutive_tx_errors",s.requests.link_error_count);
-    cJSON_AddNumberToObject(requests,"consecutive_request_failures",s.active.consecutive_failures);
-    if(s.requests.sent_total)cJSON_AddNumberToObject(requests,"last_requested_pid",s.active.last_sent_pid);
-    cJSON_AddBoolToObject(requests, "configured", s.active.configured);
-    cJSON_AddNumberToObject(j1708,"frames_per_minute",s.frames_last_minute);
+    cJSON_AddBoolToObject(requests,"rx_edge_monitor_ready",view.edge_ready);
+    cJSON_AddNumberToObject(requests,"rx_edges",view.rx_edges);
+    cJSON_AddNumberToObject(requests,"bus_deferrals",view.requests.deferred_total);
+    cJSON_AddNumberToObject(requests,"event_dropped",view.request_event_dropped);
+    cJSON_AddNumberToObject(requests,"uart_start_faults",view.uart_start_faults);
+    cJSON_AddNumberToObject(requests,"consecutive_tx_errors",view.requests.link_error_count);
+    cJSON_AddNumberToObject(requests,"consecutive_request_failures",view.active.consecutive_failures);
+    if(view.requests.sent_total)cJSON_AddNumberToObject(requests,"last_requested_pid",view.active.last_sent_pid);
+    cJSON_AddBoolToObject(requests, "configured", view.active.configured);
+    cJSON_AddNumberToObject(j1708,"frames_per_minute",view.frames_last_minute);
     cJSON *automatic=cJSON_AddObjectToObject(requests,"automatic");
     cJSON_AddBoolToObject(automatic,"enabled",tb_config_j1708_auto_enabled());
     cJSON_AddBoolToObject(automatic,"persisted",tb_config_j1708_auto_persisted());
-    cJSON_AddStringToObject(automatic,"state",tbx_j1708_auto_phase_name(s.automatic.phase));
-    cJSON_AddStringToObject(automatic,"reason",s.automatic.reason?s.automatic.reason:"WAITING_PASSIVE_RX");
-    cJSON_AddNumberToObject(automatic,"starts",s.automatic.starts);
-    cJSON_AddNumberToObject(automatic,"pauses",s.automatic.pauses);
-    cJSON_AddNumberToObject(automatic,"retry_in_ms",s.automatic.resume_us>now*1000?(s.automatic.resume_us-now*1000)/1000:0);
+    cJSON_AddStringToObject(automatic,"state",tbx_j1708_auto_phase_name(view.automatic.phase));
+    cJSON_AddStringToObject(automatic,"reason",view.automatic.reason?view.automatic.reason:"WAITING_PASSIVE_RX");
+    cJSON_AddNumberToObject(automatic,"starts",view.automatic.starts);
+    cJSON_AddNumberToObject(automatic,"pauses",view.automatic.pauses);
+    cJSON_AddNumberToObject(automatic,"retry_in_ms",view.automatic.resume_us>now*1000?(view.automatic.resume_us-now*1000)/1000:0);
     cJSON_AddNumberToObject(automatic,"max_requests_per_second",2);
-    cJSON_AddBoolToObject(automatic,"TRANSMISSION_LAUNCH_MONITOR",s.transmission.launch);
-    cJSON_AddNumberToObject(automatic,"launches",s.transmission.launches);
-    cJSON_AddNumberToObject(automatic,"candidate_flags",s.transmission.candidate_flags);
+    cJSON_AddBoolToObject(automatic,"TRANSMISSION_LAUNCH_MONITOR",view.transmission.launch);
+    cJSON_AddNumberToObject(automatic,"launches",view.transmission.launches);
+    cJSON_AddNumberToObject(automatic,"candidate_flags",view.transmission.candidate_flags);
     cJSON_AddBoolToObject(automatic,"slip_confirmed",false);
-    cJSON_AddStringToObject(requests,"physical_validation",s.active.physical_validated?"EXTERNAL_CAPTURE_CONFIRMED_BY_OPERATOR":"PENDING_EXTERNAL_CAPTURE");
-    cJSON_AddBoolToObject(requests,"physical_validated",s.active.physical_validated);
+    cJSON_AddStringToObject(requests,"physical_validation",view.active.physical_validated?"EXTERNAL_CAPTURE_CONFIRMED_BY_OPERATOR":"PENDING_EXTERNAL_CAPTURE");
+    cJSON_AddBoolToObject(requests,"physical_validated",view.active.physical_validated);
     cJSON *guard=cJSON_AddObjectToObject(requests,"rx_guard");
-    const tbx_j1708_rx_guard_t *g=&s.active.rx_guard;
+    const tbx_j1708_rx_guard_t *g=&view.active.rx_guard;
     cJSON_AddBoolToObject(guard,"fault_latched",g->fault_latched);
     cJSON_AddNumberToObject(guard,"suspect_windows",g->suspect_streak);
     cJSON_AddNumberToObject(guard,"reference_windows",g->reference_count);
@@ -1276,8 +1289,8 @@ static void capture_json_mode(cJSON *object,bool compact)
     cJSON_AddNumberToObject(guard,"framing_total",g->total.framing);cJSON_AddNumberToObject(guard,"overrun_total",g->total.overruns);
     cJSON_AddNumberToObject(guard,"uart_frame_total",g->total.uart_frame);cJSON_AddNumberToObject(guard,"uart_read_total",g->total.read_errors);
 
-    cJSON_AddStringToObject(requests,"validation_method",s.active.production_mode?"PERSISTENT_OPERATIONAL_INDIRECT":s.active.physical_validated?"EXTERNAL_INDEPENDENT":s.active.field.confirmed?"SUPERVISED_FIELD_INDIRECT":"NONE");
-    const tbx_j1708_field_t *f=&s.active.field;
+    cJSON_AddStringToObject(requests,"validation_method",view.active.production_mode?"PERSISTENT_OPERATIONAL_INDIRECT":view.active.physical_validated?"EXTERNAL_INDEPENDENT":view.active.field.confirmed?"SUPERVISED_FIELD_INDIRECT":"NONE");
+    const tbx_j1708_field_t *f=&view.active.field;
     cJSON *field=cJSON_AddObjectToObject(requests,"field_validation");
     cJSON_AddStringToObject(field,"phase",tbx_j1708_field_phase_name(f->phase));
     cJSON_AddBoolToObject(field,"running",tbx_j1708_field_running(f));
@@ -1295,63 +1308,62 @@ static void capture_json_mode(cJSON *object,bool compact)
         cJSON_AddStringToObject(field,"latency_reference","SOFTWARE_REQUEST_TO_PARSED_REPLY");
         cJSON_AddBoolToObject(field,"audit_lost",__atomic_load_n(&f->audit_lost,__ATOMIC_RELAXED));
     }
-    cJSON_AddBoolToObject(requests,"single_shot",s.active.config.single_shot);
+    cJSON_AddBoolToObject(requests,"single_shot",view.active.config.single_shot);
     char txhex[13]={0},trial_id[64];
-    for(unsigned i=0;i<s.active.tx_length;i++)snprintf(txhex+2*i,3,"%02X",s.active.tx_frame[i]);
-    snprintf(trial_id,sizeof(trial_id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),s.active.tx_started_us);
+    for(unsigned i=0;i<view.active.tx_length;i++)snprintf(txhex+2*i,3,"%02X",view.active.tx_frame[i]);
+    snprintf(trial_id,sizeof(trial_id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),view.active.tx_started_us);
     cJSON_AddStringToObject(requests,"expected_trial_tx",txhex);
     cJSON_AddStringToObject(requests,"trial_id",trial_id);
-    if(s.active.last_response_us){
-        cJSON_AddNumberToObject(requests,"last_response_pid",s.active.last_response_pid);
-        cJSON_AddNumberToObject(requests,"last_response_mid",s.active.last_response_mid);
-        cJSON_AddNumberToObject(requests,"last_response_age_ms",(double)((uint64_t)esp_timer_get_time()-s.active.last_response_us)/1000.0);
+    if(view.active.last_response_us){
+        cJSON_AddNumberToObject(requests,"last_response_pid",view.active.last_response_pid);
+        cJSON_AddNumberToObject(requests,"last_response_mid",view.active.last_response_mid);
+        cJSON_AddNumberToObject(requests,"last_response_age_ms",(double)((uint64_t)esp_timer_get_time()-view.active.last_response_us)/1000.0);
     }
-    cJSON_AddBoolToObject(requests, "work_mode", s.active.work_mode);
-    cJSON_AddBoolToObject(requests, "work_evidence_ready", tbx_j1708_active_work_ready(&s.active,(uint64_t)esp_timer_get_time()));
-    cJSON_AddBoolToObject(requests, "safety_stopped", s.requests.safety_stopped);
+    cJSON_AddBoolToObject(requests, "work_mode", view.active.work_mode);
+    cJSON_AddBoolToObject(requests, "work_evidence_ready", tbx_j1708_active_work_ready(&view.active,(uint64_t)esp_timer_get_time()));
+    cJSON_AddBoolToObject(requests, "safety_stopped", view.requests.safety_stopped);
     cJSON_AddStringToObject(requests, "validation", "EM_VALIDACAO");
-    cJSON_AddNumberToObject(requests, "echo_ok", s.active.echo_ok);
-    cJSON_AddNumberToObject(requests, "collisions", s.active.collisions);
-    cJSON_AddNumberToObject(requests, "echo_timeouts", s.active.echo_timeouts);
-    cJSON_AddNumberToObject(requests, "lease_expirations", s.active.lease_expirations);
+    cJSON_AddNumberToObject(requests, "echo_ok", view.active.echo_ok);
+    cJSON_AddNumberToObject(requests, "collisions", view.active.collisions);
+    cJSON_AddNumberToObject(requests, "echo_timeouts", view.active.echo_timeouts);
+    cJSON_AddNumberToObject(requests, "lease_expirations", view.active.lease_expirations);
     cJSON_AddNumberToObject(requests, "authorization_lease_ms",
-        s.active.production_mode?0:tbx_j1708_field_running(&s.active.field)?TBX_J1708_FIELD_LEASE_US/1000:s.active.work_mode ? TBX_J1708_WORK_LEASE_US / 1000 : TBX_J1708_ACTIVE_LEASE_US / 1000);
-    cJSON_AddNumberToObject(requests, "lease_remaining_ms", !s.active.production_mode && s.requests.armed &&
-        s.active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
-        (double)(s.active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
-    cJSON_AddStringToObject(requests, "block_reason", tb_config_j1708_auto_enabled()?(s.automatic.reason?s.automatic.reason:"WAITING_PASSIVE_RX"):!s.active.configured?"EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED":s.requests.safety_stopped?"THREE_TX_FAILURES_OR_MID_CONFLICT":!(s.active.physical_validated || s.active.field.confirmed)?"EXTERNAL_OR_SUPERVISED_FIELD_VALIDATION_REQUIRED":"NONE_OR_SAFETY_INTERLOCK");
-    cJSON_AddBoolToObject(requests,"sequential_scan",s.active.config.sequential_scan);
-    if(s.active.config.sequential_scan){
+        view.active.production_mode?0:tbx_j1708_field_running(&view.active.field)?TBX_J1708_FIELD_LEASE_US/1000:view.active.work_mode ? TBX_J1708_WORK_LEASE_US / 1000 : TBX_J1708_ACTIVE_LEASE_US / 1000);
+    cJSON_AddNumberToObject(requests, "lease_remaining_ms", !view.active.production_mode && view.requests.armed &&
+        view.active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
+        (double)(view.active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
+    cJSON_AddStringToObject(requests, "block_reason", tb_config_j1708_auto_enabled()?(view.automatic.reason?view.automatic.reason:"WAITING_PASSIVE_RX"):!view.active.configured?"EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED":view.requests.safety_stopped?"THREE_TX_FAILURES_OR_MID_CONFLICT":!(view.active.physical_validated || view.active.field.confirmed)?"EXTERNAL_OR_SUPERVISED_FIELD_VALIDATION_REQUIRED":"NONE_OR_SAFETY_INTERLOCK");
+    cJSON_AddBoolToObject(requests,"sequential_scan",view.active.config.sequential_scan);
+    if(view.active.config.sequential_scan){
         cJSON_AddNumberToObject(requests,"start_pid",
-            s.active.config.start_pid?s.active.config.start_pid:s.requests.pids[0].pid);
-        cJSON_AddNumberToObject(requests,"scan_total",s.active.scan_budget);
+            view.active.config.start_pid?view.active.config.start_pid:view.requests.pids[0].pid);
+        cJSON_AddNumberToObject(requests,"scan_total",view.active.scan_budget);
         cJSON_AddNumberToObject(requests,"scan_sent",
-            s.active.scan_completed+(s.requests.pending<TBX_J1708_REQUEST_CAPACITY?1:0));
+            view.active.scan_completed+(view.requests.pending<TBX_J1708_REQUEST_CAPACITY?1:0));
         cJSON_AddNumberToObject(requests,"scan_attempts",
-            s.requests.sent_total>=s.active.scan_sent_baseline?
-              s.requests.sent_total-s.active.scan_sent_baseline:0);
-        if(s.requests.pending<TBX_J1708_REQUEST_CAPACITY)
-            cJSON_AddNumberToObject(requests,"pending_pid",s.requests.pids[s.requests.pending].pid);
+            view.requests.sent_total>=view.active.scan_sent_baseline?
+              view.requests.sent_total-view.active.scan_sent_baseline:0);
+        if(view.requests.pending<TBX_J1708_REQUEST_CAPACITY)
+            cJSON_AddNumberToObject(requests,"pending_pid",view.requests.pids[view.requests.pending].pid);
     }
-    cJSON_AddNumberToObject(requests, "min_spacing_ms", s.requests.min_spacing_ms);
-    cJSON_AddNumberToObject(requests, "timeout_ms", s.requests.timeout_ms);
-    cJSON_AddNumberToObject(requests, "sent", s.requests.sent_total);
-    cJSON_AddNumberToObject(requests, "responses", s.requests.answered_total);
-    cJSON_AddNumberToObject(requests, "timeouts", s.requests.timeout_total);
-    cJSON_AddNumberToObject(requests, "tx_errors", s.requests.tx_failure_total);
+    cJSON_AddNumberToObject(requests, "min_spacing_ms", view.requests.min_spacing_ms);
+    cJSON_AddNumberToObject(requests, "timeout_ms", view.requests.timeout_ms);
+    cJSON_AddNumberToObject(requests, "sent", view.requests.sent_total);
+    cJSON_AddNumberToObject(requests, "responses", view.requests.answered_total);
+    cJSON_AddNumberToObject(requests, "timeouts", view.requests.timeout_total);
+    cJSON_AddNumberToObject(requests, "tx_errors", view.requests.tx_failure_total);
     if(!compact){
         cJSON *pids=cJSON_AddArrayToObject(requests,"pids");
         if(pids)for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)
-            if(!tb_json_add_array(pids,cJSON_CreateNumber(s.requests.pids[i].pid)))break;
+            if(!tb_json_add_array(pids,cJSON_CreateNumber(view.requests.pids[i].pid)))break;
     }
     if(!compact){
-        request_stats_locked(requests,0,TBX_J1708_REQUEST_CAPACITY);
+        request_stats_snapshot(requests,0,TBX_J1708_REQUEST_CAPACITY,&view.requests,&view.active);
         if(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(requests,"stats"))!=TBX_J1708_REQUEST_CAPACITY)
             cJSON_AddBoolToObject(requests,"diagnostic_partial",true);
     }
-    if (s.active.configured) cJSON_AddNumberToObject(requests, "local_mid", s.active.config.local_mid);
-    cJSON_AddNumberToObject(requests, "idle_guard_us", s.active.idle_guard_us);
-    xSemaphoreGive(s.lock);
+    if (view.active.configured) cJSON_AddNumberToObject(requests, "local_mid", view.active.config.local_mid);
+    cJSON_AddNumberToObject(requests, "idle_guard_us", view.active.idle_guard_us);
     cJSON_AddStringToObject(object, "telemetry_profile",
         tb_profile_raw(tb_config()->full_decode_enabled) ? "COMPLETO" : "LEGACY");
     cJSON_AddNumberToObject(object, "operational_interval_s",
@@ -1365,15 +1377,17 @@ cJSON *tb_capture_request_stats_json(unsigned offset,unsigned limit)
 {
     cJSON *o=cJSON_CreateObject();if(!o)return NULL;
     if(!s.lock || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE){cJSON_AddBoolToObject(o,"ok",false);cJSON_AddStringToObject(o,"error","capture_busy");return o;}
+    const tbx_j1708_request_scheduler_t schedule=s.requests;
+    const tbx_j1708_active_t active=s.active;
+    xSemaphoreGive(s.lock);
     if(offset>TBX_J1708_REQUEST_CAPACITY)offset=TBX_J1708_REQUEST_CAPACITY;
     if(!limit || limit>8)limit=8;
     bool valid=cJSON_AddBoolToObject(o,"ok",true) && cJSON_AddNumberToObject(o,"offset",offset) &&
         cJSON_AddNumberToObject(o,"total",TBX_J1708_REQUEST_CAPACITY);
-    if(valid)request_stats_locked(o,offset,limit);
+    if(valid)request_stats_snapshot(o,offset,limit,&schedule,&active);
     unsigned count=(unsigned)cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(o,"stats"));
     unsigned expected=TBX_J1708_REQUEST_CAPACITY-offset;if(expected>limit)expected=limit;
     valid=valid && cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(o,"stats")) && count==expected && cJSON_AddNumberToObject(o,"count",count);
-    xSemaphoreGive(s.lock);
     if(!valid){cJSON_Delete(o);return NULL;}
     return o;
 }

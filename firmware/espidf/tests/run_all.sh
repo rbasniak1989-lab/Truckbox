@@ -3,6 +3,7 @@ set -eu
 test_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 : "$IDF_PATH"
 export ASAN_OPTIONS=detect_leaks=0
+export UBSAN_OPTIONS=halt_on_error=1
 cd "$test_root"
 sh components/tb_base/tests/run_host_tests.sh
 sh components/tb_base/tests/run_json_memory.sh

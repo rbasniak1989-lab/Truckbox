@@ -1,0 +1,4 @@
+J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
+Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
+Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS
+OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
