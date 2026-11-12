@@ -171,6 +171,9 @@ void tb_ecu_counters_flush(void)
 {
     portENTER_CRITICAL(&counter_mux);tbx_ecu_counters_t state=ec.state;portEXIT_CRITICAL(&counter_mux);
     if(!state.record_ready)return;
+    /* Keep completed trip endpoints durable before offering their record.
+     * This is once per boundary/retry, never an NVS write per polling cycle. */
+    if(state.job.reason>=TBX_COUNTER_TRIP_START && !tb_ecu_counters_checkpoint(true))return;
     uint8_t mask=0;bool changed=false;
     for(unsigned i=0;i<3;i++)if(state.captured[i].valid){mask|=(uint8_t)(1u<<i);if(state.captured[i].raw!=ec.recorded_raw[i])changed=true;}
     changed=changed || mask!=ec.recorded_mask;

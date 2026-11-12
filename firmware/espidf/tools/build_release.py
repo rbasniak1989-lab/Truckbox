@@ -33,7 +33,7 @@ REQUIRED_SOURCE = (
     "firmware/REV_B1_CODEX_IMPLEMENTATION.md",
 )
 EXCLUDED_PARTS = {"release", "releases", "managed_components", ".git", "__pycache__", "node_modules", "private", ".pytest_cache"}
-EXCLUDED_SUFFIXES = {".log", ".zip", ".bin", ".elf", ".pyc", ".o", ".obj", ".a"}
+EXCLUDED_SUFFIXES = {".log", ".zip", ".bin", ".elf", ".pyc", ".o", ".obj", ".a", ".apk", ".aab", ".jks", ".keystore"}
 
 
 def digest(path: Path) -> str:

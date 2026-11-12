@@ -1,0 +1,15 @@
+{
+  "version": "0.2.17",
+  "project": "truckbox_core",
+  "idf": "v5.5.2",
+  "chip_id": 13,
+  "flash_size_mb": 8,
+  "size_bytes": 1544768,
+  "ota_partition_bytes": 3145728,
+  "ota_free_bytes": 1600960,
+  "application_sha256": "c32e844357948baa71fbbbabac7c5144b3ccd58352f30924f5bed50a4819eeeb",
+  "elf_sha256": "8d97f5d0ec16e886954ab89a892fcc865d825a588b33277668f60a677b474b06",
+  "partition_table_sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832",
+  "physical_validation": "NOT_PERFORMED",
+  "automatically_installed": false
+}

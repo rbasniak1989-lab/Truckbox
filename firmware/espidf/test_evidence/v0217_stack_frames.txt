@@ -1,0 +1,9 @@
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/diagnostics.c:52:13:submit	784	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/diagnostics.c:71:13:payload	208	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/diagnostics.c:181:6:tb_diagnostics_flush	144	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/capture.c:315:13:request_task	560	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/capture.c:906:13:j1708_task	208	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/capture.c:740:13:snapshot_task	368	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/tbx_j1708_auto.c:24:6:tbx_j1708_auto_tick	96	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/ecu_counters.c:148:8:tb_ecu_counters_json	1168	static
+/workspace/work/Truckbox-v0217/firmware/espidf/components/tb_core/ecu_counters.c:170:6:tb_ecu_counters_flush	1920	static

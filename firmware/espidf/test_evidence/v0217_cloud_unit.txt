@@ -1,12 +1,12 @@
-✔ actual Cloud11Nov and preserved NEXIQ value bytes; four required cases (6.980205ms)
-✔ multiple faults, extended identifiers, unknowns, incomplete and empty tables (0.880821ms)
-✔ candidate OEM definitions are scoped/versioned; water code is not water detection (0.847593ms)
-✔ history keeps modules/codes separate; missing broadcast never resolves; no duplicate activation (1.170698ms)
-✔ PID192 completed RAW projection; partial groups stay explicitly incomplete (0.989442ms)
-✔ counter resets, MID changes, missing time, jumps and independent collection instants (2.530776ms)
-✔ read-only handler requires device auth and scopes every query to its truck; no financial writes (135.146894ms)
-✔ bundled Android cache is the exact versioned small catalog (1.11999ms)
-✔ trip endpoint lookup is independent of current history page and keeps auth scope (6.439819ms)
+✔ actual Cloud11Nov and preserved NEXIQ value bytes; four required cases (5.723705ms)
+✔ multiple faults, extended identifiers, unknowns, incomplete and empty tables (0.562249ms)
+✔ candidate OEM definitions are scoped/versioned; water code is not water detection (0.720406ms)
+✔ history keeps modules/codes separate; missing broadcast never resolves; no duplicate activation (1.16088ms)
+✔ PID192 completed RAW projection; partial groups stay explicitly incomplete (1.626689ms)
+✔ counter resets, MID changes, missing time, jumps and independent collection instants (2.330276ms)
+✔ read-only handler requires device auth and scopes every query to its truck; no financial writes (73.975831ms)
+✔ bundled Android cache is the exact versioned small catalog (1.087408ms)
+✔ trip endpoint lookup is independent of current history page and keeps auth scope (4.602422ms)
 ℹ tests 9
 ℹ suites 0
 ℹ pass 9
@@ -14,4 +14,4 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 354.082212
+ℹ duration_ms 207.91495
