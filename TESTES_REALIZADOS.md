@@ -81,6 +81,8 @@ Telas/contratos ausentes mostram indisponibilidade. As funções puras e fixture
 
 Ambiente inicial sem javac; JDK local e CA do ambiente configurados mantendo TLS. Runtime Robolectric precisou receber proxy e diretório próprio; qualificadores Android de viewport foram corrigidos. PixelCopy sem janela física foi substituído por desenho da View em Canvas nativo. Capturas permitiram identificar contraste inadequado do cabeçalho e ajustar tema e dimensões; a rodada final confirma a correção. Lint exigiu includeSubdomains explícito e SdkSuppress nos testes; sem baseline para ocultar erros.
 
+A primeira execução da CI nova parou no setup do SDK porque android-actions/setup-android@v3 usa por padrão o pacote obsoleto `tools`. A configuração passou a solicitar explicitamente `platform-tools`; SDK 36/build-tools 36.0.0 continuam instalados na etapa seguinte. Esta correção afeta apenas a CI, sem mudar o APK local verificado.
+
 Lint final: zero erros e 10 avisos — OldTargetApi (1), GradleDependency (3), NewerVersionAvailable (3), ModifierParameter (2) e DiscouragedApi para orientação em Android 16+ (1). SDK 37/mudanças de plataforma não foram adotados silenciosamente sem avaliar hardware e o contrato atual.
 
 ## Artefatos verificados
