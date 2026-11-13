@@ -245,5 +245,13 @@
       "height": 1080,
       "sha256": "38e62b8f6e4ea9efb5e074a7a6d52e37c0dee187c1cb45244f2d0f23c0184f81"
     }
-  ]
+  ],
+  "githubCI": {
+    "workflow": "Multimedia Next Homologação",
+    "result": "success",
+    "runId": 43437312280,
+    "sourceCommit": "cd2924bc35ee247c05c5c2f3056a203cb62e59d8",
+    "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43437312280",
+    "includesPhysicalDevice": false
+  }
 }

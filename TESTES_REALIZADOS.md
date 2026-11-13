@@ -4,6 +4,8 @@ Versão: 0.1.0-homologacao, Android min 26 / target 36. Base preservada: `06a930
 
 **Rodada local concluída:** APKs homolog, demo e instrumentação compilados; 35 testes JVM/Compose aprovados, zero falhas/skips; 13 casos da API proposta e TypeScript strict aprovados; lint com zero erros e 10 avisos. Fonte verificada: commit `274865c3b70f433f215365e1c787df161f7ec7d0`. Não houve instalação em multimídia, acesso a ECU/Core real, deploy Cloud ou execução de migração. PASSOU abaixo identifica a camada local; não substitui aceite de campo.
 
+**CI GitHub aprovada:** [Multimedia Next Homologação — execução 43437312280](https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43437312280), sobre `cd2924bc35ee247c05c5c2f3056a203cb62e59d8`. Setup SDK, testes/tipos da API proposta, build Android, testes JVM/Compose, lint, scanner dos APKs e upload de artefatos concluídos com sucesso. A execução não inclui dispositivo físico.
+
 ## Escopo efetivamente executado
 
 - Build dos APKs homolog, demo e teste instrumentado em JDK 21 completo, Gradle 9.4.1 e SDK 36.

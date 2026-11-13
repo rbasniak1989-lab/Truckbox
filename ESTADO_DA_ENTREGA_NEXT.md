@@ -13,6 +13,7 @@ O código publicado é idêntico ao código testado no commit local 274865c3b70f
 - APKs homolog, demo e instrumentação compilados e com hashes recuperados intactos.
 - 35 testes JVM/Compose aprovados, zero falhas/skips; 13 casos da API proposta e TypeScript strict aprovados.
 - Lint: zero erros e 10 avisos registrados em TESTES_REALIZADOS.md.
+- [CI GitHub do módulo Next aprovada](https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43437312280), com artefatos publicados pelo workflow.
 - 27 capturas nativas preservadas em [evidências](docs/multimediaNext/evidencias/screenshots/README.md).
 - Assinatura v2, applicationIds distintos, scanner e ausência de PreviewData no homolog verificados.
 - Teste instrumentado compilado; execução BLOQUEADA por ausência de Android conectado e falha HTTP 503 no download do executor UTP. Nenhum teste físico foi aprovado.
