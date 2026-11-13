@@ -1,0 +1,429 @@
+{
+  "sourceCommit": "06a9309d104367a49c88167d8f2b70bd7c1ffd1e",
+  "observedDate": "2026-11-13",
+  "method": "Read-only MCP catalog, columns, advisors and deployed source. No record exports.",
+  "tables": [
+    {
+      "name": "public.trucks",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.devices",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.telemetry_samples",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.telemetry_latest",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.events",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.dashboard_access",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.trips",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.operation_state",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.fuelings",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.expenses",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.maintenance",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.health_minute_samples",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.gps_samples",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.gps_latest",
+      "rls_enabled": true
+    },
+    {
+      "name": "public.route_simulations",
+      "rls_enabled": true
+    }
+  ],
+  "columns": {
+    "public.dashboard_access": [
+      "id",
+      "label",
+      "token_hash",
+      "active",
+      "created_at",
+      "truck_id",
+      "can_write"
+    ],
+    "public.devices": [
+      "id",
+      "truck_id",
+      "device_uid",
+      "token_hash",
+      "active",
+      "created_at",
+      "last_seen_at",
+      "device_type",
+      "label"
+    ],
+    "public.fuelings": [
+      "id",
+      "truck_id",
+      "client_uid",
+      "ts",
+      "liters",
+      "price_per_l",
+      "total",
+      "station",
+      "location",
+      "full_tank",
+      "odometer_km",
+      "created_at",
+      "updated_at"
+    ],
+    "public.gps_samples": [
+      "id",
+      "truck_id",
+      "device_id",
+      "source",
+      "client_uid",
+      "ts",
+      "lat",
+      "lon",
+      "speed_kmh",
+      "heading_deg",
+      "altitude_m",
+      "accuracy_m",
+      "provider",
+      "created_at"
+    ],
+    "public.operation_state": [
+      "truck_id",
+      "mode",
+      "active_trip_id",
+      "empty_started_at",
+      "empty_start_odometer_km",
+      "empty_distance_km",
+      "empty_fuel_liters",
+      "updated_at",
+      "empty_start_fuel_counter_l",
+      "tank_estimated_l",
+      "tank_reference_fuel_counter_l",
+      "tank_updated_at",
+      "fuel_test_started_at",
+      "fuel_test_start_counter_l",
+      "runtime_counters",
+      "last_telemetry_ts",
+      "last_telemetry_seq",
+      "last_health_ts",
+      "empty_calibration_base_l",
+      "empty_calibration_start_core_l"
+    ],
+    "public.route_simulations": [
+      "id",
+      "truck_id",
+      "client_uid",
+      "status",
+      "source_url",
+      "resolved_url",
+      "origin",
+      "destination",
+      "waypoints",
+      "cargo_weight_t",
+      "tare_weight_t",
+      "gross_weight_t",
+      "rate_per_t",
+      "freight_total",
+      "route_distance_km",
+      "route_duration_seconds",
+      "encoded_polyline",
+      "geography",
+      "expected_kml",
+      "predicted_fuel_liters",
+      "predicted_fuel_low_l",
+      "predicted_fuel_high_l",
+      "confidence",
+      "prediction_basis",
+      "started_trip_id",
+      "created_at",
+      "updated_at"
+    ],
+    "public.telemetry_latest": [
+      "truck_id",
+      "device_id",
+      "seq",
+      "ts",
+      "data",
+      "updated_at"
+    ],
+    "public.telemetry_samples": [
+      "id",
+      "truck_id",
+      "device_id",
+      "seq",
+      "ts",
+      "uptime_ms",
+      "speed_kmh",
+      "rpm",
+      "gear",
+      "selected_gear",
+      "odometer_km",
+      "trip_distance_km",
+      "trip_fuel_l",
+      "trip_average_kml",
+      "instant_kml",
+      "oil_temp_c",
+      "coolant_temp_c",
+      "gearbox_temp_c",
+      "intake_temp_c",
+      "oil_pressure_bar",
+      "fuel_pressure_bar",
+      "boost_bar",
+      "pedal_pct",
+      "torque_pct",
+      "clutch_slip_pct",
+      "bogie_weight_kg",
+      "lat",
+      "lon",
+      "eco_score",
+      "raw",
+      "created_at",
+      "sample_kind",
+      "trip_id",
+      "average_100km_kml",
+      "total_weight_can_kg",
+      "power_kw",
+      "load_pct",
+      "pedal_avg_pct",
+      "pedal_max_pct",
+      "pedal_zero_pct",
+      "iroll_active",
+      "cruise_active",
+      "veb_active",
+      "veb_stage",
+      "engine_running",
+      "moving",
+      "idle_seconds",
+      "iroll_seconds",
+      "cruise_seconds",
+      "veb_seconds",
+      "auto_mode_seconds",
+      "manual_mode_seconds",
+      "shift_up_count",
+      "shift_down_count",
+      "manual_shift_count",
+      "gps_source",
+      "fuel_rate_lph",
+      "cloud_rate_applied"
+    ],
+    "public.trips": [
+      "id",
+      "truck_id",
+      "client_uid",
+      "status",
+      "origin",
+      "destination",
+      "started_at",
+      "ended_at",
+      "start_odometer_km",
+      "end_odometer_km",
+      "distance_km",
+      "driving_seconds",
+      "stopped_seconds",
+      "weight_t",
+      "rate_per_t",
+      "freight_total",
+      "fuel_liters",
+      "average_kml",
+      "notes",
+      "created_at",
+      "updated_at",
+      "empty_before_distance_km",
+      "empty_before_fuel_liters",
+      "start_core_fuel_liters",
+      "end_core_fuel_liters",
+      "requested_started_at",
+      "start_telemetry_ts",
+      "start_telemetry_seq",
+      "start_match_delta_seconds",
+      "start_lat",
+      "start_lon",
+      "start_bogie_weight_kg",
+      "engine_seconds",
+      "idle_seconds",
+      "iroll_seconds",
+      "cruise_seconds",
+      "veb_seconds",
+      "auto_mode_seconds",
+      "manual_mode_seconds",
+      "shift_up_count",
+      "shift_down_count",
+      "manual_shift_count",
+      "rpm_economy_seconds",
+      "high_load_seconds",
+      "start_runtime_counters",
+      "end_runtime_counters",
+      "live_base_distance_km",
+      "live_base_fuel_liters",
+      "live_core_start_odometer_km",
+      "live_core_start_fuel_liters",
+      "live_baseline_at",
+      "live_core_start_distance_km",
+      "route_simulation_id",
+      "planned_route_url",
+      "planned_distance_km",
+      "planned_ascent_m",
+      "planned_descent_m",
+      "planned_expected_kml",
+      "planned_fuel_liters",
+      "planned_fuel_low_l",
+      "planned_fuel_high_l",
+      "planned_forecast_confidence",
+      "planned_forecast_basis",
+      "fuel_source",
+      "rate_fuel_liters",
+      "rate_last_ts",
+      "rate_last_lph",
+      "rate_gap_count",
+      "rate_gap_seconds",
+      "rate_last_seq",
+      "rate_gap_recovered_liters",
+      "rate_gap_recovery_count"
+    ],
+    "public.trucks": [
+      "id",
+      "code",
+      "name",
+      "created_at",
+      "fuel_tank_capacity_l",
+      "fuel_calibration_factor",
+      "fuel_calibration_started_at",
+      "fuel_calibration_start_core_l",
+      "tare_weight_t"
+    ],
+    "truckbox_ai.empty_leg_auto_v1": [
+      "trip_id",
+      "previous_trip_id",
+      "applied_distance_km",
+      "applied_fuel_liters",
+      "sample_count",
+      "updated_at"
+    ],
+    "truckbox_ai.model_registry": [
+      "model_name",
+      "version",
+      "trained_at",
+      "training_start",
+      "training_end",
+      "training_rows",
+      "details"
+    ]
+  },
+  "edgeInventory": [
+    {
+      "slug": "truckbox-app",
+      "version": 20,
+      "sha256": "3c6ab34821e0ba4c3e4a390135399680d3a7e4cda936dd4c327d19e7e36aa73c",
+      "verify_jwt": false
+    },
+    {
+      "slug": "truckbox-ingest",
+      "version": 26,
+      "sha256": "5fe8d8c4450001b9c954f9c1ea6608a778a1d3dc5c78eac0d34b89efc8855ae1",
+      "verify_jwt": false
+    },
+    {
+      "slug": "truckbox-gps",
+      "version": 4,
+      "sha256": "a1cacce3a4da465480f93117db661d6f8a808894e8ca5595ccc9ab6bbe9fa550",
+      "verify_jwt": false
+    },
+    {
+      "slug": "truckbox-dashboard-data",
+      "version": 18,
+      "sha256": "2f56f53462fc1f3990e9ca95cb48bf1f0082a7a3bb7c2cbb03235b5bb835afbd",
+      "verify_jwt": false
+    },
+    {
+      "slug": "truckbox-owner-v2",
+      "version": 6,
+      "sha256": "56720c8c3b9f5daf9874391a1cef2942cacd82bdba5f88fc2b367ff34abf0978",
+      "verify_jwt": false
+    },
+    {
+      "slug": "truckbox-map-data",
+      "version": 3,
+      "sha256": "2ef33573e00eac74b5935924d069fd7d1c807d7e1e9a8c819de3db5487478c4e",
+      "verify_jwt": false
+    },
+    {
+      "slug": "truckbox-live",
+      "version": 7,
+      "sha256": "4a594c92a2d45024c11d0f3b65c0ac36e7f8f286e4c73330f628d35e13591254",
+      "verify_jwt": false
+    }
+  ],
+  "confirmedPublicSecurityDefinerRpc": [
+    {
+      "schema": "public",
+      "function": "truckbox_fuel_range_metrics",
+      "security_definer": true,
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "schema": "public",
+      "function": "truckbox_monthly_fuel_metrics",
+      "security_definer": true,
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "schema": "public",
+      "function": "truckbox_rolling_fuel_metrics",
+      "security_definer": true,
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "schema": "public",
+      "function": "truckbox_sensor_trip_series",
+      "security_definer": true,
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "schema": "public",
+      "function": "truckbox_trip_live_summary",
+      "security_definer": true,
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "schema": "public",
+      "function": "truckbox_trip_telemetry_quality",
+      "security_definer": true,
+      "anon_execute": true,
+      "authenticated_execute": true
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+name: Multimedia Next Homologação
+on:
+  pull_request:
+    paths: ['multimediaNext/**', 'backend-proposal/**', 'settings.gradle.kts', '.github/workflows/multimedia-next.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+      - name: SDK 36
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Source secrets
+        run: python3 scripts/check_next_secrets.py
+      - name: Proposed API rules (no network/database)
+        run: node backend-proposal/v1/handler.test.ts
+      - name: Proposed API strict types
+        run: |
+          npm install --prefix "$RUNNER_TEMP/truckbox-ts" --no-audit --no-fund typescript@5.9.3 @types/node@24.10.0
+          "$RUNNER_TEMP/truckbox-ts/node_modules/.bin/tsc" --noEmit --strict --target es2023 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions --types node --typeRoots "$RUNNER_TEMP/truckbox-ts/node_modules/@types" backend-proposal/v1/contracts.ts backend-proposal/v1/handler.ts backend-proposal/v1/handler.test.ts
+      - name: Build isolated APK and run JVM/native UI tests
+        run: gradle --no-daemon :multimediaNext:assembleHomologDebug :multimediaNext:assembleDemoDebug :multimediaNext:testHomologDebugUnitTest :multimediaNext:assembleHomologDebugAndroidTest :multimediaNext:lintHomologDebug
+      - name: APK secrets
+        run: python3 scripts/check_next_secrets.py multimediaNext/build/outputs/apk/homolog/debug/multimediaNext-homolog-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TruckBox-Next-homologacao
+          path: |
+            multimediaNext/build/outputs/apk/
+            multimediaNext/build/reports/
+            multimediaNext/build/screenshots/
+          retention-days: 14

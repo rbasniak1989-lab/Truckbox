@@ -1,0 +1,8 @@
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <!-- HTTP legado restrito aos nomes locais auditados; nunca transportar tokens Cloud. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">truckbox.local</domain>
+        <domain includeSubdomains="false">192.168.4.1</domain>
+    </domain-config>
+</network-security-config>
