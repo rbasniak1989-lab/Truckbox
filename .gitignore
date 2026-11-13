@@ -7,3 +7,13 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pem
+artifacts/
+test-results-local/
+node_modules/
