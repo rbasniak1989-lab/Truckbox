@@ -1,0 +1,55 @@
+{
+  "source": "SELECT-only audit; detailed data retained privately in workspace",
+  "date_utc": "2026-11-13",
+  "device_uid_suffix": "190C",
+  "firmware": "0.2.18",
+  "verified_ELF_sha256": "a2f4dca0da66be3686b285715b51a195176bce479dc87b5f089def154ad42fe1",
+  "received_boot_diagnostics": 100,
+  "received_boot_range": [
+    310,
+    515
+  ],
+  "reset_reason_counts": {
+    "3": 1,
+    "1": 95,
+    "4": 2,
+    "9": 2
+  },
+  "panic_boots": [
+    322,
+    323
+  ],
+  "brownout_boots": [
+    395,
+    399
+  ],
+  "last_received_seq": 108560,
+  "user_reported_current_boot": 553,
+  "operator_report": "uncommanded resets with supply connected",
+  "minimum_heap_other_observed_boot": {
+    "boot_id": 509,
+    "heap_minimum": 2416
+  },
+  "user_reported_boot553": {
+    "source": "user /api/state; not measured by agent",
+    "version": "0.2.18",
+    "boot_id": 553,
+    "uptime_ms": 55634,
+    "reset_reason": 1,
+    "heap_free": 59532,
+    "heap_minimum": 40140,
+    "heap_largest_block": 26624,
+    "storage": {
+      "ready": false,
+      "error": "record write failed; stopped to preserve data",
+      "committed_this_boot": 0,
+      "write_errors": 11,
+      "queue_depth": 34,
+      "last_ack_seq": 108560,
+      "max_seq": 108560,
+      "pending_known": false
+    },
+    "uncommanded_resets_confirmed_by_operator": true
+  },
+  "constraints": "ts with time_valid=false is not a measured boot wall clock; absent boots are unknown; DTC history re-emission is not a new boot"
+}

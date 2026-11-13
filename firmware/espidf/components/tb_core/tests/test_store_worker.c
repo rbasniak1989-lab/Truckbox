@@ -21,7 +21,7 @@ static void xSemaphoreGive(void *m){(void)m;assert(mutex);mutex=0;}
 static void increment(uint64_t *v){++*v;}
 static bool initialize_medium(void){++initializations;state.ready=true;state.medium_initialized=true;state.base_path="mounted-flash";return true;}
 static void prune_segments(void){assert(mutex);}
-static bool recover_records(void){assert(mutex);++recoveries;
+static bool recover_after_failure(void){assert(mutex);++recoveries;
     if(mode==3 && recoveries==1)return false;
     state.highest_committed=media_sequence;state.next_sequence=101;return true;
 }

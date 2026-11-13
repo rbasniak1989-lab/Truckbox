@@ -38,6 +38,8 @@
 #include "nvs.h"
 #include "sdmmc_cmd.h"
 #include "wear_levelling.h"
+#include "diskio_wl.h"
+#include "ff.h"
 #endif
 
 #define STORE_FLASH_SEGMENT_BYTES (48U * 1024U)
@@ -62,6 +64,14 @@ typedef struct {
     uint64_t uptime_us;
     char json[TB_RECORD_MAX];
 } queued_record_t;
+
+typedef struct {
+    const char *stage;
+    int error, close_error;
+    uint32_t segment;
+    uint64_t sequence, at_us;
+    size_t requested, written;
+} store_io_failure_t;
 
 typedef struct {
     SemaphoreHandle_t mutex;
@@ -107,6 +117,11 @@ typedef struct {
     bool oldest_pending_known;
     uint64_t last_ack_us, last_append_us, stored_bytes_this_boot;
     uint64_t write_errors;
+    store_io_failure_t last_io_failure;
+    bool volume_rebind_required;
+    uint64_t recovery_attempts, recovery_successes, volume_rebinds;
+    uint64_t last_recovery_us;
+    int volume_result;
     uint64_t dropped_queue;
     uint64_t dropped_unavailable;
     uint64_t dropped_full;
@@ -144,6 +159,26 @@ static void fail_store(const char *message)
     state.ready = false;
     snprintf(state.error, sizeof(state.error), "%s", message);
     ESP_LOGE(TAG, "%s", message);
+}
+
+static void failed_record_io(const char *stage, int error, int close_error,
+                             uint32_t segment, uint64_t sequence,
+                             size_t requested, size_t written)
+{
+    state.last_io_failure=(store_io_failure_t){
+        .stage=stage,.error=error,.close_error=close_error,
+        .segment=segment,.sequence=sequence,.requested=requested,.written=written,
+        .at_us=(uint64_t)esp_timer_get_time()
+    };
+    /* A read-only scan cannot clear FatFs' in-memory window or sharing locks
+     * left by an unsuccessful close. Rebind this FLASH volume before scanning;
+     * do not reset the ESP32, change media or format an existing filesystem. */
+    if(state.medium && !strcmp(state.medium,"flash"))state.volume_rebind_required=true;
+    ++state.write_errors;
+    fail_store("record write failed; stopped to preserve data");
+    ESP_LOGE(TAG,"record IO stage=%s errno=%d close_errno=%d seg=%" PRIu32
+        " seq=%" PRIu64 " bytes=%u/%u boot=%" PRIu32,
+        stage,error,close_error,segment,sequence,(unsigned)written,(unsigned)requested,tb_boot_id());
 }
 
 static void segment_path(char *path, size_t capacity, uint32_t id)
@@ -520,6 +555,24 @@ static bool mount_storage(void)
     return true;
 }
 
+/* All storage FILEs/DIRs have been closed and state.mutex is held. Keep the
+ * existing VFS and wear-levelling registration, but invalidate FatFs' cached
+ * volume/locks and mount the SAME filesystem again. f_mount never formats.
+ * Confirmed rows already crossed fflush/fsync/close; the only ambiguous row
+ * stays in the worker's retained buffer until a fresh CRC scan finds it. */
+static int rebind_flash_volume(wl_handle_t handle)
+{
+    unsigned char drive=ff_diskio_get_pdrv_wl(handle);
+    if(drive==0xff)return FR_INVALID_DRIVE;
+    char path[5];snprintf(path,sizeof(path),"%u:",(unsigned)drive);
+    FATFS *fs=NULL;DWORD free_clusters=0;
+    FRESULT result=f_getfree(path,&free_clusters,&fs);
+    /* f_getfree can return a read error after giving us the registered fs.
+     * Without that pointer, leave the registration untouched and retry later. */
+    if(!fs)return result==FR_OK?FR_INVALID_OBJECT:result;
+    return f_mount(fs,path,1);
+}
+
 #endif
 
 /* Delete ONLY our named telemetry .LOG segments, never other files or FAT/NVS.
@@ -617,12 +670,39 @@ static bool recover_records(void)
     state.next_segment_id=largest_id+1;
     if(!state.next_segment_id){fail_store("segment identifier exhausted");return false;}
     if(state.highest_committed>state.reserved_end){
+        if(nvs_set_u64(state.nvs,"reserved",state.highest_committed)!=ESP_OK || nvs_commit(state.nvs)!=ESP_OK){fail_store("cannot reserve recovered sequences");return false;}
         state.reserved_end=state.highest_committed;
-        if(nvs_set_u64(state.nvs,"reserved",state.reserved_end)!=ESP_OK || nvs_commit(state.nvs)!=ESP_OK){fail_store("cannot reserve recovered sequences");return false;}
     }
     state.next_sequence=state.reserved_end+1;
     if(tb_config()->sequence_floor>state.next_sequence)state.next_sequence=tb_config()->sequence_floor;
     state.recovery_complete=true;state.error[0]=0;return true;
+}
+
+static bool __attribute__((unused)) recover_after_failure(void)
+{
+    ++state.recovery_attempts;
+    state.last_recovery_us=(uint64_t)esp_timer_get_time();
+    uint64_t next_before=state.next_sequence;
+    if(state.volume_rebind_required){
+        state.recovery_complete=false;
+        state.volume_result=rebind_flash_volume(state.flash_handle);
+        if(state.volume_result!=0){
+            fail_store("flash volume rebind failed; data preserved");
+            return false;
+        }
+        ++state.volume_rebinds;
+        state.volume_rebind_required=false;
+    }
+    if(!recover_records())return false;
+    /* This is the SAME boot with one writer: consume the unused part of its
+     * already durable reservation, never the failed sequence itself. A retry
+     * every 5s must not reserve another 256 IDs/commit NVS each time. Startup
+     * still skips the persisted reservation, and newly discovered sequences
+     * or a changed floor always win. */
+    if(next_before>state.highest_committed && next_before<=state.reserved_end+1 &&
+       next_before>=tb_config()->sequence_floor)state.next_sequence=next_before;
+    ++state.recovery_successes;
+    return true;
 }
 
 /* Called only under state.mutex, and only after the ack has been committed. */
@@ -763,21 +843,35 @@ static void append_record(const queued_record_t *item)
     }
     char path[64];
     segment_path(path, sizeof(path), segment->id);
+    errno=0;
     FILE *file = fopen(path, "a+b");
-    size_t separator=0;
-    if(file && segment->quarantined && segment->bytes && fseek(file,-1,SEEK_END)==0){
-        int last=fgetc(file);
-        if(fseek(file,0,SEEK_END)!=0){fclose(file);file=NULL;}
-        else if(last!='\n'){if(fputc('\n',file)==EOF){fclose(file);file=NULL;}else separator=1;}
+    const char *failed=file?NULL:"OPEN";
+    int io_error=file?0:errno,close_error=0;
+    size_t separator=0,stored=0;
+    if(file && segment->quarantined && segment->bytes){
+        errno=0;
+        if(fseek(file,-1,SEEK_END)!=0){failed="SEEK_TAIL";io_error=errno;}
+        int last=EOF;
+        if(!failed){errno=0;last=fgetc(file);if(last==EOF){failed="READ_TAIL";io_error=errno;}}
+        if(!failed){errno=0;if(fseek(file,0,SEEK_END)!=0){failed="SEEK_END";io_error=errno;}}
+        if(!failed && last!='\n'){
+            errno=0;if(fputc('\n',file)==EOF){failed="SEPARATOR";io_error=errno;}else separator=1;
+        }
     }
-    bool ok = file && fwrite(line, 1, length, file) == length &&
-              fflush(file) == 0 && fsync(fileno(file)) == 0;
-    if (file && fclose(file) != 0) {
-        ok = false;
+    if(file && !failed){
+        errno=0;stored=fwrite(line,1,length,file);
+        if(stored!=length){failed="WRITE";io_error=errno;}
     }
-    if (!ok) {
-        ++state.write_errors;
-        fail_store("record write failed; stopped to preserve data");
+    if(file && !failed){errno=0;if(fflush(file)!=0){failed="FLUSH";io_error=errno;}}
+    if(file && !failed){errno=0;if(fsync(fileno(file))!=0){failed="SYNC";io_error=errno;}}
+    if(file){
+        errno=0;
+        if(fclose(file)!=0){close_error=errno;if(!failed){failed="CLOSE";io_error=close_error;}}
+    }
+    if(failed){
+        /* Keep the FIRST error even if close also fails or changes errno.
+         * errno==0 is reported as unknown; never invent a measured errno. */
+        failed_record_io(failed,io_error,close_error,segment->id,sequence,length,stored);
         return;
     }
     if(state.capacity_blocked){state.capacity_blocked=false;state.error[0]=0;}
@@ -913,7 +1007,7 @@ static void storage_task(void *argument)
             xSemaphoreTake(state.mutex,portMAX_DELAY);
             state.initializing=true;
             if(!state.base_path || !state.medium_initialized){initialize_medium();}
-            else if(recover_records()){
+            else if(recover_after_failure()){
                 state.ready=true;prune_segments();
                 if(retained && state.highest_committed>=retained_sequence)retained=false;
             }
@@ -1442,6 +1536,29 @@ void tb_store_add_json(cJSON *object)
     cJSON_AddNumberToObject(storage, "discarded_files", state.purged_files);
     cJSON_AddNumberToObject(storage, "corrupt_records", (double)state.corrupt_records);
     cJSON_AddNumberToObject(storage, "write_errors", (double)state.write_errors);
+    cJSON_AddNumberToObject(storage,"recovery_attempts",(double)state.recovery_attempts);
+    cJSON_AddNumberToObject(storage,"recovery_successes",(double)state.recovery_successes);
+    cJSON_AddNumberToObject(storage,"volume_rebinds",(double)state.volume_rebinds);
+    cJSON_AddBoolToObject(storage,"volume_rebind_pending",state.volume_rebind_required);
+    if(state.volume_rebinds || state.volume_result)cJSON_AddNumberToObject(storage,"volume_rebind_fresult",state.volume_result);
+    else cJSON_AddNullToObject(storage,"volume_rebind_fresult");
+    if(state.last_recovery_us)cJSON_AddNumberToObject(storage,"last_recovery_age_ms",(double)(now-state.last_recovery_us)/1000.0);
+    else cJSON_AddNullToObject(storage,"last_recovery_age_ms");
+    if(state.last_io_failure.stage){
+        const store_io_failure_t *io=&state.last_io_failure;
+        cJSON *failure=cJSON_AddObjectToObject(storage,"last_io_failure");
+        cJSON_AddStringToObject(failure,"stage",io->stage);
+        cJSON_AddNumberToObject(failure,"errno",io->error);
+        cJSON_AddBoolToObject(failure,"errno_known",io->error!=0);
+        cJSON_AddNumberToObject(failure,"close_errno",io->close_error);
+        cJSON_AddNumberToObject(failure,"segment",io->segment);
+        cJSON_AddNumberToObject(failure,"sequence",(double)io->sequence);
+        cJSON_AddNumberToObject(failure,"requested_bytes",(double)io->requested);
+        cJSON_AddNumberToObject(failure,"written_bytes",(double)io->written);
+        cJSON_AddNumberToObject(failure,"boot_id",tb_boot_id());
+        cJSON_AddNumberToObject(failure,"uptime_ms",(double)io->at_us/1000.0);
+        cJSON_AddBoolToObject(failure,"historical",state.ready);
+    }
     cJSON_AddNumberToObject(storage, "queue_depth",
                            state.queue ? uxQueueMessagesWaiting(state.queue) : 0);
     cJSON_AddNumberToObject(storage, "dropped_queue", (double)counter_value(&state.dropped_queue));

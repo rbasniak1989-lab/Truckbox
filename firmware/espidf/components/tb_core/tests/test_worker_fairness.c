@@ -36,7 +36,7 @@ typedef struct { unsigned payload; } queued_record_t;
 static void xSemaphoreTake(void *lock,unsigned wait) { (void)lock;(void)wait;++mutex_depth; }
 static void xSemaphoreGive(void *lock) { (void)lock;assert(mutex_depth==1);--mutex_depth; }
 static unsigned uxQueueMessagesWaiting(void *q){(void)q;return 1;}
-static bool recover_records(void) { return true; }
+static bool recover_after_failure(void) { return true; }
 static void prune_segments(void) { }
 static bool initialize_medium(void) { state.ready=true;state.medium_initialized=true;return true; }
 static void append_record(const queued_record_t *item) {
