@@ -1,5 +1,6 @@
 #include "tb.h"
 #include "tb_image_policy.h"
+#include "tb_crash.h"
 
 #include <limits.h>
 #include <inttypes.h>
@@ -663,6 +664,8 @@ esp_err_t tb_web_start(void)
     const httpd_uri_t routes[] = {
         { .uri = "/", .method = HTTP_GET, .handler = home_handler },
         { .uri = "/api/health", .method = HTTP_GET, .handler = health_handler },
+        { .uri = "/api/crash", .method = HTTP_GET, .handler = tb_crash_info_handler },
+        { .uri = "/api/crash.bin", .method = HTTP_GET, .handler = tb_crash_download_handler },
         { .uri = "/api/state", .method = HTTP_GET, .handler = state_handler },
         { .uri = "/api/config", .method = HTTP_GET, .handler = config_get_handler },
         { .uri = "/api/config", .method = HTTP_POST, .handler = config_post_handler },

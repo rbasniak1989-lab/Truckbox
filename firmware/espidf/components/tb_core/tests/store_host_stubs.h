@@ -44,6 +44,8 @@ static bool host_allow_compression=true;
 static bool host_mutex_busy;
 static bool host_fail_fsync_once;
 static bool host_fail_commit_once;
+static unsigned host_volume_rebind_calls;
+static int host_volume_rebind_result;
 static uint64_t host_nvs_ack, host_nvs_reserved;
 static uint64_t host_pending_ack, host_pending_reserved;
 static uint8_t host_pending_clean;
@@ -90,3 +92,7 @@ static inline int store_host_fsync(int descriptor)
     return fsync(descriptor);
 }
 #define fsync store_host_fsync
+
+/* Hardware boundary only; recovery/append/ACK remain the real store.c code. */
+static inline int rebind_flash_volume(wl_handle_t handle)
+{ (void)handle; ++host_volume_rebind_calls; return host_volume_rebind_result; }
