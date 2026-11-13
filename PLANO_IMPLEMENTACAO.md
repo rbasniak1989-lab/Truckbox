@@ -1,50 +1,35 @@
-# Plano revisável — TruckBox Multimídia Next
+# Plano revisável — :multimediaNext
+
+Base: AUDITORIA.md e contrato mestre v1. Nenhum deploy/migração de produção autorizado neste incremento.
 
 ## Arquitetura
 
-Módulo novo :multimediaNext, Kotlin/Compose nativo, sem dependência de :app/:multimedia. ApplicationIds: br.com.truckbox.multimedia.next e .next.demo. Demo separado com banner permanente e sem rede; homolog com dados reais/indisponíveis.
+Módulo Android independente, applicationId `br.com.truckbox.multimedia.next`, flavor homolog (dados reais/indisponíveis) e demo separado (`.demo`, banner permanente). Kotlin/Compose nativo, tema #E87924/grafite, Oxanium/Inter licenciadas, paisagem/imersivo, drawer sobreposto recolhido. Nenhuma dependência de `:app` ou `:multimedia`.
 
-Separar domínio puro, DTOs/repositórios tipados e componentes/telas. Estado protegido efêmero e por tenant/veículo/dispositivo/usuário/sessão; política somente pela Cloud, versionada e com validade/ACK. Financeiro e Jornada independentes, deny por padrão e sem chaves locais.
+Pacotes: domain (sinais com origem/tempo/qualidade; regras puras), data (DTOs explícitos, HTTP só leitura Core, preferências locais tipadas), ui (shell e cinco áreas). Estado protegido é efêmero e escopado a tenant/veículo/dispositivo/usuário/sessão; nunca persistir valores protegidos. Política só chega de transporte Cloud autenticado, com versão, expiração e ACK. Offline sem política verificável nega. Aparência local não muda autorização.
 
-Cinco áreas: Home, Consumo, Viagem atual, Caminhão/Diagnóstico e Configurações. Drawer recolhido/sobreposto, paisagem/imersivo, #E87924/grafite, Oxanium/Inter licenciadas, noite 18–6 São Paulo e brilho local quando suportado.
+Backend proposto v1 em diretório de proposta fora do deploy automático: contratos separados para monitoramento, Financeiro e Jornada; verificações antes de buscar/serializar dados; DTOs sem objetos SQL completos; testes negativos dos quatro cenários, revogação, identidade e expiração. Endpoints legados não servem de fallback. Migrações aditivas/rollback e revisão descritos em CONTRATOS_V1.md.
 
-## Home contratual
+## Incrementos e provas
 
-Exatamente 13 posições em 3+4+6: pressão óleo, turbo, combustível; temperatura água, óleo motor, admissão, i-Shift; marcha, tensão, ambiente, pedal, dois circuitos de ar em um cartão e torque. Não substituir essa lista.
-
-Sem novas páginas de Histórico, Comparativos, Relatórios, cadastro de frete, planejador ou Jornada isolada. Jornada é modal opcional da Viagem; Financeiro é cartão opcional independente. Na área Caminhão, Geral é primeira e concentra falhas; nas outras abas: IA, sensores, min/média/máx e expansão.
-
-## Incrementos e verificação
-
-| Ordem | Tarefa | Prova |
+| Ordem | Tarefa pequena | Verificação / condição |
 |---|---|---|
-| 1 | Shell, tema, cinco rotas e ambientes | Build, IDs distintos, drawer, noite e preferências. |
-| 2 | Home 13 posições e inteligência | Ordem, pressão dupla e screenshots. |
-| 3 | Consumo por etapa | L/h parado, carregado/vazio e ledger 720→570→670→650 com confirmação, sem boia. |
-| 4 | Viagem e módulos opcionais | Quatro matrizes, revogação e vazio sem receita. |
-| 5 | Caminhão | IA primeiro, central Geral, estatísticas temporais e DTC confirmado. |
-| 6 | Configurações | Permissões read-only; edição apenas parada/autorizada e persistida por usuário/veículo. |
-| 7 | Autorização e contratos v1 | Verificar antes de consultar/serializar; testes negativos e sem endpoints fictícios. |
-| 8 | Integração e entrega | Unitários/UI/instrumentados, cinco viewports, scanner, APK e roteiro físico. |
+| 1 | Shell, tema, cinco rotas, flavor isolado, relógio São Paulo/noite 18–6 e brilho local | Build homolog e demo; drawer fecha ao selecionar; APK IDs distintos. |
+| 2 | Home 3+4+6 e pressão dupla num só cartão, 2/3 instrumentos + 1/3 inteligência, fita viagem | Teste da ordem; screenshot nas cinco dimensões; sem mock homolog; rotação só Efficiency. |
+| 3 | Consumo com seleções etapa e janela; métricas e previsões explícitas | Testar carregado/vazio, instantâneo L/h parado; ledger tanque 720→570→670→650, replay/reboot/reset/lacuna. Saldo comercial aguarda backend. |
+| 4 | Viagem atual com mapa/rota/posição indisponíveis quando ausentes, módulos independentes | Quatro matrizes; modal jornada fecha e some ao revogar; ausência de receita no vazio. Sem cadastro/planejador. |
+| 5 | Caminhão seis abas, Geral primeiro, IA primeiro, DTC só Geral, estatísticas e expansão | Média temporal irregular; códigos/horas só de fonte; conexão perdida mantém episódio e estado atual desconhecido. |
+| 6 | Configurações e preferências aparência, conexões independentes, personalização segura | Sem switches protegidos; editar só com parada verificada e autorização. Persistência de layout Cloud depende de autenticação. |
+| 7 | Autorização remota e DTOs backend v1, proposta de migrations reversíveis | Testes locais server-side antes da entrega; **sem** alegar implantação/provisionamento real. |
+| 8 | Integração existente que passar auditoria, hardening, APK, documentação | Testes JVM/UI/screenshot; tentativa de instrumentação; scan de segredos; lista T01–T50 com evidência. |
 
-## Contratos e migrações propostos
+## Critérios para liberar integração real
 
-São propostas de produto, não descrições de schema implantado. Validar ownership/autenticação e staging antes de gerar DDL definitivo.
+1. Provisionamento de identidade de multimídia e login por usuário/veículo, renovação e revogação; autorizações em cada consulta, incluindo endpoints antigos e RPCs.
+2. Aprovar contrato e aplicar adições em staging isolado com backup, testes RLS/API entre tenants e rollback. Não promover automaticamente.
+3. Capturar `/api/state` autorizado, timestamps/qualidade por sinal e versão firmware; validar os 13 instrumentos no FH, combustível e vazão incluindo lenta. Não alterar firmware neste escopo.
+4. Validar ledger autoritativo, ambos tanques cheios, concorrência e reconstrução tardia; Motorista deve registrar semântica inequívoca. Vazio só se vincula com confirmação.
+5. Aprovar fornecedores/licenças/custos de mapa, relevo e tarifa; captura DTC e legislação/classificação Jornada.
+6. Executar no hardware Android 13” toque/noite/imersivo/offline/reinício e integração Core/Motorista/Cloud com a multimídia desligada.
 
-- Identidade, vínculos e sessões por dispositivo/usuário/veículo.
-- Políticas independentes versionadas, auditoria e ACK.
-- Ledger combustível por evento/epoch/seq e confirmação inequívoca de ambos tanques cheios.
-- Observações/episódios DTC com UNKNOWN após desconexão e fim só confirmado.
-- Praças/tarifas versionadas/passagens/responsável/reembolso e confirmação do vínculo do vazio.
-- Segmentos/correções/confirmações de Jornada, com revisão legal.
-- Evidências/versões de insights e layouts de 13 posições.
-
-Adições com privilégios mínimos e autorização em cada consulta; nenhuma abertura genérica de acesso. Não assumir confirmação de ambos tanques ou vínculo do vazio a partir de registros antigos. Revisar todos os caminhos de autorização existentes.
-
-Rollback operacional: desabilitar novos serviços/vínculos/reconciliadores e negar módulos, preservando dados/auditoria. Não apagar registros como forma padrão de reversão. Não executar produção sem revisão/autorização.
-
-## Condições para integração e aceite
-
-Provisionar identidade e sessão, validar contratos em staging, capturar telemetria autorizada, comprovar timestamps/qualidade e persistência/replay. Validar 13 sensores, DTC, tanque, jornada e ecossistema Core/Motorista/Cloud. Aprovar fornecedores/licenças/custos de mapas/relevo/tarifas e pendências legais.
-
-Testar os cinco viewports e o Android 13” real com toque, densidade, brilho/noite, imersivo, offline/reinício e operação com multimídia desligada. Sem dados, usar Sem leitura/Dados insuficientes/Não verificado. Mocks não substituem campo.
+Ao faltar contrato, a tela mostra Sem leitura/Dados insuficientes/Não verificado. A implementação local pode avançar, mas aceite integrado permanece BLOQUEADO. Lista detalhada de execução será mantida em TESTES_REALIZADOS.md; nenhuma pendência de fornecedor ou campo será ocultada por demonstração.
