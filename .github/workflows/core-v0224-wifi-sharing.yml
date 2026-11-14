@@ -32,6 +32,7 @@ jobs:
           target: esp32c6
           path: firmware/espidf
           command: |
+            set -eu
             export PATH="$PWD/../../.ci-tools/node/bin:$PATH"
             node --version
             bash tools/build_v020.sh core
