@@ -1,0 +1,56 @@
+name: Core 0.2.24 Starlink sharing candidate
+on:
+  push:
+    branches: [codex/core-multimedia-contract]
+    paths: ['firmware/**', '.github/workflows/core-v0224-wifi-sharing.yml']
+  pull_request:
+    branches: [fix/revb1-v0223-polling-fuel]
+    paths: ['firmware/**', '.github/workflows/core-v0224-wifi-sharing.yml']
+  workflow_dispatch:
+concurrency:
+  group: core-v0224-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: ESP-IDF 5.5.2 compile and host regressions (no flash)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+      - name: Verify Core image, unchanged partitions, J1708 profile and bounded NAT
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct,hashlib
+          p=Path('firmware/espidf/build-core')
+          data=(p/'truckbox_core.bin').read_bytes()
+          assert 512<len(data)<0x300000
+          text=lambda a,b:data[a:b].split(b'\0',1)[0].decode('ascii')
+          assert data[0]==0xe9 and data[3]>>4==3 and struct.unpack_from('<H',data,12)[0]==13
+          assert text(48,80)=='0.2.24' and text(80,112)=='truckbox_core' and text(144,176)=='v5.5.2'
+          assert hashlib.sha256(Path('firmware/espidf/partitions.csv').read_bytes()).hexdigest()=='5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832'
+          config=(p/'sdkconfig').read_text()
+          assert all(x in config for x in ['CONFIG_TB_J1708_ONLY=y','CONFIG_LWIP_IPV4_NAPT=y','CONFIG_LWIP_IP_FORWARD=y'])
+          assert 'CONFIG_LWIP_IPV4_NAPT_PORTMAP=y' not in config
+          assert '-DIP_NAPT_MAX=64' in (p/'compile_commands.json').read_text()
+          print('Candidate compiled:',len(data),'bytes; sha256:',hashlib.sha256(data).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: TruckBox-Core-0.2.24-CANDIDATA-NAO-INSTALADA
+          path: |
+            firmware/espidf/build-core/truckbox_core.bin
+            firmware/espidf/build-core/truckbox_core.elf
+            firmware/espidf/build-core/truckbox_core.map
+            firmware/espidf/build-core/sdkconfig
+          retention-days: 30
+          if-no-files-found: error

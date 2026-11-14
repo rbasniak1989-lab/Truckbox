@@ -11,6 +11,7 @@ sh components/tb_core/tests/run_diagnostic_memory.sh
 sh components/tb_web/tests/run_json_http.sh
 sh components/tb_web/tests/run_crash.sh
 sh components/tb_base/tests/run_peer_address.sh
+sh components/tb_base/tests/run_wifi_sharing.sh
 sh components/tb_web/tests/run_policy_test.sh
 sh components/tb_core/tests/run.sh
 sh components/tb_core/tests/run_store_format.sh
