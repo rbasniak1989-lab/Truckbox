@@ -1,8 +1,6 @@
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <!-- HTTP legado restrito aos nomes locais auditados; nunca transportar tokens Cloud. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">truckbox.local</domain>
-        <domain includeSubdomains="false">192.168.4.1</domain>
-    </domain-config>
+    <!-- Android não aceita CIDR em domain-config. O transporte Core valida RFC1918 ou
+         truckbox.local, fixa GET /api/state, vincula ao Wi-Fi e recusa redirects.
+         Cloud usa exclusivamente HTTPS e outro transporte; nunca enviar tokens ao Core. -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

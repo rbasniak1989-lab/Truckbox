@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-14",
+  "version": "0.1.1-homologacao",
+  "tests": {
+    "tests": 59,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Warning": 7
+  },
+  "apkSha256": "6b724f02162973d400cd1380e87b4dc29ce8f2112fea67a648c832fea5379117",
+  "firmwareContractSource": "bd723891cdaad2b23466c8311d13409b3d4a36c0",
+  "sameDebugCertificateAs010": true,
+  "physicalDeviceTested": false,
+  "productionChanged": false,
+  "cloudLiveIntegrated": false
+}

@@ -30,6 +30,7 @@ import java.time.format.DateTimeFormatter
     onNight: (Boolean)->Unit = {},
     startingPage: Page = Page.HOME,
     nowOverride: Instant? = null,
+    onCoreRetry: () -> Unit = {},
 ) {
     val state = input.redacted()
     var now by remember { mutableStateOf(nowOverride ?: Instant.now()) }
@@ -69,13 +70,15 @@ import java.time.format.DateTimeFormatter
                     Caption("Cloud: ${state.cloud.label}")
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start=56.dp,end=20.dp,top=10.dp,bottom=20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                    if(page==Page.HOME) {
+                        HomeScreen(state,now,Modifier.fillMaxSize().padding(start=40.dp,end=14.dp,top=8.dp,bottom=12.dp))
+                    } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start=56.dp,end=20.dp,top=10.dp,bottom=20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                         when(page) {
-                            Page.HOME -> HomeScreen(state,now)
+                            Page.HOME -> Unit
                             Page.CONSUMPTION -> ConsumptionScreen(state,now)
                             Page.TRIP -> TripScreen(state,now)
                             Page.TRUCK -> TruckScreen(state,now)
-                            Page.SETTINGS -> SettingsScreen(state,preferences,onPreferences,now)
+                            Page.SETTINGS -> SettingsScreen(state,preferences,onPreferences,now,onCoreRetry)
                         }
                     }
                     FilledTonalIconButton(onClick={scope.launch{drawer.open()}},modifier=Modifier.align(Alignment.CenterStart).padding(start=8.dp).width(36.dp).height(72.dp).testTag("drawer-handle")) {

@@ -10,8 +10,8 @@ android {
         applicationId = "br.com.truckbox.multimedia.next"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-homologacao"
+        versionCode = 2
+        versionName = "0.1.1-homologacao"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     flavorDimensions += "environment"

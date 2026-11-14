@@ -15,8 +15,9 @@ import br.com.truckbox.multimedia.next.domain.*
 import java.time.Instant
 
 private val sections=listOf("Geral","Veículo e perfil","Módulos e permissões","Personalizar painel","Conexões","Tela e aparência","Atualizações","Manutenção e testes","Sobre")
-@Composable fun SettingsScreen(state: AppState,preferences: LocalPreferences,onPreferences: (LocalPreferences)->Unit,now: Instant) {
+@Composable fun SettingsScreen(state: AppState,preferences: LocalPreferences,onPreferences: (LocalPreferences)->Unit,now: Instant,onCoreRetry: () -> Unit = {}) {
     var section by remember { mutableIntStateOf(0) }
+    var coreHost by remember(preferences.coreHost) { mutableStateOf(preferences.coreHost) }
     ChoiceRow(sections,section,{section=it},Modifier.horizontalScroll(rememberScrollState()))
     if(section==0 || section==1) Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         PanelCard(Modifier.weight(1f)) {
@@ -58,7 +59,20 @@ private val sections=listOf("Geral","Veículo e perfil","Módulos e permissões"
         ConnectionLine("4G / SD do Core","Não verificado · Rev.B.1")
         Caption("Última resposta Core: ${state.lastCoreResponse ?: "Não recebida"}")
         Caption("Host local de leitura (sem token)")
-        ChoiceRow(listOf("truckbox.local","192.168.4.1"),if(preferences.coreHost=="truckbox.local") 0 else 1,{onPreferences(preferences.copy(coreHost=if(it==0) "truckbox.local" else "192.168.4.1"))})
+        ChoiceRow(listOf("truckbox.local","192.168.4.1"),when(preferences.coreHost){"truckbox.local"->0;"192.168.4.1"->1;else->-1},{onPreferences(preferences.copy(coreHost=if(it==0) "truckbox.local" else "192.168.4.1"))})
+        OutlinedTextField(value=coreHost,onValueChange={coreHost=it.trim()},singleLine=true,label={Text("Core na rede Starlink · IP local")},
+            supportingText={Text("Use truckbox.local ou o IP privado do Core, sem http://, porta ou senha.")},isError=!validCoreHost(coreHost))
+        TextButton(onClick={onPreferences(preferences.copy(coreHost=coreHost))},enabled=validCoreHost(coreHost) && coreHost!=preferences.coreHost) { Text("Aplicar endereço do Core") }
+        Caption("Se o nome local não responder, a consulta tenta também o IP. O acesso usa o Wi-Fi, mesmo sem internet.")
+        TextButton(onClick=onCoreRetry,enabled=!state.demo) { Text("Testar conexão agora") }
+        state.coreDiagnostics?.let { report ->
+            Caption("Último teste: ${report.checkedAt}")
+            report.attempts.forEach { attempt ->
+                Caption("${attempt.host}${if(attempt.resource=="/api/state") "" else attempt.resource} · ${attempt.issue?.label ?: "JSON recebido"}${attempt.httpStatus?.let { " · HTTP $it" } ?: ""}")
+            }
+            if(report.responded) Caption("Campos numéricos reconhecidos: ${report.recognizedValues}")
+            Text(report.explanation)
+        }
     }
     if(section==0 || section==5) PanelCard(Modifier.fillMaxWidth()) {
         SectionTitle("Tela e aparência",Icons.Outlined.DarkMode)
@@ -74,7 +88,7 @@ private val sections=listOf("Geral","Veículo e perfil","Módulos e permissões"
     }
     if(section==7) PanelCard(Modifier.fillMaxWidth()) {
         SectionTitle("Manutenção e testes",Icons.Outlined.Build)
-        Caption("O app consulta apenas GET /api/state. Nenhum reset, teste de barramento, limpeza de fila ou atualização de firmware é enviado.")
+        Caption("O app consulta GET /api/sensors paginado e, em firmware sem esse recurso, GET /api/state. Nenhum reset, teste de barramento, limpeza de fila ou atualização de firmware é enviado.")
         Caption("Diagnóstico: ${state.core.label}. Não há logs com payload, credenciais ou dados protegidos.")
     }
     if(section==8) PanelCard(Modifier.fillMaxWidth()) {

@@ -67,6 +67,25 @@ class NativeUiTest {
         compose.onNodeWithTag("expand-sensors").performScrollTo().performClick()
         compose.onNodeWithText("Sinais adicionais").assertExists()
     }
+    @Test fun coreConnectionReportExplainsUnverifiedValuesAndAllowsExplicitRetest() {
+        var retries=0
+        val report=CoreDiagnostics(now,listOf(CoreAttempt("truckbox.local",CoreIssue.DNS),CoreAttempt("192.168.4.1",httpStatus=200)),2)
+        compose.setContent{TruckBoxApp(AppState(core=ConnectionState.HTTP_RESPONDED,coreDiagnostics=report),startingPage=Page.SETTINGS,nowOverride=now,onCoreRetry={retries++})}
+        compose.onNodeWithText("Testar conexão agora").performScrollTo().performClick()
+        compose.runOnIdle{assertEquals(1,retries)}
+        compose.onNodeWithText("Campos numéricos reconhecidos: 2").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(report.explanation).assertExists()
+        compose.onNodeWithText("truckbox.local · Nome do Core não resolvido").assertExists()
+        compose.onNodeWithText("192.168.4.1 · JSON recebido · HTTP 200").assertExists()
+    }
+    @Test fun receivedLegacyValueIsOnlyShownAsUnverifiedInsideSensorDetails() {
+        val reading=Reading(4.4,"bar",Origin.CORE,receivedAt=now,quality=Quality.UNVERIFIED)
+        compose.setContent{TruckBoxApp(AppState(readings=mapOf(Instrument.OIL_PRESSURE to InstrumentValue(reading))),nowOverride=now)}
+        compose.onNodeWithText("Valor recebido, não verificado:",substring=true).assertDoesNotExist()
+        compose.onNodeWithTag("instrument-OIL_PRESSURE").performClick()
+        compose.onNodeWithText("Valor recebido, não verificado:",substring=true).assertExists()
+        assertNull(reading.current(now))
+    }
     @Test fun captureOptionalModulesWithExplicitTestDemonstrationBanner() {
         val sample=AppState(demo=true,journeyAllowed=true,financialAllowed=true,
             policyLabel="DEMONSTRAÇÃO · política de teste",
@@ -85,6 +104,29 @@ class NativeUiTest {
     @Test @Config(qualifiers="w1280dp-h800dp-land-mdpi") fun screenshots1280x800() = screenshots(1280,800)
     @Test @Config(qualifiers="w1672dp-h941dp-land-mdpi") fun screenshots1672x941() = screenshots(1672,941)
     @Test @Config(qualifiers="w1920dp-h1080dp-land-mdpi") fun screenshots1920x1080() = screenshots(1920,1080)
+    @Test @Config(qualifiers="w1920dp-h1080dp-land-mdpi") fun captureHomeForDesignReviewExplicitDemo13Inches() {
+        val demoValues=listOf(4.4,1.8,4.5,87.0,92.0,38.0,76.0,12.0,27.6,24.0,62.0,10.1,74.0)
+        fun reading(value: Double,unit: String)=Reading(value,unit,Origin.DEMO)
+        val readings=Instrument.defaults.mapIndexed { index,sensor -> sensor to InstrumentValue(reading(demoValues[index],sensor.unit),
+            if(sensor==Instrument.AIR) reading(10.4,"bar") else null) }.toMap()
+        compose.setContent{TruckBoxApp(AppState(demo=true,core=ConnectionState.DEMO,cloud=ConnectionState.DEMO,readings=readings),nowOverride=now)}
+        compose.onNodeWithText("DEMONSTRAÇÃO · valores fictícios · sem conexão com Core ou Cloud").assertExists()
+        assertHomeGeometry()
+        saveNativeWindow(File("build/screenshots/homolog/home-13pol-1920x1080-TEST-DEMO.png").apply{parentFile?.mkdirs()})
+    }
+
+    private fun assertHomeGeometry() {
+        val left=compose.onNodeWithTag("home-instruments").fetchSemanticsNode().boundsInRoot
+        val right=compose.onNodeWithTag("home-intelligence").fetchSemanticsNode().boundsInRoot
+        val footer=compose.onNodeWithTag("home-footer").fetchSemanticsNode().boundsInRoot
+        val root=compose.onNodeWithTag("app-root").fetchSemanticsNode().boundsInRoot
+        assertEquals(2f,left.width/right.width,.02f)
+        assertEquals(left.top,right.top,1f)
+        assertTrue(right.left>left.right)
+        assertTrue(footer.top>=left.bottom && footer.top>=right.bottom)
+        assertTrue(footer.bottom<=root.bottom+1)
+        Instrument.defaults.forEach { compose.onNodeWithTag("instrument-${it.name}").assertIsDisplayed() }
+    }
 
     private fun screenshots(w: Int,h: Int) {
         var page by mutableStateOf(Page.HOME)
@@ -95,6 +137,7 @@ class NativeUiTest {
                 compose.runOnIdle{page=p;renderKey++}
                 compose.waitForIdle()
                 val root=saveNativeWindow(File(output,"${p.name.lowercase()}-${w}x${h}.png"))
+                if(p==Page.HOME) assertHomeGeometry()
                 assertEquals(w,root.first)
                 // Activity nativa pode reservar área de sistema; registrar a dimensão capturada.
                 assertTrue("Altura do viewport: ${root.second}",root.second in (h-80)..h)

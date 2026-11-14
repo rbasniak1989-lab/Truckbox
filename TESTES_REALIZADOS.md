@@ -96,3 +96,13 @@ Lint final: zero erros e 10 avisos — OldTargetApi (1), GradleDependency (3), N
 | multimediaNext-homolog-debug-androidTest.apk | `d608b7781e3a55cda96233650c5380957deed733cd5f0af66215eae9b9c0ff7a` |
 
 Homolog: `br.com.truckbox.multimedia.next`; demo: `br.com.truckbox.multimedia.next.demo`. Assinatura debug v2 verificada. Os APKs não incluem credenciais de produção, e o homolog não contém PreviewData. As capturas de módulos opcionais usam fixtures identificadas como TEST-DEMO.
+# Incremento 14/11/2026 — 0.1.1 Core/Home
+
+Build local completo aprovado: APKs homolog/demo/instrumentação, **59 testes JVM/Compose**, zero falhas/skips e lint sem erros. Scanner de fontes/APK passou e certificado debug é o mesmo da 0.1.0. Metadados e hash em `docs/multimediaNext/evidencias/verification-2026-11-14-core-home.json`.
+
+Novos casos: Wi-Fi sem internet/celular como rota padrão, fallback DNS/IP, validação de LAN privada, rejeição de redirects/HTML/corpos excessivos, endpoint real de sensores schema 2, metadados, páginas limitadas/progresso, sinal/unidade corretos, J1587 provisório, stale/NA, replay/conflito e boot entre páginas, circuito duplo, cache vazio sem zeros fabricados. Home tem assertivas geométricas 2:1, rodapé dentro do viewport e 13 cartões visíveis nas cinco resoluções do ZIP. Captura de tipografia com números fictícios leva `TEST-DEMO` e banner permanente.
+
+Não exercitado: aparelho físico, comportamento de barras proprietárias da central automotiva, Core/Motorista/Link/Starlink em conjunto e Cloud autenticada real. A foto do usuário comprova resposta de `/api/state` no navegador; não é ensaio automatizado do APK no hardware. O firmware foi localizado em outra branch e apenas lido, sem compilação/OTA nova neste incremento.
+
+Os registros abaixo são a evidência histórica da 0.1.0 e não equivalem a validação física da 0.1.1.
+

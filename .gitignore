@@ -17,3 +17,7 @@ captures/
 artifacts/
 test-results-local/
 node_modules/
+.kotlin/
+**/node_modules/
+**/supabase/.temp/
+**/supabase/.branches/

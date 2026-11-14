@@ -29,6 +29,8 @@ def main():
     count = 0
     for directory in (ROOT / "multimediaNext" / "src", ROOT / "backend-proposal"):
         for path in directory.rglob("*"):
+            if any(part in {"node_modules", ".temp", ".branches"} for part in path.parts):
+                continue
             if not path.is_file() or path.suffix in {".ttf", ".png"}:
                 continue
             count += 1

@@ -4,7 +4,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 
-enum class Quality { VALID, STALE, UNVERIFIED, MISSING, INVALID }
+enum class Quality { VALID, PROVISIONAL, STALE, UNVERIFIED, MISSING, INVALID }
 enum class Origin { CORE, CLOUD, DEMO }
 
 data class Reading(
@@ -15,11 +15,23 @@ data class Reading(
     val receivedAt: Instant? = null,
     val quality: Quality = Quality.MISSING,
     val sourceId: String? = null,
+    val captureId: Long? = null,
+    val bootId: Long? = null,
+    val validation: String? = null,
 ) {
     fun current(now: Instant, maxAgeSeconds: Long = 5): Double? {
+        if(quality!=Quality.VALID) return null
+        return freshValue(now,maxAgeSeconds)
+    }
+    /** Observação real com metadados, ainda em validação; nunca autoriza cálculos ou ações. */
+    fun observed(now: Instant, maxAgeSeconds: Long = 5): Double? {
+        if(quality!=Quality.VALID && quality!=Quality.PROVISIONAL) return null
+        return freshValue(now,maxAgeSeconds)
+    }
+    private fun freshValue(now: Instant, maxAgeSeconds: Long): Double? {
         val at = sampledAt ?: return null
-        if (quality != Quality.VALID || sourceId.isNullOrBlank()) return null
-        if (at.isAfter(now) || now.epochSecond - at.epochSecond > maxAgeSeconds) return null
+        if (sourceId.isNullOrBlank()) return null
+        if (at.isAfter(now) || java.time.Duration.between(at,now).toMillis()>maxAgeSeconds*1000) return null
         return value?.takeIf { it.isFinite() }
     }
 }
@@ -71,6 +83,7 @@ data class TripView(
 )
 enum class ConnectionState(val label: String) {
     UNVERIFIED("Não verificado"), HTTP_RESPONDED("HTTP respondeu · sinais não verificados"),
+    SENSORS_RECEIVED("Leituras recebidas · conferir qualidade"),
     OFFLINE("Sem resposta"), BLOCKED("Aguardando contrato seguro"), DEMO("Simulado")
 }
 enum class Appearance { AUTO, NIGHT, DAY }
@@ -87,6 +100,7 @@ data class AppState(
     val core: ConnectionState = ConnectionState.UNVERIFIED,
     val cloud: ConnectionState = ConnectionState.BLOCKED,
     val lastCoreResponse: Instant? = null,
+    val coreDiagnostics: CoreDiagnostics? = null,
     val speed: Reading? = null,
     val fuelRate: Reading? = null,
     val trip: TripView? = null,

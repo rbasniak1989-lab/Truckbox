@@ -22,6 +22,7 @@ import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
 import br.com.truckbox.multimedia.next.R
 import br.com.truckbox.multimedia.next.domain.*
 import java.time.Instant
@@ -36,25 +37,39 @@ val Ink = Color(0xFFEDF0F0)
 @OptIn(ExperimentalTextApi::class)
 val Inter = FontFamily(
     Font(R.font.inter,FontWeight.Normal,variationSettings=FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.inter,FontWeight.Medium,variationSettings=FontVariation.Settings(FontVariation.weight(500))),
     Font(R.font.inter,FontWeight.SemiBold,variationSettings=FontVariation.Settings(FontVariation.weight(600))),
     Font(R.font.inter,FontWeight.Bold,variationSettings=FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.inter,FontWeight.ExtraBold,variationSettings=FontVariation.Settings(FontVariation.weight(800))),
+    Font(R.font.inter,FontWeight.Black,variationSettings=FontVariation.Settings(FontVariation.weight(900))),
 )
 @OptIn(ExperimentalTextApi::class)
-val Oxanium = FontFamily(Font(R.font.oxanium,FontWeight.Bold,variationSettings=FontVariation.Settings(FontVariation.weight(700))))
+val Oxanium = FontFamily(
+    Font(R.font.oxanium,FontWeight.Bold,variationSettings=FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.oxanium,FontWeight.ExtraBold,variationSettings=FontVariation.Settings(FontVariation.weight(800))),
+)
 
 @Composable fun BlackOrangeTheme(content: @Composable () -> Unit) {
+    val base=Typography()
+    val typography=base.copy(
+        displayLarge=base.displayLarge.copy(fontFamily=Inter),displayMedium=base.displayMedium.copy(fontFamily=Inter),displaySmall=base.displaySmall.copy(fontFamily=Inter),
+        headlineLarge=base.headlineLarge.copy(fontFamily=Inter),headlineMedium=base.headlineMedium.copy(fontFamily=Inter),headlineSmall=base.headlineSmall.copy(fontFamily=Inter),
+        titleLarge=base.titleLarge.copy(fontFamily=Inter),titleMedium=base.titleMedium.copy(fontFamily=Inter,fontWeight=FontWeight.Bold,fontSize=17.sp),titleSmall=base.titleSmall.copy(fontFamily=Inter),
+        bodyLarge=base.bodyLarge.copy(fontFamily=Inter,fontSize=14.sp,lineHeight=18.sp),bodyMedium=base.bodyMedium.copy(fontFamily=Inter,fontSize=13.sp,lineHeight=17.sp),bodySmall=base.bodySmall.copy(fontFamily=Inter),
+        labelLarge=base.labelLarge.copy(fontFamily=Inter),labelMedium=base.labelMedium.copy(fontFamily=Inter),labelSmall=base.labelSmall.copy(fontFamily=Inter),
+    )
     MaterialTheme(colorScheme=darkColorScheme(primary=Orange,onPrimary=Color.Black,secondary=Orange,onSecondary=Color.Black,
         secondaryContainer=Color(0xFF34251B),onSecondaryContainer=Ink,background=Background,surface=Panel,onSurface=Ink,onBackground=Ink,
         onSurfaceVariant=Muted,outline=Stroke,surfaceTint=Color.Transparent,surfaceContainerLowest=Background,
         surfaceContainerLow=Panel,surfaceContainer=Panel,surfaceContainerHigh=Color(0xFF1C2024),surfaceContainerHighest=Color(0xFF23282D)),
-        typography=Typography(bodyLarge=androidx.compose.ui.text.TextStyle(fontFamily=Inter,fontSize=14.sp),bodyMedium=androidx.compose.ui.text.TextStyle(fontFamily=Inter,fontSize=13.sp),titleMedium=androidx.compose.ui.text.TextStyle(fontFamily=Inter,fontWeight=FontWeight.Bold,fontSize=17.sp))) {
+        typography=typography) {
         CompositionLocalProvider(LocalContentColor provides Ink,content=content)
     }
 }
 
-@Composable fun PanelCard(modifier: Modifier = Modifier, accent: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+@Composable fun PanelCard(modifier: Modifier = Modifier, accent: Boolean = false, contentPadding: Dp = 16.dp, spacing: Dp = 10.dp, content: @Composable ColumnScope.() -> Unit) {
     Surface(modifier,shape=RoundedCornerShape(14.dp),color=Panel,border=BorderStroke(1.dp,if(accent) Orange.copy(alpha=.55f) else Stroke)) {
-        Column(Modifier.background(Brush.linearGradient(listOf(Color.White.copy(alpha=.015f),Color.Black.copy(alpha=.12f)))).padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
+        Column(Modifier.background(Brush.linearGradient(listOf(Color.White.copy(alpha=.015f),Color.Black.copy(alpha=.12f)))).padding(contentPadding),verticalArrangement=Arrangement.spacedBy(spacing),content=content)
     }
 }
 @Composable fun SectionTitle(title: String, icon: ImageVector = Icons.Outlined.Insights, modifier: Modifier = Modifier) {
@@ -63,12 +78,12 @@ val Oxanium = FontFamily(Font(R.font.oxanium,FontWeight.Bold,variationSettings=F
         Text(title,fontFamily=Inter,fontSize=16.sp,fontWeight=FontWeight.Bold)
     }
 }
-@Composable fun Caption(text: String, modifier: Modifier = Modifier) { Text(text,modifier,color=Muted,fontSize=12.sp,fontFamily=Inter) }
+@Composable fun Caption(text: String, modifier: Modifier = Modifier) { Text(text,modifier,color=Muted,fontSize=12.sp,lineHeight=15.sp,fontFamily=Inter) }
 @Composable fun Metric(title: String, value: String?, unit: String = "", modifier: Modifier = Modifier, note: String? = null) {
     PanelCard(modifier) {
         Caption(title)
         Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
-            Text(value ?: "—",fontFamily=Oxanium,fontWeight=FontWeight.Bold,fontStyle=FontStyle.Italic,fontSize=34.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f,false))
+            Text(value ?: "—",fontFamily=Oxanium,fontWeight=FontWeight.ExtraBold,fontStyle=FontStyle.Italic,fontSize=34.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f,false))
             Caption(unit,Modifier.padding(bottom=5.dp))
         }
         Caption(note ?: if(value==null) "Sem leitura" else "")
@@ -94,23 +109,34 @@ fun instrumentIcon(sensor: Instrument): ImageVector = when(sensor) {
     Instrument.TORQUE -> Icons.Outlined.Speed
 }
 fun visibleValue(reading: Reading?, now: Instant, demo: Boolean): Double? =
-    if(demo && reading?.source==Origin.DEMO) reading.value else reading?.current(now)
+    if(demo && reading?.source==Origin.DEMO) reading.value else reading?.observed(now)
 
 @Composable fun InstrumentCard(sensor: Instrument, value: InstrumentValue?, now: Instant, demo: Boolean, size: Int, modifier: Modifier = Modifier, onClick: ()->Unit) {
-    val wide=LocalWindowInfo.current.containerSize.width/LocalDensity.current.density>=1500
     val first = visibleValue(value?.first,now,demo)
     val second = visibleValue(value?.second,now,demo)
     val text = if(sensor==Instrument.AIR) "${format(first) ?: "—"} / ${format(second) ?: "—"}" else format(first,if(sensor in listOf(Instrument.GEAR,Instrument.PEDAL,Instrument.TORQUE)) 0 else 1) ?: "—"
     Surface(modifier.clickable(onClick=onClick),shape=RoundedCornerShape(13.dp),border=BorderStroke(1.dp,Stroke),color=Panel) {
-        Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.White.copy(alpha=.025f),Color.Transparent))).padding(if(size==2) 9.dp else 13.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.SpaceBetween) {
-            Box(Modifier.width(40.dp).height(1.dp).background(Orange.copy(alpha=.7f)))
-            Icon(instrumentIcon(sensor),null,tint=Orange,modifier=Modifier.size(if(size==2) 19.dp else 24.dp))
-            Text(sensor.label,fontSize=(if(size==2) 11 else 14).sp,fontWeight=FontWeight.SemiBold,maxLines=3,overflow=TextOverflow.Ellipsis,minLines=2,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
-            Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                Text(text,fontFamily=Oxanium,fontStyle=FontStyle.Italic,fontWeight=FontWeight.Bold,fontSize=(when { sensor==Instrument.AIR -> if(wide) 28 else 21; size==0 -> if(wide) 72 else 48; size==1 -> if(wide) 54 else 36; else -> if(wide) 42 else 29 }).sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f,false))
-                if(sensor!=Instrument.AIR) Text(sensor.unit,color=Color(0xFFD1A17D),fontSize=12.sp,modifier=Modifier.padding(bottom=5.dp))
+      BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact=maxHeight<150.dp
+        val tight=maxHeight<105.dp
+        val showIcon=maxHeight>=90.dp
+        val padding=if(tight) 5.dp else if(compact || size==2) 8.dp else 13.dp
+        val availableWidth=(maxWidth-padding*2).value
+        val digitSize=minOf(when(size){0->80f;1->62f;else->48f},maxHeight.value*(if(tight) .28f else .33f),
+            (availableWidth-if(sensor==Instrument.AIR) 0f else 24f)/(text.length.coerceAtLeast(2)*.65f)).coerceAtLeast(12f)
+        Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.White.copy(alpha=.025f),Color.Transparent))).padding(padding),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.SpaceBetween) {
+            if(showIcon) {
+                Box(Modifier.width(40.dp).height(1.dp).background(Orange.copy(alpha=.7f)))
+                Icon(instrumentIcon(sensor),null,tint=Orange,modifier=Modifier.size(if(tight) 14.dp else if(size==2 || compact) 19.dp else 24.dp))
             }
-            Caption(if(first==null || (sensor==Instrument.AIR && second==null)) "Sem leitura" else if(demo) "Demonstração" else "Leitura validada")
+            Text(sensor.label,fontFamily=Inter,fontSize=(if(tight) 10 else if(size==2) 11 else if(compact) 12 else 14).sp,lineHeight=(if(tight) 12 else if(size==2) 13 else 16).sp,fontWeight=FontWeight.Bold,maxLines=2,overflow=TextOverflow.Ellipsis,minLines=if(tight) 1 else 2,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+            Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                Text(text,fontFamily=Oxanium,fontStyle=FontStyle.Italic,fontWeight=FontWeight.ExtraBold,fontSize=digitSize.sp,lineHeight=(digitSize*1.12f).sp,maxLines=1,overflow=TextOverflow.Clip,softWrap=false,modifier=Modifier.weight(1f,false))
+                if(sensor!=Instrument.AIR) Text(sensor.unit,color=Color(0xFFD1A17D),fontSize=(if(tight || size==2) 9 else 12).sp,modifier=Modifier.padding(bottom=3.dp))
+            }
+            if(sensor==Instrument.AIR) Text("bar · circuitos 1/2",fontFamily=Inter,color=Muted,fontSize=9.sp,lineHeight=11.sp,maxLines=1)
+            Text(if(first==null || (sensor==Instrument.AIR && second==null)) "Sem leitura" else if(demo) "Demonstração" else if(value?.first?.quality==Quality.PROVISIONAL || value?.second?.quality==Quality.PROVISIONAL) "Não verificado" else "Leitura validada",fontFamily=Inter,color=Muted,fontSize=(if(tight || size==2) 9 else 11).sp,lineHeight=(if(tight || size==2) 11 else 14).sp,maxLines=1)
         }
+      }
     }
 }

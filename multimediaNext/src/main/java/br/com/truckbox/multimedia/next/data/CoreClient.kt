@@ -2,7 +2,11 @@ package br.com.truckbox.multimedia.next.data
 
 import br.com.truckbox.multimedia.next.domain.*
 import com.google.gson.Gson
+import com.google.gson.JsonParseException
+import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URL
 import java.time.Instant
 
@@ -15,6 +19,7 @@ data class CoreStateDto(
     val speedKph: Double? = null, val fuelRateLph: Double? = null,
 )
 data class CoreResult(val values: Map<Instrument,InstrumentValue>, val speed: Reading?, val flow: Reading?, val receivedAt: Instant)
+data class CoreFetchResult(val response: CoreResult?, val diagnostics: CoreDiagnostics)
 
 fun CoreStateDto.toDomain(received: Instant): CoreResult {
     fun reading(value: Double?, unit: String) = Reading(
@@ -31,28 +36,70 @@ fun CoreStateDto.toDomain(received: Instant): CoreResult {
     return CoreResult(values,reading(speedKph,"km/h"),reading(fuelRateLph,"L/h"),received)
 }
 
-class CoreClient(private val gson: Gson = Gson()) {
-    fun fetch(host: String): CoreResult? {
-        // Os únicos hosts HTTP permitidos são locais; nenhuma credencial é enviada ao Core.
-        require(host in setOf("truckbox.local","192.168.4.1"))
-        val connection = URL("http://$host/api/state").openConnection() as HttpURLConnection
-        return try {
-            connection.connectTimeout = 1500; connection.readTimeout = 2000
-            connection.requestMethod = "GET"; connection.instanceFollowRedirects = false
-            connection.useCaches = false; connection.setRequestProperty("Accept","application/json")
-            if (connection.responseCode !in 200..299) return null
-            val body = connection.inputStream.use { input ->
-                val output = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                while (output.size() <= 1_048_576) {
-                    val count = input.read(buffer)
-                    if(count < 0) break
-                    output.write(buffer,0,count)
+class CoreClient(
+    private val connections: CoreConnectionFactory,
+    private val gson: Gson = Gson(),
+    private val now: () -> Instant = Instant::now,
+) {
+    fun fetch(preferredHost: String): CoreFetchResult {
+        require(validCoreHost(preferredHost))
+        val attempts = mutableListOf<CoreAttempt>()
+        for (host in linkedSetOf(preferredHost,"192.168.4.1","truckbox.local")) {
+            var connection: HttpURLConnection? = null
+            var status: Int? = null
+            try {
+                // Somente GET local; fallback de endereço não consome lotes nem envia ACK/reset/GPS.
+                connection = connections.open(URL("http://$host/api/state?nocache=${now().toEpochMilli()}"))
+                connection.connectTimeout = 1500; connection.readTimeout = 2000
+                connection.requestMethod = "GET"; connection.instanceFollowRedirects = false
+                connection.useCaches = false
+                connection.setRequestProperty("Accept","application/json")
+                connection.setRequestProperty("Cache-Control","no-cache, no-store")
+                status = connection.responseCode
+                if (status !in 200..299) {
+                    attempts += CoreAttempt(host,CoreIssue.HTTP,status)
+                    continue
                 }
-                output.toByteArray()
+                val body = connection.inputStream.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (output.size() <= MAX_BODY_BYTES) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer,0,count)
+                    }
+                    output.toByteArray()
+                }
+                if (body.isEmpty() || body.size > MAX_BODY_BYTES) {
+                    attempts += CoreAttempt(host,CoreIssue.FORMAT,status)
+                    continue
+                }
+                val result = gson.fromJson(body.toString(Charsets.UTF_8),CoreStateDto::class.java)?.toDomain(now())
+                if (result == null) {
+                    attempts += CoreAttempt(host,CoreIssue.FORMAT,status)
+                    continue
+                }
+                attempts += CoreAttempt(host,httpStatus=status)
+                val count = result.values.values.sumOf { listOfNotNull(it.first.value,it.second?.value).size } +
+                    listOfNotNull(result.speed?.value,result.flow?.value).size
+                return CoreFetchResult(result,CoreDiagnostics(now(),attempts.toList(),count))
+            } catch (_: CoreWifiUnavailable) {
+                attempts += CoreAttempt(host,CoreIssue.NO_WIFI)
+                break // Não tentar a rede móvel quando o Wi-Fi do Core estiver ausente.
+            } catch (_: UnknownHostException) {
+                attempts += CoreAttempt(host,CoreIssue.DNS,status)
+            } catch (_: SocketTimeoutException) {
+                attempts += CoreAttempt(host,CoreIssue.TIMEOUT,status)
+            } catch (_: JsonParseException) {
+                attempts += CoreAttempt(host,CoreIssue.FORMAT,status)
+            } catch (_: IOException) {
+                attempts += CoreAttempt(host,CoreIssue.IO,status)
+            } finally {
+                connection?.disconnect()
             }
-            if (body.isEmpty() || body.size > 1_048_576) return null
-            gson.fromJson(body.toString(Charsets.UTF_8),CoreStateDto::class.java)?.toDomain(Instant.now())
-        } finally { connection.disconnect() }
+        }
+        return CoreFetchResult(null,CoreDiagnostics(now(),attempts.toList()))
     }
+
+    private companion object { const val MAX_BODY_BYTES = 1_048_576 }
 }

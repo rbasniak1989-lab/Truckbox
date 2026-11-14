@@ -4,7 +4,7 @@ Este incremento é uma base Android nativa para revisão. Não é liberação co
 
 ## APKs e coexistência
 
-- Homologação: `br.com.truckbox.multimedia.next`, versão `0.1.0-homologacao`.
+- Homologação: `br.com.truckbox.multimedia.next`, versão `0.1.1-homologacao`.
 - Demonstração: `br.com.truckbox.multimedia.next.demo`, banner permanente de dados fictícios, sem rede.
 - Multimídia antiga: `br.com.truckbox.multimedia`; Motorista: `br.com.truckbox.driver`. Nenhum desses pacotes é substituído ou desinstalado.
 
@@ -38,9 +38,18 @@ Habilitar instalação de fontes externas ou depuração USB somente conforme ad
 
 O APK homolog usa FLAG_SECURE para evitar capturas/miniaturas de possíveis dados protegidos. O APK demo permite capturas dos dados fictícios para revisão visual. As capturas automatizadas JVM usam Views de teste, sem dados reais.
 
-O puxador à esquerda abre cinco áreas. Em Configurações, aparência/host Core são preferências locais; permissões são somente leitura. O app consulta apenas GET `/api/state` nos hosts locais permitidos. Nenhum reset, GPS, ACK de lote ou escrita operacional é enviado. Resposta HTTP sem timestamp/qualidade de sinal resulta em “Sem leitura”, mesmo quando existirem números no JSON legado.
+O puxador à esquerda abre cinco áreas. Em Configurações, aparência/host Core são preferências locais; permissões são somente leitura. O app consulta GET `/api/sensors?offset=0&limit=8` e pagina somente observações reais. Em firmware que responda 404 nesse recurso, consulta o diagnóstico legado `/api/state`, sem transformar números sem metadados em leitura atual. Nenhum reset, GPS, ACK, configuração ou OTA é enviado.
 
-Cloud autenticada, DTC, mapa/rota/GPS, pedágios, jornada e saldo de tanque persistido aguardam os contratos listados em CONTRATOS_V1.md. Sua indisponibilidade no APK real é intencional e explícita. Financeiro/Jornada começam negados; não existe toggle local de liberação.
+### Sensores pela rede do Core
+
+1. Conecte o aparelho ao Wi-Fi do Core. Em **Configurações → Conexões**, selecione `192.168.4.1` ou `truckbox.local` e toque **Testar conexão agora**.
+2. Confira o diagnóstico do endpoint, código HTTP e quantidade de sinais mapeados. Abra um instrumento para conferir origem/qualidade/captura. Sem observação ou com idade acima de cinco segundos, ele fica **Sem leitura**. J1587 com status `EM_VALIDACAO` permanece **Não verificado**, mesmo com número real recebido.
+3. Para sensores e Cloud simultâneos, use Core e multimídia na **mesma rede Starlink de 2,4 GHz**, com comunicação entre clientes. No campo **Core na rede Starlink**, aplique o IP privado LAN/STA mostrado no painel do Core, sem esquema ou porta. O IP de exemplo do AP não é o IP da LAN.
+4. A 0.2.23 já prevê STA externa. O AP do Core é de configuração e não fornece internet por NAT; permanecer só nele não dá acesso à Cloud. Não há necessidade de atualizar firmware apenas para usar esse suporte já existente.
+
+Contrato conferido na branch `fix/revb1-v0223-polling-fuel`, commit `bd723891cdaad2b23466c8311d13409b3d4a36c0`. Isso não comprova qual versão está efetivamente gravada nem disponibilidade dos 13 sensores no caminhão. PIDs com cadência longa podem aparecer desatualizados; o app não aumenta polling do barramento.
+
+Cloud autenticada real, DTC, mapa/rota/GPS, pedágios, jornada e saldo de tanque persistido aguardam as integrações listadas em CONTRATOS_V1.md. Financeiro/Jornada começam negados; não existe toggle local de liberação. A 0.1.1 é o incremento local Core/Home; a preparação do novo canal Cloud é trabalho separado.
 
 ## Instrumentação e rollback
 

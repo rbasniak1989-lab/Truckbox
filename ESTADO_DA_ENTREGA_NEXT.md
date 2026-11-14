@@ -1,6 +1,8 @@
 # Estado da entrega — TruckBox Next
 
-13/11/2026. O workspace foi recuperado e os fontes, APKs e resultados conferidos. Esta revisão inclui o módulo :multimediaNext, a auditoria detalhada autorizada, os contratos propostos e as evidências. Nenhuma mudança em firmware, Motorista, multimídia antiga ou schema de produção.
+14/11/2026. Incremento 0.1.1 Core/Home disponível localmente, com 59 testes aprovados, APK assinado com a mesma chave debug e capturas para 13″. Lê o contrato real de sensores da 0.2.23, usa Wi-Fi local/LAN Starlink e corrige a Home/imersivo/fontes. A integração Cloud real ainda depende da implementação e implantação revisada do novo canal autenticado. Nenhuma mudança em firmware, Motorista, multimídia antiga ou schema de produção.
+
+Os registros a seguir documentam a entrega histórica 0.1.0. A declaração de identidade entre os commits abaixo aplica-se somente a essa entrega, anterior ao incremento 0.1.1.
 
 ## Incremento disponível
 
