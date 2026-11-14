@@ -14,6 +14,7 @@ static void reset_store(void)
     memset(&host_config, 0, sizeof(host_config));
     host_nvs_ack = host_nvs_reserved = host_pending_ack = host_pending_reserved = 0;
     host_pending_clean = 0;
+    host_pending_keep=host_nvs_keep=0;
     host_queue_length = host_fsync_calls = host_commit_calls = 0;
     host_fail_fsync_once = host_fail_commit_once = false;
     snprintf(host_directory, sizeof(host_directory), "/tmp/tb-store-txn-XXXXXX");
@@ -25,6 +26,8 @@ static void reset_store(void)
     state.next_segment_id = 1;
     state.next_sequence = 1;
     state.ready = true;host_allow_compression=true;
+    state.preserve_fence_set=true; /* fresh 0.2.20: empty initial fence */
+    state.write_confirmed=true; /* healthy fixture; failure tests clear it */
     state.mutex = state.queue = (void *)1;
 }
 
@@ -57,6 +60,7 @@ static void append_json(const char *json, uint64_t uptime)
 
 static void simulate_restart(void)
 {
+    state.write_confirmed=false;
     state.ready = false;
     state.segment_count = state.pending_bytes = state.pending_records = 0;
     memset(state.segments, 0, sizeof(state.segments));

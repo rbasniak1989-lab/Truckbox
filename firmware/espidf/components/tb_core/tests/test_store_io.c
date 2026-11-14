@@ -7,9 +7,16 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-enum fault_kind { NONE, OPEN, WRITE, FLUSH, SYNC, CLOSE, SEEK_TAIL, READ_TAIL, FAULT_SEEK_END, SEPARATOR };
+#include <fcntl.h>
+enum fault_kind { NONE, OPEN, FDOPEN, WRITE, FLUSH, SYNC, CLOSE, SEEK_TAIL, READ_TAIL, FAULT_SEEK_END, SEPARATOR };
 static enum fault_kind fault;
 static bool secondary_close;
+static int io_open(const char *path,int flags,mode_t mode){
+    if(fault==OPEN){errno=EACCES;return -1;}return open(path,flags,mode);
+}
+static FILE *io_fdopen(int fd,const char *mode){
+    if(fault==FDOPEN){errno=ENOMEM;return NULL;}return fdopen(fd,mode);
+}
 static FILE *io_fopen(const char *path,const char *mode){
     if(fault==OPEN && !strcmp(mode,"a+b")){errno=EACCES;return NULL;}
     return fopen(path,mode);
@@ -31,6 +38,8 @@ static int io_fseek(FILE *f,long offset,int origin){
 static int io_fgetc(FILE *f){if(fault==READ_TAIL){errno=EIO;return EOF;}return fgetc(f);}
 static int io_fputc(int c,FILE *f){if(fault==SEPARATOR){errno=EIO;return EOF;}return fputc(c,f);}
 #define fopen io_fopen
+#define open io_open
+#define fdopen io_fdopen
 #define fwrite io_fwrite
 #define fflush io_fflush
 #define fclose io_fclose
@@ -55,7 +64,7 @@ static void check_failure(enum fault_kind kind,const char *stage){
     append_json("{\"raw\":\"RETAINED\"}",2);
     assert(!state.ready && state.write_errors==1 && state.highest_committed==1);
     assert(state.last_io_failure.stage && !strcmp(state.last_io_failure.stage,stage));
-    int expected=kind==OPEN?EACCES:(kind==WRITE || kind==CLOSE)?ENOSPC:EIO;
+    int expected=kind==OPEN?EACCES:kind==FDOPEN?ENOMEM:(kind==WRITE || kind==CLOSE)?ENOSPC:EIO;
     assert(state.last_io_failure.error==expected && state.volume_rebind_required);
     if(kind==FLUSH)assert(state.last_io_failure.close_error==ENOSPC); /* first errno survives close */
     cJSON *batch=tb_store_batch(8,12000);assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(batch,"ok")));cJSON_Delete(batch);
@@ -70,12 +79,14 @@ static void check_failure(enum fault_kind kind,const char *stage){
     assert(!recover_after_failure() && !state.ready && state.volume_rebind_required);
     assert(state.ack_sequence==0 && host_nvs_ack==0);
     host_volume_rebind_result=0;assert(recover_after_failure());state.ready=true;
-    assert(host_volume_rebind_calls==2 && state.volume_rebinds==1 && state.recovery_attempts==2 && state.recovery_successes==1);
+    assert(host_volume_rebind_calls==2 && state.volume_rebinds==1 && state.recovery_attempts==2 && state.recovery_successes==0);
     /* Exactly the production retained-row rule: recover a complete ambiguous
      * write, otherwise append the retained payload once using a new sequence. */
     if(state.highest_committed<state.last_io_failure.sequence)append_json("{\"raw\":\"RETAINED\"}",2);
+    append_json("{\"raw\":\"AFTER_RECOVERY\"}",3);
+    assert(state.write_confirmed && state.recovery_successes==1);
     batch=tb_store_batch(8,12000);cJSON *samples=cJSON_GetObjectItemCaseSensitive(batch,"samples");
-    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(batch,"ok")) && cJSON_GetArraySize(samples)==2);
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(batch,"ok")) && cJSON_GetArraySize(samples)==3);
     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(sample_at(batch,0),"raw")->valuestring,"CONFIRMED"));
     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(sample_at(batch,1),"raw")->valuestring,"RETAINED"));
     uint64_t target=(uint64_t)cJSON_GetObjectItemCaseSensitive(batch,"max_seq")->valuedouble;cJSON_Delete(batch);
@@ -83,16 +94,20 @@ static void check_failure(enum fault_kind kind,const char *stage){
 }
 static void repeated_failure_then_recover(void){
     fault=NONE;reset_store();state.medium="flash";host_volume_rebind_result=0;host_volume_rebind_calls=0;
-    for(unsigned i=0;i<11;i++){
+    for(unsigned i=0;i<3;i++){
         fault=OPEN;append_json("{\"raw\":\"BUFFERED\"}",3);assert(!state.ready);
         assert(state.committed_this_boot==0 && host_nvs_ack==0);
-        fault=NONE;if(i<10){assert(recover_after_failure());state.ready=true;}
+        fault=NONE;assert(recover_after_failure());state.ready=true;
     }
-    assert(state.write_errors==11 && !state.ready);
+    assert(state.write_errors==3 && state.io_paused && !state.write_confirmed && state.recovery_successes==0);
+    uint64_t before=state.next_sequence;
+    for(unsigned i=0;i<24;i++)append_json("{\"raw\":\"STILL_BUFFERED\"}",3);
+    assert(state.write_errors==3 && state.next_sequence==before && state.recovery_successes==0);
+    assert(tb_store_retry()==ESP_OK && !state.io_paused);
     assert(recover_after_failure());state.ready=true;
     append_json("{\"raw\":\"BUFFERED\"}",3);
     assert(state.ready && state.pending_records==1 && state.committed_this_boot==1);
-    assert(host_nvs_reserved==256 && host_commit_calls==1 && state.highest_committed==12);
+    assert(host_nvs_reserved==256 && host_commit_calls==1 && state.highest_committed==4);
     simulate_restart();assert(state.next_sequence==257); /* no reuse across boots */
     cleanup_store();
 }
@@ -117,11 +132,11 @@ static void recovered_reservation_commit_must_be_retried(void){
 }
 int main(void){
     for(enum fault_kind f=OPEN;f<=SEPARATOR;f++){
-        static const char *const names[]={"NONE","OPEN","WRITE","FLUSH","SYNC","CLOSE","SEEK_TAIL","READ_TAIL","SEEK_END","SEPARATOR"};
+        static const char *const names[]={"NONE","OPEN","FDOPEN","WRITE","FLUSH","SYNC","CLOSE","SEEK_TAIL","READ_TAIL","SEEK_END","SEPARATOR"};
         check_failure(f,names[f]);
     }
     repeated_failure_then_recover();
     recovered_reservation_commit_must_be_retried();
-    puts("Store IO: 9 failing stages, first/close errno, unknown pending, failed rebind, 11 consecutive failures, retained CRC recovery, no duplicate and ACK-only recycling PASS");
+    puts("Store IO: 10 failing stages, first/close errno, 3-attempt pause, no false recovery success, retained CRC recovery, NVS retry, no duplicate and ACK-only recycling PASS");
     return 0;
 }

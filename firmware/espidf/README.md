@@ -1,4 +1,6 @@
-Core **0.2.19 — CANDIDATA, não instalada**: [recuperação da flash, reinícios e próximos passos](AUDITORIA_v0.2.19.md) e [changelog](CHANGELOG_v0.2.19.md). Recuperação do volume após erro de IO, diagnóstico da primeira falha e exportação administrativa de crash. Nenhuma OTA, reset, apagamento ou reativação de TX realizada.
+Core **0.2.20 — CANDIDATA, não instalada**: [OPEN/EACCES, correção, testes e evidência ainda necessária](FLASH_FIX_v0.2.20.md) e [changelog](CHANGELOG_v0.2.20.md). Reconhece AM_RDO pelos atributos FAT, cria segmentos exclusivos, preserva arquivos anteriores e só confirma recuperação após escrita durável. Requisições J1708/NVS permanecem intactas. Nenhuma OTA ou intervenção na placa realizada.
+
+Core **0.2.19 — referência observada em campo**: [recuperação da flash e reinícios](AUDITORIA_v0.2.19.md) e [changelog](CHANGELOG_v0.2.19.md). O operador informou OPEN/EACCES persistente; esta versão não registrava FRESULT ou atributos FAT e contava scans como recuperações. Corrigidos na candidata acima.
 
 Core **0.2.18 — referência observada em campo**: [auditoria de RAM, eco PID439 e timeout PID153](AUDITORIA_v0.2.18.md) e [changelog](CHANGELOG_v0.2.18.md). Diagnóstico compacto por padrão, páginas pequenas e separação de eco estendido; proteções preservadas. Foi identificada na Cloud pelo SHA ELF; não foi instalada pelo agente.
 
