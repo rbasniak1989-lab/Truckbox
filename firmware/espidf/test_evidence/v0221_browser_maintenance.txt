@@ -1,0 +1,1 @@
+Browser maintenance PASS: no auto-format on load/login, backup, parked/loss/phrase/nonce gates, cancel, one confirmed POST, media error no retry, expiry/logout, Core/Link isolation; fixtures only.

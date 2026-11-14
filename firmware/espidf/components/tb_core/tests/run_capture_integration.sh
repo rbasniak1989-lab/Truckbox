@@ -21,7 +21,7 @@ state_start = source.index('static struct {')
 state_end = source.index('} s;', state_start) + len('} s;')
 typedefs = re.findall(r'typedef struct\s*\{[^}]*\}\s*trip_blob(?:_v1)?_t;', source)
 assert len(typedefs) == 2
-names = ['persist_trip', 'mirror_trip_locked', 'pgn_of', 'update_signals', 'update_j1587_signal_locked', 'tb_capture_reset_trip','evidence_hex','tb_capture_confirm_physical','tb_capture_request_enable_work','tb_capture_field_start','tb_capture_field_confirm','finish_j1708','j1708_task']
+names = ['persist_trip', 'mirror_trip_locked', 'pgn_of', 'update_signals', 'update_j1587_signal_locked', 'tb_capture_reset_trip','evidence_hex','tb_capture_confirm_physical','tb_capture_request_enable_work','tb_capture_field_start','tb_capture_field_confirm','finish_j1708','j1708_task','tb_capture_storage_stationary']
 event_end=source.index('} request_event_t;')+len('} request_event_t;');event_start=source.rfind('typedef struct {',0,event_end)
 chunks = [source[state_start:state_end],source[event_start:event_end], *typedefs, 'static void add_sample_identity(cJSON *o,const char *k){cJSON_AddStringToObject(o,"sample_kind",k);}', 'static void queue_sample(cJSON *o){assert(cJSON_GetObjectItemCaseSensitive(o,"tx_observed_hex"));++host_audits;cJSON_Delete(o);}']
 # Host runner tests acquisition and signal arbitration; flash JSON serialization is

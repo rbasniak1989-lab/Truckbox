@@ -1,4 +1,6 @@
-Core **0.2.20 — CANDIDATA, não instalada**: [OPEN/EACCES, correção, testes e evidência ainda necessária](FLASH_FIX_v0.2.20.md) e [changelog](CHANGELOG_v0.2.20.md). Reconhece AM_RDO pelos atributos FAT, cria segmentos exclusivos, preserva arquivos anteriores e só confirma recuperação após escrita durável. Requisições J1708/NVS permanecem intactas. Nenhuma OTA ou intervenção na placa realizada.
+Core **0.2.21 — CANDIDATA de manutenção, não instalada pelo agente**: [procedimento pelo Wi-Fi, testes, perdas e rollback](MAINTENANCE_v0.2.21.md). Instalar a BIN não limpa arquivos. A recriação somente de `/tbflash` exige administrador, parada medida e confirmação explícita em duas etapas. [Changelog](CHANGELOG_v0.2.21.md).
+
+Core **0.2.20 — observada em campo; boot 559 analisado**: [OPEN/EACCES, correção, testes e evidência ainda necessária](FLASH_FIX_v0.2.20.md) e [changelog](CHANGELOG_v0.2.20.md). Reconhece AM_RDO pelos atributos FAT, cria segmentos exclusivos, preserva arquivos anteriores e só confirma recuperação após escrita durável. Requisições J1708/NVS permanecem intactas. Nenhuma OTA ou intervenção na placa realizada.
 
 Core **0.2.19 — referência observada em campo**: [recuperação da flash e reinícios](AUDITORIA_v0.2.19.md) e [changelog](CHANGELOG_v0.2.19.md). O operador informou OPEN/EACCES persistente; esta versão não registrava FRESULT ou atributos FAT e contava scans como recuperações. Corrigidos na candidata acima.
 

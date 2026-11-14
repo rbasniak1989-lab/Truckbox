@@ -23,6 +23,8 @@ sh components/tb_core/tests/run_fatfs_rebind.sh
 sh components/tb_core/tests/run_store_io.sh
 sh components/tb_core/tests/run_store_open.sh
 sh components/tb_core/tests/run_store_retry.sh
+sh components/tb_core/tests/run_store_maintenance.sh
+sh components/tb_core/tests/run_store_backup.sh
 sh components/tb_core/tests/run_worker_fairness.sh
 sh components/tb_core/tests/run_legacy_profile.sh
 sh components/tb_core/tests/run_j1939.sh
