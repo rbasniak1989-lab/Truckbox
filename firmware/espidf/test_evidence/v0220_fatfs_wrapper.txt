@@ -1,0 +1,1 @@
+4203232c:	ca1e90ef          	jal	4201bfcc <__wrap_f_open>

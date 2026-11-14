@@ -1,0 +1,24 @@
+{
+  "baseline_0.2.19": {
+    ".iram0.text": 127468,
+    ".iram0.data": 4,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 67912,
+    "ram_static_bytes": 210172
+  },
+  "candidate_0.2.20": {
+    ".iram0.text": 127468,
+    ".iram0.data": 4,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 68096,
+    "ram_static_bytes": 210356
+  },
+  "static_delta_bytes": 184,
+  "OTA_bytes": 1556512,
+  "physical_heap": "NOT_MEASURED",
+  "queue_capacities_changed": false
+}

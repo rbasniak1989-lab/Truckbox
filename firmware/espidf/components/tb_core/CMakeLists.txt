@@ -13,4 +13,5 @@ idf_component_register(SRCS ${core_sources}
 
 if(NOT CONFIG_TB_ROLE_LINK)
     target_compile_options(${COMPONENT_LIB} PRIVATE -fstack-usage)
+    target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=f_open")
 endif()

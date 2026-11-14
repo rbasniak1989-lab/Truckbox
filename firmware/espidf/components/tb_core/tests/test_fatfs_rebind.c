@@ -4,17 +4,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include "ff.h"
 #include "diskio.h"
 
 #define SECTORS 512u
 #define SECTOR_SIZE 4096u
 static unsigned char disk[SECTORS*SECTOR_SIZE];
-static bool fail_writes,fail_reads;
+static bool fail_writes,fail_reads,write_protected;
 static unsigned disk_writes;
 PARTITION VolToPart[FF_VOLUMES]={{0,0},{1,0}};
 DSTATUS disk_initialize(BYTE d){return d==0?0:STA_NOINIT;}
-DSTATUS disk_status(BYTE d){return d==0?0:STA_NOINIT;}
+DSTATUS disk_status(BYTE d){return d==0?(write_protected?STA_PROTECT:0):STA_NOINIT;}
 DRESULT disk_read(BYTE d,BYTE *out,LBA_t sector,UINT count){
     if(d!=0 || sector+count>SECTORS)return RES_PARERR;
     if(fail_reads)return RES_ERROR;
@@ -45,7 +48,80 @@ int ff_mutex_take(int n){(void)n;return 1;}
 void ff_mutex_give(int n){(void)n;}
 typedef int wl_handle_t;
 static unsigned char ff_diskio_get_pdrv_wl(wl_handle_t h){return h==17?0:0xff;}
+typedef void *TaskHandle_t;
+static TaskHandle_t current_task=(void *)17;
+static TaskHandle_t xTaskGetCurrentTaskHandle(void){return current_task;}
+typedef struct{
+    bool fatfs_called,stat_measured,partition_readonly;int fatfs_result,fatfs_flags,stat_result,file_attributes;
+    uint32_t file_bytes,filesystem_type,root_entries;char path[96];
+}store_io_failure_t;
+static struct{const char *medium,*base_path;wl_handle_t flash_handle;}state={"flash","/tbflash",17};
+#define ESP_PARTITION_TYPE_DATA 1
+#define ESP_PARTITION_SUBTYPE_DATA_FAT 2
+typedef struct{bool readonly;}esp_partition_t;
+static const esp_partition_t *esp_partition_find_first(int type,int subtype,const char *label){
+    static const esp_partition_t partition={false};assert(type==1 && subtype==2 && !strcmp(label,"storage"));return &partition;
+}
 #include "rebind_under_test.h"
+static void put(const char *name,const char *s);
+static void expect(const char *name,const char *s);
+
+static void access_denied_cases(void){
+    FATFS fs;unsigned char work[SECTOR_SIZE];FIL file;FILINFO info;UINT n;
+    MKFS_PARM options={.fmt=FM_FAT|FM_SFD,.n_fat=2,.n_root=128,.au_size=SECTOR_SIZE};
+    memset(disk,0xff,sizeof(disk));assert(f_mkfs("0:",&options,work,sizeof(work))==FR_OK);
+    assert(f_mount(&fs,"0:",1)==FR_OK);
+    put("0:/00000001.LOG","PRESERVED\n");
+    assert(f_chmod("0:/00000001.LOG",AM_RDO,AM_RDO)==FR_OK);
+    assert(f_stat("0:/00000001.LOG",&info)==FR_OK && (info.fattrib&AM_RDO));
+    assert(get_stat_mode(false)&S_IWUSR); /* stock IDF Unix mode cannot detect AM_RDO */
+    assert(recovered_file_readonly("/tbflash/00000001.LOG"));
+    for(unsigned i=0;i<24;i++){
+        assert(rebind_flash_volume(17)==FR_OK);
+        expect("0:/00000001.LOG","PRESERVED\n");
+        store_io_failure_t traced={0};open_trace_begin();
+        FRESULT result=f_open(&file,"0:/00000001.LOG",fat_mode_conv(O_RDWR|O_APPEND|O_CREAT));
+        open_trace_end(&traced);
+        assert(result==FR_DENIED && fresult_to_errno(result)==EACCES);
+        assert(traced.fatfs_called && traced.fatfs_result==FR_DENIED && traced.fatfs_flags==(FA_READ|FA_WRITE|FA_OPEN_ALWAYS));
+        strcpy(traced.path,"/tbflash/00000001.LOG");inspect_open_failure(&traced);
+        assert(traced.stat_measured && traced.stat_result==FR_OK && (traced.file_attributes&AM_RDO) && traced.file_bytes==10);
+    }
+    assert(f_open(&file,"0:/00000002.LOG",fat_mode_conv(O_RDWR|O_APPEND|O_CREAT|O_EXCL))==FR_OK);
+    assert(f_write(&file,"NEW_DURABLE\n",12,&n)==FR_OK && n==12);
+    assert(f_sync(&file)==FR_OK && f_close(&file)==FR_OK);
+    expect("0:/00000001.LOG","PRESERVED\n");expect("0:/00000002.LOG","NEW_DURABLE\n");
+    assert(f_stat("0:/00000001.LOG",&info)==FR_OK && (info.fattrib&AM_RDO));
+    assert(f_open(&file,"0:/00000002.LOG",fat_mode_conv(O_RDWR|O_APPEND|O_CREAT|O_EXCL))==FR_EXIST);
+    expect("0:/00000002.LOG","NEW_DURABLE\n");
+    write_protected=true;
+    FRESULT result=f_open(&file,"0:/00000002.LOG",FA_WRITE);
+    assert(result==FR_WRITE_PROTECTED && fresult_to_errno(result)==EACCES);
+    write_protected=false;
+    open_trace_begin();current_task=(void *)18;
+    assert(f_open(&file,"0:/00000002.LOG",FA_READ)==FR_OK && f_close(&file)==FR_OK);
+    current_task=(void *)17;store_io_failure_t ignored={0};open_trace_end(&ignored);assert(!ignored.fatfs_called);
+    assert(f_mount(NULL,"0:",0)==FR_OK);
+    /* Separate disposable fixture: free data clusters do not imply free FAT
+     * directory entries. This case CANNOT be fixed by deleting protected data. */
+    memset(disk,0xff,sizeof(disk));assert(f_mkfs("0:",&options,work,sizeof(work))==FR_OK);
+    assert(f_mount(&fs,"0:",1)==FR_OK);
+    DWORD before,after;FATFS *mounted=NULL;
+    assert(f_getfree("0:",&before,&mounted)==FR_OK && before>100);
+    for(unsigned i=0;i<fs.n_rootdir;i++){
+        char path[24];snprintf(path,sizeof(path),"0:/F%07u.TMP",i);put(path,"");
+    }
+    assert(f_getfree("0:",&after,&mounted)==FR_OK && before==after);
+    assert(f_stat("0:/00000001.LOG",&info)==FR_NO_FILE);
+    result=f_open(&file,"0:/00000001.LOG",FA_READ|FA_WRITE|FA_CREATE_NEW);
+    assert(result==FR_DENIED && fresult_to_errno(result)==EACCES);
+    store_io_failure_t missing={0};strcpy(missing.path,"/tbflash/00000001.LOG");inspect_open_failure(&missing);
+    assert(missing.stat_measured && missing.stat_result==FR_NO_FILE && missing.root_entries==128);
+    assert(rebind_flash_volume(17)==FR_OK);
+    assert(f_open(&file,"0:/00000001.LOG",FA_READ|FA_WRITE|FA_CREATE_NEW)==FR_DENIED);
+    assert(f_mount(NULL,"0:",0)==FR_OK);
+    puts("Actual FatFs: 24 successful scans/remounts still OPEN/EACCES on AM_RDO; new exclusive segment works, old bytes/attrs remain; full directory with free clusters stays denied; exact FRESULT trace PASS");
+}
 
 static void put(const char *name,const char *s){
     FIL file;UINT n;assert(f_open(&file,name,FA_WRITE|FA_CREATE_ALWAYS)==FR_OK);
@@ -101,6 +177,7 @@ int main(void){
     expect("0:/00000002.BAD","EVIDENCE\n");
     assert(rebind_flash_volume(99)==FR_INVALID_DRIVE);
     assert(f_mount(NULL,"0:",0)==FR_OK);
+    access_denied_cases();
     puts("Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS");
     return 0;
 }

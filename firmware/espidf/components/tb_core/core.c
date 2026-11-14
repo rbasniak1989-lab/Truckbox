@@ -460,6 +460,19 @@ static esp_err_t rollback_prepare_handler(httpd_req_t *request)
     tb_store_add_json(reply);return tb_http_send_json(request,reply);
 }
 
+static esp_err_t storage_retry_handler(httpd_req_t *request)
+{
+    if(!tb_http_require_admin(request))return ESP_OK;
+    if(tb_web_ota_busy())return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"OTA busy");
+    cJSON *body=NULL;
+    if(tb_http_read_json(request,128,&body)!=ESP_OK){cJSON_Delete(body);return ESP_FAIL;}
+    bool authorized=cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized"));cJSON_Delete(body);
+    if(!authorized)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"explicit storage retry authorization required");
+    if(tb_store_retry()!=ESP_OK)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"storage unavailable");
+    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);tb_store_add_json(reply);
+    return tb_http_send_json(request,reply);
+}
+
 static esp_err_t reset_handler(httpd_req_t *request)
 {
     if (!legacy_write_origin_ok(request)) return httpd_resp_send_err(request, HTTPD_403_FORBIDDEN, "cross-site write rejected");
@@ -658,6 +671,7 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
         { .uri = "/api/reset", .method = HTTP_POST, .handler = reset_handler },
         { .uri = "/api/storage/prepare-rollback", .method = HTTP_POST, .handler = rollback_prepare_handler },
         { .uri = "/api/storage/discard", .method = HTTP_POST, .handler = discard_storage_handler },
+        { .uri = "/api/storage/retry", .method = HTTP_POST, .handler = storage_retry_handler },
     };
     for (unsigned i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         esp_err_t err = httpd_register_uri_handler(server, &routes[i]);

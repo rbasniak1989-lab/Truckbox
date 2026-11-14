@@ -49,6 +49,7 @@ static int host_volume_rebind_result;
 static uint64_t host_nvs_ack, host_nvs_reserved;
 static uint64_t host_pending_ack, host_pending_reserved;
 static uint8_t host_pending_clean;
+static uint32_t host_pending_keep,host_nvs_keep;
 
 static inline const tb_config_t *tb_config(void) { return &host_config; }
 static inline const char *tb_device_uid(void) { return "TB-HOST-0123456789AB"; }
@@ -76,6 +77,8 @@ static inline esp_err_t nvs_set_u64(nvs_handle_t handle, const char *name, uint6
 }
 static inline esp_err_t nvs_set_u8(nvs_handle_t handle, const char *name, uint8_t value)
 { (void)handle; (void)name; host_pending_clean = value; return ESP_OK; }
+static inline esp_err_t nvs_set_u32(nvs_handle_t handle,const char *name,uint32_t value)
+{ (void)handle;(void)name;host_pending_keep=value;return ESP_OK; }
 static inline esp_err_t nvs_commit(nvs_handle_t handle)
 {
     (void)handle;
@@ -83,6 +86,7 @@ static inline esp_err_t nvs_commit(nvs_handle_t handle)
     if (host_fail_commit_once) { host_fail_commit_once = false; return ESP_FAIL; }
     host_nvs_ack = host_pending_ack;
     host_nvs_reserved = host_pending_reserved;
+    host_nvs_keep=host_pending_keep;
     return ESP_OK;
 }
 static inline int store_host_fsync(int descriptor)

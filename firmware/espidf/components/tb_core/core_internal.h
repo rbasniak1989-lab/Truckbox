@@ -2,6 +2,7 @@
 #include "tb.h"
 
 esp_err_t tb_store_init(void);
+esp_err_t tb_store_retry(void);
 esp_err_t tb_capture_start(void);
 void tb_capture_add_json(cJSON *object);
 void tb_capture_add_json_compact(cJSON *object);
