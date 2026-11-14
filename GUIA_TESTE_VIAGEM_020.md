@@ -1,6 +1,6 @@
 # Teste de viagem — Next 0.2.0 e Core 0.2.24
 
-**Estado da entrega:** APK 0.2.0 compilado, 88 testes Android/JVM/Compose aprovados, lint sem erros; candidata Core 0.2.24 compilada e testada em CI, ainda sem validação física. Após aprovação explícita da configuração pelo proprietário, a nova API `multimedia-next-v1` v1 foi publicada e um único vínculo temporário foi provisionado com Financeiro/Jornada autorizados, válido até **17/11/2026 19h29 Brasília**. Falta ativar a multimídia real com o código privado.
+**Estado da entrega:** APK 0.2.0 compilado, 88 testes Android/JVM/Compose aprovados, lint sem erros; candidata Core 0.2.24 compilada e testada em CI, ainda sem validação física completa. API `multimedia-next-v1` atualizada à v2 para horários compatíveis com Android 13. Um único vínculo proprietário, Financeiro/Jornada autorizados, válido até **17/11/2026 19h29 Brasília**. O proprietário confirmou a ativação real; ACK da política v1 registrado no banco. Mesmo APK/código; sem nova instalação.
 
 ## Uso após liberação da API
 

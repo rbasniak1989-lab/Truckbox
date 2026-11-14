@@ -1,5 +1,11 @@
 # TruckBox Next
 
+## Cloud v2 — compatibilidade de horários com Android 8–13
+
+Ativação retornava HTTP 200 e vinculava o aparelho, mas o APK Android 13 recusava `expiresAt` com sufixo PostgreSQL `+00:00`: o `InstantPrinterParser` dessa plataforma exige `Z`. A API temporária agora normaliza os timestamps de ativação, política, lease, viagem e GPS para UTC com `Z`, preservando a fração original e os mesmos instantes. Código, vínculo, prazo e permissões mantidos; APK 0.2.0 continua válido.
+
+Correção publicada na Edge `multimedia-next-v1` v2. Seis testes focados SQL/RSA/HTTP/serialização passaram, com TypeScript strict e Deno check. Proprietário confirmou “Vínculo consultado na Cloud”; ACK da política v1 confirmado no banco. Isso valida ativação/Cloud nesse aparelho, sem declarar o restante do hardware ou GPS/viagem real homologado.
+
 ## 0.2.0-homologacao — última leitura e canal Core/Cloud
 
 Pedido posterior de campo: canal temporário sem contas publicado após aprovação explícita, um vínculo proprietário por até 72 h, Financeiro/Jornada autorizados na Cloud e GPS exclusivo do Motorista. Não habilita payload sem fonte verificada. Migração completa de contas não aplicada. Guia direto em GUIA_TESTE_VIAGEM_020.md.

@@ -3,6 +3,32 @@ export type FieldAction='context'|'activate'|'enroll'|'state'|'ack'|'logout';
 export interface FieldTestPort { call(action: FieldAction,hash: string,device: string,nonce?: string,key?: string,core?: string,version?: number): Promise<Record<string,unknown>>; }
 const json=(status: number,v: unknown)=>new Response(JSON.stringify(v),{status,headers:{'content-type':'application/json','cache-control':'no-store','vary':'Authorization, X-TruckBox-Device'}});
 
+/** Android 8–13 Instant.parse requires literal Z (AOSP InstantPrinterParser).
+ * PostgreSQL JSON emits +00:00. Preserve fractional precision so the same policy
+ * version never changes its effective issuedAt/expiresAt during serialization. */
+export function fieldUtcTimestamp(value: string): string {
+  const parts=/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if(!parts||!Number.isFinite(Date.parse(value)))throw new AccessError(503,'invalid_server_timestamp');
+  const date=parts[3]==='Z'||parts[3]==='+00:00'||parts[3]==='-00:00'?parts[1]:new Date(value).toISOString().slice(0,19);
+  return date+(parts[2]??'')+'Z';
+}
+export function fieldTestWireDto(value: Record<string,unknown>): Record<string,unknown> {
+  const dates=(input: Record<string,unknown>,fields: string[])=>{
+    const out={...input};
+    for(const field of fields)if(out[field]!==undefined&&out[field]!==null) {
+      if(typeof out[field]!=='string')throw new AccessError(503,'invalid_server_timestamp');
+      out[field]=fieldUtcTimestamp(out[field] as string);
+    }
+    return out;
+  };
+  const out=dates(value,['expiresAt','receivedAt','leaseExpiresAt']);
+  for(const [key,fields] of [['policy',['issuedAt','expiresAt']],['trip',['legStartedAt']],['gps',['sampledAt']]] as const) {
+    const nested=out[key];
+    if(nested&&typeof nested==='object'&&!Array.isArray(nested))out[key]=dates(nested as Record<string,unknown>,[...fields]);
+  }
+  return out;
+}
+
 /** Acesso de campo temporário aprovado pelo proprietário; sem cadastro e sem credencial embutida no APK. */
 export function createFieldTestApp(db: FieldTestPort,now: ()=>Date=()=>new Date()) {
   return async(req: Request): Promise<Response>=>{
@@ -34,7 +60,7 @@ export function createFieldTestApp(db: FieldTestPort,now: ()=>Date=()=>new Date(
       const version=action==='ack'?value.version:undefined;
       if(action==='ack'&&(typeof version!=='number'||!Number.isSafeInteger(version)||version<1))throw new AccessError(400,'invalid_ack');
       const out=await db.call(action,hash,device,nonce,action==='activate'?spki:undefined,action==='activate'?value.coreDeviceUid as string:undefined,version as number|undefined);
-      return json(action==='enroll'?202:200,out);
+      return json(action==='enroll'?202:200,fieldTestWireDto(out));
     } catch(e) {return e instanceof AccessError?json(e.status,{error:e.code}):json(503,{error:'test_service_unavailable'});}
   };
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
-import {createFieldTestApp,type FieldAction,type FieldTestPort} from './field-test.ts';
+import {createFieldTestApp,fieldTestWireDto,fieldUtcTimestamp,type FieldAction,type FieldTestPort} from './field-test.ts';
 import {AccessError,canonicalProof,sha256} from './security.ts';
 const ids={truck:'10000000-0000-4000-8000-000000000001',core:'10000000-0000-4000-8000-000000000002',device:'10000000-0000-4000-8000-000000000003',trip:'10000000-0000-4000-8000-000000000004'};
 const token='tbxft_'+Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
@@ -41,12 +41,14 @@ async function signed(action='state',body?:string,other: {device?:string;nonce?:
 const activate=(f: Awaited<ReturnType<typeof fixture>>,core='test-core')=>signed('activate',JSON.stringify({publicKeySpki:spki,coreDeviceUid:core})).then(r=>f.app(r));
 test('field access binds exactly one multimedia/Core and all permissions come from Cloud',async()=>{
  const f=await fixture();try {
-  assert.equal((await activate(f)).status,200);
+  const activation=await activate(f);assert.equal(activation.status,200);
+  assert.ok((await activation.json()).expiresAt.endsWith('Z'));
   for(const financial of [false,true])for(const journey of [false,true]) {
    await f.pg.query('update multimedia_field_test_v1.access set financial_read=$1,journey_read=$2,policy_version=policy_version+1',[financial,journey]);
    const r=await f.app(await signed());assert.equal(r.status,200);const b=await r.json();assert.equal(b.trip.origin,'TEST ORIGIN');
    assert.equal(b.policy.financialRead,financial);assert.equal(b.policy.journeyRead,journey);assert.equal(b.financial,null);assert.equal(b.journey,null);
    assert.equal(Date.parse(b.leaseExpiresAt)-Date.parse(b.receivedAt),20000);assert.equal(b.coreDeviceUid,'test-core');
+   for(const at of [b.receivedAt,b.leaseExpiresAt,b.policy.issuedAt,b.policy.expiresAt,b.trip.legStartedAt])assert.match(at,/Z$/);
   }
   assert.equal((await f.app(await signed('activate',JSON.stringify({publicKeySpki:spki,coreDeviceUid:'test-core'}),{device:ids.trip}))).status,403);
  } finally {await f.pg.close();}
@@ -77,7 +79,21 @@ test('GPS is exclusively Motorista through Cloud and never replaced by a newer C
   await f.pg.query("insert into public.gps_latest values($1,$2,'CORE_GPS',now(),10,20,'other',1)",[ids.truck,ids.core]);
   assert.equal((await activate(f)).status,200);const r=await f.app(await signed());const b=await r.json();
   assert.equal(b.gps.source,'ANDROID_PHONE');assert.equal(b.gps.latitude,-15);assert.equal(b.gps.longitude,-47);assert.ok(Date.now()-Date.parse(b.gps.sampledAt)>3500000);
+  assert.match(b.gps.sampledAt,/Z$/);
  } finally {await f.pg.close();}
+});
+test('wire timestamps satisfy Android 13 literal-Z parser without changing precision or authorization',()=>{
+ const stamp='2026-11-14T12:00:00.123456+00:00';
+ assert.equal(fieldUtcTimestamp(stamp),'2026-11-14T12:00:00.123456Z');
+ assert.equal(fieldUtcTimestamp('2026-11-15T02:15:30.123456789+03:00'),'2026-11-14T23:15:30.123456789Z');
+ const wire=fieldTestWireDto({expiresAt:stamp,receivedAt:stamp,leaseExpiresAt:'2026-11-14T12:00:20.123456+00:00',requestNonce:'SAME_NONCE',
+   scope:{userId:'SAME_ID'},policy:{version:7,issuedAt:stamp,expiresAt:stamp,financialRead:false,journeyRead:true},
+   trip:{legStartedAt:stamp},gps:{sampledAt:stamp},financial:null,journey:null});
+ assert.equal(wire.requestNonce,'SAME_NONCE');assert.deepEqual(wire.scope,{userId:'SAME_ID'});
+ assert.deepEqual(wire.policy,{version:7,issuedAt:stamp.replace('+00:00','Z'),expiresAt:stamp.replace('+00:00','Z'),financialRead:false,journeyRead:true});
+ assert.equal(Date.parse(wire.leaseExpiresAt as string)-Date.parse(wire.receivedAt as string),20000);
+ assert.equal(wire.financial,null);assert.equal(wire.journey,null);
+ assert.throws(()=>fieldUtcTimestamp('2026-11-14T12:00:00'),/invalid_server_timestamp/);
 });
 test('anonymous database roles cannot call the server RPC and permission edits require a new version',async()=>{
  const f=await fixture();try {

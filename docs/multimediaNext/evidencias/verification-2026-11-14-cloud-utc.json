@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-14",
+  "scope": "multimedia-next-v1 temporary Cloud channel",
+  "deployedEdgeVersion": 2,
+  "problem": "Android 13 accepted device activation on server but could not parse PostgreSQL +00:00 timestamp with the platform literal-Z Instant parser",
+  "change": "canonical UTC Z for activation, policy, lease, trip and GPS, preserving fractional precision and instant",
+  "tests": {
+    "focusedPostgresRsaHttpSerialization": 6,
+    "failures": 0,
+    "typescriptStrict": "passed",
+    "denoCheck": "passed",
+    "sourceSecretsScanner": "passed"
+  },
+  "realDeviceResult": {
+    "reportedAndroidMajor": 13,
+    "ownerConfirmedCloudLink": true,
+    "policyAckVersionConfirmedInDatabase": 1,
+    "financialAndJourneyGranted": true
+  },
+  "newCredentials": 0,
+  "newSchemaChanges": 0,
+  "newApkRequired": false,
+  "unchanged": ["bound device key", "access code", "expiry", "policy permissions", "Core firmware", "Motorista app"],
+  "remaining": "Full hardware/NAT, Motorista GPS freshness and trip data validation remain separate field checks"
+}

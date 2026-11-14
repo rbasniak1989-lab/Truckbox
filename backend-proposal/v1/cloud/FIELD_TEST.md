@@ -1,5 +1,7 @@
 # Canal temporário de campo — autorizado pelo proprietário
 
+Atualização v2: timestamps PostgreSQL com offset são serializados em UTC `Z`, compatível com o parser `Instant` AOSP Android 8–13. Frações de segundo e instantes preservados; nenhuma alteração no código de acesso, vínculo ou permissões. O proprietário confirmou o vínculo no APK e a Cloud registrou ACK v1. As notas de implantação v1 abaixo são históricas; a ativação positiva já foi confirmada.
+
 Solicitação posterior de 14/11: teste de viagem sem provisionar contas, liberar Financeiro/Jornada para o próprio vínculo e GPS exclusivamente TruckBox Motorista via Cloud. Não usar credenciais de ingestão nem fallback público.
 
 `field-test.ts` implementa prova RSA, token opaco aleatório 256 bits, nonce, relógio e RPC somente servidor. A migração `20261114221000_multimedia_field_test_v1.sql` cria duas tabelas privadas com RLS, expiração máxima 72 h, pinning de aparelho/chave/Core e versão de permissões. O principal é um vínculo temporário real, distinto de usuário Supabase Auth. Código bruto fica fora do Git/APK e só é entregue privadamente; banco armazena SHA256. Primeiro uso exige Core existente/ativo do veículo autorizado. Próximos usos exigem mesma chave/Core/aparelho. Revogação e expiração são verificadas em cada consulta.
