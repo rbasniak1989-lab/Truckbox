@@ -1,0 +1,3 @@
+Actual FatFs: 24 successful scans/remounts still OPEN/EACCES on AM_RDO; new exclusive segment works, old bytes/attrs remain; full directory with free clusters stays denied; exact FRESULT trace PASS
+Boot 559 reproduction: FAT12/512 slots, CREATE_NEW flags7, absent LOG, FR_DENIED7/EACCES13/stat4 with free clusters; full foreign directory OR invisible orphan LFNs; three rebinds do not fix either; zero writes and exact root bytes preserved PASS
+Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS

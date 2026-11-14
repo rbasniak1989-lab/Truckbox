@@ -134,6 +134,68 @@ static void expect(const char *name,const char *s){
     assert(f_read(&file,text,sizeof(text)-1,&n)==FR_OK);
     assert(n==strlen(s) && !strcmp(text,s));assert(f_close(&file)==FR_OK);
 }
+
+static unsigned visible_root_entries(void){
+    FF_DIR directory;FILINFO info;unsigned count=0;
+    assert(f_opendir(&directory,"0:/")==FR_OK);
+    for(;;){assert(f_readdir(&directory,&info)==FR_OK);if(!info.fname[0])break;++count;}
+    assert(f_closedir(&directory)==FR_OK);return count;
+}
+
+/* Boot 559: FS_FAT12, 512 root slots, absent 00000001.LOG, CREATE_NEW=7,
+ * OPEN=FR_DENIED, stat=FR_NO_FILE, no recognized LOG segments. This test
+ * deliberately constructs two DIFFERENT RAM-only directory states; it does
+ * not assert which state exists on the truck and never changes production. */
+static void field_root_denied_cases(void){
+    FATFS fs;unsigned char work[SECTOR_SIZE];FIL file;FILINFO info;
+    MKFS_PARM options={.fmt=FM_FAT|FM_SFD,.n_fat=2,.n_root=512,.au_size=SECTOR_SIZE};
+    for(unsigned corrupt=0;corrupt<2;corrupt++){
+        memset(disk,0xff,sizeof(disk));assert(f_mkfs("0:",&options,work,sizeof(work))==FR_OK);
+        assert(f_mount(&fs,"0:",1)==FR_OK);
+        assert(fs.fs_type==FS_FAT12 && fs.n_rootdir==512);
+        DWORD free_before,free_after;FATFS *mounted=NULL;
+        assert(f_getfree("0:",&free_before,&mounted)==FR_OK && free_before>100);
+        size_t root_offset=(size_t)fs.dirbase*SECTOR_SIZE,root_bytes=(size_t)fs.n_rootdir*32;
+        assert(root_offset+root_bytes<=sizeof(disk));
+        if(!corrupt){
+            for(unsigned i=0;i<512;i++){
+                char path[24];snprintf(path,sizeof(path),"0:/F%07u.TMP",i);put(path,"");
+            }
+            assert(visible_root_entries()==512);
+        }else{
+            /* Orphaned LFN slots are not visible as files, but are not free
+             * slots either. Inject only into this disposable, unmounted RAM
+             * fixture. A root scan can report zero LOGs without an empty root. */
+            assert(f_mount(NULL,"0:",0)==FR_OK);
+            memset(disk+root_offset,0xff,root_bytes);
+            for(unsigned i=0;i<512;i++){
+                unsigned char *entry=disk+root_offset+i*32;
+                entry[0]=0x41;entry[11]=0x0f; /* LFN attribute, internal AM_LFN */
+                entry[12]=0;entry[26]=entry[27]=0;
+            }
+            assert(f_mount(&fs,"0:",1)==FR_OK && visible_root_entries()==0);
+        }
+        assert(f_getfree("0:",&free_after,&mounted)==FR_OK && free_after==free_before);
+        unsigned char *preserved=malloc(root_bytes);assert(preserved);
+        memcpy(preserved,disk+root_offset,root_bytes);
+        unsigned writes_before=disk_writes;
+        for(unsigned retry=0;retry<3;retry++){
+            store_io_failure_t traced={0};open_trace_begin();
+            FRESULT result=f_open(&file,"0:/00000001.LOG",fat_mode_conv(O_RDWR|O_APPEND|O_CREAT|O_EXCL));
+            open_trace_end(&traced);
+            assert(result==FR_DENIED && fresult_to_errno(result)==EACCES);
+            assert(traced.fatfs_called && traced.fatfs_result==7 && traced.fatfs_flags==7);
+            assert(f_stat("0:/00000001.LOG",&info)==FR_NO_FILE);
+            strcpy(traced.path,"/tbflash/00000001.LOG");inspect_open_failure(&traced);
+            assert(traced.stat_measured && traced.stat_result==4 && traced.filesystem_type==1 && traced.root_entries==512);
+            assert(!traced.partition_readonly && !recovered_file_readonly(traced.path));
+            assert(rebind_flash_volume(17)==FR_OK);
+            assert(disk_writes==writes_before && !memcmp(preserved,disk+root_offset,root_bytes));
+        }
+        free(preserved);assert(f_mount(NULL,"0:",0)==FR_OK);
+    }
+    puts("Boot 559 reproduction: FAT12/512 slots, CREATE_NEW flags7, absent LOG, FR_DENIED7/EACCES13/stat4 with free clusters; full foreign directory OR invisible orphan LFNs; three rebinds do not fix either; zero writes and exact root bytes preserved PASS");
+}
 int main(void){
     FATFS fs;unsigned char work[SECTOR_SIZE];
     /* Formatting is ONLY for this disposable RAM fixture. Recovery below uses
@@ -178,6 +240,7 @@ int main(void){
     assert(rebind_flash_volume(99)==FR_INVALID_DRIVE);
     assert(f_mount(NULL,"0:",0)==FR_OK);
     access_denied_cases();
+    field_root_denied_cases();
     puts("Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS");
     return 0;
 }
