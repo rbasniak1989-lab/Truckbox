@@ -51,11 +51,18 @@ import java.util.Locale
             Box(Modifier.fillMaxWidth().weight(1f).heightIn(min=230.dp).background(androidx.compose.ui.graphics.Color(0xFF10191D)),contentAlignment=Alignment.Center) {
                 Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)) {
                     Icon(Icons.Outlined.LocationOff,null,tint=Muted,modifier=Modifier.size(44.dp))
-                    Text("Mapa e posição indisponíveis")
-                    Caption("Rota selecionada e GPS do Motorista não verificados")
+                    Text("Mapa indisponível")
+                    Caption("Fornecedor de mapa e rota ainda não configurados")
+                    state.gps?.let {gps->
+                        Text("Última posição recebida da Cloud",fontWeight=FontWeight.Bold)
+                        Text("${format(gps.latitude,5)}, ${format(gps.longitude,5)}")
+                        Caption("Captura: ${gps.sampledAt}")
+                        Caption("Origem: ${gps.source} · ${gps.provider ?: "Provedor não informado"}")
+                        Caption("Precisão informada: ${format(gps.accuracyM) ?: "—"} m · não verificada fisicamente")
+                    } ?: Caption("Sem posição recebida da Cloud")
                 }
             }
-            Caption("Sem projeção de localização. Última posição: não recebida.")
+            Caption("Sem projeção de localização. A data da captura identifica posições antigas.")
         }
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {

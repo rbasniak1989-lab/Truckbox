@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Configuração pública do projeto, fornecida no build. Não aceitar service_role/token de ingestão.
+val cloudProperties=Properties()
+file("cloud-public.properties").inputStream().use {cloudProperties.load(it)} // URL/chave publicável; não concede acesso.
+providers.gradleProperty("truckbox.cloud.config").orNull?.let { path -> file(path).inputStream().use { cloudProperties.load(it) } }
+val cloudUrl=cloudProperties.getProperty("url","")
+val cloudPublishableKey=cloudProperties.getProperty("publishableKey","")
+require(cloudUrl.isEmpty() || Regex("https://[a-z0-9-]+\\.supabase\\.co").matches(cloudUrl))
+require(cloudPublishableKey.isEmpty() || Regex("sb_publishable_[A-Za-z0-9_-]{16,}").matches(cloudPublishableKey))
 
 android {
     namespace = "br.com.truckbox.multimedia.next"
@@ -10,8 +21,10 @@ android {
         applicationId = "br.com.truckbox.multimedia.next"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1-homologacao"
+        versionCode = 3
+        versionName = "0.2.0-homologacao"
+        buildConfigField("String","CLOUD_URL","\"$cloudUrl\"")
+        buildConfigField("String","CLOUD_PUBLISHABLE_KEY","\"$cloudPublishableKey\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     flavorDimensions += "environment"

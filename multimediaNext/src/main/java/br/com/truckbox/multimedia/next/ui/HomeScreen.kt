@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.truckbox.multimedia.next.domain.*
+import br.com.truckbox.multimedia.next.data.canBeLastInstrumentValue
 import kotlinx.coroutines.delay
 import java.time.Instant
 
@@ -102,15 +103,17 @@ import java.time.Instant
 @Composable fun SensorDialog(sensor: Instrument,value: InstrumentValue?,now: Instant,demo: Boolean,onClose: ()->Unit) {
     AlertDialog(onDismissRequest=onClose,title={Text(sensor.label)},text={
         Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Text(visibleValue(value?.first,now,demo)?.let { "${format(it)} ${sensor.unit}" } ?: "Sem leitura",fontWeight=FontWeight.Bold)
+            Text(instrumentDisplayValue(value?.first,now,demo)?.let { "${format(it)} ${sensor.unit}" } ?: "Sem leitura",fontWeight=FontWeight.Bold)
+            if(!demo && value?.first?.canBeLastInstrumentValue()==true && value.first.observed(now)==null) Caption("Última leitura recebida · ${instrumentAge(value.first,now)} · desatualizada")
             value?.first?.takeIf { it.source==Origin.CORE && it.quality==Quality.UNVERIFIED && it.receivedAt!=null }?.value?.let {
                 Caption("Valor recebido, não verificado: ${format(it)} ${sensor.unit}")
             }
             Caption("Origem: ${value?.first?.source?.name ?: "Não verificada"}")
+            Caption("Sinal: ${value?.first?.sourceId ?: "Não informado"}")
             Caption("Captura: ${value?.first?.sampledAt ?: "Não informada"}")
             Caption("Recebimento: ${value?.first?.receivedAt ?: "Não informado"}")
             Caption("Qualidade: ${value?.first?.quality?.name ?: "MISSING"}")
-            Caption("Uma resposta de rede não valida a leitura da ECU. Valores antigos não são apresentados como atuais.")
+            Caption("Últimos valores ficam identificados pela idade. Cálculos e ações continuam exigindo amostras atuais e válidas.")
         }
     },confirmButton={TextButton(onClick=onClose){Text("Fechar")}})
 }

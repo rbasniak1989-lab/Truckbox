@@ -1,5 +1,13 @@
 # Incremento 14/11/2026 — 0.1.1 Core/Home
 
+**Resultado posterior 0.2.0:** build final homolog/demo/instrumentação aprovado; **88 testes JVM/Compose**, zero falhas/erros/skips; lint **0 erros/9 avisos**; scanner de 72 fontes e APK sem ocorrências. API proposta: **35 testes** aprovados (13 regras, 15 integração SQL/RSA, 5 canal temporário, 2 vetores de prova); TypeScript strict e Deno check aprovados. Os casos incluem retenção/NA/zero/replay/Core diferente, restauração do código cifrado, quatro permissões, ACK, revogação, lease e GPS exclusivo Motorista.
+
+**Core 0.2.24:** [CI 43645022308](https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43645022308) aprovada, compilação ESP-IDF 5.5.2 e suíte host completa, perfil/partições/tamanho/NAPT64 conferidos. Imagem 1.591.184 bytes, SHA256 `5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d`. Sem flash ou validação física de NAT/Starlink.
+
+**Cloud de teste:** após aprovação explícita do proprietário, migração temporária aplicada, nova Edge publicada v1, único vínculo com ambos os módulos autorizados. Hospedado: 401 sem autenticação; 403 com código/RSA válidos e Core errado; RPC nega anon/authenticated; vínculo ainda sem aparelho. A credencial adicional de QA foi rejeitada e não criada. Não foi feita ativação positiva pela automação para preservar o vínculo ao Keystore real. Permissão não valida valores financeiros/jornada/consumo: fontes continuam indisponíveis neste canal. Plano completo de contas/12 tabelas não aplicado. Consulte GUIA_TESTE_VIAGEM_020.md.
+
+O usuário confirmou que a 0.1.1 passou a mostrar valores nos instrumentos. Isso é evidência parcial relatada, não aceite físico de todos os 13 ou do fluxo completo. Sem Android físico conectado; APK instrumentado compilado, execução em aparelho ainda pendente. As seções históricas abaixo mantêm os limites das versões anteriores.
+
 Build local completo aprovado: APKs homolog/demo/instrumentação, **59 testes JVM/Compose**, zero falhas/skips e lint sem erros. Scanner de fontes/APK passou e certificado debug é o mesmo da 0.1.0. Metadados e hash em `docs/multimediaNext/evidencias/verification-2026-11-14-core-home.json`.
 
 Novos casos: Wi-Fi sem internet/celular como rota padrão, fallback DNS/IP, validação de LAN privada, rejeição de redirects/HTML/corpos excessivos, endpoint real de sensores schema 2, metadados, páginas limitadas/progresso, sinal/unidade corretos, J1587 provisório, stale/NA, replay/conflito e boot entre páginas, circuito duplo, cache vazio sem zeros fabricados. Home tem assertivas geométricas 2:1, rodapé dentro do viewport e 13 cartões visíveis nas cinco resoluções do ZIP. Captura de tipografia com números fictícios leva `TEST-DEMO` e banner permanente.

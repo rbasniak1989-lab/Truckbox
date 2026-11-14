@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import br.com.truckbox.multimedia.next.R
 import br.com.truckbox.multimedia.next.domain.*
+import br.com.truckbox.multimedia.next.data.canBeLastInstrumentValue
 import java.time.Instant
 import java.util.Locale
 
@@ -110,10 +111,19 @@ fun instrumentIcon(sensor: Instrument): ImageVector = when(sensor) {
 }
 fun visibleValue(reading: Reading?, now: Instant, demo: Boolean): Double? =
     if(demo && reading?.source==Origin.DEMO) reading.value else reading?.observed(now)
+fun instrumentDisplayValue(reading: Reading?,now: Instant,demo: Boolean): Double? =
+    visibleValue(reading,now,demo) ?: reading?.takeIf {it.canBeLastInstrumentValue() && it.sampledAt?.isAfter(now)==false}?.value
+fun instrumentAge(reading: Reading?,now: Instant): String {
+    val at=reading?.sampledAt ?: return "idade desconhecida"
+    val age=java.time.Duration.between(at,now).seconds.coerceAtLeast(0)
+    return when {age>=86400->"${age/86400}d";age>=3600->"${age/3600}h";age>=60->"${age/60}min";else->"${age}s"}
+}
 
 @Composable fun InstrumentCard(sensor: Instrument, value: InstrumentValue?, now: Instant, demo: Boolean, size: Int, modifier: Modifier = Modifier, onClick: ()->Unit) {
-    val first = visibleValue(value?.first,now,demo)
-    val second = visibleValue(value?.second,now,demo)
+    val first = instrumentDisplayValue(value?.first,now,demo)
+    val second = instrumentDisplayValue(value?.second,now,demo)
+    val old=!demo && ((first!=null && value?.first?.observed(now)==null) || (second!=null && value?.second?.observed(now)==null))
+    val oldest=listOfNotNull(value?.first,value?.second).filter {it.canBeLastInstrumentValue()}.minByOrNull {it.sampledAt!!}
     val text = if(sensor==Instrument.AIR) "${format(first) ?: "—"} / ${format(second) ?: "—"}" else format(first,if(sensor in listOf(Instrument.GEAR,Instrument.PEDAL,Instrument.TORQUE)) 0 else 1) ?: "—"
     Surface(modifier.clickable(onClick=onClick),shape=RoundedCornerShape(13.dp),border=BorderStroke(1.dp,Stroke),color=Panel) {
       BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -131,11 +141,11 @@ fun visibleValue(reading: Reading?, now: Instant, demo: Boolean): Double? =
             }
             Text(sensor.label,fontFamily=Inter,fontSize=(if(tight) 10 else if(size==2) 11 else if(compact) 12 else 14).sp,lineHeight=(if(tight) 12 else if(size==2) 13 else 16).sp,fontWeight=FontWeight.Bold,maxLines=2,overflow=TextOverflow.Ellipsis,minLines=if(tight) 1 else 2,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
             Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                Text(text,fontFamily=Oxanium,fontStyle=FontStyle.Italic,fontWeight=FontWeight.ExtraBold,fontSize=digitSize.sp,lineHeight=(digitSize*1.12f).sp,maxLines=1,overflow=TextOverflow.Clip,softWrap=false,modifier=Modifier.weight(1f,false))
+                Text(text,color=if(old) Muted else Ink,fontFamily=Oxanium,fontStyle=FontStyle.Italic,fontWeight=FontWeight.ExtraBold,fontSize=digitSize.sp,lineHeight=(digitSize*1.12f).sp,maxLines=1,overflow=TextOverflow.Clip,softWrap=false,modifier=Modifier.weight(1f,false))
                 if(sensor!=Instrument.AIR) Text(sensor.unit,color=Color(0xFFD1A17D),fontSize=(if(tight || size==2) 9 else 12).sp,modifier=Modifier.padding(bottom=3.dp))
             }
             if(sensor==Instrument.AIR) Text("bar · circuitos 1/2",fontFamily=Inter,color=Muted,fontSize=9.sp,lineHeight=11.sp,maxLines=1)
-            Text(if(first==null || (sensor==Instrument.AIR && second==null)) "Sem leitura" else if(demo) "Demonstração" else if(value?.first?.quality==Quality.PROVISIONAL || value?.second?.quality==Quality.PROVISIONAL) "Não verificado" else "Leitura validada",fontFamily=Inter,color=Muted,fontSize=(if(tight || size==2) 9 else 11).sp,lineHeight=(if(tight || size==2) 11 else 14).sp,maxLines=1)
+            Text(if(first==null && second==null) "Sem leitura" else if(demo) "Demonstração" else if(old) "Última · ${instrumentAge(oldest,now)}" else if(value?.first?.quality==Quality.PROVISIONAL || value?.second?.quality==Quality.PROVISIONAL) "Não verificado" else "Leitura validada",fontFamily=Inter,color=Muted,fontSize=(if(tight || size==2) 9 else 11).sp,lineHeight=(if(tight || size==2) 11 else 14).sp,maxLines=1)
         }
       }
     }

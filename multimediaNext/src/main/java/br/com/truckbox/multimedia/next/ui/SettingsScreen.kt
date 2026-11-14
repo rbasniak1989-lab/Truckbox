@@ -13,23 +13,30 @@ import androidx.compose.ui.unit.dp
 import br.com.truckbox.multimedia.next.BuildConfig
 import br.com.truckbox.multimedia.next.domain.*
 import java.time.Instant
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 
 private val sections=listOf("Geral","Veículo e perfil","Módulos e permissões","Personalizar painel","Conexões","Tela e aparência","Atualizações","Manutenção e testes","Sobre")
-@Composable fun SettingsScreen(state: AppState,preferences: LocalPreferences,onPreferences: (LocalPreferences)->Unit,now: Instant,onCoreRetry: () -> Unit = {}) {
+@Composable fun SettingsScreen(state: AppState,preferences: LocalPreferences,onPreferences: (LocalPreferences)->Unit,now: Instant,onCoreRetry: () -> Unit = {},
+    cloudUi: CloudUiState=CloudUiState(),onCloudSignIn: (String,String)->Unit={_,_->},onCloudSignOut: ()->Unit={},onCloudRefresh: ()->Unit={},onCloudTestActivate: (String)->Unit={}) {
     var section by remember { mutableIntStateOf(0) }
     var coreHost by remember(preferences.coreHost) { mutableStateOf(preferences.coreHost) }
+    var email by remember {mutableStateOf("")}
+    var password by remember {mutableStateOf("")}
+    var testCode by remember {mutableStateOf("")}
     ChoiceRow(sections,section,{section=it},Modifier.horizontalScroll(rememberScrollState()))
     if(section==0 || section==1) Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         PanelCard(Modifier.weight(1f)) {
             SectionTitle("Veículo ativo",Icons.Outlined.LocalShipping)
-            Text("Vínculo não verificado",fontWeight=FontWeight.Bold)
+            Text(state.vehicleLabel ?: "Vínculo não verificado",fontWeight=FontWeight.Bold)
             Caption("Perfil, veículo, eixos e capacidade vêm do cadastro autenticado na Cloud.")
             Caption("A capacidade de 720 L do FH de exemplo só é referência após ambos tanques cheios.")
         }
         PanelCard(Modifier.weight(1f)) {
             SectionTitle("Perfil de uso",Icons.Outlined.PersonOutline)
-            Text("Identidade não provisionada")
-            Caption("Autenticação por multimídia + veículo + usuário pendente do contrato seguro.")
+            Text(if(state.cloudScope!=null) "Identidade consultada na Cloud" else "Identidade não provisionada")
+            Caption("Vínculo de multimídia, veículo e usuário aprovado pelo proprietário na Cloud.")
         }
     }
     if(section==0 || section==2) PanelCard(Modifier.fillMaxWidth(),accent=true) {
@@ -54,8 +61,8 @@ private val sections=listOf("Geral","Veículo e perfil","Módulos e permissões"
         SectionTitle("Conexões e dispositivos",Icons.Outlined.Wifi)
         ConnectionLine("Core · HTTP local",state.core.label)
         ConnectionLine("Cloud",state.cloud.label)
-        ConnectionLine("Internet local","Não verificado")
-        ConnectionLine("GPS do Motorista","Não verificado")
+        ConnectionLine("Internet via Core",state.coreInternetSharing?.label(now) ?: "Compartilhamento não informado pelo firmware")
+        ConnectionLine("GPS pela Cloud",if(state.gps!=null) "Posição recebida · conferir data e origem" else "Sem posição recebida")
         ConnectionLine("4G / SD do Core","Não verificado · Rev.B.1")
         Caption("Última resposta Core: ${state.lastCoreResponse ?: "Não recebida"}")
         Caption("Host local de leitura (sem token)")
@@ -73,6 +80,28 @@ private val sections=listOf("Geral","Veículo e perfil","Módulos e permissões"
             if(report.responded) Caption("Campos numéricos reconhecidos: ${report.recognizedValues}")
             Text(report.explanation)
         }
+        HorizontalDivider(color=Stroke)
+        SectionTitle("Acesso à Cloud",Icons.Outlined.Cloud)
+        if(!cloudUi.authenticated) {
+            Caption("Teste de viagem · conecte ao Core, cole o código recebido e ative uma vez neste aparelho. Permissões e validade vêm da Cloud.")
+            OutlinedTextField(value=testCode,onValueChange={testCode=it.trim().take(80)},label={Text("Código de teste")},singleLine=true,visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password))
+            Button(onClick={onCloudTestActivate(testCode);testCode=""},enabled=cloudUi.configured && !cloudUi.busy && !state.demo && state.coreDeviceUid!=null && br.com.truckbox.multimedia.next.data.isFieldTestToken(testCode)) {Text("Ativar teste de viagem")}
+        }
+        Text(cloudUi.message)
+        cloudUi.deviceId?.let { Caption("Identificador da multimídia para aprovação: $it") }
+        Caption("Última consulta Cloud: ${state.lastCloudResponse ?: "Não recebida"}")
+        if(!cloudUi.authenticated) {
+            OutlinedTextField(value=email,onValueChange={email=it},label={Text("E-mail do acesso TruckBox")},singleLine=true,
+                enabled=cloudUi.configured && !cloudUi.busy && !state.demo,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email))
+            OutlinedTextField(value=password,onValueChange={password=it},label={Text("Senha")},singleLine=true,
+                enabled=cloudUi.configured && !cloudUi.busy && !state.demo,visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password))
+            Button(onClick={onCloudSignIn(email,password);password=""},enabled=cloudUi.configured && !cloudUi.busy && !state.demo && email.contains('@') && password.isNotEmpty()) {Text("Entrar na Cloud")}
+        }
+        if(cloudUi.authenticated || cloudUi.busy) Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick=onCloudRefresh,enabled=!cloudUi.busy && !state.demo) {Text("Sincronizar Cloud")}
+            TextButton(onClick=onCloudSignOut,enabled=!state.demo) {Text("Sair da Cloud")}
+        }
+        Caption("Entrar solicita o vínculo; permissões Financeiro/Jornada continuam somente leitura e são concedidas na Cloud.")
     }
     if(section==0 || section==5) PanelCard(Modifier.fillMaxWidth()) {
         SectionTitle("Tela e aparência",Icons.Outlined.DarkMode)

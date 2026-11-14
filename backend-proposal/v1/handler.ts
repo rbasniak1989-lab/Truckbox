@@ -12,13 +12,30 @@ export function createHandler(ports: Ports): (req: Request)=>Promise<Response> {
     try {
       if(req.method!=='GET') return reply(405,{error:'method_not_allowed'});
       const url=new URL(req.url);
-      if(!['/v1/policy','/v1/financial','/v1/journey','/v1/consumption'].includes(url.pathname)) return reply(404,{error:'unknown_contract'});
+      if(!['/v1/policy','/v1/financial','/v1/journey','/v1/consumption','/v1/trip'].includes(url.pathname)) return reply(404,{error:'unknown_contract'});
       const session=await ports.authenticate(req);
       if(!session) return reply(401,{error:'authentication_required'});
       // IDs livres nunca ampliam escopo autenticado.
       const requested=url.searchParams.get('vehicle_id');
       if(requested && requested!==session.scope.vehicleId) return reply(403,{error:'scope_denied'});
       if(!session.monitoringRead) return reply(403,{error:'monitoring_denied'});
+      if(url.pathname==='/v1/trip') {
+        const source=await ports.trip?.(session.scope);
+        if(!source) return reply(503,{error:'data_unavailable'});
+        if(!sameScope(source.scope,session.scope)) return reply(403,{error:'scope_denied'});
+        const trip=source.trip;
+        if(trip && (!['LOADED','EMPTY'].includes(trip.kind) || !trip.id || !trip.legId ||
+            [trip.origin,trip.destination].some(x=>x!==null && (typeof x!=='string'||x.length>250)) ||
+            (trip.weightT!==null && (!Number.isFinite(trip.weightT)||trip.weightT<0)) ||
+            (trip.legStartedAt!==null&&!Number.isFinite(Date.parse(trip.legStartedAt))))) return reply(503,{error:'invalid_trip'});
+        const c=trip?.consumption;
+        if(c && (c.legId!==trip?.legId||c.kind!==trip.kind||!Number.isFinite(c.distanceKm)||c.distanceKm<0||!Number.isFinite(c.consumedLiters)||c.consumedLiters<0)) return reply(503,{error:'invalid_consumption'});
+        const latest=await ports.authenticate(req);
+        if(!latest || !latest.monitoringRead || !sameScope(latest.scope,session.scope)) return reply(403,{error:'session_revoked'});
+        // Projeção independente de frete, custos, direção e descanso; nunca serializar o objeto SQL.
+        return reply(200,{contractVersion:1,trip:trip?{id:trip.id,legId:trip.legId,kind:trip.kind,origin:trip.origin,destination:trip.destination,weightT:trip.weightT,legStartedAt:trip.legStartedAt,
+          consumption:c?{legId:c.legId,kind:c.kind,distanceKm:c.distanceKm,consumedLiters:c.consumedLiters,averageKml:c.consumedLiters>0?c.distanceKm/c.consumedLiters:null}:null}:null});
+      }
       if(url.pathname==='/v1/consumption') {
         const source=await ports.consumption(session.scope);
         if(!source) return reply(503,{error:'data_unavailable'});

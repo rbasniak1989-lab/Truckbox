@@ -18,7 +18,7 @@ data class CoreStateDto(
     val acceleratorPct: Double? = null, val actualTorquePct: Double? = null,
     val speedKph: Double? = null, val fuelRateLph: Double? = null,
 )
-data class CoreResult(val values: Map<Instrument,InstrumentValue>, val speed: Reading?, val flow: Reading?, val receivedAt: Instant)
+data class CoreResult(val values: Map<Instrument,InstrumentValue>, val speed: Reading?, val flow: Reading?, val receivedAt: Instant,val physicalDeviceUid: String?=null,val internetSharing: CoreInternetSharing?=null)
 data class CoreFetchResult(val response: CoreResult?, val diagnostics: CoreDiagnostics)
 
 fun CoreStateDto.toDomain(received: Instant): CoreResult {

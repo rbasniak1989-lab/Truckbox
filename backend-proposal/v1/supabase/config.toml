@@ -1,0 +1,7 @@
+# Homologação local/revisão. Nenhum projeto hospedado foi vinculado.
+project_id = "truckbox-multimedia-next"
+
+[functions.multimedia-next-v1]
+verify_jwt = false # Auth/session/RSA or expiring test credential/RSA checked in function; no public fallback.
+import_map = "./functions/multimedia-next-v1/deno.json"
+entrypoint = "./functions/multimedia-next-v1/index.ts"

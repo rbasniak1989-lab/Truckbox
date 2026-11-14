@@ -9,6 +9,7 @@ enum class CoreIssue(val label: String) {
     HTTP("Resposta HTTP recusada"),
     FORMAT("Resposta fora do formato JSON esperado"),
     IO("Falha de comunicação com o Core"),
+    IDENTITY("Core diferente do veículo vinculado na Cloud"),
 }
 
 data class CoreAttempt(val host: String, val issue: CoreIssue? = null, val httpStatus: Int? = null, val resource: String = "/api/state")

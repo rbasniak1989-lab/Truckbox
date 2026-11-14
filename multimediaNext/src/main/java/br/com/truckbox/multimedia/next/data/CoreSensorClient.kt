@@ -19,7 +19,7 @@ data class CoreSensorPageDto(
     val count: Int? = null,
     @SerializedName("observed_count") val observedCount: Int? = null,
     @SerializedName("next_offset") val nextOffset: Int? = null,
-    val readings: List<CoreSensorDto>? = null,
+    val readings: List<CoreSensorDto?>? = null,
 )
 data class CoreSensorDto(
     val source: String? = null, val sid: Int? = null, val pid: Int? = null,
@@ -33,6 +33,10 @@ data class CoreSensorDto(
     @SerializedName("age_ms") val ageMs: Long? = null,
     val stale: Boolean? = null, val value: Double? = null,
 )
+data class CoreHealthDto(val ok: Boolean?=null,val role: String?=null,
+    @SerializedName("device_uid") val deviceUid: String?=null,@SerializedName("boot_id") val bootId: Long?=null,val network: CoreNetworkDto?=null)
+data class CoreNetworkDto(@SerializedName("internet_sharing") val internetSharing: CoreInternetSharingDto?=null)
+data class CoreInternetSharingDto(@SerializedName("napt_active") val naptActive: Boolean?=null,val status: String?=null)
 private data class SensorSpec(val key: String, val unit: String, val pgn: Int? = null, val priority: Int = 0)
 private val canSpecs=mapOf(
     34 to SensorSpec("OIL_PRESSURE","bar",65263),29 to SensorSpec("BOOST","bar",65270),33 to SensorSpec("FUEL_PRESSURE","bar",65263),
@@ -58,10 +62,12 @@ class CoreSensorClient(
     private data class Seen(val capture: Long, val uptime: Long, val value: Double?, val sampledAt: Instant)
     private val seen=mutableMapOf<String,Seen>()
     private var lastHost: String?=null
+    private var lastExpectedCore: String?=null
+    private var lastPhysicalCore: String?=null
 
-    fun fetch(preferredHost: String): CoreFetchResult {
+    fun fetch(preferredHost: String,expectedDeviceUid: String?=null): CoreFetchResult {
         require(validCoreHost(preferredHost))
-        if(lastHost!=preferredHost) {seen.clear();lastHost=preferredHost}
+        if(lastHost!=preferredHost || lastExpectedCore!=expectedDeviceUid) {seen.clear();lastHost=preferredHost;lastExpectedCore=expectedDeviceUid}
         val attempts=mutableListOf<CoreAttempt>()
         for(host in linkedSetOf(preferredHost,"192.168.4.1","truckbox.local")) {
             var status: Int?=null
@@ -70,6 +76,29 @@ class CoreSensorClient(
                 var offset=0
                 var total: Int?=null
                 var boot: Long?=null
+                var physicalUid: String?=null
+                var sharing: CoreInternetSharing?=null
+                run {
+                    var healthConnection: HttpURLConnection?=null
+                    try {
+                        healthConnection=connections.open(URL("http://$host/api/health?nocache=${now().toEpochMilli()}"))
+                        healthConnection.requestMethod="GET";healthConnection.connectTimeout=1500;healthConnection.readTimeout=2000
+                        healthConnection.instanceFollowRedirects=false;healthConnection.useCaches=false
+                        healthConnection.setRequestProperty("Cache-Control","no-cache, no-store")
+                        healthConnection.setRequestProperty("Connection","close")
+                        status=healthConnection.responseCode
+                        if(status !in 200..299)throw SensorHttpError()
+                        val health=gson.fromJson(healthConnection.inputStream.use {it.readBounded()},CoreHealthDto::class.java) ?: throw SensorFormatError()
+                        if(health.ok!=true || health.role!="core" || health.deviceUid.isNullOrBlank() || (expectedDeviceUid!=null && health.deviceUid!=expectedDeviceUid))throw SensorIdentityError()
+                        physicalUid=health.deviceUid
+                        if(lastPhysicalCore!=physicalUid) {seen.clear();lastPhysicalCore=physicalUid}
+                        boot=health.bootId ?: throw SensorFormatError()
+                        health.network?.internetSharing?.let {item->
+                            if(item.naptActive!=null && item.status!=null && item.status.length<=80)
+                                sharing=CoreInternetSharing(item.naptActive,item.status,now())
+                        }
+                    } finally {healthConnection?.disconnect()}
+                }
                 do {
                     var connection: HttpURLConnection?=null
                     val started=monotonic()
@@ -96,7 +125,8 @@ class CoreSensorClient(
                         observed !in 0..192 || next!=offset+count || next>observed || (count==0 && offset<observed)) throw SensorFormatError()
                     if(total==null) total=observed
                     val roundTripMs=((monotonic()-started)/1_000_000).coerceAtLeast(0)
-                    for(row in rows) {
+                    for(item in rows) {
+                        val row=item ?: throw SensorFormatError()
                         val rowBoot=row.bootId ?: throw SensorFormatError()
                         if(boot!=null && boot!=rowBoot) throw SensorFormatError() // Não misturar boots entre páginas.
                         boot=rowBoot
@@ -126,9 +156,10 @@ class CoreSensorClient(
                 val chosen=values.values.flatMap {listOfNotNull(it.first,it.second)}+listOfNotNull(speed,flow)
                 attempts+=CoreAttempt(host,httpStatus=status,resource="/api/sensors")
                 if(seen.size>384) seen.clear() // Cache técnico volátil, limitado, sem payload bruto.
-                return CoreFetchResult(CoreResult(values,speed,flow,now()),CoreDiagnostics(now(),attempts.toList(),chosen.count {it.value!=null},
+                return CoreFetchResult(CoreResult(values,speed,flow,now(),physicalUid,sharing),CoreDiagnostics(now(),attempts.toList(),chosen.count {it.value!=null},
                     sensorApi=true,validValues=chosen.count {it.current(now())!=null},provisionalValues=chosen.count {it.quality==Quality.PROVISIONAL && it.observed(now())!=null}))
             } catch (_: CoreWifiUnavailable) { attempts+=CoreAttempt(host,CoreIssue.NO_WIFI,resource="/api/sensors");break
+            } catch (_: SensorIdentityError) { attempts+=CoreAttempt(host,CoreIssue.IDENTITY,status,"/api/health")
             } catch (_: UnknownHostException) { attempts+=CoreAttempt(host,CoreIssue.DNS,status,"/api/sensors")
             } catch (_: SocketTimeoutException) { attempts+=CoreAttempt(host,CoreIssue.TIMEOUT,status,"/api/sensors")
             } catch (_: SensorHttpError) { attempts+=CoreAttempt(host,CoreIssue.HTTP,status,"/api/sensors")
@@ -137,7 +168,7 @@ class CoreSensorClient(
             } catch (_: IOException) { attempts+=CoreAttempt(host,CoreIssue.IO,status,"/api/sensors") }
         }
         // Compatibilidade explícita: firmware sem esse recurso ainda pode responder ao diagnóstico legado.
-        if(attempts.any {it.httpStatus==404} && attempts.none {it.issue==CoreIssue.NO_WIFI}) {
+        if(expectedDeviceUid==null && attempts.any {it.httpStatus==404} && attempts.none {it.issue==CoreIssue.NO_WIFI}) {
             val legacy=CoreClient(connections,gson,now).fetch(preferredHost)
             return legacy.copy(diagnostics=legacy.diagnostics.copy(attempts=attempts+legacy.diagnostics.attempts))
         }
@@ -161,6 +192,7 @@ class CoreSensorClient(
         }
         val quality=when {
             row.value?.isFinite()!=true -> Quality.MISSING
+            row.quality !in setOf("VALIDO","EM_VALIDACAO") || row.validation !in setOf("EM_VALIDACAO","VALIDADO_NOS_LOGS") -> Quality.INVALID
             row.stale || row.ageMs+roundTripMs>5000 -> Quality.STALE
             row.quality=="VALIDO" && row.validation=="VALIDADO_NOS_LOGS" -> Quality.VALID
             row.quality in setOf("VALIDO","EM_VALIDACAO") && row.validation in setOf("EM_VALIDACAO","VALIDADO_NOS_LOGS") -> Quality.PROVISIONAL
@@ -179,4 +211,5 @@ class CoreSensorClient(
     }
     private class SensorHttpError : IOException()
     private class SensorFormatError : IOException()
+    private class SensorIdentityError : IOException()
 }

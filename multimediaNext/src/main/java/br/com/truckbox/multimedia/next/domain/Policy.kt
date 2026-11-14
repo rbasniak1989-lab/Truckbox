@@ -10,7 +10,7 @@ data class CloudPolicy(
 data class ProtectedViews(val financial: FinancialView? = null, val journey: JourneyView? = null)
 
 /** Recebe somente resultados de transporte autenticado. Sem fonte Cloud conectada: deny.
- * Não há setter de permissão em preferências nem transporte produtivo configurado neste incremento. */
+ * Não há setter de permissão em preferências. O cliente HTTP exige sessão e vínculo Cloud reais. */
 class PolicySession(private var scope: IdentityScope) {
     private var policy: CloudPolicy? = null
     private var highestVersion = 0L

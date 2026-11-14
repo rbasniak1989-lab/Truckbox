@@ -24,7 +24,8 @@ class CoreSensorClientTest {
         """{"source":"$source",${if(source=="j1939") "\"sid\":$id,\"sa\":$address,\"pgn\":$pgn" else "\"pid\":$id,\"mid\":$address"},"unit":"$unit","quality":"$quality","validation":"$validation","capture_id":$capture,"boot_id":$boot,"uptime_us":100000,"age_ms":$age,"stale":${age>5000},"value":$value,"last_valid_value":999}"""
     private fun page(rows: List<String>,offset: Int=0,total: Int=rows.size,next: Int=offset+rows.size)=
         """{"ok":true,"schema_version":2,"offset":$offset,"count":${rows.size},"observed_count":$total,"next_offset":$next,"readings":[${rows.joinToString(",")}]}"""
-    private fun client(body: (URL)->String)=CoreSensorClient(CoreConnectionFactory {url->Reply(url,body(url))},now={now},monotonic={0})
+    private fun client(body: (URL)->String)=CoreSensorClient(CoreConnectionFactory {url->Reply(url,
+        if(url.path=="/api/health") """{"ok":true,"role":"core","device_uid":"test-core","boot_id":1}""" else body(url))},now={now},monotonic={0})
 
     @Test fun pagesObservedReadingsWithMetadataAndExactUnits() {
         val paths=mutableListOf<URL>()
@@ -43,6 +44,7 @@ class CoreSensorClientTest {
         assertEquals("J1939/SA:0/PGN:65263/SID:34",oil.sourceId)
         assertEquals(87.0,result.response!!.values[Instrument.COOLANT]!!.first.current(now)!!,0.01)
         assertEquals(2,result.diagnostics.validValues)
+        assertEquals("test-core",result.response!!.physicalDeviceUid)
     }
     @Test fun j1587ObservationIsVisibleWithProvisionalQualityButCannotAuthorizeCalculations() {
         val result=client {page(listOf(row(source="j1587",id=100,address=128,quality="EM_VALIDACAO",validation="EM_VALIDACAO")))}.fetch("truckbox.local")
@@ -111,5 +113,26 @@ class CoreSensorClientTest {
         assertTrue(result.response!!.values.isEmpty())
         assertNull(result.response!!.speed)
         assertNull(result.response!!.flow)
+    }
+    @Test fun cloudBindingChecksCoreUidBeforeReadingAnySensor() {
+        val urls=mutableListOf<URL>()
+        val result=CoreSensorClient(CoreConnectionFactory {url->
+            urls+=url
+            Reply(url,if(url.path=="/api/health") """{"ok":true,"role":"core","device_uid":"other-core","boot_id":1}""" else page(listOf(row())))
+        },now={now},monotonic={0}).fetch("truckbox.local","expected-core")
+        assertNull(result.response)
+        assertTrue(urls.isNotEmpty())
+        assertTrue(urls.all {it.path=="/api/health"})
+        assertTrue(result.diagnostics.attempts.all {it.issue==CoreIssue.IDENTITY})
+    }
+    @Test fun replacingThePhysicalCoreDoesNotReuseThePreviousCaptureCache() {
+        var uid="first-core";var number="4.4"
+        val c=CoreSensorClient(CoreConnectionFactory {url->Reply(url,
+            if(url.path=="/api/health") """{"ok":true,"role":"core","device_uid":"$uid","boot_id":1}""" else page(listOf(row(value=number))))},now={now},monotonic={0})
+        assertEquals("first-core",c.fetch("192.168.4.1").response!!.physicalDeviceUid)
+        uid="second-core";number="5.5"
+        val next=c.fetch("192.168.4.1").response!!
+        assertEquals("second-core",next.physicalDeviceUid)
+        assertEquals(5.5,next.values[Instrument.OIL_PRESSURE]!!.first.value!!,0.0)
     }
 }

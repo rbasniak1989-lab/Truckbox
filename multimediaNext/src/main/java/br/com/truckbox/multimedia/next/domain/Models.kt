@@ -56,6 +56,21 @@ enum class Instrument(val label: String, val unit: String, val coreKey: String?)
 }
 
 data class InstrumentValue(val first: Reading, val second: Reading? = null)
+data class CoreInternetSharing(val naptActive: Boolean,val status: String,val observedAt: Instant) {
+    fun label(now: Instant): String {
+        if(java.time.Duration.between(observedAt,now).seconds !in 0..10)return "Estado do compartilhamento desatualizado"
+        return when(status) {
+            "NAPT_ACTIVE_NOT_VERIFIED" -> if(naptActive) "Encaminhamento ativo · Internet não verificada" else "Não verificado"
+            "NO_UPLINK_CONFIGURED" -> "Wi-Fi externo não configurado no Core"
+            "WAITING_UPLINK","UPLINK_DISCONNECTED","UPLINK_IP_LOST","NO_UPSTREAM_GATEWAY" -> "Core sem acesso à rede externa"
+            "SUBNET_CONFLICT" -> "Redes do Core e do roteador em conflito"
+            "INSUFFICIENT_HEAP" -> "Compartilhamento suspenso · memória insuficiente"
+            "DHCP_DNS_ERROR" -> "DNS da rede externa indisponível"
+            else -> "Compartilhamento não verificado"
+        }
+    }
+}
+data class CloudPosition(val latitude: Double,val longitude: Double,val sampledAt: Instant,val source: String,val provider: String?,val accuracyM: Double?)
 enum class Page(val title: String) {
     HOME("Home"), CONSUMPTION("Consumo"), TRIP("Viagem atual"),
     TRUCK("Caminhão e Diagnóstico"), SETTINGS("Configurações")
@@ -77,13 +92,15 @@ data class LegConsumption(val legId: String, val kind: LegKind, val distanceKm: 
 }
 data class TripView(
     val id: String, val legId: String, val origin: String, val destination: String,
-    val kind: LegKind, val consumption: LegConsumption,
+    val kind: LegKind, val consumption: LegConsumption?,
     val product: String? = null, val weightT: Double? = null,
     val remainingKm: Double? = null, val legStartedAt: Instant? = null,
 )
 enum class ConnectionState(val label: String) {
     UNVERIFIED("Não verificado"), HTTP_RESPONDED("HTTP respondeu · sinais não verificados"),
     SENSORS_RECEIVED("Leituras recebidas · conferir qualidade"),
+    CLOUD_AUTHENTICATED("Resposta autenticada da Cloud"), AUTH_REQUIRED("Acesso à Cloud necessário"),
+    AUTH_PENDING("Aguardando vínculo na Cloud"),
     OFFLINE("Sem resposta"), BLOCKED("Aguardando contrato seguro"), DEMO("Simulado")
 }
 enum class Appearance { AUTO, NIGHT, DAY }
@@ -100,10 +117,13 @@ data class AppState(
     val core: ConnectionState = ConnectionState.UNVERIFIED,
     val cloud: ConnectionState = ConnectionState.BLOCKED,
     val lastCoreResponse: Instant? = null,
+    val coreDeviceUid: String? = null,
+    val coreInternetSharing: CoreInternetSharing? = null,
     val coreDiagnostics: CoreDiagnostics? = null,
     val speed: Reading? = null,
     val fuelRate: Reading? = null,
     val trip: TripView? = null,
+    val gps: CloudPosition? = null,
     val legs: List<LegConsumption> = emptyList(),
     val last100Kml: Double? = null,
     val tankLiters: Double? = null,
@@ -114,10 +134,20 @@ data class AppState(
     val journeyAllowed: Boolean = false,
     val policyLabel: String = "Aguardando sincronização segura",
     val policyVersion: Long? = null,
+    val policyExpiresAt: Instant? = null,
+    val cloudScope: IdentityScope? = null,
+    val vehicleLabel: String? = null,
+    val expectedCoreUid: String? = null,
+    val lastCloudResponse: Instant? = null,
     val series: Map<Instrument, List<TimeSample>> = emptyMap(),
 ) {
     // Defesa final antes da composição, inclusive contra retorno tardio de requests.
-    fun redacted() = copy(financial = financial.takeIf { financialAllowed }, journey = journey.takeIf { journeyAllowed })
+    fun redacted(now: Instant=Instant.now()): AppState {
+        val lease=demo || policyExpiresAt?.isAfter(now)==true
+        val f=financialAllowed && lease;val j=journeyAllowed && lease
+        return copy(financial=financial.takeIf {f},journey=journey.takeIf {j},financialAllowed=f,journeyAllowed=j,
+            policyLabel=if(!lease && policyVersion!=null) "Sem sincronização recente da Cloud" else policyLabel)
+    }
 }
 data class FinancialView(val contractedCents: Long?, val incurredCents: Long, val projectedCents: Long)
 data class JourneyView(val reference: Instant, val summary: JourneySummary)

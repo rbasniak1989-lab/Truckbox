@@ -1,5 +1,7 @@
 # Plano revisável — :multimediaNext
 
+Atualização posterior autorizada para viagem de teste: canal temporário sem contas implantado conforme GUIA_TESTE_VIAGEM_020.md, restrito ao vínculo proprietário por até 72 h, com ambos os módulos autorizados. A implantação completa de contas/12 tabelas abaixo permanece proposta. Firmware candidato separado no PR 27; sem flash.
+
 Base: AUDITORIA.md e contrato mestre v1. Nenhum deploy/migração de produção autorizado neste incremento.
 
 ## Arquitetura
@@ -27,9 +29,9 @@ Backend proposto v1 em diretório de proposta fora do deploy automático: contra
 
 1. Provisionamento de identidade de multimídia e login por usuário/veículo, renovação e revogação; autorizações em cada consulta, incluindo endpoints antigos e RPCs.
 2. Aprovar contrato e aplicar adições em staging isolado com backup, testes RLS/API entre tenants e rollback. Não promover automaticamente.
-3. Capturar `/api/state` autorizado, timestamps/qualidade por sinal e versão firmware; validar os 13 instrumentos no FH, combustível e vazão incluindo lenta. Não alterar firmware neste escopo.
+3. Conferir `/api/health` e `/api/sensors` schema 2 da fonte 0.2.23 localizada, boot/captura/idade/qualidade; validar os 13 instrumentos no FH, combustível e vazão incluindo lenta. A solicitação posterior autoriza preparar a candidata Core 0.2.24 de compartilhamento Starlink em branch separada; flash/OTA continua sujeito a revisão. Ver PLANO_INTEGRACAO_CORE_CLOUD.md.
 4. Validar ledger autoritativo, ambos tanques cheios, concorrência e reconstrução tardia; Motorista deve registrar semântica inequívoca. Vazio só se vincula com confirmação.
 5. Aprovar fornecedores/licenças/custos de mapa, relevo e tarifa; captura DTC e legislação/classificação Jornada.
 6. Executar no hardware Android 13” toque/noite/imersivo/offline/reinício e integração Core/Motorista/Cloud com a multimídia desligada.
 
-Ao faltar contrato, a tela mostra Sem leitura/Dados insuficientes/Não verificado. A implementação local pode avançar, mas aceite integrado permanece BLOQUEADO. Lista detalhada de execução será mantida em TESTES_REALIZADOS.md; nenhuma pendência de fornecedor ou campo será ocultada por demonstração.
+Ao faltar contrato, a tela mostra Sem leitura/Dados insuficientes/Não verificado. Por pedido posterior do usuário, um instrumento com observação real anterior conserva o último número com idade e indicação de desatualização; nunca é tratado como atual para cálculos. A implementação local pode avançar, mas aceite integrado permanece BLOQUEADO. Lista detalhada em TESTES_REALIZADOS.md; nenhuma pendência de fornecedor ou campo será ocultada por demonstração.

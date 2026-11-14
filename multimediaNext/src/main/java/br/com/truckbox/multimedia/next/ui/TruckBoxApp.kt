@@ -31,9 +31,14 @@ import java.time.format.DateTimeFormatter
     startingPage: Page = Page.HOME,
     nowOverride: Instant? = null,
     onCoreRetry: () -> Unit = {},
+    cloudUi: CloudUiState = CloudUiState(),
+    onCloudSignIn: (String,String)->Unit = {_,_->},
+    onCloudSignOut: ()->Unit = {},
+    onCloudRefresh: ()->Unit = {},
+    onCloudTestActivate: (String)->Unit = {},
 ) {
-    val state = input.redacted()
     var now by remember { mutableStateOf(nowOverride ?: Instant.now()) }
+    val state = input.redacted(now)
     LaunchedEffect(nowOverride) { if(nowOverride==null) while(true) { now=Instant.now(); delay(1000) } else now=nowOverride }
     val night = isNight(now,preferences.appearance)
     LaunchedEffect(night) { onNight(night) }
@@ -78,7 +83,7 @@ import java.time.format.DateTimeFormatter
                             Page.CONSUMPTION -> ConsumptionScreen(state,now)
                             Page.TRIP -> TripScreen(state,now)
                             Page.TRUCK -> TruckScreen(state,now)
-                            Page.SETTINGS -> SettingsScreen(state,preferences,onPreferences,now,onCoreRetry)
+                            Page.SETTINGS -> SettingsScreen(state,preferences,onPreferences,now,onCoreRetry,cloudUi,onCloudSignIn,onCloudSignOut,onCloudRefresh,onCloudTestActivate)
                         }
                     }
                     FilledTonalIconButton(onClick={scope.launch{drawer.open()}},modifier=Modifier.align(Alignment.CenterStart).padding(start=8.dp).width(36.dp).height(72.dp).testTag("drawer-handle")) {

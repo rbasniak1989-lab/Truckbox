@@ -1,5 +1,18 @@
 # TruckBox Next
 
+## 0.2.0-homologacao — última leitura e canal Core/Cloud
+
+Pedido posterior de campo: canal temporário sem contas publicado após aprovação explícita, um vínculo proprietário por até 72 h, Financeiro/Jornada autorizados na Cloud e GPS exclusivo do Motorista. Não habilita payload sem fonte verificada. Migração completa de contas não aplicada. Guia direto em GUIA_TESTE_VIAGEM_020.md.
+
+- Home conserva a última observação real de cada instrumento entre consultas esparsas, NA e falha de comunicação; mostra idade/desatualização sem renovar a captura. Zero real continua sendo zero. Sinais nunca observados ficam Sem leitura. O cache não fornece velocidade/vazão atuais nem números para cálculos e não se mistura entre Core/veículo/MID/boot dos circuitos de ar.
+- `/api/health` identifica o Core antes de ler sensores. Vínculo remoto pode exigir UID exato; captura de outro Core não reutiliza cache anterior. Configurações distingue encaminhamento anunciado pelo firmware de Internet/Cloud realmente verificadas.
+- Cliente Cloud nativo HTTPS com DTOs, Supabase Auth, prova RSA do aparelho, refresh cifrado, nonce, ACK de política e polling independente. Quatro combinações Financeiro/Jornada, limpeza em revogação/offline/expiração e descarte de retorno tardio; sem toggle local nem conteúdo protegido persistido.
+- Backend proposto concreto com consultas parametrizadas e migração privada aditiva; testes HTTP/RSA/Postgres isolados. Nenhum deploy/DDL hospedado. Read models de consumo/financeiro/jornada começam vazios, sem assumir confiabilidade dos dados legados.
+- Viagem e GPS do veículo autorizado vêm da Cloud. Posição mostra captura/origem/precisão recebidas; não há extrapolação nem posição atual inventada. Mapa/rota/licença permanecem pendentes.
+- Captura nativa adicional de retenção para 13″, explicitamente TESTE DE CONTRATO, e preservação dos 13 instrumentos, fontes do ZIP, proporção 2:1 e rodapé.
+
+Firmware separado: [PR 27](https://github.com/rbasniak1989-lab/Truckbox/pull/27), candidata Core **0.2.24** para compartilhar Starlink com a multimídia conectada ao AP do Core. APK não altera firmware. Auth/Edge hospedados, conta/vínculo, validação de hardware e integrações comerciais continuam pendentes; ver REVISAO_CORE_CLOUD_020.md e TESTES_REALIZADOS.md.
+
 ## 0.1.1-homologacao — Core e Home de 13″
 
 - Leitura do endpoint real `/api/sensors` schema 2 da candidata Core 0.2.23, paginado em lotes de oito. Mapeamento explícito de SID/PID, PGN e unidade; sem interpretar catálogo, histórico ou último valor válido como leitura atual.

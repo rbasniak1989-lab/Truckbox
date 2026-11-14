@@ -1,0 +1,10 @@
+{
+  "url": "https://example.invalid/functions/v1/multimedia-next-v1/v1/policy/ack?sample=%C3%A7",
+  "method": "POST",
+  "deviceId": "10000000-0000-4000-8000-000000000003",
+  "time": "1794657600000",
+  "nonce": "10000000-0000-4000-8000-000000000009",
+  "body": "{\"version\":7}",
+  "token": "TEST_TOKEN_NOT_A_CREDENTIAL",
+  "canonical": "truckbox-next-v1\n10000000-0000-4000-8000-000000000003\nPOST\n/multimedia-next-v1/v1/policy/ack?sample=%C3%A7\n1794657600000\n10000000-0000-4000-8000-000000000009\n529c7bcdf5ae85af6369f65b73dcb263130bb5934422a89445c5a69723bd5aab\n08c9cd64ae3f062b4a15e9fb6f5b8819a493a9d3f8e0b5cfbd4c3d3e9a0e2925"
+}

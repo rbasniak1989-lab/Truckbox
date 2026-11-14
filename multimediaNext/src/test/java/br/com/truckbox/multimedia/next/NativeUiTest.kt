@@ -1,6 +1,11 @@
 package br.com.truckbox.multimedia.next
 
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -43,13 +48,13 @@ class NativeUiTest {
         var state by mutableStateOf(AppState())
         compose.setContent{TruckBoxApp(state,startingPage=Page.TRIP,nowOverride=now)}
         listOf(false,true).forEach { f->listOf(false,true).forEach { j->
-            compose.runOnIdle{state=AppState(financialAllowed=f,journeyAllowed=j)}
+            compose.runOnIdle{state=AppState(financialAllowed=f,journeyAllowed=j,policyExpiresAt=now.plusSeconds(60))}
             if(f) compose.onNodeWithTag("financial-card").assertExists() else compose.onNodeWithTag("financial-card").assertDoesNotExist()
             if(j) compose.onNodeWithTag("journey-button").assertExists() else compose.onNodeWithTag("journey-button").assertDoesNotExist()
         } }
     }
     @Test fun revocationClosesJourneyModalImmediatelyAndPreservesTripPage() {
-        var state by mutableStateOf(AppState(journeyAllowed=true))
+        var state by mutableStateOf(AppState(journeyAllowed=true,policyExpiresAt=now.plusSeconds(60)))
         compose.setContent{TruckBoxApp(state,startingPage=Page.TRIP,nowOverride=now)}
         compose.onNodeWithTag("journey-button").performClick()
         compose.onNodeWithTag("journey-dialog").assertExists()
@@ -85,6 +90,34 @@ class NativeUiTest {
         compose.onNodeWithTag("instrument-OIL_PRESSURE").performClick()
         compose.onNodeWithText("Valor recebido, não verificado:",substring=true).assertExists()
         assertNull(reading.current(now))
+    }
+    @Test @Config(qualifiers="w1920dp-h1080dp-land-mdpi") fun oldIntakeValueStaysOnTheNativeCardWithItsAge() {
+        val reading=Reading(38.0,"°C",Origin.CORE,now.minusSeconds(12),now.minusSeconds(12),Quality.STALE,"J1587/MID:128/PID:105",100,1)
+        compose.setContent {
+            Column(Modifier.fillMaxSize().background(Color.Black)) {
+                Text("TESTE DE CONTRATO · dado fictício para verificar retenção · sem Core ou Cloud",color=Color(0xFFE87924),modifier=Modifier.padding(8.dp))
+                Box(Modifier.weight(1f)) {TruckBoxApp(AppState(readings=mapOf(Instrument.INTAKE to InstrumentValue(reading))),nowOverride=now)}
+            }
+        }
+        compose.onNodeWithText("38,0",useUnmergedTree=true).assertExists()
+        compose.onNodeWithText("Última · 12s").assertExists()
+        assertHomeGeometry()
+        saveNativeWindow(File("build/screenshots/homolog/home-retencao-13pol-1920x1080-TESTE-CONTRATO.png").apply{parentFile?.mkdirs()})
+        compose.onNodeWithTag("instrument-INTAKE").performClick()
+        compose.onNodeWithText("Última leitura recebida · 12s · desatualizada").assertExists()
+        assertNull(reading.current(now))
+    }
+    @Test fun leaseExpiryRemovesFinancialContentAndClosesTheJourneyModal() {
+        var displayTime by mutableStateOf(now)
+        val state=AppState(financialAllowed=true,journeyAllowed=true,policyExpiresAt=now.plusSeconds(20),policyVersion=1)
+        compose.setContent{TruckBoxApp(state,startingPage=Page.TRIP,nowOverride=displayTime)}
+        compose.onNodeWithTag("journey-button").performClick()
+        compose.onNodeWithTag("journey-dialog").assertExists()
+        compose.runOnIdle{displayTime=now.plusSeconds(20)}
+        compose.onNodeWithTag("journey-dialog").assertDoesNotExist()
+        compose.onNodeWithTag("journey-button").assertDoesNotExist()
+        compose.onNodeWithTag("financial-card").assertDoesNotExist()
+        compose.onNodeWithText("Mapa da viagem").assertExists()
     }
     @Test fun captureOptionalModulesWithExplicitTestDemonstrationBanner() {
         val sample=AppState(demo=true,journeyAllowed=true,financialAllowed=true,

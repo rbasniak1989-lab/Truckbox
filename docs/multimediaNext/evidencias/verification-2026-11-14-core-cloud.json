@@ -1,0 +1,49 @@
+{
+  "version": "0.2.0-homologacao",
+  "date": "2026-11-14",
+  "android": {
+    "tests": 88,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Warning": 9
+  },
+  "backendTests": {
+    "rules": 13,
+    "postgresRsaIntegration": 15,
+    "fieldTest": 5,
+    "sharedProof": 2,
+    "failures": 0
+  },
+  "scanner": {
+    "files": 72,
+    "findings": 0
+  },
+  "apk": {
+    "bytes": 19396362,
+    "sha256": "3693fad027562c1bc8dea5c65f13f508f1967c417cc62241730d49732c0df91a"
+  },
+  "firmware": {
+    "version": "0.2.24",
+    "bytes": 1591184,
+    "sha256": "5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d",
+    "ci": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43645022308",
+    "flashed": false
+  },
+  "cloud": {
+    "newEdge": "multimedia-next-v1",
+    "version": 1,
+    "temporaryMigrationApplied": true,
+    "fullAccountsMigrationApplied": false,
+    "activeCredentials": 1,
+    "ownerModulesGranted": true,
+    "hardwareDeviceActivation": "pending",
+    "unauthenticatedHttp": 401,
+    "wrongCoreValidRsaHttp": 403,
+    "anonymousRpcExecute": false
+  },
+  "physicalValidation": "pending; no Android/Core hardware attached",
+  "screenshots": "native Compose/Robolectric, 5 viewports; synthetic captures explicitly labeled"
+}

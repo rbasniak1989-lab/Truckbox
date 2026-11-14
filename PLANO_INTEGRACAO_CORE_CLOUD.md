@@ -1,28 +1,33 @@
-# Integração Core / Cloud e Home 13″ — revisão de 14/11/2026
+# Integração Core / Cloud e Home 13″ — revisão 0.2.0 / 0.2.24
 
-Solicitação adicional: sensores reais do Core, viagens e dados operacionais autenticados da Cloud, rede Starlink, Home fiel ao ZIP e tipografia. A política Financeiro/Jornada continua exclusivamente remota. Sem gravação de firmware, migração ou deploy em produção neste trabalho local.
+**Atualização autorizada:** para a viagem de teste, o proprietário solicitou acesso sem contas, ambos os módulos liberados para o próprio equipamento e GPS exclusivamente Motorista. Foi implantado o canal temporário descrito em GUIA_TESTE_VIAGEM_020.md: duas tabelas privadas, nova Edge, um vínculo de até 72 h. A migração completa de 12 tabelas e Auth abaixo permanecem etapas futuras. Nenhum firmware foi gravado.
 
-## Evidência nova
+O usuário confirmou a topologia: **multimídia conectada somente ao Wi-Fi do Core**, sensores pelo Core, viagens/GPS pela Cloud, Internet da Starlink compartilhada pelo Core. Também pediu conservar a última leitura real dos instrumentos quando a próxima consulta não trouxer aquele sinal. Essas instruções substituem a proposta anterior de conectar a multimídia diretamente à LAN Starlink e ocultar números após cinco segundos.
 
-- O usuário confirmou que `http://192.168.4.1/api/state` abre no aparelho e forneceu foto da resposta. Nenhum UID, SSID, conteúdo pessoal ou credencial dessa foto será versionado.
-- Os fontes do Core **0.2.23** foram localizados na branch `fix/revb1-v0223-polling-fuel`, commit `bd723891cdaad2b23466c8311d13409b3d4a36c0`. O inventário anterior se referia à `main`, que não contém firmware. Esta descoberta amplia a auditoria, sem alterar sua base histórica.
-- Essa versão já oferece **GET `/api/sensors?offset=0&limit=8`**, schema 2, com origem J1939/J1587, SID/PID, SA/MID, PGN, unidade, qualidade, validação, boot, captura, uptime e idade. `/api/state` é diagnóstico compacto e não deve ser usado como mapa recursivo de sensores.
-- A documentação de rede da 0.2.23 prevê Core/Link na mesma LAN Wi-Fi externa de **2,4 GHz**, incluindo Starlink. Os APs `192.168.4.1`/`192.168.5.1` são de configuração e **não fornecem internet por NAT**. Não é necessário substituir o firmware para inventar esse suporte.
-- Há somente um projeto Supabase acessível e nenhuma branch de desenvolvimento. As rotas seguras de multimídia ainda não estão implantadas. Mudanças hospedadas precisam de revisão concreta antes da execução.
+## Arquitetura revisável
 
-## Topologia
+```text
+Starlink 2,4 GHz → STA Core → NAPT/DNS → AP Core → multimídia
+                           │                     ├─ HTTP local → sensores
+                           │                     └─ HTTPS → Auth / Cloud → viagem e GPS
+                           └─ Link/Gateway/Motorista mantêm ingestão e ACK existentes
+```
 
-Core e multimídia na mesma LAN Starlink, com comunicação entre clientes habilitada. A multimídia faz HTTP local apenas ao Core e HTTPS autenticado à Cloud. O Link/Motorista continua responsável pela ingestão e pelos ACKs; o novo app não assume a fila. Com o roteador indisponível, a coleta e a fila do Core preservam seu comportamento existente. O app pode consultar o AP do Core ao trocar de rede, mas isso por si só não fornece acesso à Cloud.
+O app não faz ACK, gravação de GPS, alteração de contadores, configuração ou OTA do Core. Queda da Starlink não impede o HTTP local; valores antigos no painel têm idade/qualidade visíveis e não autorizam cálculos. Financeiro/Jornada são independentes, somente Cloud e removidos no erro/expiração, sem cache protegido persistente.
 
-## Incrementos testáveis
+## Evidências e incrementos
 
-1. Corrigir seleção do Wi-Fi sem exigir internet, fallback mDNS/IP e configuração de IP privado na LAN Starlink; explicar falhas/contrato na tela. Não usar binding global do processo.
-2. Implementar adaptador **do endpoint real de sensores schema 2**, paginação limitada e mapeamento explícito por protocolo/ID/unidade. Preservar qualidade, idade e origem; ignorar `last_valid_value` como leitura atual. Resultados em validação devem ser identificados, nunca promovidos a validados.
-3. Home: corpo em duas colunas 2:1 em paisagem, 13 instrumentos em 3+4+6, rodapé fixo de Viagem Atual. Inter para textos e Oxanium 800 inclinado para números; fontes offline. Reaplicar imersivo ao retomar/focar a janela. Capturas nativas para revisão em 1920×1080 e 1280×800 e regressão nas outras resoluções do ZIP.
-4. Concretizar backend versionado: autenticação de usuário e prova do dispositivo, vínculo aprovado na Cloud, políticas revogáveis, projeções explícitas de viagem/consumo e recursos protegidos separados. Migrações aditivas e rollback operacional, testes com Postgres isolado, nenhum dado real nos fixtures.
-5. Integrar cliente Cloud Android tipado, sessão protegida, login/vínculo na área de Configurações, polling independente do Core e descarte de respostas tardias/expiradas. Permissões somente leitura. Não embutir credencial de ingestão/service_role nem usar os fallbacks públicos legados.
-6. Compilar APK de homologação com chave debug preservada; scanner, unitários, testes nativos, API/SQL e evidências. Submeter alteração hospedada e plano de rollback à revisão antes de ativar Cloud real.
+1. **Core 0.2.23 localizado:** branch `fix/revb1-v0223-polling-fuel`, `bd723891cdaad2b23466c8311d13409b3d4a36c0`. A main auditada inicialmente não contém firmware. Essa fonte tem `/api/health` e `/api/sensors` schema 2, páginas de oito, boot/captura/idade/origem/qualidade. O usuário confirmou leitura de sensores na multimídia; isso não comprova todos os 13 nem validação física pelo desenvolvimento.
+2. **Retenção por sinal:** última observação utilizável do mesmo Core fica em memória, sem inventar zero nem atualizar sua captura. NA/ausência/erro de comunicação conservam o número como antigo. Troca de host/Core/veículo limpa contexto. Dois circuitos de ar não se completam entre MIDs/boots diferentes. Velocidade/vazão de cálculo não usam esse cache. `last_valid_value` do firmware não é promovido a leitura atual.
+3. **Home nativa 13″:** 13 cartões, 3+4+6, proporção 2:1, rodapé Viagem Atual, Inter/Oxanium locais, imersivo reaplicado; capturas em cinco resoluções. Fonte/cores/layout não são WebView.
+4. **Firmware separado:** [PR 27](https://github.com/rbasniak1989-lab/Truckbox/pull/27), candidata **0.2.24**, implementa NAPT IPv4 limitado a 64 conexões, DNS DHCP, recuperação e proteção de RAM/sub-rede. A 0.2.23 possui STA, porém **não compartilha Internet**. Candidata sem flash/OTA; captura, polling, pinos, NVS, fila/ACK e partições preservados. Roteiro físico e rollback em `firmware/espidf/STARLINK_MULTIMIDIA_v0.2.24.md` daquela branch.
+5. **Canal Cloud proposto:** `backend-proposal/v1/cloud` e pasta Supabase local. Auth verificado, sessão ativa no banco, prova RSA do Android Keystore, nonce de uso único, aprovação remota usuário/aparelho/veículo, política versionada, ACK idempotente e rechecagem antes de serializar. Migração privada aditiva gerada pelo CLI oficial; sem deploy nem DDL de produção.
+6. **Android Cloud:** DTOs tipados, HTTPS independente do Core, login em Configurações, refresh cifrado no Keystore/AES-GCM, polling de 10 s, lease máxima de 20 s reduzida pelo tempo da requisição, descarte por escopo/versão/epoch. Só chave pública de projeto pode entrar no build. CI sem configuração fica explícita; APK configurado não presume a existência da nova API.
+7. **Viagem/GPS:** metadados de viagem e última posição de `gps_latest` somente do veículo autorizado, sem selecionar frete/notas/horas por tabela inteira. GPS mantém captura/origem/precisão recebidas, sem extrapolação; o registro encontrado em 14/11 era de **30/10**, não GPS atual. Mapa/rota continuam dependentes de fornecedor/licença. Contadores, finanças e jornada só entram por read models verificados; começam vazios.
+8. **Entrega e revisão:** build APK, testes Android/JVM/Compose, API/SQL/RSA isolados, lint, scanner e evidências; imagem firmware separada com regressões. Plano concreto de implantação/rollback em `REVISAO_CORE_CLOUD_020.md` antes de solicitar autorização hospedada.
 
-## Limites de aceite
+## Bloqueios reais
 
-A conectividade e os sensores do caminhão, o estado de validação J1587, a disponibilidade da Starlink, o firmware efetivamente gravado e a integração com Motorista/Link exigem teste no equipamento. IA, DTC/episódios, mapas/tarifas e jornada legal não serão simulados. A versão do app e a versão do firmware têm numeração independente. Não produzir OTA nova se a integração puder usar os endpoints já existentes da 0.2.23.
+Há somente um projeto Supabase acessível e nenhuma branch de desenvolvimento. A conta do aplicativo correspondente ao e-mail informado não foi encontrada em Auth; nenhum usuário/senha/convite foi criado. Provisionamento seguro e aprovação de vínculo são necessários. Os fallbacks públicos legados da auditoria continuam pendência de segurança e não são usados pelo canal novo.
+
+Sem hardware disponível ao desenvolvimento: NAT/DNS/HTTPS na Starlink, Keystore físico, treze instrumentos/cadências, Link/Motorista/Cloud, barras da central de 13″ e desempenho precisam de ensaio real. IA, DTC/episódios, pedágios, ledger persistido e jornada legal não são simulados. App, firmware e canal Cloud possuem entregas e aceites independentes; compilar não significa homologar em campo.

@@ -28,14 +28,14 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Source secrets
         run: python3 scripts/check_next_secrets.py
-      - name: Proposed API rules (no network/database)
-        run: node backend-proposal/v1/handler.test.ts
+      - name: Install pinned proposed backend dependencies
+        run: npm ci --prefix backend-proposal/v1 --no-audit --no-fund
+      - name: Proposed API, RSA proof and isolated Postgres integration (no production)
+        run: npm test --prefix backend-proposal/v1
       - name: Proposed API strict types
-        run: |
-          npm install --prefix "$RUNNER_TEMP/truckbox-ts" --no-audit --no-fund typescript@5.9.3 @types/node@24.10.0
-          "$RUNNER_TEMP/truckbox-ts/node_modules/.bin/tsc" --noEmit --strict --target es2023 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions --types node --typeRoots "$RUNNER_TEMP/truckbox-ts/node_modules/@types" backend-proposal/v1/contracts.ts backend-proposal/v1/handler.ts backend-proposal/v1/handler.test.ts
+        run: npm run typecheck --prefix backend-proposal/v1
       - name: Build isolated APK and run JVM/native UI tests
-        run: gradle --no-daemon :multimediaNext:assembleHomologDebug :multimediaNext:assembleDemoDebug :multimediaNext:testHomologDebugUnitTest :multimediaNext:assembleHomologDebugAndroidTest :multimediaNext:lintHomologDebug
+        run: gradle --no-daemon --max-workers=1 :multimediaNext:assembleHomologDebug :multimediaNext:assembleDemoDebug :multimediaNext:testHomologDebugUnitTest :multimediaNext:assembleHomologDebugAndroidTest :multimediaNext:lintHomologDebug
       - name: APK secrets
         run: python3 scripts/check_next_secrets.py multimediaNext/build/outputs/apk/homolog/debug/multimediaNext-homolog-debug.apk
       - uses: actions/upload-artifact@v4
