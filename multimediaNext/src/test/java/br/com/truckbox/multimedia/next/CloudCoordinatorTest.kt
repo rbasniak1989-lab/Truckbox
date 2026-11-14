@@ -63,6 +63,8 @@ class CloudCoordinatorTest {
             c.signIn("test@example.invalid","TEST_ONLY")
             assertEquals(f,state.value.financialAllowed);assertEquals(j,state.value.journeyAllowed)
             assertEquals(f,state.value.financial!=null);assertEquals(j,state.value.journey!=null)
+            assertEquals(mapOf((false to false) to "Módulos opcionais não liberados pela Cloud",(true to false) to "Financeiro liberado pela Cloud",
+                (false to true) to "Jornada liberada pela Cloud",(true to true) to "Financeiro e Jornada liberados pela Cloud")[f to j],state.value.policyLabel)
             assertNotNull(state.value.trip);assertNull(state.value.trip!!.consumption)
             assertEquals(clock.plusMillis(19900),state.value.policyExpiresAt)
             c.refresh();assertEquals(1,api.enrollments);assertEquals(1,api.acks)

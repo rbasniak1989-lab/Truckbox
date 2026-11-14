@@ -166,7 +166,13 @@ class CloudCoordinator(
                 previous.copy(cloud=ConnectionState.CLOUD_AUTHENTICATED,trip=trip,legs=legs,gps=gps,
                     financial=views.financial,journey=views.journey,financialAllowed=flags.first,journeyAllowed=flags.second,
                     policyVersion=remote?.version.takeIf {applied},policyExpiresAt=remote?.expiresAt?.let {minOf(it,leaseDeadline)}.takeIf {applied},
-                    policyLabel=if(applied) "Não liberado pela Cloud" else "Política indisponível ou expirada",cloudScope=identity,
+                    policyLabel=when {
+                        !applied -> "Política indisponível ou expirada"
+                        flags.first && flags.second -> "Financeiro e Jornada liberados pela Cloud"
+                        flags.first -> "Financeiro liberado pela Cloud"
+                        flags.second -> "Jornada liberada pela Cloud"
+                        else -> "Módulos opcionais não liberados pela Cloud"
+                    },cloudScope=identity,
                     vehicleLabel=dto.vehicleLabel,expectedCoreUid=dto.coreDeviceUid,lastCloudResponse=received,
                     readings=if(changed) emptyMap() else previous.readings,coreDeviceUid=if(changed) null else previous.coreDeviceUid,coreInternetSharing=if(changed) null else previous.coreInternetSharing,
                     speed=if(changed) null else previous.speed,fuelRate=if(changed) null else previous.fuelRate)

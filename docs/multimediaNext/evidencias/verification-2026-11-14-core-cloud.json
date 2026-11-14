@@ -23,7 +23,7 @@
   },
   "apk": {
     "bytes": 19396362,
-    "sha256": "3693fad027562c1bc8dea5c65f13f508f1967c417cc62241730d49732c0df91a"
+    "sha256": "acff341e7698a6146c920369c48a9266fd6a615a47a57586489bac074e26f565"
   },
   "firmware": {
     "version": "0.2.24",
@@ -45,5 +45,6 @@
     "anonymousRpcExecute": false
   },
   "physicalValidation": "pending; no Android/Core hardware attached",
-  "screenshots": "native Compose/Robolectric, 5 viewports; synthetic captures explicitly labeled"
+  "screenshots": "native Compose/Robolectric, 5 viewports; synthetic captures explicitly labeled",
+  "ownerPermissionLabelVerified": true
 }
