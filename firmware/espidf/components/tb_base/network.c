@@ -3,6 +3,7 @@
 #include <string.h>
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_mac.h"
 #include "esp_timer.h"
 #include "esp_netif.h"
@@ -28,16 +29,121 @@ static unsigned s_retries;
 static bool s_retry_pending;
 static char s_link_address[16];
 static int64_t s_link_seen_us;
+static bool s_ap_ready, s_napt_active;
+static uint32_t s_napt_uplink;
+static const char *s_router_state = "WAITING_UPLINK";
+static char s_router_dns[16];
+static bool s_router_dns_fallback = true;
 
 bool tb_network_wifi_uplink(void)
 {
-    /* A legacy Link STA connects to Core's private AP, which has no Internet route. */
+    /* Preserve the legacy Link's existing PPP/Wi-Fi selection. */
     return tb_role() == TB_ROLE_CORE || tb_config()->wifi_ssid[0] != '\0';
 }
 
 static const char *station_ssid(void)
 {
     return tb_network_wifi_uplink() ? tb_config()->wifi_ssid : tb_config()->core_ssid;
+}
+
+static bool subnets_overlap(const esp_netif_ip_info_t *a, const esp_netif_ip_info_t *b)
+{
+    /* Compare the shorter prefix: a /25 inside the AP's /24 also overlaps. */
+    const uint32_t common = a->netmask.addr & b->netmask.addr;
+    return a->ip.addr && b->ip.addr && common &&
+        (a->ip.addr & common) == (b->ip.addr & common);
+}
+
+static void router_state(const char *reason)
+{
+    portENTER_CRITICAL(&s_status_lock);
+    s_router_state = reason;
+    portEXIT_CRITICAL(&s_status_lock);
+}
+
+static void router_disable(const char *reason)
+{
+    if (s_napt_active) {
+        esp_err_t err = esp_netif_napt_disable(s_access_point);
+        if (err != ESP_OK) ESP_LOGW(TAG, "NAPT disable: %s", esp_err_to_name(err));
+    }
+    portENTER_CRITICAL(&s_status_lock);
+    s_napt_active = false;
+    s_napt_uplink = 0;
+    s_router_state = reason;
+    portEXIT_CRITICAL(&s_status_lock);
+}
+
+static esp_err_t router_dns(const esp_netif_dns_info_t *dns, bool fallback)
+{
+    char address[16];
+    snprintf(address, sizeof(address), IPSTR, IP2STR(&dns->ip.u_addr.ip4));
+    if (!strcmp(address, s_router_dns)) {
+        portENTER_CRITICAL(&s_status_lock);
+        s_router_dns_fallback = fallback;
+        portEXIT_CRITICAL(&s_status_lock);
+        return ESP_OK;
+    }
+    /* DHCP only: no Wi-Fi restart, no AP kick, no NVS writes. */
+    (void)esp_netif_dhcps_stop(s_access_point);
+    uint8_t offer = 0x02; /* DHCPS_OFFER_DNS, as in ESP-IDF 5.5.2 softap_sta. */
+    esp_err_t err = esp_netif_dhcps_option(s_access_point, ESP_NETIF_OP_SET,
+        ESP_NETIF_DOMAIN_NAME_SERVER, &offer, sizeof(offer));
+    if (err == ESP_OK) err = esp_netif_set_dns_info(s_access_point, ESP_NETIF_DNS_MAIN, dns);
+    esp_err_t started = esp_netif_dhcps_start(s_access_point);
+    if (started != ESP_OK && started != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) return started;
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_status_lock);
+        strlcpy(s_router_dns, address, sizeof(s_router_dns));
+        s_router_dns_fallback = fallback;
+        portEXIT_CRITICAL(&s_status_lock);
+    }
+    return err;
+}
+
+static void router_refresh(void)
+{
+    if (tb_role() != TB_ROLE_CORE) return;
+    if (!s_ap_ready) { router_disable("AP_NOT_READY"); return; }
+    if (!station_ssid()[0]) { router_disable("NO_UPLINK_CONFIGURED"); return; }
+    if (!s_status.station_connected) { router_disable("WAITING_UPLINK"); return; }
+    esp_netif_ip_info_t ap = {0}, sta = {0};
+    if (esp_netif_get_ip_info(s_access_point, &ap) != ESP_OK ||
+        esp_netif_get_ip_info(s_station, &sta) != ESP_OK || !sta.ip.addr || !sta.gw.addr) {
+        router_disable("NO_UPSTREAM_GATEWAY"); return;
+    }
+    const bool conflict = subnets_overlap(&ap, &sta);
+    portENTER_CRITICAL(&s_status_lock);
+    s_subnet_conflict = conflict;
+    portEXIT_CRITICAL(&s_status_lock);
+    if (conflict) { router_disable("SUBNET_CONFLICT"); return; }
+    if (s_napt_active && s_napt_uplink != sta.ip.addr) router_disable("UPLINK_CHANGED");
+    esp_netif_dns_info_t dns = {0};
+    bool fallback = esp_netif_get_dns_info(s_station, ESP_NETIF_DNS_MAIN, &dns) != ESP_OK ||
+        dns.ip.type != ESP_IPADDR_TYPE_V4 || !dns.ip.u_addr.ip4.addr;
+    if (fallback) {
+        dns.ip.type = ESP_IPADDR_TYPE_V4;
+        IP4_ADDR(&dns.ip.u_addr.ip4, 1, 1, 1, 1);
+    }
+    if (router_dns(&dns, fallback) != ESP_OK) { router_disable("DHCP_DNS_ERROR"); return; }
+    if (s_napt_active) return;
+    /* lwIP allocates/asserts internally. Keep ample headroom for capture/HTTP. */
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    if (heap_caps_get_free_size(caps) < 32768 || heap_caps_get_largest_free_block(caps) < 8192) {
+        router_state("INSUFFICIENT_HEAP"); return;
+    }
+    const esp_err_t err = esp_netif_napt_enable(s_access_point);
+    if (err != ESP_OK) {
+        router_state("NAPT_ENABLE_ERROR");
+        ESP_LOGW(TAG, "NAPT enable: %s", esp_err_to_name(err));
+        return;
+    }
+    portENTER_CRITICAL(&s_status_lock);
+    s_napt_active = true;
+    s_napt_uplink = sta.ip.addr;
+    s_router_state = "NAPT_ACTIVE_NOT_VERIFIED";
+    portEXIT_CRITICAL(&s_status_lock);
+    ESP_LOGI(TAG, "Core AP forwarding enabled; Internet reachability not verified");
 }
 
 void tb_network_start_time_sync(void)
@@ -116,7 +222,19 @@ static void reconnect_task(void *unused)
 static void network_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+    if (base == WIFI_EVENT && id == WIFI_EVENT_AP_START) {
+        s_ap_ready = true;
+        router_refresh();
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_AP_STOP) {
+        s_ap_ready = false;
+        router_disable("AP_STOPPED");
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_LOST_IP) {
+        portENTER_CRITICAL(&s_status_lock);
+        s_status.station_connected = false;
+        s_status.station_ip[0] = '\0';
+        portEXIT_CRITICAL(&s_status_lock);
+        router_disable("UPLINK_IP_LOST");
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         const char *ssid = station_ssid();
         if (ssid[0]) {
             esp_wifi_connect();
@@ -126,6 +244,7 @@ static void network_event(void *arg, esp_event_base_t base, int32_t id, void *da
         s_status.station_connected = false;
         s_status.station_ip[0] = '\0';
         portEXIT_CRITICAL(&s_status_lock);
+        router_disable("UPLINK_DISCONNECTED");
         ++s_retries;
         const char *ssid = station_ssid();
         portENTER_CRITICAL(&s_status_lock);
@@ -152,13 +271,13 @@ static void network_event(void *arg, esp_event_base_t base, int32_t id, void *da
         {
             esp_netif_ip_info_t ap;
             if (esp_netif_get_ip_info(s_access_point, &ap) == ESP_OK) {
-                s_subnet_conflict = ((ap.ip.addr & event->ip_info.netmask.addr)
-                                    == (event->ip_info.ip.addr & event->ip_info.netmask.addr));
+                s_subnet_conflict = subnets_overlap(&ap, &event->ip_info);
                 if (s_subnet_conflict) {
                     ESP_LOGE(TAG, "Router overlaps this module's private AP subnet; use a different LAN subnet");
                 }
             }
         }
+        router_refresh();
         if (tb_network_wifi_uplink()) tb_network_start_time_sync();
     }
 }
@@ -173,6 +292,22 @@ static esp_err_t configure_ap_address(bool core)
     esp_err_t err = esp_netif_set_ip_info(s_access_point, &ip);
     if (err != ESP_OK) {
         return err;
+    }
+    if (core) {
+        /* A client joining before Starlink connects can resolve once the uplink returns.
+         * DNS is replaced with the upstream DHCP DNS on GOT_IP. */
+        uint8_t offer = 0x02;
+        uint32_t lease_minutes = 1;
+        esp_netif_dns_info_t dns = {0};
+        dns.ip.type = ESP_IPADDR_TYPE_V4;
+        IP4_ADDR(&dns.ip.u_addr.ip4, 1, 1, 1, 1);
+        err = esp_netif_dhcps_option(s_access_point, ESP_NETIF_OP_SET,
+            ESP_NETIF_DOMAIN_NAME_SERVER, &offer, sizeof(offer));
+        if (err == ESP_OK) err = esp_netif_set_dns_info(s_access_point, ESP_NETIF_DNS_MAIN, &dns);
+        if (err == ESP_OK) err = esp_netif_dhcps_option(s_access_point, ESP_NETIF_OP_SET,
+            ESP_NETIF_IP_ADDRESS_LEASE_TIME, &lease_minutes, sizeof(lease_minutes));
+        if (err != ESP_OK) return err;
+        strlcpy(s_router_dns, "1.1.1.1", sizeof(s_router_dns));
     }
     /* .2 is reserved for Link; a provisioning client must never receive it. */
     dhcps_lease_t lease = {.enable = true};
@@ -238,6 +373,8 @@ esp_err_t tb_network_start(void)
     err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, network_event, NULL);
     if (err != ESP_OK) return err;
     err = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, network_event, NULL);
+    if (err != ESP_OK) return err;
+    err = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_LOST_IP, network_event, NULL);
     if (err != ESP_OK) return err;
     err = esp_wifi_set_mode(WIFI_MODE_APSTA);
     if (err != ESP_OK) return err;
@@ -312,6 +449,24 @@ void tb_network_add_json(cJSON *object)
     cJSON_AddBoolToObject(network, "subnet_conflict", s_subnet_conflict);
     cJSON_AddStringToObject(network, "station_mode", tb_network_wifi_uplink() ? "ROUTER" : "CORE_PRIVATE_AP");
     if (tb_role() == TB_ROLE_CORE) {
+        bool active, fallback;
+        const char *reason;
+        char dns[16];
+        portENTER_CRITICAL(&s_status_lock);
+        active = s_napt_active;
+        fallback = s_router_dns_fallback;
+        reason = s_router_state;
+        strlcpy(dns, s_router_dns, sizeof(dns));
+        portEXIT_CRITICAL(&s_status_lock);
+        cJSON *sharing = cJSON_AddObjectToObject(network, "internet_sharing");
+        if (sharing) {
+            cJSON_AddBoolToObject(sharing, "napt_active", active);
+            cJSON_AddBoolToObject(sharing, "internet_verified", false);
+            cJSON_AddStringToObject(sharing, "status", reason);
+            cJSON_AddStringToObject(sharing, "dns_server", dns);
+            cJSON_AddStringToObject(sharing, "dns_source", fallback ? "FALLBACK" : "UPSTREAM_DHCP");
+            cJSON_AddNumberToObject(sharing, "max_connections", 64);
+        }
         char link_host[16];
         tb_network_link_host(link_host, sizeof(link_host));
         cJSON_AddStringToObject(network, "link_host", link_host);
