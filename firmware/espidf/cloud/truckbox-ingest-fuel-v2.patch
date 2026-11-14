@@ -1,0 +1,59 @@
+--- truckbox-ingest-v26.ts
++++ truckbox-ingest-fuel-v2-review.ts
+@@ -1,2 +1,29 @@
++// Pure normalization policy; no network/database writes. Historical trips are
++// not rebuilt. ECU interval deltas and repeated audit rows must never be summed.
++function isCoreFuelV2(s:any) {
++  return s?.trip_accounting?.v === 2 && Number.isFinite(s?.trip_fuel_l) && s.trip_fuel_l >= 0;
++}
++function normalizeCoreFuelV2(row:any, trip:any) {
++  if (!isCoreFuelV2(row.raw)) return row;
++  const a = row.raw.trip_accounting, op = a.op;
++  const matched = trip && typeof trip.client_uid === 'string' && Array.isArray(op) &&
++    op.length === 3 && op[0] === trip.client_uid && Number.isFinite(op[1]) && op[1] >= 0 && typeof op[2] === 'boolean';
++  const fuel = matched ? op[1] : null;
++  return {...row, cloud_rate_applied: true, trip_fuel_l: fuel,
++    trip_average_kml: fuel > 0 && row.trip_distance_km >= 0 ? row.trip_distance_km / fuel : null,
++    raw: {...row.raw, core_fuel_l: row.raw.trip_fuel_l,
++      core_trip_fuel_l: row.raw.trip_fuel_l, fuel_accounting_v: 2,
++      cloud_fuel_source: matched ? 'CORE_PID183_PID250_V2' : 'CORE_V2_OPERATION_REFERENCE_REQUIRED',
++      operation_allocation_estimated: matched ? op[2] : null}};
++}
++function fuelIntervalKey(deviceUid:any, event:any) {
++  if (event?.event !== 'FUEL_RECONCILIATION' || event?.v !== 2 ||
++      !Array.isArray(event.anchor) || event.anchor.length !== 7 ||
++      !Array.isArray(event.previous) || event.previous.length !== 4) return null;
++  // Include real endpoint boot/uptime and raw counters, not just a resettable
++  // per-device interval counter or the repeated snapshot's timestamp/sequence.
++  return JSON.stringify([deviceUid,...event.previous,event.anchor[0],event.anchor[1],event.anchor[3],event.anchor[4]]);
++}
++
+ import { createClient } from 'npm:@supabase/supabase-js@2';
+ 
+@@ -78,5 +105,5 @@
+     if(!emergencyRawOnly){
+       const {data:trip}=await sb.from('trips')
+-        .select('id,weight_t,started_at,start_odometer_km,distance_km,fuel_liters,average_kml,fuel_source,rate_fuel_liters,rate_last_ts,rate_last_seq,rate_last_lph,rate_gap_count,rate_gap_seconds')
++        .select('id,client_uid,weight_t,started_at,start_odometer_km,distance_km,fuel_liters,average_kml,fuel_source,rate_fuel_liters,rate_last_ts,rate_last_seq,rate_last_lph,rate_gap_count,rate_gap_seconds')
+         .eq('truck_id',device.truck_id).eq('status','ACTIVE').order('started_at',{ascending:false}).limit(1).maybeSingle();
+       activeTrip=trip;
+@@ -293,4 +320,5 @@
+     }
+ 
++    rows=rows.map((r:any)=>normalizeCoreFuelV2(r,activeTrip));
+     let rateUpdateStatus='SKIPPED';
+     let rateJob:Promise<void>|null=null;
+@@ -308,5 +336,5 @@
+         const shouldQueueTripRate=tripRows.length>0 && newestTripMs>0 &&
+           (lastRatedMs===0 || newestTripMs-lastRatedMs>=30000);
+-        if(shouldQueueTripRate){
++        if(shouldQueueTripRate && !tripRows.some((r:any)=>isCoreFuelV2(r.raw))){
+           rateUpdateStatus='QUEUED';
+           const tripId=activeTrip!.id;
+@@ -326,5 +354,5 @@
+         });
+   
+-        if(activeTrip?.id&&candidate.trip_id===activeTrip.id&&activeTrip.fuel_liters!=null){
++        if(!isCoreFuelV2(candidate.raw)&&activeTrip?.id&&candidate.trip_id===activeTrip.id&&activeTrip.fuel_liters!=null){
+           candidate.trip_fuel_l=num(activeTrip.fuel_liters);
+           candidate.trip_average_kml=num(activeTrip.average_kml);

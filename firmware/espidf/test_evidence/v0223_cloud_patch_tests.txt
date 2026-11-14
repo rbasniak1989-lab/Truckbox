@@ -1,0 +1,9 @@
+test_data_policy_only_no_auth_or_transport_change (test_fuel_v2_patch.FuelPatchTests.test_data_policy_only_no_auth_or_transport_change) ... ok
+test_output_aliases_cannot_destroy_input (test_fuel_v2_patch.FuelPatchTests.test_output_aliases_cannot_destroy_input) ... ok
+test_public_diff_does_not_contain_authentication_block (test_fuel_v2_patch.FuelPatchTests.test_public_diff_does_not_contain_authentication_block) ... ok
+test_unreviewed_source_is_preserved (test_fuel_v2_patch.FuelPatchTests.test_unreviewed_source_is_preserved) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.002s
+
+OK

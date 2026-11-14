@@ -148,9 +148,28 @@ static void transmission_launch_and_candidates(void)
     /* An unknown/stale speed never manufactures a launch or a clutch diagnosis. */
     memset(&t,0,sizeof(t));tbx_transmission_observe(&t,TBX_TR_RPM,1300,now);tbx_transmission_tick(&t,now);assert(!t.launch && !t.candidate_flags);
 }
+static void scheduler_supervision_and_stale_baseline(void)
+{
+    fixture_t f;initialize(&f);seconds(&f,60);
+    while(f.s.pending<TBX_J1708_REQUEST_CAPACITY || f.c.tx_active)step(&f);
+    unsigned sent=f.s.sent_total;
+    /* Inject a live-task scheduler stalled by an impossible future TX deadline. */
+    f.s.next_tx_valid=true;f.s.next_tx_ms=(uint32_t)(f.now/1000)+3600000;
+    f.env.bus_busy=true;seconds(&f,90);assert(f.c.work_mode && !f.automatic.stalls);
+    assert(!strcmp(f.automatic.reason,"BUS_BUSY_DEFERRED"));
+    f.env.bus_busy=false;seconds(&f,50);assert(!f.s.armed && f.automatic.stalls==1 && f.automatic.phase==TBX_AUTO_BACKOFF);
+    assert(!strcmp(f.automatic.last_stop_reason,"SCHEDULER_NO_TX_PROGRESS") && f.env.enabled);
+    assert(f.s.sent_total==sent);seconds(&f,100);assert(f.s.sent_total>sent && f.c.work_mode);
+    /* Persistent safety conflict never becomes an operator OFF and never
+     * resumes just because Wi-Fi/internet would have recovered. */
+    f.env.local_conflict=true;seconds(&f,1);sent=f.s.sent_total;seconds(&f,600);
+    assert(f.env.enabled && f.automatic.phase==TBX_AUTO_BLOCKED && f.s.sent_total==sent);
+    initialize(&f);seconds(&f,60);assert(f.writes); /* Reboot after a transient stop re-evaluates fresh RX. */
+    puts("Polling supervisor: real TX stall -> controlled backoff/restart; genuine MID hold blocks, desired policy stays ON PASS");
+}
 int main(void)
 {
-    automatic_and_cadences();expansion_in_one_scheduler();pid153_transient_timeout_does_not_stop_passive_or_work();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
+    scheduler_supervision_and_stale_baseline();automatic_and_cadences();expansion_in_one_scheduler();pid153_transient_timeout_does_not_stop_passive_or_work();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
     puts("Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
     return 0;
 }

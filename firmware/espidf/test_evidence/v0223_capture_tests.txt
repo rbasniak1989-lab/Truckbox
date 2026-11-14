@@ -1,0 +1,6 @@
+Operation audit: durable NVS before outbox, immutable boundary identity, duplicate/reordered events and delayed-reference quality PASS
+Independent snapshot-task supervisor: missing TX task heartbeat releases TX, diagnoses unavailable, retains desired policy, no reset/NVS disable PASS
+boot564 exact AC802282308222005C replay: 30 delayed/fragmented cases, one-time echo consumption and true MID hold PASS
+Actual UART PID439: six echo fragmentations + adjacent reply never self-conflict; genuine MID172 conflict still stops TX and keeps passive RX PASS
+Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS
+Actual capture functions passed: v1 migration/v2 reboot, GPS-independent trip/source selection, gap/reset rebasing, unavailable readings, NVS outside RX lock, canonical C0 derived fuel/fallback boundaries

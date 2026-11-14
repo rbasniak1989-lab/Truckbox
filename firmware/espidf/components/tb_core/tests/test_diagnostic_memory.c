@@ -17,6 +17,7 @@ static bool diagnostic_lock_held;
 #include "tbx_trip.h"
 #include "tbx_fuel.h"
 #include "accounting_json.h"
+#include "polling_guard.h"
 #include "telemetry_profile.h"
 #define CONFIG_TB_J1708_ONLY 1
 #define TB_RECORD_MAX 768
@@ -27,6 +28,7 @@ static bool diagnostic_lock_held;
 #define BRIDGE_BATCH_BYTES 8192u
 typedef void *SemaphoreHandle_t;
 typedef void *QueueHandle_t;
+typedef void *TaskHandle_t;
 typedef unsigned nvs_handle_t;
 static bool mutex_available=true;
 static int64_t esp_timer_get_time(void){return 600000000;}
@@ -54,6 +56,7 @@ static void setup_capture(void)
     memset(&s,0,sizeof(s));s.lock=(void *)1;s.j1708_ready=s.edge_ready=true;
     tbx_j1708_request_init(&s.requests);tbx_j1708_active_init(&s.active,&s.requests,NULL,NULL);
     s.trip.quality="ESTIMADO_VELOCIDADE_J1587";s.fuel_account.quality="INTEGRADO_VAZAO_J1587_EM_VALIDACAO";
+    strcpy(s.fuel_account.operation_uid,"operation-allocation-test");s.fuel_account.operation_open=true;
     s.speed_at=s.rpm_at=s.total_at=s.j1708_at=600000;s.rpm=840;s.j1708_frames=37525;s.frames_last_minute=3900;
     s.observed_mid[128>>3]|=1;s.observed_mid[130>>3]|=1<<(130&7);
     snprintf(s.j1708_last,sizeof(s.j1708_last),"{\"source\":\"j1708\",\"mid\":128,\"raw\":\"80BE401A68\",\"checksum_valid\":true,\"parameters\":[{\"pid\":190,\"data\":\"401A\"}]}");
@@ -72,6 +75,8 @@ static void fault_every_allocation(void)
         for(size_t fail=2;fail<=total;fail++){
             heap_reset();cJSON *o=cJSON_CreateObject();assert(o);heap_fail_call=fail;
             if(compact)tb_capture_add_json_compact(o);else tb_capture_add_json(o);
+            const cJSON *a=cJSON_GetObjectItemCaseSensitive(o,"trip_accounting"),*op=cJSON_GetObjectItemCaseSensitive(a,"op");
+            if(op)assert(cJSON_IsArray(op) && cJSON_GetArraySize(op)==3);
             cJSON_Delete(o);assert(!heap_used);
         }
         printf("Production capture %s: %zu individual allocation failures leave no orphan nodes\n",compact?"compact":"full",total-1);

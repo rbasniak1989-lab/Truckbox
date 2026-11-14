@@ -1,0 +1,16 @@
+{
+  "state": "CANDIDATE_NOT_DEPLOYED",
+  "source_commit": "377d1e4a9009658f1ccae4d09994accba38c5184",
+  "verified_hash_entries": 216,
+  "source_files": 526,
+  "source_snapshot_matches": true,
+  "provenance_clean": true,
+  "esp32c6_8mb_idf552": true,
+  "bootloader_and_partitions_identical_to_0222": true,
+  "no_link_image": true,
+  "ota_sha256": "7fa1fdc07230d7e48a13bd42576d95ea06d02e9402f1523938a583f036e01df5",
+  "ota_bytes": 1583360,
+  "app_elf_sha256": "2e7d4fbd88a6acd7c1d58ea556ed48bdaa88e3b7250468597cf75cd610e661c6",
+  "package_sha256": "13bb5ca4d2079d68299987939dc0479715971f8c27a2eb1fcd7fd347d60e67aa",
+  "package_bytes": 8619195
+}

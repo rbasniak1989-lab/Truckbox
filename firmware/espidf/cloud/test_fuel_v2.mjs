@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {isCoreFuelV2,normalizeCoreFuelV2,fuelIntervalKey} from './fuel_v2.mjs';
+const trip={client_uid:'A'};
+const input=total=>({trip_distance_km:28,raw:{trip_fuel_l:total,trip_accounting:{v:2,op:['A',total,true]}}});
+const first=normalizeCoreFuelV2(input(9),trip), confirmed=normalizeCoreFuelV2(input(10),trip);
+const provisional=normalizeCoreFuelV2(input(15),trip), final=normalizeCoreFuelV2(input(14),trip);
+assert.deepEqual([first.trip_fuel_l,confirmed.trip_fuel_l,provisional.trip_fuel_l,final.trip_fuel_l],[9,10,15,14]);
+assert.equal(final.trip_average_kml,2);assert.equal(normalizeCoreFuelV2(final,trip).trip_fuel_l,14);
+assert.equal(normalizeCoreFuelV2(input(14),{client_uid:'B'}).trip_fuel_l,null);
+assert.equal(normalizeCoreFuelV2(input(14),null).raw.core_fuel_l,14);
+assert.equal(normalizeCoreFuelV2(input(0),trip).trip_average_kml,null);
+assert.equal(normalizeCoreFuelV2(input(10),trip).cloud_rate_applied,true);
+assert.equal(normalizeCoreFuelV2(input(10),trip).raw.operation_allocation_estimated,true);
+assert.equal(input(9).raw.trip_fuel_l,9); // Pure, does not mutate source/history.
+const old={trip_fuel_l:123,raw:{trip_fuel_l:123}};assert.equal(normalizeCoreFuelV2(old,trip),old);
+assert.equal(isCoreFuelV2({trip_fuel_l:NaN,trip_accounting:{v:2}}),false);
+const e={event:'FUEL_RECONCILIATION',v:2,previous:[1000,1,1000,1794600001000],anchor:[128,1021,483.11,2,5000,1794600301000,100]};
+const map=new Map();for(let i=0;i<100;i++)map.set(fuelIntervalKey('Core',e),{confirmed:14});
+assert.equal(map.size,1);assert.equal([...map.values()][0].confirmed,14);
+assert.notEqual(fuelIntervalKey('OtherCore',e),fuelIntervalKey('Core',e));
+console.log('Cloud fuel v2: canonical replacement/idempotence, negative correction, no cross-trip allocation, zero denominator, immutable legacy and repeated interval dedup PASS');

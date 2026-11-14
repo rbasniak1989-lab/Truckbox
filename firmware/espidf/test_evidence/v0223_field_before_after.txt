@@ -1,0 +1,5 @@
+Exact field-byte replay; original0.2.22 before edits, then echo fix, same real UART/finish functions.
+BASELINE 0.2.22: tx_age=38362us echo=5/5 observed_local=1 safety_stopped=1 armed=0 passive_frames=1 responses=0
+Reported boot564 sequence reproduced against exact production UART/finish functions: FALSE LOCAL_MID_CONFLICT.
+FIXED candidate: tx_age=38362us echo=5/5 observed_local=0 safety_stopped=0 armed=1 passive_frames=1 responses=1
+Reported boot564 sequence reproduced against exact production UART/finish functions: no false MID conflict; actual MID130/PID34 candidate preserved.

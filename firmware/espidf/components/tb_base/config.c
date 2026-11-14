@@ -580,6 +580,8 @@ static esp_err_t persist(const tb_config_t *config,bool save_auto)
         result = nvs_set_str(handle, CONFIG_KEY, serialized);
         if(result==ESP_OK)result=nvs_set_str(handle,"v212",ext);
         if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v216",auto_text);
+        /* Separate marker: old firmware can still parse v216 on rollback. */
+        if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v223","production-v1");
         if(result==ESP_OK)result=nvs_set_str(handle,"v217",extra_text);
         if (result == ESP_OK) {
             result = nvs_commit(handle);
@@ -709,6 +711,19 @@ esp_err_t tb_config_init(void)
     load_extension();
     bool auto_migrate=load_auto_extension();
     bool expansion_migrate=load_expansion();
+    if(tb_role()==TB_ROLE_CORE && (auto_migrate || s_auto_persisted)){
+        /* <=0.2.22 incorrectly persisted technical MID stops as operator OFF.
+         * The product migration authorizes ON once; later operator OFF remains
+         * OFF. Startup still requires fresh passive RX and a free local MID. */
+        nvs_handle_t policy;char marker[32];size_t n=sizeof(marker);
+        esp_err_t e=nvs_open(CONFIG_NAMESPACE,NVS_READONLY,&policy);
+        if(e==ESP_OK){e=nvs_get_str(policy,"v223",marker,&n);nvs_close(policy);}
+        if(e==ESP_ERR_NVS_NOT_FOUND){s_config.j1708_auto_enabled=true;auto_migrate=true;}
+        else if(e!=ESP_OK || strcmp(marker,"production-v1")){
+            s_config.j1708_auto_enabled=false;s_auto_persisted=false;auto_migrate=false;
+            snprintf(extension_error,sizeof(extension_error),"v223 policy invalid: TX blocked; NVS preserved");
+        }
+    }
     if (first_boot || upgrade || auto_migrate || expansion_migrate) {
         result = persist(&s_config,auto_migrate || s_auto_persisted);
         if (result != ESP_OK) {

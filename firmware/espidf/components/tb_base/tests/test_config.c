@@ -11,7 +11,7 @@
 static char *persisted;
 static char *pending;
 static char *extension_saved,*extension_pending,*auto_saved,*auto_pending;
-static char *extra_saved,*extra_pending;
+static char *extra_saved,*extra_pending,*policy_saved,*policy_pending;
 static bool target_mac;
 static esp_err_t flash_error;
 static esp_err_t write_error;
@@ -68,6 +68,10 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v223")){
+        if(!policy_saved)return ESP_ERR_NVS_NOT_FOUND;
+        size_t n=strlen(policy_saved)+1;if(value){assert(*size>=n);memcpy(value,policy_saved,n);}*size=n;return ESP_OK;
+    }
     if(!strcmp(key,"v217")){
         if(!extra_saved)return ESP_ERR_NVS_NOT_FOUND;
         size_t n=strlen(extra_saved)+1;if(value){assert(*size>=n);memcpy(value,extra_saved,n);}*size=n;return ESP_OK;
@@ -97,6 +101,7 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v223")){if(write_error!=ESP_OK)return write_error;free(policy_pending);policy_pending=strdup(value);assert(policy_pending);return ESP_OK;}
     if(!strcmp(key,"v217")){if(write_error!=ESP_OK)return write_error;free(extra_pending);extra_pending=strdup(value);assert(extra_pending);return ESP_OK;}
     if(!strcmp(key,"v216")){if(write_error!=ESP_OK)return write_error;free(auto_pending);auto_pending=strdup(value);assert(auto_pending);return ESP_OK;}
     if(!strcmp(key,"v212")){if(write_error!=ESP_OK)return write_error;free(extension_pending);extension_pending=strdup(value);assert(extension_pending);return ESP_OK;}
@@ -113,6 +118,7 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if(policy_pending){free(policy_saved);policy_saved=policy_pending;policy_pending=NULL;}
     if(extra_pending){free(extra_saved);extra_saved=extra_pending;extra_pending=NULL;}
     if(auto_pending){free(auto_saved);auto_saved=auto_pending;auto_pending=NULL;}
     if(extension_pending){free(extension_saved);extension_saved=extension_pending;extension_pending=NULL;}
@@ -140,6 +146,7 @@ static void clear_storage(void)
     free(persisted);
     free(pending);free(extension_saved);free(extension_pending);extension_saved=extension_pending=NULL;
     free(extra_saved);free(extra_pending);extra_saved=extra_pending=NULL;
+    free(policy_saved);free(policy_pending);policy_saved=policy_pending=NULL;
     free(auto_saved);free(auto_pending);auto_saved=auto_pending=NULL;target_mac=false;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;
@@ -320,6 +327,16 @@ static void test_automatic_persistence(void)
     for(unsigned i=0;i<17;i++)assert(tb_config()->j1708_auto_intervals_ms[i]==tbx_j1708_production_period(tbx_j1708_policy()[i].pid,false));
     assert(apply("{\"j1708_auto_intervals_ms\":{\"33\":7000},\"j1708_launch_intervals_ms\":{\"33\":2500}}") == ESP_OK);
     reboot();assert(tb_config_init()==ESP_OK && tb_config()->j1708_auto_intervals_ms[1]==7000 && tb_config()->j1708_launch_intervals_ms[1]==2500);
+#if !CONFIG_TB_ROLE_LINK
+    /* Real 0.2.22 shape: OFF persisted after a technical fault, no marker.
+     * Migrate desired policy once; preserve MIDs, cadences and credentials. */
+    assert(!tb_config_j1708_auto_enabled());char credential[33];strcpy(credential,tb_config()->admin_token);
+    free(policy_saved);policy_saved=NULL;count=writes;reboot();
+    assert(tb_config_init()==ESP_OK && writes==count+1 && tb_config_j1708_auto_enabled());
+    assert(!strcmp(credential,tb_config()->admin_token) && tb_config()->j1708_auto_intervals_ms[1]==7000);
+    assert(tb_config_set_j1708_auto(false)==ESP_OK);count=writes;reboot();
+    assert(tb_config_init()==ESP_OK && writes==count && !tb_config_j1708_auto_enabled());
+#endif
     /* Existing 0.2.15 install: absent extension migrates exactly once. */
     free(auto_saved);auto_saved=NULL;count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count+1);
     count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count);

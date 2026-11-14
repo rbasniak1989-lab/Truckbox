@@ -54,7 +54,28 @@ static inline void tb_trip_checkpoint_restore(const tb_trip_checkpoint_t *b,tbx_
     a->integrated_l=b->integrated_l;a->estimated_l=b->estimated_l;a->direct_l=b->direct_l;
     a->direct_valid=b->direct_valid;a->direct_mid=b->direct_mid;a->direct_raw=b->direct_raw;
     a->direct_anchor_l=b->direct_anchor_l;a->estimated_at_direct=b->estimated_at_direct;
+    /* v3 has no boot/UTC anchor timestamp. Preserve its total, but require a
+     * fresh anchor instead of inventing an elapsed time across a reboot. */
+    a->direct_valid=false;
     a->last_l_per_km=b->last_l_per_km;a->distance_km=b->distance_anchor_km;a->distance_valid=b->distance_anchor_valid;
     a->gaps=b->gaps;a->resets=b->resets;a->range_errors=b->range_errors;
     a->quality=b->direct_valid?"PID250_RECUPERADO_AGUARDANDO_LEITURA":"INTEGRACAO_RECUPERADA_AGUARDANDO_LEITURA";
+}
+
+typedef struct {
+    uint32_t version;
+    tb_trip_checkpoint_t legacy;
+    tbx_fuel_persist_t fuel;
+    uint32_t crc;
+} tb_trip_checkpoint_v4_t;
+static inline void tb_trip_checkpoint_v4_make(tb_trip_checkpoint_v4_t *v,const tb_trip_checkpoint_t *legacy,const tbx_fuel_account_t *a)
+{
+    memset(v,0,sizeof(*v));v->version=4;v->legacy=*legacy;tbx_fuel_account_export(a,&v->fuel);
+    v->crc=tb_store_crc32(v,offsetof(tb_trip_checkpoint_v4_t,crc));
+}
+static inline bool tb_trip_checkpoint_v4_valid(const tb_trip_checkpoint_v4_t *v)
+{
+    tbx_fuel_account_t check;
+    return v->version==4 && v->crc==tb_store_crc32(v,offsetof(tb_trip_checkpoint_v4_t,crc)) &&
+        tb_trip_checkpoint_valid(&v->legacy) && tbx_fuel_account_restore(&check,&v->fuel);
 }

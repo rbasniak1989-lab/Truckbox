@@ -46,6 +46,8 @@ typedef struct tbx_j1708_active {
     void *context;
     bool configured, tx_active, work_mode,production_mode;
     uint8_t echo_position;
+    bool echo_frame_pending;
+    uint64_t echo_received_us;
     uint8_t tx_frame[6], tx_length;
     uint16_t tx_pid,last_sent_pid;
     uint64_t last_sent_us;
@@ -88,5 +90,6 @@ void tbx_j1708_active_note_link_error(tbx_j1708_active_t *, const char *reason);
  * tentative temporal correlation, never proof of causal ECU response. */
 bool tbx_j1708_active_note_response(tbx_j1708_active_t *, uint8_t mid, uint16_t pid, uint64_t now_us);
 bool tbx_j1708_active_is_tx_echo(const tbx_j1708_active_t *, const uint8_t *, size_t, uint64_t now_us);
+bool tbx_j1708_active_consume_tx_echo(tbx_j1708_active_t *,const uint8_t *,size_t,uint64_t now_us);
 
 #endif
