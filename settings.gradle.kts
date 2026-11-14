@@ -18,3 +18,4 @@ rootProject.name = "TruckBox"
 include(":app")
 include(":multimedia")
 include(":recovery")
+include(":multimediaNext")

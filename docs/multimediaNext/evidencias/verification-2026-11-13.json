@@ -1,0 +1,257 @@
+{
+  "date": "2026-11-13",
+  "testedSourceCommit": "274865c3b70f433f215365e1c787df161f7ec7d0",
+  "publicationSourceCommit": "58e98cc",
+  "sourceContentIdentical": true,
+  "jvmTests": [
+    {
+      "name": "br.com.truckbox.multimedia.next.CoreContractTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "timestamp": "2026-11-13T12:45:14.594Z"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.next.DomainRulesTest",
+      "tests": "13",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "timestamp": "2026-11-13T12:45:14.843Z"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.next.NativeUiTest",
+      "tests": "10",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "timestamp": "2026-11-13T12:45:15.665Z"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.next.PolicyTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "timestamp": "2026-11-13T12:46:29.143Z"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.next.PreferencesStoreTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "timestamp": "2026-11-13T12:46:29.175Z"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.next.TankLedgerTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "timestamp": "2026-11-13T12:46:39.403Z"
+    }
+  ],
+  "apiProposalTests": {
+    "passed": 13,
+    "failed": 0,
+    "usesProductionData": false
+  },
+  "strictTypecheck": true,
+  "lint": {
+    "errors": 0,
+    "warnings": 10
+  },
+  "instrumentedExecution": "BLOCKED: no device; UTP dependency download returned HTTP 503",
+  "apk": [
+    {
+      "file": "multimediaNext-homolog-debug-androidTest.apk",
+      "sha256": "d608b7781e3a55cda96233650c5380957deed733cd5f0af66215eae9b9c0ff7a",
+      "bytes": 1133751
+    },
+    {
+      "file": "multimediaNext-demo-debug.apk",
+      "sha256": "d898e7329e6ca7e16ebc8c2fd4f9a9d1ee346973db06a4707a13a57d26b4a8e1",
+      "bytes": 19590556
+    },
+    {
+      "file": "multimediaNext-homolog-debug.apk",
+      "sha256": "3773df046a928e3f7f301788b9e10887b69fd0eb20ef9501cfb014a0e120b61d",
+      "bytes": 19590536
+    }
+  ],
+  "captureMethod": "Android View.draw(Canvas) with Robolectric SDK 35, mdpi; not physical-device screenshots",
+  "screenshots": [
+    {
+      "file": "consumption-1024x460.png",
+      "width": 1024,
+      "height": 460,
+      "sha256": "9b5a57b2ace9e8e957f76bdcc5eeba6d77c83dd9138d9a69f4519e0559e1ba51"
+    },
+    {
+      "file": "consumption-1024x600.png",
+      "width": 1024,
+      "height": 600,
+      "sha256": "4791f2df25c66b1f1adb4b16909df2ab9d371be1062618174614f5c2f40623ea"
+    },
+    {
+      "file": "consumption-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "d190aebc23c4331334e11215bfa6bb2dae9992d7d3bde524f7a10ffcf84630cb"
+    },
+    {
+      "file": "consumption-1672x941.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "a2ee05a24ce92a08456156eca725e91c3c8f1d5139a1cd56685161981dab292c"
+    },
+    {
+      "file": "consumption-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "545b5ee5e9cbf89813f440bfe6262d41ae9ce0ff0a7d8dbf6dbce7f8ce9a8ec1"
+    },
+    {
+      "file": "home-1024x460.png",
+      "width": 1024,
+      "height": 460,
+      "sha256": "c30171e7b0c00234208d4253d570d18d2dd9abefef9d18aa66bdeb57a9334600"
+    },
+    {
+      "file": "home-1024x600.png",
+      "width": 1024,
+      "height": 600,
+      "sha256": "f794b260ff812096ac9c22b738de7b4c6af1dd3fa365f5b083853bd0c799732c"
+    },
+    {
+      "file": "home-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "d2af338ac489843ce34cd1e52f27db290eca3266a1de0183ba831bbe667d8c98"
+    },
+    {
+      "file": "home-1672x941.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "2b2cc7e7740402e2a4c915fbc831769c802235e48cf21383c2a0ee2ae057b2db"
+    },
+    {
+      "file": "home-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "c81f49a800569ab0a02cf8f21619fdb69d9626701d24011600c78a2959800684"
+    },
+    {
+      "file": "optional-financial-TEST-DEMO.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "8fc761a007a02356039284abb5dfb37fed54229681e238acfa56f251a3525355"
+    },
+    {
+      "file": "optional-journey-TEST-DEMO.png",
+      "width": 560,
+      "height": 421,
+      "sha256": "aa7c06d332f207f7198615cfbd87f47bdc4b122e6c848e49158a44f10ebbc83b"
+    },
+    {
+      "file": "settings-1024x460.png",
+      "width": 1024,
+      "height": 460,
+      "sha256": "33393806cd646de86f346824805c814a0e5c3a4ef5db8bc3ef9c1b86b6833c8c"
+    },
+    {
+      "file": "settings-1024x600.png",
+      "width": 1024,
+      "height": 600,
+      "sha256": "9ecb9e622f1bb8bc6bf77e14861beb653bc2dcc39af1a55148e3a20b4250c58f"
+    },
+    {
+      "file": "settings-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "7e926a9ab6d02d3fe80daa0489ed5d71a5bc6bfe63487ee7ed87fc80c7dd5dee"
+    },
+    {
+      "file": "settings-1672x941.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "596c267cfb14164b7792510628cc3d0446470b54755fdbdd08a63267b75373c3"
+    },
+    {
+      "file": "settings-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "036a2aa79c0033568c621c51f36d93aa5925ce6cdefa745b0c772e131c38242f"
+    },
+    {
+      "file": "trip-1024x460.png",
+      "width": 1024,
+      "height": 460,
+      "sha256": "607ba2c385eddfd4a6e4656114ecc1b1520ad5d1302066c02cec5b7534ebd727"
+    },
+    {
+      "file": "trip-1024x600.png",
+      "width": 1024,
+      "height": 600,
+      "sha256": "76e7867d8ababecef7aaae8d4630c9667f367ea10e13c674366469505d44b15b"
+    },
+    {
+      "file": "trip-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "3ec7dfe962766727d3d79265e97e11659cd431926f2b5c4532e3f820ef7863de"
+    },
+    {
+      "file": "trip-1672x941.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "21b03bae0830b1f011c842b215673a4adbc5085cb167585111bbb9ecd08cc2d8"
+    },
+    {
+      "file": "trip-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "d2c8d5a9921115ccc6b6186af073fa927261a69f1bece65f4799cc712eb9f35b"
+    },
+    {
+      "file": "truck-1024x460.png",
+      "width": 1024,
+      "height": 460,
+      "sha256": "680a1509b1b02c93595d4bc8fe4686810341c1819e5fc6595ac477a2b20ef068"
+    },
+    {
+      "file": "truck-1024x600.png",
+      "width": 1024,
+      "height": 600,
+      "sha256": "51305854ecb3f0f463384b02dfb80b0c6b21103d950783cac4dfd0705253717f"
+    },
+    {
+      "file": "truck-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "cf5caf43c7a3e3ac88f1d22511d64d7519598509c21568146006477bcf30f614"
+    },
+    {
+      "file": "truck-1672x941.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "a00a30ea3b278ca1cbd33f56e2d4d691724c93d8e202d654afa14b011217f44f"
+    },
+    {
+      "file": "truck-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "38e62b8f6e4ea9efb5e074a7a6d52e37c0dee187c1cb45244f2d0f23c0184f81"
+    }
+  ],
+  "githubCI": {
+    "workflow": "Multimedia Next Homologação",
+    "result": "success",
+    "runId": 43437312280,
+    "sourceCommit": "cd2924bc35ee247c05c5c2f3056a203cb62e59d8",
+    "url": "https://github.com/rbasniak1989-lab/Truckbox/actions/runs/43437312280",
+    "includesPhysicalDevice": false
+  }
+}

@@ -1,0 +1,6 @@
+<network-security-config>
+    <!-- Android não aceita CIDR em domain-config. O transporte Core valida RFC1918 ou
+         truckbox.local, fixa GET /api/state, vincula ao Wi-Fi e recusa redirects.
+         Cloud usa exclusivamente HTTPS e outro transporte; nunca enviar tokens ao Core. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

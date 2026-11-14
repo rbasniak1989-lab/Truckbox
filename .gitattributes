@@ -1,0 +1,4 @@
+gradlew.bat text eol=crlf
+# Preserve the upstream OFL license text verbatim.
+multimediaNext/licenses/*.txt -whitespace
+multimediaNext/src/main/assets/licenses/*.txt -whitespace

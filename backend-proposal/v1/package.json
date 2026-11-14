@@ -1,0 +1,9 @@
+{
+  "name": "truckbox-next-cloud-v1",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": { "test": "node handler.test.ts && node cloud/integration.test.ts && node cloud/field-test.test.ts && node cloud/proof.test.ts", "typecheck": "tsc --noEmit --strict --target es2023 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions contracts.ts handler.ts cloud/*.ts" },
+  "dependencies": { "postgres": "3.4.7" },
+  "devDependencies": { "@electric-sql/pglite": "0.5.16", "@types/emscripten": "1.41.5", "@types/node": "24.10.0", "typescript": "5.9.3" }
+}
