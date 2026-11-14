@@ -116,9 +116,9 @@ static bool maintenance_empty_volume(void)
 
 esp_err_t tb_store_maintenance_prepare(char challenge[33])
 {
-    if(!challenge || !tb_capture_storage_stationary() || !maintenance_target_valid())return ESP_ERR_INVALID_STATE;
+    if(!challenge || !maintenance_target_valid())return ESP_ERR_INVALID_STATE;
     if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
-    if(maintenance.running || state.rollback_paused || !maintenance_target_valid() || !tb_capture_storage_stationary()){
+    if(maintenance.running || state.rollback_paused || !maintenance_target_valid()){
         xSemaphoreGive(state.mutex);return ESP_ERR_INVALID_STATE;
     }
     unsigned char random[16];esp_fill_random(random,sizeof(random));
@@ -131,12 +131,12 @@ esp_err_t tb_store_maintenance_prepare(char challenge[33])
 
 esp_err_t tb_store_maintenance_format(const char *challenge)
 {
-    if(!tb_capture_storage_stationary() || !maintenance_target_valid())return ESP_ERR_INVALID_STATE;
+    if(!maintenance_target_valid())return ESP_ERR_INVALID_STATE;
     if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
     uint64_t now=(uint64_t)esp_timer_get_time();
     bool valid=challenge && strlen(challenge)==32 && maintenance.challenge[0] &&
         !strcmp(challenge,maintenance.challenge) && now<maintenance.expires_us &&
-        !maintenance.running && !state.rollback_paused && maintenance_target_valid() && tb_capture_storage_stationary();
+        !maintenance.running && !state.rollback_paused && maintenance_target_valid();
     if(!valid){xSemaphoreGive(state.mutex);return ESP_ERR_INVALID_STATE;}
     /* Consume BEFORE the first destructive operation. A lost HTTP response or
      * power cut cannot replay this permission or authorize a second format. */
@@ -183,7 +183,7 @@ esp_err_t tb_store_maintenance_format(const char *challenge)
 esp_err_t tb_store_flash_backup(httpd_req_t *request)
 {
     const esp_partition_t *p=maintenance_partition();
-    if(!p || !tb_capture_storage_stationary())return ESP_ERR_INVALID_STATE;
+    if(!p)return ESP_ERR_INVALID_STATE;
     if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
     unsigned char *chunk=malloc(1024);esp_err_t result=chunk?ESP_OK:ESP_ERR_NO_MEM;
     httpd_resp_set_type(request,"application/octet-stream");

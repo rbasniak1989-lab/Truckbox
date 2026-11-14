@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "version": "0.2.22",
+  "source_commit": "f29526c10bf997d40e16ab94cea3dc83d499f8fc",
+  "source_clean": true,
+  "checksums_verified": 195,
+  "source_files_compared": 502,
+  "only_core_packaged": true,
+  "partition_unchanged": true,
+  "elf_matches_OTA": true,
+  "ota_bytes": 1568496,
+  "ota_sha256": "d962279a5545fea0413d52951021d10c26a08d356bd72f054e932a336b594432",
+  "zip_bytes": 8476534,
+  "zip_sha256": "72fdf490f7462583d0f4619c0788f0a1f8f8e80cb46f7dc121095ae3991fc5a1",
+  "OTA_applied": false,
+  "device_format_executed": false
+}

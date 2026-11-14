@@ -19,11 +19,10 @@ typedef struct{uint32_t address,size;bool readonly;}esp_partition_t;
 typedef struct{size_t bytes;bool complete;}httpd_req_t;
 static esp_partition_t partition={0x620000,0x1e0000,false};
 static struct{void *mutex;}state={(void *)1};
-static unsigned held,reads,sends;static bool parked=true,busy,oom;static int fail_read=-1,fail_send=-1;
+static unsigned held,reads,sends;static bool busy,oom;static int fail_read=-1,fail_send=-1;
 static const esp_partition_t *esp_partition_find_first(int type,int subtype,const char *label){
     assert(type==1 && subtype==2 && !strcmp(label,"storage"));return &partition;
 }
-static bool tb_capture_storage_stationary(void){return parked;}
 static bool xSemaphoreTake(void *mutex,unsigned wait){assert(mutex && wait==200 && !held);if(busy)return false;held=1;return true;}
 static void xSemaphoreGive(void *mutex){assert(mutex && held==1);held=0;}
 static void vTaskDelay(unsigned ticks){assert(ticks==1 && held);}
@@ -50,10 +49,9 @@ int main(void){
     httpd_req_t r={0};assert(tb_store_flash_backup(&r)==ESP_OK && r.bytes==0x1e0000 && r.complete && !held);
     unsigned before=reads;partition.address=0x9000;r=(httpd_req_t){0};assert(tb_store_flash_backup(&r)!=ESP_OK && !r.bytes && reads==before);partition.address=0x620000;
     partition.readonly=true;assert(tb_store_flash_backup(&r)!=ESP_OK);partition.readonly=false;
-    parked=false;assert(tb_store_flash_backup(&r)!=ESP_OK);parked=true;
     busy=true;assert(tb_store_flash_backup(&r)==ESP_ERR_TIMEOUT);busy=false;
     oom=true;assert(tb_store_flash_backup(&r)==ESP_ERR_NO_MEM && !held);oom=false;
     fail_read=4096;r=(httpd_req_t){0};assert(tb_store_flash_backup(&r)!=ESP_OK && r.bytes==4096 && !r.complete && !held);fail_read=-1;
     fail_send=2048;r=(httpd_req_t){0};assert(tb_store_flash_backup(&r)!=ESP_OK && r.bytes==2048 && !r.complete && !held);
-    puts("Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/movement/mutex/OOM/read/send failure guards, released mutex, no writes PASS");return 0;
+    puts("Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/mutex/OOM/read/send failure guards; no speed dependency, released mutex, no writes PASS");return 0;
 }

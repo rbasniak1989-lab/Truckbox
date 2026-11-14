@@ -7,7 +7,7 @@ python3 - "$d/../core.c" "$w/maintenance_handlers_under_test.h" <<'PY'
 from pathlib import Path
 import sys
 s=Path(sys.argv[1]).read_text();parts=[]
-for name in ['storage_maintenance_handler','storage_backup_handler']:
+for name in ['storage_maintenance_error','storage_maintenance_handler','storage_backup_handler']:
  start=s.index('static esp_err_t '+name+'(');end=s.index('{',start)+1;depth=1
  while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
  parts.append(s[start:end])

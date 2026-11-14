@@ -1,3 +1,5 @@
+Core **0.2.22 — candidata, manutenção com um clique**: [guia, testes e rollback](MAINTENANCE_v0.2.22.md). Botão Recriar armazenamento, sem frase/caixas/diálogo; sem trava de velocidade somente para manutenção. Proteções J1708 preservadas. Nenhuma ação executada na placa.
+
 Core **0.2.21 — CANDIDATA de manutenção, não instalada pelo agente**: [procedimento pelo Wi-Fi, testes, perdas e rollback](MAINTENANCE_v0.2.21.md). Instalar a BIN não limpa arquivos. A recriação somente de `/tbflash` exige administrador, parada medida e confirmação explícita em duas etapas. [Changelog](CHANGELOG_v0.2.21.md).
 
 Core **0.2.20 — observada em campo; boot 559 analisado**: [OPEN/EACCES, correção, testes e evidência ainda necessária](FLASH_FIX_v0.2.20.md) e [changelog](CHANGELOG_v0.2.20.md). Reconhece AM_RDO pelos atributos FAT, cria segmentos exclusivos, preserva arquivos anteriores e só confirma recuperação após escrita durável. Requisições J1708/NVS permanecem intactas. Nenhuma OTA ou intervenção na placa realizada.

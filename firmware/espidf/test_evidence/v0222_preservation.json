@@ -1,0 +1,200 @@
+{
+  "baseline": "1fd7f1bc813eed1f13b3644343d6553db46ae24a",
+  "files": [
+    {
+      "file": "firmware/j1708_17pid/INVENTARIO_v0.2.17.csv",
+      "unchanged": true,
+      "sha256": "c06ccfd83b4a0c8a8a1175ad08a4742f3e420f2f7d7fd868432d55bc3ae10a9d"
+    },
+    {
+      "file": "firmware/j1708_17pid/README.md",
+      "unchanged": true,
+      "sha256": "df2122bde6be56f17b7271db650c7be5c661226495320d1d97f8039b680d2738"
+    },
+    {
+      "file": "firmware/j1708_17pid/SCALES.md",
+      "unchanged": true,
+      "sha256": "5d8d9efcce2291a1c9d2a103eec405718ee72b7f1aa1a3ced8d1d63b6c1f7eda"
+    },
+    {
+      "file": "firmware/j1708_17pid/PASSIVE.md",
+      "unchanged": true,
+      "sha256": "10c13add523385ae1a47d5389d9a8c817cbef91348592aef8ce61ca559c863b6"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.h",
+      "unchanged": true,
+      "sha256": "d7e98b8d74b55b56c5c237c8ab98ba9f74e20be943e0ac47a677e153eca60efc"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.c",
+      "unchanged": true,
+      "sha256": "6a7521a5b4502191359cfccb83905d1d193cc67d4aff89bdc390fbc544753b63"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.h",
+      "unchanged": true,
+      "sha256": "890d5c47caa330d5e94d4f0eaee680ddbbf12249869f5b50c4e40a497594ba85"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.h",
+      "unchanged": true,
+      "sha256": "e21f405444c17e43f11c15e6426825f560e251e31852ded8bf8cffc0f72297f2"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.c",
+      "unchanged": true,
+      "sha256": "785f75435a21853207876a3b14b7d96714bde1bf24c2e12eca8fa7d445cdab7d"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.h",
+      "unchanged": true,
+      "sha256": "c585dd6a87784d3504cef82f1158918a9cefd1e251fd69ecda2a784c5983d841"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.c",
+      "unchanged": true,
+      "sha256": "9d18e7846e59caeb573c28d5da406e17e6b8f83d15ea0f8e60be5e494eab7ef8"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.c",
+      "unchanged": true,
+      "sha256": "2784306aca7c9c22ceab4e880d173db75a7cb469a87a6fdb9759b056a3a3986d"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.c",
+      "unchanged": true,
+      "sha256": "d3174a09a1c8545091f3bf9751621ef82c7d23b76e33741c81c2f216e50e51ec"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1708_policy.h",
+      "unchanged": true,
+      "sha256": "fa54cf24aeed91252a5fb54988f5b03f9f347bc5ae74180267916af97d1ce046"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.h",
+      "unchanged": true,
+      "sha256": "4fb7eb60f4c9f6f302b2e1348daf37a47e996664c876aa09f622d2d71b959c08"
+    },
+    {
+      "file": "firmware/j1708_17pid/tests/run_all.sh",
+      "unchanged": true,
+      "sha256": "7b9528d21d17346ba107a576d22adbe572ba2d17b93ea7ab571ffcb0bc3dae85"
+    },
+    {
+      "file": "firmware/j1708_17pid/tests/test_tbx_j1708_requests.c",
+      "unchanged": true,
+      "sha256": "16538458883b1b5c18ad04ec795db000bf8a91adb61ca3840fa95d8f34eb4efe"
+    },
+    {
+      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_passive_full.c",
+      "unchanged": true,
+      "sha256": "36897727784a32af51cc8d238642cc609b4fe4044463cdc3c159a091791a90cd"
+    },
+    {
+      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_passive.c",
+      "unchanged": true,
+      "sha256": "d1ea1be03be7b4bc5aa738a5bd0b2f7b5262ba4c4bef12bacd8af7eb02037825"
+    },
+    {
+      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_diagnostics.c",
+      "unchanged": true,
+      "sha256": "f973ef4be9569e03352a978dce567212e555a6b9c5da227c67370c176dae4dc4"
+    },
+    {
+      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_decoder.c",
+      "unchanged": true,
+      "sha256": "1cb01f25cc74e15787f27544f789d776b2f1e927e6ffbf62d32bbe4064d25bd5"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/capture.c",
+      "unchanged": true,
+      "sha256": "4cd1ded376962044d08a627485ab64d2c9974073f0ed28fff513d4c0bd68d1da"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1708_active.c",
+      "unchanged": true,
+      "sha256": "1652506865b5f30303566fcee0f966f0d98d0cfeb0c4b66b81bcd266e6c18792"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1708_auto.c",
+      "unchanged": true,
+      "sha256": "8a49ca7968e2ed0e86d8a16c2f5580effe32c4e6e5a08cf7bafe4f76446bdffc"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1708_field.c",
+      "unchanged": true,
+      "sha256": "a4d6be270b005380c8169113bad853e28016388420e761f670325a4f955ac203"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c",
+      "unchanged": true,
+      "sha256": "1c634c4026c763bf968650d3fb477828c4fdd5053714ba7b4ef07b62acfac95a"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_transmission.c",
+      "unchanged": true,
+      "sha256": "e0cac603ce503db17865130d30a8ce8321303d8c8ed684f189598fbd7f3500bf"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_trip.c",
+      "unchanged": true,
+      "sha256": "4f3c6d6a116bbfde31372bff1c3c745f0a96d39bc74fe98fbcfa3da4dd2cf8bf"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_fuel_account.c",
+      "unchanged": true,
+      "sha256": "6311fbaaf689660229b0b5d5319e07e8b1c9f37fc1265b18b6c9a3090c4f4665"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_fuel.c",
+      "unchanged": true,
+      "sha256": "3ddd41d03a34eeec5347dc5666ab558918af656f2be1c59c5332bc9f37266e9e"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1939.c",
+      "unchanged": true,
+      "sha256": "14129fcfc5817548ad24521a959c41fe932fa56c4f3d089ece18ae70ffbdf68d"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1939_tp.c",
+      "unchanged": true,
+      "sha256": "53a2e75c437f3bcce438fe2954922f639394f6091ac0b1e9bf6f044f39de49e6"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/telemetry.c",
+      "unchanged": true,
+      "sha256": "45551ef83a586fe0f3e300b6c1e0c07cea1317a6c062624bca035e0deaf2f24c"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/protocols.c",
+      "unchanged": true,
+      "sha256": "e2480f0616223f738f64b35d2f1e6e46dbbf90c77b025adbe3a26eeb55f266a8"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/diagnostics.c",
+      "unchanged": true,
+      "sha256": "2978478054f91c1a31f1fdcdb5e9a2d49f5c2dd858171b8e9f36c76dffce135d"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/ecu_counters.c",
+      "unchanged": true,
+      "sha256": "6c2b9a2e891131ee5e534ee4a042c3b53cde5fa7d97245a37d5b3ebd321c1045"
+    },
+    {
+      "file": "firmware/espidf/components/tb_base/config.c",
+      "unchanged": true,
+      "sha256": "86ee6439521fed53541252a12994be29ee570d442811b1492303d4cefe84b013"
+    },
+    {
+      "file": "firmware/espidf/components/tb_base/network.c",
+      "unchanged": true,
+      "sha256": "90cae32602e13a621f14190dde4a3bb930ca938dbd4b69b67299e5d3dda64462"
+    },
+    {
+      "file": "firmware/espidf/partitions.csv",
+      "unchanged": true,
+      "sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832"
+    }
+  ]
+}

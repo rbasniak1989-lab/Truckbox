@@ -1,0 +1,1111 @@
+diff --git a/.github/workflows/core-v0222-simple-maintenance.yml b/.github/workflows/core-v0222-simple-maintenance.yml
+new file mode 100644
+index 0000000..4e64798
+--- /dev/null
++++ b/.github/workflows/core-v0222-simple-maintenance.yml
+@@ -0,0 +1,83 @@
++name: TruckBox Core 0.2.22 explicit WiFi storage maintenance
++on:
++  push:
++    branches: [fix/revb1-v0222-simple-maintenance]
++    paths: ['firmware/**', 'cloud/diagnostics/**', 'supabase/**', '.github/workflows/core-v0222-simple-maintenance.yml']
++  pull_request:
++    branches: [feature/revb1-v0221-flash-maintenance]
++    paths: ['firmware/**', 'cloud/diagnostics/**', 'supabase/**', '.github/workflows/core-v0222-simple-maintenance.yml']
++  workflow_dispatch:
++concurrency:
++  group: core-v0222-${{ github.head_ref || github.ref_name }}
++  cancel-in-progress: true
++permissions:
++  contents: read
++jobs:
++  test-build:
++    runs-on: ubuntu-latest
++    timeout-minutes: 45
++    steps:
++      - uses: actions/checkout@v4
++      - name: Build ESP32-C6 with exact ESP-IDF and exercise all host/fault/offline tests
++        uses: espressif/esp-idf-ci-action@v1
++        with:
++          esp_idf_version: v5.5.2
++          target: esp32c6
++          path: firmware/espidf
++          command: bash tools/build_v020.sh core && sh tests/run_all.sh
++      - name: Check Core identity, OTA fit, profile and unchanged partition table
++        run: |
++          python3 - <<'PY'
++          from pathlib import Path
++          import struct,hashlib
++          p=Path('firmware/espidf/build-core')
++          data=(p/'truckbox_core.bin').read_bytes()
++          assert 512<len(data)<0x300000
++          text=lambda a,b:data[a:b].split(b'\0',1)[0].decode('ascii')
++          assert data[0]==0xe9 and data[3]>>4==3 and struct.unpack_from('<H',data,12)[0]==13
++          assert text(48,80)=='0.2.22' and text(80,112)=='truckbox_core' and text(144,176)=='v5.5.2'
++          assert hashlib.sha256(Path('firmware/espidf/partitions.csv').read_bytes()).hexdigest()=='5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832'
++          assert 'CONFIG_TB_J1708_ONLY=y' in (p/'sdkconfig').read_text()
++          PY
++      - uses: actions/upload-artifact@v4
++        with:
++          name: TruckBox-Core-0.2.22-CANDIDATA-NAO-INSTALADA
++          path: |
++            firmware/espidf/build-core/truckbox_core.bin
++            firmware/espidf/build-core/truckbox_core.elf
++            firmware/espidf/build-core/truckbox_core.map
++          retention-days: 30
++          if-no-files-found: error
++  browser:
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '22'
++      - name: Install browser test dependencies in runner temporary directory
++        run: |
++          npm install --prefix "$RUNNER_TEMP/tb-web" --no-audit --no-fund playwright
++          "$RUNNER_TEMP/tb-web/node_modules/.bin/playwright" install --with-deps chromium
++      - name: Exercise actual embedded HTML against local HTTP fixtures
++        run: |
++          NODE_PATH="$RUNNER_TEMP/tb-web/node_modules" node firmware/espidf/tests/web/test_flow.cjs
++          NODE_PATH="$RUNNER_TEMP/tb-web/node_modules" node firmware/espidf/tests/web/test_flash_maintenance.cjs
++      - uses: actions/upload-artifact@v4
++        with:
++          name: TruckBox-Core-0.2.22-painel-simulado
++          path: |
++            firmware/espidf/tests/web/result.json
++            firmware/espidf/tests/web/*.png
++          if-no-files-found: error
++  diagnostics-cloud:
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '22'
++      - run: node --test cloud/diagnostics/test_diagnostics.mjs
++      - run: node cloud/diagnostics/check_entry.mjs
+diff --git a/firmware/espidf/CHANGELOG_v0.2.22.md b/firmware/espidf/CHANGELOG_v0.2.22.md
+new file mode 100644
+index 0000000..a7649a3
+--- /dev/null
++++ b/firmware/espidf/CHANGELOG_v0.2.22.md
+@@ -0,0 +1,11 @@
++# 0.2.22 — manutenção simples
++
++- Um botão **Recriar armazenamento**, sem frase, caixas de aceite ou diálogo.
++- Preparo/nonce executados internamente após o clique explícito do administrador.
++- Manutenção e backup sem trava de velocidade/RPM, conforme pedido do operador.
++- Controles funcionam mesmo com diagnóstico parcial; erros retornam JSON legível.
++- Permanecem limites de partição, NVS/contadores, ACK, prova de escrita e exclusão OTA.
++- Proteções e funcionamento J1708 inalterados. Nenhuma OTA ou limpeza automática.
++- Build e testes passaram; avaliação no hardware pendente.
++
++Detalhes: [MAINTENANCE_v0.2.22.md](MAINTENANCE_v0.2.22.md).
+diff --git a/firmware/espidf/CMakeLists.txt b/firmware/espidf/CMakeLists.txt
+index 9cc66c6..21bb27f 100644
+--- a/firmware/espidf/CMakeLists.txt
++++ b/firmware/espidf/CMakeLists.txt
+@@ -5,7 +5,7 @@ if(NOT TRUCKBOX_ROLE STREQUAL "core" AND NOT TRUCKBOX_ROLE STREQUAL "link")
+ endif()
+ set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
+ set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.${TRUCKBOX_ROLE}.defaults")
+-set(PROJECT_VER "0.2.21" CACHE STRING "Application version included in OTA images")
++set(PROJECT_VER "0.2.22" CACHE STRING "Application version included in OTA images")
+ set(IDF_TARGET "esp32c6")
+ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+ project(truckbox_${TRUCKBOX_ROLE})
+diff --git a/firmware/espidf/MAINTENANCE_v0.2.22.md b/firmware/espidf/MAINTENANCE_v0.2.22.md
+new file mode 100644
+index 0000000..a319b8e
+--- /dev/null
++++ b/firmware/espidf/MAINTENANCE_v0.2.22.md
+@@ -0,0 +1,80 @@
++# Core 0.2.22 candidata — manutenção com um clique
++
++Alteração incremental sobre 0.2.21, commit `1fd7f1b`, conforme as instruções
++do operador: um botão, sem confirmação adicional e sem trava de velocidade
++para a manutenção do armazenamento. Nenhuma ação foi executada no dispositivo.
++
++## Uso
++
++Enviar manualmente **`truckbox_core_0.2.22_ota.bin`** para o Core pelo painel OTA.
++Depois do reinício, abrir a página novamente ou usar Ctrl+F5 para carregar a
++interface nova. Entrar com a chave de administrador já cadastrada.
++
++Em **Coleta e armazenamento**, clicar **Recriar armazenamento**. Esse clique
++é a autorização: a página prepara e executa a operação internamente. Não há
++frase, caixas de aceite, botão de preparo separado ou diálogo de confirmação.
++**Baixar cópia** continua disponível como opção independente.
++
++O botão não depende de velocidade, RPM, GPS, internet ou de diagnóstico completo.
++O operador autorizou expressamente a perda dos arquivos locais e o uso em
++movimento. Nenhuma declaração fictícia de veículo parado é enviada ou registrada.
++Instalar a BIN, abrir a página e entrar como administrador não iniciam limpeza.
++
++## Escopo preservado
++
++- Somente `storage:/tbflash`, offset 0x620000 e tamanho 0x1e0000, como na 0.2.21.
++  Formato de registros, CRC, ACK, reserva de sequências e partições não mudam.
++- NVS, identidade, Wi-Fi, vínculo, viagens e combustível não são apagados. A
++  marca de proteção dos arquivos descartados é reiniciada somente na operação.
++- Permanecem autenticação, exclusão de OTA, validação da imagem confirmada,
++  alvo/UID/boot, nonce de uso único, mutex, prova de escrita/sync/readback e pausa
++  por falha. A frase/aceite do protocolo legado ficam internos ao clique explícito.
++- Não há repetição automática se a resposta se perder. Duplo clique durante
++  execução não dispara uma segunda operação. Sem tentativa de formatação no boot.
++- Retirada a dependência de velocidade apenas do armazenamento/backup. Rotinas
++  J1708, PIDs, MIDs, cadências, arbitragem, proteções e política persistente são
++  idênticos à 0.2.21. Pausa de TX durante IO e retomada saudável seguem a proteção
++  de exclusão já existente; recepção passiva é preservada.
++- Não há OTA automática ou alterações em Cloud, Link, microSD, FRAM ou modem.
++
++## Correções do painel
++
++O painel anterior só habilitava manutenção quando o diagnóstico completo
++continha `storage.maintenance.available=true`. Respostas parciais/OOM ou mutex
++ocupado omitem esse campo e podiam bloquear os controles mesmo com o recurso
++instalado. A interface nova usa login/função do módulo e deixa a validação ao
++servidor. Busca identidade leve em `/api/health` antes de operar e mantém o
++preparo/nonce inteiramente dentro do handler do clique.
++
++Erros do endpoint de manutenção passam a ser JSON legível pelo painel, com
++mensagem real de autorização, operação ocupada ou falha. Não ficam escondidos
++como erro genérico de resposta HTML inválida.
++
++## Verificação
++
++- Build ESP-IDF 5.5.2/ESP32-C6/8 MB: PASS. Aplicação **1.568.496 bytes**, cabe no
++  slot de 3.145.728. RAM estática **210.436 bytes**, igual à 0.2.21; sem novas filas.
++- Suíte completa host, ASan/UBSan e 24 testes Python: PASS. Inclui FatFs real,
++  falhas IO, preservação, transações, reboot, ACK e regressões J1708/J1939/trip.
++- Store/handler: preparo e formatação sem condição de parada, mantendo todos
++  os outros guards; falhas, nonce expirado/replay, IDs/ACK e fila: PASS.
++- Backup: leitura limitada à partição, erros/OOM/mutex e sem dependência de
++  velocidade: PASS.
++- Chromium/página real: diagnóstico parcial, um clique sem formulário/modal,
++  dupla ativação, identidade atual, preparo recusado/expirado, erro sem retry,
++  backup, logout e isolamento Core/Link: PASS. Regressão geral do painel: PASS.
++- Simulação offline de 2 horas com/sem UTC: 3.789 registros, 14 reinícios,
++  zero drops por capacidade e sincronização sem duplicação: PASS.
++- 39 arquivos de captura, requisições, configuração, rede, protocolos, viagens
++  e partições conferidos byte a byte contra a 0.2.21.
++
++Evidências em `test_evidence/v0222_*`. Não houve ensaio físico, medição de heap
++ou execução desta manutenção em movimento no caminhão. Permissão funcional
++não é comprovação de ausência de interferência elétrica; proteções TX não mudam.
++
++## Retorno
++
++Rollback de aplicação usa o processo OTA existente, com layout/NVS preservados.
++Retornar à 0.2.21 traz de volta a interface e a trava de parada daquela versão.
++Rollback não restaura arquivos eliminados. A OTA reinicia; dados apenas em RAM
++na versão em campo não têm preservação garantida. Esse comportamento não mudou.
+diff --git a/firmware/espidf/README.md b/firmware/espidf/README.md
+index 8cd3685..bbc4dda 100644
+--- a/firmware/espidf/README.md
++++ b/firmware/espidf/README.md
+@@ -1,3 +1,5 @@
++Core **0.2.22 — candidata, manutenção com um clique**: [guia, testes e rollback](MAINTENANCE_v0.2.22.md). Botão Recriar armazenamento, sem frase/caixas/diálogo; sem trava de velocidade somente para manutenção. Proteções J1708 preservadas. Nenhuma ação executada na placa.
++
+ Core **0.2.21 — CANDIDATA de manutenção, não instalada pelo agente**: [procedimento pelo Wi-Fi, testes, perdas e rollback](MAINTENANCE_v0.2.21.md). Instalar a BIN não limpa arquivos. A recriação somente de `/tbflash` exige administrador, parada medida e confirmação explícita em duas etapas. [Changelog](CHANGELOG_v0.2.21.md).
+ 
+ Core **0.2.20 — observada em campo; boot 559 analisado**: [OPEN/EACCES, correção, testes e evidência ainda necessária](FLASH_FIX_v0.2.20.md) e [changelog](CHANGELOG_v0.2.20.md). Reconhece AM_RDO pelos atributos FAT, cria segmentos exclusivos, preserva arquivos anteriores e só confirma recuperação após escrita durável. Requisições J1708/NVS permanecem intactas. Nenhuma OTA ou intervenção na placa realizada.
+diff --git a/firmware/espidf/components/tb_core/core.c b/firmware/espidf/components/tb_core/core.c
+index b66d670..24b1076 100644
+--- a/firmware/espidf/components/tb_core/core.c
++++ b/firmware/espidf/components/tb_core/core.c
+@@ -473,6 +473,13 @@ static esp_err_t storage_retry_handler(httpd_req_t *request)
+     return tb_http_send_json(request,reply);
+ }
+ 
++static esp_err_t storage_maintenance_error(httpd_req_t *request,const char *message)
++{
++    httpd_resp_set_status(request,"400 Bad Request");
++    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",false);
++    cJSON_AddStringToObject(reply,"error",message);return tb_http_send_json(request,reply);
++}
++
+ static esp_err_t storage_maintenance_handler(httpd_req_t *request)
+ {
+     if(!tb_http_require_admin(request))return ESP_OK;
+@@ -481,8 +488,7 @@ static esp_err_t storage_maintenance_handler(httpd_req_t *request)
+     const cJSON *action=cJSON_GetObjectItemCaseSensitive(body,"action");
+     bool prepare=cJSON_IsString(action) && !strcmp(action->valuestring,"prepare");
+     bool format=cJSON_IsString(action) && !strcmp(action->valuestring,"format");
+-    bool allowed=(prepare || format) && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized")) &&
+-        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"stationary")) && tb_capture_storage_stationary();
++    bool allowed=(prepare || format) && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized"));
+     const cJSON *phrase=cJSON_GetObjectItemCaseSensitive(body,"confirmation");
+     const cJSON *uid=cJSON_GetObjectItemCaseSensitive(body,"device_uid");
+     const cJSON *boot=cJSON_GetObjectItemCaseSensitive(body,"boot_id");
+@@ -490,8 +496,8 @@ static esp_err_t storage_maintenance_handler(httpd_req_t *request)
+         cJSON_IsString(phrase) && !strcmp(phrase->valuestring,"FORMATAR TBFLASH") &&
+         cJSON_IsString(uid) && !strcmp(uid->valuestring,tb_device_uid()) &&
+         cJSON_IsNumber(boot) && boot->valuedouble==(double)tb_boot_id();
+-    if(!allowed){cJSON_Delete(body);return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"Confirme caminhao parado, perda dos arquivos e identificacao correta; velocidade recente deve ser zero.");}
+-    if(!tb_web_begin_maintenance()){cJSON_Delete(body);return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"OTA ou manutencao em andamento.");}
++    if(!allowed){cJSON_Delete(body);return storage_maintenance_error(request,"Solicitacao invalida: confira autorizacao e identificacao do Core.");}
++    if(!tb_web_begin_maintenance()){cJSON_Delete(body);return storage_maintenance_error(request,"OTA ou manutencao em andamento. Aguarde terminar.");}
+     char challenge[33]={0};esp_err_t result;
+     if(prepare)result=tb_store_maintenance_prepare(challenge);
+     else{
+@@ -499,7 +505,7 @@ static esp_err_t storage_maintenance_handler(httpd_req_t *request)
+         result=cJSON_IsString(nonce)?tb_store_maintenance_format(nonce->valuestring):ESP_ERR_INVALID_ARG;
+     }
+     cJSON_Delete(body);tb_web_set_ota_busy(false);
+-    if(result!=ESP_OK)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"Manutencao recusada ou falhou. Consulte storage.maintenance; prepare nova confirmacao para tentar novamente.");
++    if(result!=ESP_OK)return storage_maintenance_error(request,"Manutencao indisponivel ou falhou. Aguarde a confirmacao da versao apos reinicio e consulte storage.maintenance.");
+     cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);
+     if(prepare){
+         cJSON_AddStringToObject(reply,"challenge",challenge);cJSON_AddNumberToObject(reply,"expires_in_s",120);
+@@ -511,8 +517,8 @@ static esp_err_t storage_maintenance_handler(httpd_req_t *request)
+ static esp_err_t storage_backup_handler(httpd_req_t *request)
+ {
+     if(!tb_http_require_admin(request))return ESP_OK;
+-    if(!tb_capture_storage_stationary() || !tb_web_begin_maintenance())
+-        return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"Estacione e aguarde velocidade recente zero; OTA/manutencao deve estar livre.");
++    if(!tb_web_begin_maintenance())
++        return storage_maintenance_error(request,"OTA ou manutencao em andamento. Aguarde terminar.");
+     esp_err_t result=tb_store_flash_backup(request);tb_web_set_ota_busy(false);return result;
+ }
+ 
+diff --git a/firmware/espidf/components/tb_core/store_maintenance.h b/firmware/espidf/components/tb_core/store_maintenance.h
+index 091ebcb..28116c6 100644
+--- a/firmware/espidf/components/tb_core/store_maintenance.h
++++ b/firmware/espidf/components/tb_core/store_maintenance.h
+@@ -116,9 +116,9 @@ static bool maintenance_empty_volume(void)
+ 
+ esp_err_t tb_store_maintenance_prepare(char challenge[33])
+ {
+-    if(!challenge || !tb_capture_storage_stationary() || !maintenance_target_valid())return ESP_ERR_INVALID_STATE;
++    if(!challenge || !maintenance_target_valid())return ESP_ERR_INVALID_STATE;
+     if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
+-    if(maintenance.running || state.rollback_paused || !maintenance_target_valid() || !tb_capture_storage_stationary()){
++    if(maintenance.running || state.rollback_paused || !maintenance_target_valid()){
+         xSemaphoreGive(state.mutex);return ESP_ERR_INVALID_STATE;
+     }
+     unsigned char random[16];esp_fill_random(random,sizeof(random));
+@@ -131,12 +131,12 @@ esp_err_t tb_store_maintenance_prepare(char challenge[33])
+ 
+ esp_err_t tb_store_maintenance_format(const char *challenge)
+ {
+-    if(!tb_capture_storage_stationary() || !maintenance_target_valid())return ESP_ERR_INVALID_STATE;
++    if(!maintenance_target_valid())return ESP_ERR_INVALID_STATE;
+     if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
+     uint64_t now=(uint64_t)esp_timer_get_time();
+     bool valid=challenge && strlen(challenge)==32 && maintenance.challenge[0] &&
+         !strcmp(challenge,maintenance.challenge) && now<maintenance.expires_us &&
+-        !maintenance.running && !state.rollback_paused && maintenance_target_valid() && tb_capture_storage_stationary();
++        !maintenance.running && !state.rollback_paused && maintenance_target_valid();
+     if(!valid){xSemaphoreGive(state.mutex);return ESP_ERR_INVALID_STATE;}
+     /* Consume BEFORE the first destructive operation. A lost HTTP response or
+      * power cut cannot replay this permission or authorize a second format. */
+@@ -183,7 +183,7 @@ esp_err_t tb_store_maintenance_format(const char *challenge)
+ esp_err_t tb_store_flash_backup(httpd_req_t *request)
+ {
+     const esp_partition_t *p=maintenance_partition();
+-    if(!p || !tb_capture_storage_stationary())return ESP_ERR_INVALID_STATE;
++    if(!p)return ESP_ERR_INVALID_STATE;
+     if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
+     unsigned char *chunk=malloc(1024);esp_err_t result=chunk?ESP_OK:ESP_ERR_NO_MEM;
+     httpd_resp_set_type(request,"application/octet-stream");
+diff --git a/firmware/espidf/components/tb_core/tests/run_store_maintenance.sh b/firmware/espidf/components/tb_core/tests/run_store_maintenance.sh
+index fcbfea1..aca4e35 100644
+--- a/firmware/espidf/components/tb_core/tests/run_store_maintenance.sh
++++ b/firmware/espidf/components/tb_core/tests/run_store_maintenance.sh
+@@ -7,7 +7,7 @@ python3 - "$d/../core.c" "$w/maintenance_handlers_under_test.h" <<'PY'
+ from pathlib import Path
+ import sys
+ s=Path(sys.argv[1]).read_text();parts=[]
+-for name in ['storage_maintenance_handler','storage_backup_handler']:
++for name in ['storage_maintenance_error','storage_maintenance_handler','storage_backup_handler']:
+  start=s.index('static esp_err_t '+name+'(');end=s.index('{',start)+1;depth=1
+  while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
+  parts.append(s[start:end])
+diff --git a/firmware/espidf/components/tb_core/tests/test_store_backup.c b/firmware/espidf/components/tb_core/tests/test_store_backup.c
+index e7b28f9..2412e2f 100644
+--- a/firmware/espidf/components/tb_core/tests/test_store_backup.c
++++ b/firmware/espidf/components/tb_core/tests/test_store_backup.c
+@@ -19,11 +19,10 @@ typedef struct{uint32_t address,size;bool readonly;}esp_partition_t;
+ typedef struct{size_t bytes;bool complete;}httpd_req_t;
+ static esp_partition_t partition={0x620000,0x1e0000,false};
+ static struct{void *mutex;}state={(void *)1};
+-static unsigned held,reads,sends;static bool parked=true,busy,oom;static int fail_read=-1,fail_send=-1;
++static unsigned held,reads,sends;static bool busy,oom;static int fail_read=-1,fail_send=-1;
+ static const esp_partition_t *esp_partition_find_first(int type,int subtype,const char *label){
+     assert(type==1 && subtype==2 && !strcmp(label,"storage"));return &partition;
+ }
+-static bool tb_capture_storage_stationary(void){return parked;}
+ static bool xSemaphoreTake(void *mutex,unsigned wait){assert(mutex && wait==200 && !held);if(busy)return false;held=1;return true;}
+ static void xSemaphoreGive(void *mutex){assert(mutex && held==1);held=0;}
+ static void vTaskDelay(unsigned ticks){assert(ticks==1 && held);}
+@@ -50,10 +49,9 @@ int main(void){
+     httpd_req_t r={0};assert(tb_store_flash_backup(&r)==ESP_OK && r.bytes==0x1e0000 && r.complete && !held);
+     unsigned before=reads;partition.address=0x9000;r=(httpd_req_t){0};assert(tb_store_flash_backup(&r)!=ESP_OK && !r.bytes && reads==before);partition.address=0x620000;
+     partition.readonly=true;assert(tb_store_flash_backup(&r)!=ESP_OK);partition.readonly=false;
+-    parked=false;assert(tb_store_flash_backup(&r)!=ESP_OK);parked=true;
+     busy=true;assert(tb_store_flash_backup(&r)==ESP_ERR_TIMEOUT);busy=false;
+     oom=true;assert(tb_store_flash_backup(&r)==ESP_ERR_NO_MEM && !held);oom=false;
+     fail_read=4096;r=(httpd_req_t){0};assert(tb_store_flash_backup(&r)!=ESP_OK && r.bytes==4096 && !r.complete && !held);fail_read=-1;
+     fail_send=2048;r=(httpd_req_t){0};assert(tb_store_flash_backup(&r)!=ESP_OK && r.bytes==2048 && !r.complete && !held);
+-    puts("Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/movement/mutex/OOM/read/send failure guards, released mutex, no writes PASS");return 0;
++    puts("Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/mutex/OOM/read/send failure guards; no speed dependency, released mutex, no writes PASS");return 0;
+ }
+diff --git a/firmware/espidf/components/tb_core/tests/test_store_maintenance.c b/firmware/espidf/components/tb_core/tests/test_store_maintenance.c
+index 25a2490..3688f03 100644
+--- a/firmware/espidf/components/tb_core/tests/test_store_maintenance.c
++++ b/firmware/espidf/components/tb_core/tests/test_store_maintenance.c
+@@ -10,12 +10,12 @@ static bool tb_http_require_admin(httpd_req_t *r){if(!admin)r->status=401;return
+ static bool tb_web_begin_maintenance(void){if(ota_busy)return false;ota_busy=true;return true;}
+ static void tb_web_set_ota_busy(bool busy){ota_busy=busy;}
+ static esp_err_t tb_store_flash_backup(httpd_req_t *r){(void)r;++backup_calls;return ESP_OK;}
+-static esp_err_t httpd_resp_send_err(httpd_req_t *r,int status,const char *text){(void)text;r->status=status;return ESP_FAIL;}
++static esp_err_t httpd_resp_set_status(httpd_req_t *r,const char *status){assert(!strcmp(status,"400 Bad Request"));r->status=400;return ESP_OK;}
+ static esp_err_t tb_http_read_json(httpd_req_t *r,size_t n,cJSON **out){
+     if(!r->body || strlen(r->body)>=n)return ESP_FAIL;
+     *out=cJSON_Parse(r->body);return *out?ESP_OK:ESP_FAIL;
+ }
+-static esp_err_t tb_http_send_json(httpd_req_t *r,cJSON *owned){r->reply=owned;r->status=200;return ESP_OK;}
++static esp_err_t tb_http_send_json(httpd_req_t *r,cJSON *owned){r->reply=owned;if(!r->status)r->status=200;return ESP_OK;}
+ #include "maintenance_handlers_under_test.h"
+ 
+ /* Destruction ONLY of a disposable test directory, after real authorization
+@@ -43,10 +43,10 @@ static void fixture(void){
+     admin=true;ota_busy=false;
+ }
+ static void body_for(char body[512],const char *challenge){
+-    snprintf(body,512,"{\"action\":\"format\",\"authorized\":true,\"stationary\":true,\"accept_data_loss\":true,\"confirmation\":\"FORMATAR TBFLASH\",\"device_uid\":\"%s\",\"boot_id\":42,\"challenge\":\"%s\"}",tb_device_uid(),challenge);
++    snprintf(body,512,"{\"action\":\"format\",\"authorized\":true,\"accept_data_loss\":true,\"confirmation\":\"FORMATAR TBFLASH\",\"device_uid\":\"%s\",\"boot_id\":42,\"challenge\":\"%s\"}",tb_device_uid(),challenge);
+ }
+ static void prepare(char out[33]){
+-    httpd_req_t r={.body="{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}"};
++    httpd_req_t r={.body="{\"action\":\"prepare\",\"authorized\":true}"};
+     assert(storage_maintenance_handler(&r)==ESP_OK && r.status==200 && !ota_busy);
+     const cJSON *token=cJSON_GetObjectItemCaseSensitive(r.reply,"challenge");assert(cJSON_IsString(token) && strlen(token->valuestring)==32);
+     memcpy(out,token->valuestring,33);cJSON_Delete(r.reply);
+@@ -61,9 +61,10 @@ int main(void){
+     admin=false;invoke("{}",401);assert(!host_format_calls);admin=true;
+     invoke("{",0); /* invalid JSON never reaches formatting */
+     invoke("{\"action\":\"format\",\"authorized\":true}",400);
+-    host_parked=false;invoke("{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}",400);host_parked=true;
+-    host_maintenance_target=false;invoke("{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}",400);host_maintenance_target=true;
+-    ota_busy=true;invoke("{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}",400);assert(ota_busy);ota_busy=false;
++    host_parked=false;invoke("{\"action\":\"prepare\",\"authorized\":true}",200);
++    assert(!host_format_calls); /* storage preparation is allowed in motion */
++    host_maintenance_target=false;invoke("{\"action\":\"prepare\",\"authorized\":true}",400);host_maintenance_target=true;
++    ota_busy=true;invoke("{\"action\":\"prepare\",\"authorized\":true}",400);assert(ota_busy);ota_busy=false;
+     prepare(challenge);assert(!host_format_calls && stat(old_path,&old)==0);
+     body_for(body,challenge);host_now_us+=MAINTENANCE_TTL_US;invoke(body,400);assert(!host_format_calls);
+     prepare(challenge);body_for(body,challenge);
+@@ -100,8 +101,8 @@ int main(void){
+     assert(!maintenance.challenge[0] && !maintenance.attempts && host_format_calls==1 && host_nvs_ack==sequence);
+     invoke(body,400);assert(host_format_calls==1);
+     httpd_req_t backup={0};admin=false;storage_backup_handler(&backup);assert(!backup_calls);admin=true;
+-    host_parked=false;storage_backup_handler(&backup);assert(!backup_calls);host_parked=true;
+-    assert(storage_backup_handler(&backup)==ESP_OK && backup_calls==1 && !ota_busy);
++    host_parked=false;assert(storage_backup_handler(&backup)==ESP_OK && backup_calls==1);
++    assert(storage_backup_handler(&backup)==ESP_OK && backup_calls==2 && !ota_busy);
+     remove_probe();cleanup_store();
+ 
+     fixture();prepare(challenge);body_for(body,challenge);host_format_result=ESP_FAIL;
+@@ -110,5 +111,5 @@ int main(void){
+     host_format_result=ESP_OK;prepare(challenge);body_for(body,challenge);host_fail_fsync_once=true;
+     invoke(body,400);assert(!state.write_confirmed && !maintenance.probe_durable && state.io_paused);
+     remove_probe();cleanup_store();
+-    puts("Storage maintenance: no automatic wipe; admin/stationary/target/OTA/phrase/loss/UID/boot/nonce/expiry guards; format/probe/NVS failure; one-shot replay rejection; retained RAM and sequence/ACK; real post-format telemetry/ACK/reboot; backup authorization PASS");return 0;
++    puts("Storage maintenance: movement allowed, no automatic wipe; admin/target/OTA/protocol/UID/boot/nonce/expiry guards; format/probe/NVS failure; replay rejection; retained RAM and sequence/ACK; telemetry/ACK/reboot; JSON errors and backup authorization PASS");return 0;
+ }
+diff --git a/firmware/espidf/components/tb_web/index.html b/firmware/espidf/components/tb_web/index.html
+index 895bf4e..18ec4f5 100644
+--- a/firmware/espidf/components/tb_web/index.html
++++ b/firmware/espidf/components/tb_web/index.html
+@@ -228,20 +228,16 @@
+     <p class="hint">Somente segmentos confirmados pela Cloud são reaproveitados. Arquivos com corrupção permanecem preservados. A autonomia é estimada pela taxa real de gravação deste boot; indisponível antes de um minuto.</p>
+     <button type="button" id="discard-storage" hidden disabled>Descarte indisponível nesta versão</button>
+     <div id="discard-message" class="banner message" role="status" aria-live="polite"></div>
+-    <details id="flash-maintenance">
+-      <summary>Manutenção da memória de telemetria</summary>
+-      <p class="note spacer">Recriar o armazenamento apaga todos os arquivos locais de telemetria, inclusive os não enviados e arquivos danificados. Não apaga Wi-Fi, vínculo, identidade, viagens ou combustível salvos na NVS. Instalar esta versão não inicia a limpeza.</p>
++    <div id="flash-maintenance" class="section">
++      <h3>Manutenção da memória de telemetria</h3>
++      <p class="hint">Recria somente o armazenamento local. Mantém Wi-Fi, vínculo, identidade e contadores salvos.</p>
+       <fieldset id="flash-maint-fields" disabled>
+-        <label class="check"><input id="flash-parked" type="checkbox"><span>O caminhão está estacionado, com alimentação estável. Mantenha a ignição ligada para a placa conferir velocidade recente zero.</span></label>
+-        <button id="flash-backup" class="spacer" type="button">Baixar cópia da partição antes de limpar</button>
+-        <p class="hint">A cópia contém dados locais e deve ser guardada em particular. Durante a manutenção, o polling pode pausar pela proteção existente; sua configuração automática é preservada.</p>
+-        <button id="flash-prepare" class="spacer" type="button">Preparar confirmação de limpeza</button>
+-        <label class="check spacer"><input id="flash-loss" type="checkbox"><span>Aceito perder todos os arquivos locais de telemetria desta partição.</span></label>
+-        <label class="spacer">Digite FORMATAR TBFLASH para confirmar<input id="flash-phrase" autocomplete="off" spellcheck="false" maxlength="32"></label>
+-        <button id="flash-format" class="spacer" type="button" disabled>Apagar arquivos e recriar armazenamento</button>
++        <button id="flash-format" class="primary spacer" type="button">Recriar armazenamento</button>
++        <button id="flash-backup" class="spacer" type="button">Baixar cópia</button>
+       </fieldset>
++      <p id="flash-block" class="hint" role="status"></p>
+       <div id="flash-message" class="banner message" role="status" aria-live="polite"></div>
+-    </details>
++    </div>
+   </section>
+   <div class="split">
+     <section class="panel" aria-labelledby="ota-title">
+@@ -284,7 +280,7 @@
+   let stateBusy = false;
+   let uploadBusy = false;
+   let j1708Busy = false;
+-  let flashBusy = false, flashChallenge = '', flashExpires = 0, flashBoot = null;
++  let flashBusy = false;
+ 
+   function message(id, text, kind = '') {
+     const element = $(id);
+@@ -347,7 +343,6 @@
+     try {
+       const state = await request('/api/state?compact=1');
+       lastState = state;
+-      if(flashBoot !== null && flashBoot !== state.boot_id)flashChallenge='';
+       if(token && state.role==='core'){
+         try{
+           const stats=[];
+@@ -419,8 +414,6 @@
+   }
+ 
+   function signOut() {
+-    flashChallenge='';flashExpires=0;flashBoot=null;
+-    $('flash-phrase').value='';$('flash-loss').checked=false;$('flash-parked').checked=false;
+     token = '';
+     $('admin-token').value = '';
+     $('login-form').hidden = false;
+@@ -461,49 +454,42 @@
+   $('discard-storage').addEventListener('click',()=>message('discard-message','Descarte indisponível: a recuperação preserva os arquivos.','warning'));
+ 
+   function updateFlashMaintenance() {
+-    const available=role==='core' && !!token && lastState?.storage?.maintenance?.available===true;
+-    $('flash-maint-fields').disabled=!available || flashBusy || uploadBusy;
+-    $('flash-prepare').disabled=!$('flash-parked').checked;
+-    $('flash-backup').disabled=!$('flash-parked').checked;
+-    $('flash-format').disabled=!flashChallenge || Date.now()>=flashExpires || !$('flash-parked').checked ||
+-      !$('flash-loss').checked || $('flash-phrase').value!=='FORMATAR TBFLASH';
++    const blocked=role!=='core' || !token || flashBusy || uploadBusy;
++    $('flash-maint-fields').disabled=blocked;
++    text('flash-block',!token?'Entre como administrador para usar a manutenção.':
++      flashBusy?'Manutenção em andamento…':uploadBusy?'Aguarde a atualização terminar.':'');
+   }
+-  for(const id of ['flash-parked','flash-loss','flash-phrase'])$(id).addEventListener('input',updateFlashMaintenance);
+   function flashLock(value) {
+     flashBusy=value;$('ota-fields').disabled=value || !token;
+     $('save-config').disabled=value;$('logout').disabled=value;updateFlashMaintenance();
+   }
+-  $('flash-prepare').addEventListener('click',async()=>{
+-    if(!token || role!=='core' || flashBusy || uploadBusy || !$('flash-parked').checked)return;
+-    flashChallenge='';flashLock(true);
+-    try {
+-      const response=await request('/api/storage/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},
+-        body:JSON.stringify({action:'prepare',authorized:true,stationary:true})});
+-      flashChallenge=response.challenge;flashExpires=Date.now()+response.expires_in_s*1000;flashBoot=lastState.boot_id;
+-      message('flash-message','Confirmação preparada por 2 minutos. Nada foi apagado. Confira a perda dos arquivos e digite a frase.','warning');
+-    }catch(error){message('flash-message',error.message,'error');}
+-    finally{flashLock(false);}
+-  });
+   $('flash-format').addEventListener('click',async()=>{
+-    if(!token || flashBusy || uploadBusy || $('flash-format').disabled)return;
+-    if(!confirm('Apagar todos os arquivos locais de telemetria e recriar SOMENTE /tbflash? Esta ação não pode ser desfeita sem uma cópia.'))return;
+-    const challenge=flashChallenge;flashChallenge='';flashLock(true);
+-    message('flash-message','Recriando o volume e verificando escrita persistente. Mantenha a alimentação ligada.');
++    if(!token || role!=='core' || flashBusy || uploadBusy)return;
++    flashLock(true);message('flash-message','Recriando armazenamento… Mantenha a alimentação ligada.');
+     try {
++      // The explicit click authorizes this operation. Exchange the existing
++      // one-shot nonce internally; no persisted intent or automatic retry.
++      const identity=await request('/api/health');
++      if(identity.role!=='core' || typeof identity.device_uid!=='string' || !Number.isSafeInteger(identity.boot_id))
++        throw new Error('Não foi possível confirmar a identidade do Core.');
++      const prepared=await request('/api/storage/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},
++        body:JSON.stringify({action:'prepare',authorized:true})});
++      if(typeof prepared.challenge!=='string' || !/^[0-9a-f]{32}$/.test(prepared.challenge) || !(prepared.expires_in_s>0))
++        throw new Error('A placa não liberou a manutenção.');
+       const response=await request('/api/storage/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},
+-        body:JSON.stringify({action:'format',authorized:true,stationary:true,accept_data_loss:true,
+-          confirmation:$('flash-phrase').value,challenge,device_uid:lastState.device_uid,boot_id:flashBoot})},120000);
+-      message('flash-message',response.message+' Confira registros confirmados e ACK da Cloud.','success');
+-    }catch(error){message('flash-message',error.message+' Não repita automaticamente; consulte o diagnóstico antes de preparar outra confirmação.','error');}
+-    finally{$('flash-phrase').value='';$('flash-loss').checked=false;flashLock(false);refreshState();}
++        body:JSON.stringify({action:'format',authorized:true,accept_data_loss:true,confirmation:'FORMATAR TBFLASH',
++          challenge:prepared.challenge,device_uid:identity.device_uid,boot_id:identity.boot_id})},120000);
++      message('flash-message',response.message+' Aguarde telemetria e ACK da Cloud.','success');
++    }catch(error){message('flash-message',error.message+' A operação não será repetida automaticamente.','error');}
++    finally{flashLock(false);refreshState();}
+   });
+   $('flash-backup').addEventListener('click',async()=>{
+-    if(!token || flashBusy || uploadBusy || !$('flash-parked').checked)return;
+-    flashChallenge='';flashLock(true);message('flash-message','Lendo uma cópia da partição. Nenhum arquivo será apagado.');
++    if(!token || role!=='core' || flashBusy || uploadBusy)return;
++    flashLock(true);message('flash-message','Lendo uma cópia da partição. Nenhum arquivo será apagado.');
+     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);
+     try {
+       const response=await fetch('/api/storage/backup',{headers:{Authorization:'Bearer '+token},signal:controller.signal,cache:'no-store',credentials:'omit'});
+-      if(!response.ok)throw new Error('Backup recusado (HTTP '+response.status+'). Confira velocidade recente zero e autorização.');
++      if(!response.ok)throw new Error('Backup recusado (HTTP '+response.status+'). Confira o acesso de administrador.');
+       const blob=await response.blob();if(blob.size!==0x1e0000)throw new Error('Cópia incompleta; não usar como backup.');
+       const url=URL.createObjectURL(blob),link=document.createElement('a');
+       link.href=url;link.download='truckbox-storage-WL-backup.bin';link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+@@ -599,7 +585,7 @@
+     const path = target === 'link' ? '/api/ota/link' : '/api/ota';
+     const xhr = new XMLHttpRequest();
+     uploadBusy = true;
+-    flashChallenge='';updateFlashMaintenance();
++    updateFlashMaintenance();
+     $('ota-fields').disabled = true;
+     $('save-config').disabled = true;
+     $('logout').disabled = true;
+diff --git a/firmware/espidf/test_evidence/v0222_browser_maintenance.txt b/firmware/espidf/test_evidence/v0222_browser_maintenance.txt
+new file mode 100644
+index 0000000..84d5245
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0222_browser_maintenance.txt
+@@ -0,0 +1 @@
++Browser maintenance PASS: single click, no phrase/checkbox/dialog, partial diagnostic works, internal nonce/identity, duplicate suppression, no auto-format on load/login, failures without retry, backup/logout/Core-Link guards; loopback fixtures only.
+diff --git a/firmware/espidf/test_evidence/v0222_browser_regression.txt b/firmware/espidf/test_evidence/v0222_browser_regression.txt
+new file mode 100644
+index 0000000..a9bd103
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0222_browser_regression.txt
+@@ -0,0 +1,22 @@
++PASS public status stays read-only and renders untrusted JSON as text
++PASS wrong administrator key leaves configuration locked
++PASS authenticated login enables Core controls without persisting its key
++PASS configuration submits only dirty fields and omits emptied secrets
++PASS explicit open-network checkbox clears Wi-Fi password
++PASS existing-cloud sequence accepts the largest safe JSON integer
++PASS pairing data is authenticated and copyable
++PASS OTA rejects extension, short file, oversized file and invalid magic before upload
++PASS server role rejection is shown and local OTA sends authenticated raw binary
++PASS Core forwards Link OTA to its dedicated route and presents progress
++PASS J1708 timeout and validated source MIDs submit numeric configuration
++PASS J1708 one-shot, external evidence gate, explicit travel activation and stop
++PASS supervised field path requires parked authorization and separate indirect confirmation; external fields remain empty
++PASS compact diagnostics paginate all 17 PID statistics without the large full-state response
++PASS latched RX fault explains the stop and blocks new TX controls while manual stop stays available
++PASS RAM failure shows partial health, preserves OTA access and stop, and never enables a stale active test
++PASS persistent automatic status needs no arm command; manual tests stay separate and re-enable only saves policy
++PASS mobile page has no horizontal overflow
++PASS logout clears pairing and removes authorization from future state requests
++PASS Link profile shows pairing/GPS/modem and hides Core forwarding/capture
++PASS Link submits separate GPS credentials and pairing then clears secret inputs
++PASS configuration server errors stay visible without claiming successful save
+diff --git a/firmware/espidf/test_evidence/v0222_host_tests.txt b/firmware/espidf/test_evidence/v0222_host_tests.txt
+new file mode 100644
+index 0000000..6834ec5
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0222_host_tests.txt
+@@ -0,0 +1,113 @@
++config host tests passed (core)
++config host tests passed (link)
++config host tests passed (core)
++JSON memory: 25624-byte native tree / 14401-byte wire output: old print fails with 256 free bytes; streaming uses zero new cJSON allocations
++JSON equivalence, references, all sink failures, depth/size limits, OOM and insertion ownership passed
++Production diagnostics native cJSON: full tree 36328 bytes; old print peak 53283; compact tree 9168 (74.8% smaller); 27 stats fetched in pages <=8
++Production capture full: 918 individual allocation failures leave no orphan nodes
++Production capture compact: 244 individual allocation failures leave no orphan nodes
++Production diagnostics native cJSON: full tree 49960 bytes; old print peak 78274; compact tree 10373 (79.2% smaller); 27 stats fetched in pages <=8
++Production capture full: 1289 individual allocation failures leave no orphan nodes
++Production capture compact: 275 individual allocation failures leave no orphan nodes
++Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
++Real HTTP pressure: field budget41596, unbounded full peak41577 (incomplete), compact peak22894 including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS
++Production HTTP: chunked wire equivalence, maximum 1024-byte staging, zero serializer allocations and all client disconnect points free the tree
++Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved
++Crash evidence: admin/OTA guards, 512-byte streaming, CRC/bounds, unknown boot association, incomplete read refusal and allocation faults PASS
++Network peer cache: same LAN/private AP, own/foreign address rejection, DHCP change and stale fallback passed
++Real sockets: v0.2.2 IPv4-on-IPv6 regression reproduced; mapped IPv4 and native IPv4 learned; native IPv6/invalid FD rejected
++image policy: valid roles, malformed/truncated images, chip, hash and string boundaries passed
++Protocol tests passed
++Validated 4000 generated records with an independent JSON parser
++Storage record CRC and interrupted-tail tests passed
++FRAM codec tests passed: golden CRC, 512 corruptions, sequence bounds, generation wrap, 65 interrupted writes, NVS-reset checkpoint
++Independent Python CRC/serialization golden vector passed
++Storage transactions: no GPS/offline/reboot, late GPS immutability, ACK gaps/idempotence/NVS fault, fsync fault, torn tail, corruption, capacity and startup queue passed
++Storage codec: UTF-8/key tokens, lossless roundtrip, output bounds, all truncations, malformed base64/backreferences and 3000 deterministic fuzz inputs PASS
++Power cuts: 90 byte boundaries, CRC-valid completion without newline, append/reboot after every cut PASS
++0.2.11-compatible non-final/oversized/CRC corruption, repeated resets, suffix salvage, ACK refusal and immutable evidence PASS
++Real writer loop: retry uncommitted row, avoid duplicate after ambiguous fsync, repeated read-only recovery, drain barrier and maintenance pause PASS
++Actual FatFs: 24 successful scans/remounts still OPEN/EACCES on AM_RDO; new exclusive segment works, old bytes/attrs remain; full directory with free clusters stays denied; exact FRESULT trace PASS
++Boot 559 reproduction: FAT12/512 slots, flags7, FR_DENIED7/stat4; full directory OR orphan LFNs; rebinds never fix; original bytes preserved until explicit production formatter; partition guard, new file/sync/readback/reboot PASS
++Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS
++Store IO: 10 failing stages, first/close errno, 3-attempt pause, no false recovery success, retained CRC recovery, NVS retry, no duplicate and ACK-only recycling PASS
++Store OPEN regression: readonly legacy rolled to new exclusive segment; preserved bytes/IDs/attrs across reboot+ACK; no collision overwrite; fence commit fault; 24 scans != durable recovery PASS
++Storage retry route: admin, explicit authorization, JSON/OTA/mutex guards; actual retry preserves RAM queue, record IDs, durable pending, errors and NVS; no restart or acquisition control PASS
++Storage maintenance: movement allowed, no automatic wipe; admin/target/OTA/protocol/UID/boot/nonce/expiry guards; format/probe/NVS failure; replay rejection; retained RAM and sequence/ACK; telemetry/ACK/reboot; JSON errors and backup authorization PASS
++Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/mutex/OOM/read/send failure guards; no speed dependency, released mutex, no writes PASS
++tb_decode: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++storage_task: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++OK: LEGACY=6/60 state snapshots; FULL=60/60
++J1939: 76 catalog rows / 29 PGNs; 55 evidenced mappings, 15 partial/raw, 6 pending/unavailable; SAE status, source isolation and delta tests PASS
++J1939 TP.BAM: complete30/19byte, interleaving, bounds, seq, timeout, capacity PASS
++OK: J1939 inventory 76 signal rows / 29 PGNs; 46 observed PGNs; confidence tags
++J1939 C/PythonV1: 80 scalar/component equivalence checks + explicit safety differences PASS; constructed Master vectors, no full Logs Mae replay
++OK: 17 PIDs, authorization, spacing, replies and cutoffs
++OK: 17 PID scales, raw retention, status bits, unavailable and malformed frames
++OK: 48 passive PIDs; numeric/raw/invalid/unavailable
++OK: 31/31 passive PID decoder paths, physical units, masks, codes and time
++PID194: actual A/B/C/D, page2 PID/SID, 119-code parser, unknowns, states/history/no absent-clear, bounded no-overwrite and concurrent PID192 assembly PASS
++OK: J1587 bridge48+17, multiparameter/page2, checksum/bounds/NA, counter deltas, hardware TX inhibit
++Trip: checkpoint/reboot, source priority, counter reset/jump/gap and fallback overlap PASS
++Accounting: validated odometer recovery, speed overlap replacement, isolated estimates, PID250 reconciliation/no duplication, unknown gap and CRC fallback PASS
++Actual UART PID439: six echo fragmentations + adjacent reply never self-conflict; genuine MID172 conflict still stops TX and keeps passive RX PASS
++Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS
++Actual capture functions passed: v1 migration/v2 reboot, GPS-independent trip/source selection, gap/reset rebasing, unavailable readings, NVS outside RX lock, canonical C0 derived fuel/fallback boundaries
++Actual Core GPS functions passed: absent GPS, no invented coordinates/time, receipt-vs-aged fix guard, no retroactive queued/history fixes, expiry/restart, source speed preservation
++J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
++Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
++Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS
++OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
++J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed
++Field J1708: baseline/control/3x17/after, measured latency/echo, indirect operator confirmation, ambiguity rejection, conflicts/faults/stop/reboot and existing travel cadence PASS
++0.2.14 synthetic 599 valid/6 invalid window stops; 0.2.15 isolated burst does not. Incident branch itself remains unidentifiable from minute aggregates.
++RX guard A-J: stable traffic, isolated noise, traffic/engine changes, persistent RX faults, TX faults, repeated timeouts, offline/reconnect, reboot, spontaneous candidates and stale calibration PASS
++PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS
++Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS
++PID194 OOM: 258 allocation fault points; no partial kind/raw identity accepted by store PASS
++Volvo real modules: PID194 wire length/Cloud bytes, dedup, A/B NVS/torn checkpoint, offline store retry, counter capture/start/end/reboot, unchanged suppression and reset/MID/time/range guards PASS (1055 bounded records, peak 689 bytes)
++Actual field audit: 482-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS
++Guard upper-range fixture fits 731 bytes (limit 767); Guard record: 522 bytes, live/ref counters and actual predicate/mode flags, atomic arrays and allocation failure ownership PASS
++J1708 event persistence policy: PASSED
++Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed
++Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed
++NMEA parser tests passed
++GPS outbox tests passed
++test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
++test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
++test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
++test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
++test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
++test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
++test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
++test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
++test_diff_cannot_overwrite_source_or_private_review (test_cloud_patch.CloudPatchTests.test_diff_cannot_overwrite_source_or_private_review) ... ok
++test_input_cannot_be_overwritten (test_cloud_patch.CloudPatchTests.test_input_cannot_be_overwritten) ... ok
++test_missing_or_duplicate_fragments_rejected (test_cloud_patch.CloudPatchTests.test_missing_or_duplicate_fragments_rejected) ... ok
++test_only_reviewed_fragments_change (test_cloud_patch.CloudPatchTests.test_only_reviewed_fragments_change) ... ok
++test_public_diff_contains_no_authentication_block (test_cloud_patch.CloudPatchTests.test_public_diff_contains_no_authentication_block) ... ok
++test_wrong_source_hash_leaves_input_and_output_untouched (test_cloud_patch.CloudPatchTests.test_wrong_source_hash_leaves_input_and_output_untouched) ... ok
++test_corrupt_file_rejected_before_usb (test_flash_package.FlashPackageTests.test_corrupt_file_rejected_before_usb) ... ok
++test_manifest_cannot_write_nvs (test_flash_package.FlashPackageTests.test_manifest_cannot_write_nvs) ... ok
++test_path_escape_rejected (test_flash_package.FlashPackageTests.test_path_escape_rejected) ... ok
++test_success_preserves_nvs_and_uses_argument_list (test_flash_package.FlashPackageTests.test_success_preserves_nvs_and_uses_argument_list) ... ok
++test_wrong_flash_size_never_writes (test_flash_package.FlashPackageTests.test_wrong_flash_size_never_writes) ... ok
++test_wrong_role_binary_rejected_even_with_matching_hash (test_flash_package.FlashPackageTests.test_wrong_role_binary_rejected_even_with_matching_hash) ... ok
++test_missing_invalid_reset_and_source_change_skip_intervals (test_fuel_equivalence.FuelEquivalence.test_missing_invalid_reset_and_source_change_skip_intervals) ... ok
++test_python_c_1000_generated_valid_samples (test_fuel_equivalence.FuelEquivalence.test_python_c_1000_generated_valid_samples) ... ok
++test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
++test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
++
++----------------------------------------------------------------------
++Ran 24 tests in 2.620s
++
++OK
++Offline source: clock=0 virtual_seconds=7200 frames=441135 records=3789 requests=8175 response_candidates=8175 latest=76 RAW_writes=0
++Offline storage: duration=7200s input_records=3789 original_JSON_bytes=2473390 physical_bytes=1477083 budget_bytes=1818624 segments=31 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 684772 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=3789 deliveries_including_retries=3797 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Offline source: clock=1 virtual_seconds=7200 frames=441135 records=3789 requests=8175 response_candidates=8175 latest=76 RAW_writes=0
++Offline storage: duration=7200s input_records=3789 original_JSON_bytes=2572474 physical_bytes=1595469 budget_bytes=1818624 segments=33 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 684788 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=3789 deliveries_including_retries=3797 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Host tests passed; ESP32 physical tests remain pending.
+diff --git a/firmware/espidf/test_evidence/v0222_memory.json b/firmware/espidf/test_evidence/v0222_memory.json
+new file mode 100644
+index 0000000..7297dda
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0222_memory.json
+@@ -0,0 +1,24 @@
++{
++  "baseline_0.2.21": {
++    ".iram0.text": 127468,
++    ".iram0.data": 4,
++    ".iram0.bss": 0,
++    ".dram0.data": 14788,
++    ".noinit": 0,
++    ".dram0.bss": 68176,
++    "ram_static_bytes": 210436
++  },
++  "candidate_0.2.22": {
++    ".iram0.text": 127468,
++    ".iram0.data": 4,
++    ".iram0.bss": 0,
++    ".dram0.data": 14788,
++    ".noinit": 0,
++    ".dram0.bss": 68176,
++    "ram_static_bytes": 210436
++  },
++  "static_delta_bytes": 0,
++  "OTA_bytes": 1568496,
++  "physical_heap": "NOT_MEASURED",
++  "queue_capacities_changed": false
++}
+diff --git a/firmware/espidf/test_evidence/v0222_preservation.json b/firmware/espidf/test_evidence/v0222_preservation.json
+new file mode 100644
+index 0000000..94f40d5
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0222_preservation.json
+@@ -0,0 +1,200 @@
++{
++  "baseline": "1fd7f1bc813eed1f13b3644343d6553db46ae24a",
++  "files": [
++    {
++      "file": "firmware/j1708_17pid/INVENTARIO_v0.2.17.csv",
++      "unchanged": true,
++      "sha256": "c06ccfd83b4a0c8a8a1175ad08a4742f3e420f2f7d7fd868432d55bc3ae10a9d"
++    },
++    {
++      "file": "firmware/j1708_17pid/README.md",
++      "unchanged": true,
++      "sha256": "df2122bde6be56f17b7271db650c7be5c661226495320d1d97f8039b680d2738"
++    },
++    {
++      "file": "firmware/j1708_17pid/SCALES.md",
++      "unchanged": true,
++      "sha256": "5d8d9efcce2291a1c9d2a103eec405718ee72b7f1aa1a3ced8d1d63b6c1f7eda"
++    },
++    {
++      "file": "firmware/j1708_17pid/PASSIVE.md",
++      "unchanged": true,
++      "sha256": "10c13add523385ae1a47d5389d9a8c817cbef91348592aef8ce61ca559c863b6"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.h",
++      "unchanged": true,
++      "sha256": "d7e98b8d74b55b56c5c237c8ab98ba9f74e20be943e0ac47a677e153eca60efc"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.c",
++      "unchanged": true,
++      "sha256": "6a7521a5b4502191359cfccb83905d1d193cc67d4aff89bdc390fbc544753b63"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.h",
++      "unchanged": true,
++      "sha256": "890d5c47caa330d5e94d4f0eaee680ddbbf12249869f5b50c4e40a497594ba85"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.h",
++      "unchanged": true,
++      "sha256": "e21f405444c17e43f11c15e6426825f560e251e31852ded8bf8cffc0f72297f2"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.c",
++      "unchanged": true,
++      "sha256": "785f75435a21853207876a3b14b7d96714bde1bf24c2e12eca8fa7d445cdab7d"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.h",
++      "unchanged": true,
++      "sha256": "c585dd6a87784d3504cef82f1158918a9cefd1e251fd69ecda2a784c5983d841"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.c",
++      "unchanged": true,
++      "sha256": "9d18e7846e59caeb573c28d5da406e17e6b8f83d15ea0f8e60be5e494eab7ef8"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.c",
++      "unchanged": true,
++      "sha256": "2784306aca7c9c22ceab4e880d173db75a7cb469a87a6fdb9759b056a3a3986d"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.c",
++      "unchanged": true,
++      "sha256": "d3174a09a1c8545091f3bf9751621ef82c7d23b76e33741c81c2f216e50e51ec"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1708_policy.h",
++      "unchanged": true,
++      "sha256": "fa54cf24aeed91252a5fb54988f5b03f9f347bc5ae74180267916af97d1ce046"
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.h",
++      "unchanged": true,
++      "sha256": "4fb7eb60f4c9f6f302b2e1348daf37a47e996664c876aa09f622d2d71b959c08"
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/run_all.sh",
++      "unchanged": true,
++      "sha256": "7b9528d21d17346ba107a576d22adbe572ba2d17b93ea7ab571ffcb0bc3dae85"
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1708_requests.c",
++      "unchanged": true,
++      "sha256": "16538458883b1b5c18ad04ec795db000bf8a91adb61ca3840fa95d8f34eb4efe"
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_passive_full.c",
++      "unchanged": true,
++      "sha256": "36897727784a32af51cc8d238642cc609b4fe4044463cdc3c159a091791a90cd"
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_passive.c",
++      "unchanged": true,
++      "sha256": "d1ea1be03be7b4bc5aa738a5bd0b2f7b5262ba4c4bef12bacd8af7eb02037825"
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_diagnostics.c",
++      "unchanged": true,
++      "sha256": "f973ef4be9569e03352a978dce567212e555a6b9c5da227c67370c176dae4dc4"
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_decoder.c",
++      "unchanged": true,
++      "sha256": "1cb01f25cc74e15787f27544f789d776b2f1e927e6ffbf62d32bbe4064d25bd5"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/capture.c",
++      "unchanged": true,
++      "sha256": "4cd1ded376962044d08a627485ab64d2c9974073f0ed28fff513d4c0bd68d1da"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_active.c",
++      "unchanged": true,
++      "sha256": "1652506865b5f30303566fcee0f966f0d98d0cfeb0c4b66b81bcd266e6c18792"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_auto.c",
++      "unchanged": true,
++      "sha256": "8a49ca7968e2ed0e86d8a16c2f5580effe32c4e6e5a08cf7bafe4f76446bdffc"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_field.c",
++      "unchanged": true,
++      "sha256": "a4d6be270b005380c8169113bad853e28016388420e761f670325a4f955ac203"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c",
++      "unchanged": true,
++      "sha256": "1c634c4026c763bf968650d3fb477828c4fdd5053714ba7b4ef07b62acfac95a"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_transmission.c",
++      "unchanged": true,
++      "sha256": "e0cac603ce503db17865130d30a8ce8321303d8c8ed684f189598fbd7f3500bf"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_trip.c",
++      "unchanged": true,
++      "sha256": "4f3c6d6a116bbfde31372bff1c3c745f0a96d39bc74fe98fbcfa3da4dd2cf8bf"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_fuel_account.c",
++      "unchanged": true,
++      "sha256": "6311fbaaf689660229b0b5d5319e07e8b1c9f37fc1265b18b6c9a3090c4f4665"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_fuel.c",
++      "unchanged": true,
++      "sha256": "3ddd41d03a34eeec5347dc5666ab558918af656f2be1c59c5332bc9f37266e9e"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1939.c",
++      "unchanged": true,
++      "sha256": "14129fcfc5817548ad24521a959c41fe932fa56c4f3d089ece18ae70ffbdf68d"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1939_tp.c",
++      "unchanged": true,
++      "sha256": "53a2e75c437f3bcce438fe2954922f639394f6091ac0b1e9bf6f044f39de49e6"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/telemetry.c",
++      "unchanged": true,
++      "sha256": "45551ef83a586fe0f3e300b6c1e0c07cea1317a6c062624bca035e0deaf2f24c"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/protocols.c",
++      "unchanged": true,
++      "sha256": "e2480f0616223f738f64b35d2f1e6e46dbbf90c77b025adbe3a26eeb55f266a8"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/diagnostics.c",
++      "unchanged": true,
++      "sha256": "2978478054f91c1a31f1fdcdb5e9a2d49f5c2dd858171b8e9f36c76dffce135d"
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/ecu_counters.c",
++      "unchanged": true,
++      "sha256": "6c2b9a2e891131ee5e534ee4a042c3b53cde5fa7d97245a37d5b3ebd321c1045"
++    },
++    {
++      "file": "firmware/espidf/components/tb_base/config.c",
++      "unchanged": true,
++      "sha256": "86ee6439521fed53541252a12994be29ee570d442811b1492303d4cefe84b013"
++    },
++    {
++      "file": "firmware/espidf/components/tb_base/network.c",
++      "unchanged": true,
++      "sha256": "90cae32602e13a621f14190dde4a3bb930ca938dbd4b69b67299e5d3dda64462"
++    },
++    {
++      "file": "firmware/espidf/partitions.csv",
++      "unchanged": true,
++      "sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832"
++    }
++  ]
++}
+diff --git a/firmware/espidf/tests/web/test_flash_maintenance.cjs b/firmware/espidf/tests/web/test_flash_maintenance.cjs
+index 8a201f8..7cfab22 100644
+--- a/firmware/espidf/tests/web/test_flash_maintenance.cjs
++++ b/firmware/espidf/tests/web/test_flash_maintenance.cjs
+@@ -1,18 +1,19 @@
+-/* Real embedded page, local HTTP fixtures only. No ESP32 or Cloud access. */
++/* Real embedded page; loopback fixtures only, never a vehicle or Cloud. */
+ 'use strict';
+ const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
+ const {chromium}=require('playwright');
+ const html=fs.readFileSync(path.join(__dirname,'../../components/tb_web/index.html'));
+ const ADMIN='synthetic_admin_only_for_tests';
+-let role='core',formatFailure=false,expires=120,acceptDialog=false;
+-const operations=[],errors=[];
++let role='core',formatFailure=false,prepareFailure=false,expires=120,wrongIdentity=false;
++const operations=[],errors=[],dialogs=[];
+ const server=http.createServer(async(req,res)=>{
+   const parts=[];for await(const chunk of req)parts.push(chunk);
+   const body=Buffer.concat(parts).toString();
+   const json=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(data));};
+   if(req.url==='/'){res.writeHead(200,{'Content-Type':'text/html'});return res.end(html);}
+-  if(req.url.startsWith('/api/state'))return json(200,{ok:true,role,boot_id:77,version:'0.2.21-MOCK',device_uid:'MOCK-CORE',
+-    network:{},speedKph:0,storage:{maintenance:{available:true}},ota_busy:false});
++  if(req.url==='/api/health')return json(200,{ok:true,role:wrongIdentity?'link':role,boot_id:77,version:'0.2.22-MOCK',device_uid:'MOCK-CORE'});
++  // A partial/OOM diagnosis must not permanently disable storage maintenance.
++  if(req.url.startsWith('/api/state'))return json(503,{ok:false,error:'Mock full diagnosis unavailable'});
+   if(req.headers.authorization!=='Bearer '+ADMIN)return json(401,{ok:false,error:'Mock unauthorized'});
+   if(req.url==='/api/config')return json(200,{role,capture_profile:'J1708_ONLY'});
+   if(req.url.startsWith('/api/j1708/requests'))return json(200,{ok:true,stats:[]});
+@@ -21,8 +22,12 @@ const server=http.createServer(async(req,res)=>{
+   }
+   if(req.url==='/api/storage/maintenance'){
+     const value=JSON.parse(body);operations.push(value);
+-    assert.equal(value.authorized,true);assert.equal(value.stationary,true);
+-    if(value.action==='prepare')return json(200,{ok:true,challenge:'6'.repeat(32),expires_in_s:expires});
++    assert.equal(value.authorized,true);assert.equal(value.stationary,undefined);
++    if(value.action==='prepare'){
++      if(prepareFailure)return json(400,{ok:false,error:'Mock maintenance busy'});
++      await new Promise(r=>setTimeout(r,50));
++      return json(200,{ok:true,challenge:'6'.repeat(32),expires_in_s:expires});
++    }
+     assert.equal(value.action,'format');assert.equal(value.accept_data_loss,true);
+     assert.equal(value.confirmation,'FORMATAR TBFLASH');assert.equal(value.challenge,'6'.repeat(32));
+     assert.equal(value.boot_id,77);assert.equal(value.device_uid,'MOCK-CORE');
+@@ -33,49 +38,47 @@ const server=http.createServer(async(req,res)=>{
+ (async()=>{
+   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+   const origin='http://127.0.0.1:'+server.address().port;
+-  const browser=await chromium.launch({executablePath:process.env.TB_CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox']});
++  const browser=await chromium.launch({executablePath:process.env.TB_CHROMIUM_PATH || (fs.existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined),headless:true,args:['--no-sandbox']});
+   try{
+     const context=await browser.newContext({acceptDownloads:true});
+     await context.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());
+     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+-    page.on('dialog',d=>acceptDialog?d.accept():d.dismiss());
++    page.on('dialog',d=>{dialogs.push(d.message());d.dismiss();});
+     await page.goto(origin);await page.locator('#connection').filter({hasText:'Online'}).waitFor();
+-    assert.equal(await page.locator('#flash-maint-fields').evaluate(e=>e.disabled),true);
++    assert(await page.locator('#flash-format').isDisabled());
+     await page.locator('#admin-token').fill(ADMIN);await page.locator('#login').click();
+     await page.locator('#auth-status').filter({hasText:'Administrador'}).waitFor();
+-    await page.locator('#flash-maintenance > summary').click();
+-    assert.equal(operations.length,0);assert(await page.locator('#flash-prepare').isDisabled());
+-    await page.locator('#flash-parked').check();
+-    const download=page.waitForEvent('download');await page.locator('#flash-backup').click();
+-    await download;await page.locator('#flash-message').filter({hasText:'baixada'}).waitFor();
+-    assert.deepEqual(operations,['backup']);
+-    await page.locator('#flash-prepare').click();await page.locator('#flash-message').filter({hasText:'Nada foi apagado'}).waitFor();
+-    assert.equal(operations.filter(o=>o.action==='format').length,0);
+-    await page.locator('#flash-loss').check();await page.locator('#flash-phrase').fill('INCORRETO');
+-    assert(await page.locator('#flash-format').isDisabled());
+-    await page.locator('#flash-phrase').fill('FORMATAR TBFLASH');
+-    await page.locator('#flash-format').click(); /* dialog dismissed */
+-    assert.equal(operations.filter(o=>o.action==='format').length,0);
+-    acceptDialog=true;await page.locator('#flash-format').click();
++    assert.equal(operations.length,0);assert(!(await page.locator('#flash-format').isDisabled()));
++    assert.equal(await page.locator('#flash-phrase,#flash-loss,#flash-parked,#flash-prepare').count(),0);
++    // Even immediate repeated clicks only authorize one request pair.
++    await page.locator('#flash-format').evaluate(el=>{el.click();el.click();});
+     await page.locator('#flash-message').filter({hasText:'Mock format completed'}).waitFor();
+-    assert.equal(operations.filter(o=>o.action==='format').length,1);
+-    assert(await page.locator('#flash-format').isDisabled());
+-    formatFailure=true;await page.locator('#flash-prepare').click();
+-    await page.locator('#flash-message').filter({hasText:'Nada foi apagado'}).waitFor();
+-    await page.locator('#flash-loss').check();await page.locator('#flash-phrase').fill('FORMATAR TBFLASH');
+-    await page.locator('#flash-format').click();await page.locator('#flash-message').filter({hasText:'Não repita automaticamente'}).waitFor();
++    assert.equal(operations.filter(o=>o.action==='prepare').length,1);
++    assert.equal(operations.filter(o=>o.action==='format').length,1);assert.deepEqual(dialogs,[]);
++    prepareFailure=true;await page.locator('#flash-format').click();
++    await page.locator('#flash-message').filter({hasText:'Mock maintenance busy'}).waitFor();
++    assert.equal(operations.filter(o=>o.action==='format').length,1);prepareFailure=false;
++    expires=0;await page.locator('#flash-format').click();
++    await page.locator('#flash-message').filter({hasText:'não liberou a manutenção'}).waitFor();
++    assert.equal(operations.filter(o=>o.action==='format').length,1);expires=120;
++    await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);
++    wrongIdentity=true;const before=operations.length;await page.locator('#flash-format').click();
++    await page.waitForFunction(()=>document.querySelector('#flash-message').textContent.includes('identidade do Core'));
++    assert.equal(operations.length,before);wrongIdentity=false;
++    await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);
++    await page.locator('#refresh').click();
++    await page.locator('#stat-role').filter({hasText:'Core'}).waitFor();
++    await page.locator('#flash-format').waitFor({state:'visible'});
++    formatFailure=true;await page.locator('#flash-format').click();
++    await page.locator('#flash-message').filter({hasText:'não será repetida automaticamente'}).waitFor();
+     await page.waitForTimeout(300);assert.equal(operations.filter(o=>o.action==='format').length,2);
+-    assert(await page.locator('#flash-format').isDisabled());
+-    expires=0;await page.locator('#flash-prepare').click();
+-    await page.locator('#flash-message').filter({hasText:'Nada foi apagado'}).waitFor();
+-    await page.locator('#flash-loss').check();await page.locator('#flash-phrase').fill('FORMATAR TBFLASH');
+-    assert(await page.locator('#flash-format').isDisabled());
++    const download=page.waitForEvent('download');await page.locator('#flash-backup').click();
++    await download;await page.locator('#flash-message').filter({hasText:'baixada'}).waitFor();
++    assert.equal(operations.at(-1),'backup');assert.deepEqual(dialogs,[]);
+     await page.locator('#logout').click();assert(await page.locator('#flash-format').isDisabled());
+-    assert.equal(await page.locator('#flash-phrase').inputValue(),'');
+     role='link';await page.reload();await page.locator('#connection').filter({hasText:'Online'}).waitFor();
+-    assert(await page.locator('#storage-maintenance').isHidden());
+-    assert.deepEqual(errors,[]);
+-    console.log('Browser maintenance PASS: no auto-format on load/login, backup, parked/loss/phrase/nonce gates, cancel, one confirmed POST, media error no retry, expiry/logout, Core/Link isolation; fixtures only.');
++    assert(await page.locator('#storage-maintenance').isHidden());assert.deepEqual(errors,[]);
++    console.log('Browser maintenance PASS: single click, no phrase/checkbox/dialog, partial diagnostic works, internal nonce/identity, duplicate suppression, no auto-format on load/login, failures without retry, backup/logout/Core-Link guards; loopback fixtures only.');
+     await context.close();
+   }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
+ })().catch(e=>{console.error(e);process.exitCode=1;server.close();});
+diff --git a/firmware/espidf/tools/build_release.py b/firmware/espidf/tools/build_release.py
+index a8b12a0..421163c 100644
+--- a/firmware/espidf/tools/build_release.py
++++ b/firmware/espidf/tools/build_release.py
+@@ -14,7 +14,7 @@ import zipfile
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-VERSION = "0.2.21"
++VERSION = "0.2.22"
+ EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
+ REQUIRED_SOURCE = (
+     "firmware/espidf/CMakeLists.txt",
+@@ -137,8 +137,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
+         "branch": git_value(project_root, "branch", "--show-current"),
+         "commit": git_value(project_root, "rev-parse", "HEAD"),
+         "dirty": bool(git_value(project_root, "status", "--porcelain")),
+-        "integration_base_branch": "fix/revb1-v0220-flash-open",
+-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "521b1ec"),
++        "integration_base_branch": "feature/revb1-v0221-flash-maintenance",
++        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "1fd7f1b"),
+         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
+     }
+     result["builds"] = {}
+diff --git a/firmware/espidf/tools/build_v020.sh b/firmware/espidf/tools/build_v020.sh
+index 259d4b8..3c10707 100755
+--- a/firmware/espidf/tools/build_v020.sh
++++ b/firmware/espidf/tools/build_v020.sh
+@@ -20,7 +20,7 @@ if [[ "$idf_version" != 'ESP-IDF v5.5.2' ]]; then
+   exit 2
+ fi
+ for build_role in "${roles[@]}"; do
+-  project_version=0.2.21
++  project_version=0.2.22
+   idf.py -C "$project_root" -B "$project_root/build-$build_role" \
+     -DTRUCKBOX_ROLE="$build_role" -DPROJECT_VER="$project_version" build
+ done

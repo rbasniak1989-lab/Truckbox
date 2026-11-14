@@ -228,20 +228,16 @@
     <p class="hint">Somente segmentos confirmados pela Cloud são reaproveitados. Arquivos com corrupção permanecem preservados. A autonomia é estimada pela taxa real de gravação deste boot; indisponível antes de um minuto.</p>
     <button type="button" id="discard-storage" hidden disabled>Descarte indisponível nesta versão</button>
     <div id="discard-message" class="banner message" role="status" aria-live="polite"></div>
-    <details id="flash-maintenance">
-      <summary>Manutenção da memória de telemetria</summary>
-      <p class="note spacer">Recriar o armazenamento apaga todos os arquivos locais de telemetria, inclusive os não enviados e arquivos danificados. Não apaga Wi-Fi, vínculo, identidade, viagens ou combustível salvos na NVS. Instalar esta versão não inicia a limpeza.</p>
+    <div id="flash-maintenance" class="section">
+      <h3>Manutenção da memória de telemetria</h3>
+      <p class="hint">Recria somente o armazenamento local. Mantém Wi-Fi, vínculo, identidade e contadores salvos.</p>
       <fieldset id="flash-maint-fields" disabled>
-        <label class="check"><input id="flash-parked" type="checkbox"><span>O caminhão está estacionado, com alimentação estável. Mantenha a ignição ligada para a placa conferir velocidade recente zero.</span></label>
-        <button id="flash-backup" class="spacer" type="button">Baixar cópia da partição antes de limpar</button>
-        <p class="hint">A cópia contém dados locais e deve ser guardada em particular. Durante a manutenção, o polling pode pausar pela proteção existente; sua configuração automática é preservada.</p>
-        <button id="flash-prepare" class="spacer" type="button">Preparar confirmação de limpeza</button>
-        <label class="check spacer"><input id="flash-loss" type="checkbox"><span>Aceito perder todos os arquivos locais de telemetria desta partição.</span></label>
-        <label class="spacer">Digite FORMATAR TBFLASH para confirmar<input id="flash-phrase" autocomplete="off" spellcheck="false" maxlength="32"></label>
-        <button id="flash-format" class="spacer" type="button" disabled>Apagar arquivos e recriar armazenamento</button>
+        <button id="flash-format" class="primary spacer" type="button">Recriar armazenamento</button>
+        <button id="flash-backup" class="spacer" type="button">Baixar cópia</button>
       </fieldset>
+      <p id="flash-block" class="hint" role="status"></p>
       <div id="flash-message" class="banner message" role="status" aria-live="polite"></div>
-    </details>
+    </div>
   </section>
   <div class="split">
     <section class="panel" aria-labelledby="ota-title">
@@ -284,7 +280,7 @@
   let stateBusy = false;
   let uploadBusy = false;
   let j1708Busy = false;
-  let flashBusy = false, flashChallenge = '', flashExpires = 0, flashBoot = null;
+  let flashBusy = false;
 
   function message(id, text, kind = '') {
     const element = $(id);
@@ -347,7 +343,6 @@
     try {
       const state = await request('/api/state?compact=1');
       lastState = state;
-      if(flashBoot !== null && flashBoot !== state.boot_id)flashChallenge='';
       if(token && state.role==='core'){
         try{
           const stats=[];
@@ -419,8 +414,6 @@
   }
 
   function signOut() {
-    flashChallenge='';flashExpires=0;flashBoot=null;
-    $('flash-phrase').value='';$('flash-loss').checked=false;$('flash-parked').checked=false;
     token = '';
     $('admin-token').value = '';
     $('login-form').hidden = false;
@@ -461,49 +454,42 @@
   $('discard-storage').addEventListener('click',()=>message('discard-message','Descarte indisponível: a recuperação preserva os arquivos.','warning'));
 
   function updateFlashMaintenance() {
-    const available=role==='core' && !!token && lastState?.storage?.maintenance?.available===true;
-    $('flash-maint-fields').disabled=!available || flashBusy || uploadBusy;
-    $('flash-prepare').disabled=!$('flash-parked').checked;
-    $('flash-backup').disabled=!$('flash-parked').checked;
-    $('flash-format').disabled=!flashChallenge || Date.now()>=flashExpires || !$('flash-parked').checked ||
-      !$('flash-loss').checked || $('flash-phrase').value!=='FORMATAR TBFLASH';
+    const blocked=role!=='core' || !token || flashBusy || uploadBusy;
+    $('flash-maint-fields').disabled=blocked;
+    text('flash-block',!token?'Entre como administrador para usar a manutenção.':
+      flashBusy?'Manutenção em andamento…':uploadBusy?'Aguarde a atualização terminar.':'');
   }
-  for(const id of ['flash-parked','flash-loss','flash-phrase'])$(id).addEventListener('input',updateFlashMaintenance);
   function flashLock(value) {
     flashBusy=value;$('ota-fields').disabled=value || !token;
     $('save-config').disabled=value;$('logout').disabled=value;updateFlashMaintenance();
   }
-  $('flash-prepare').addEventListener('click',async()=>{
-    if(!token || role!=='core' || flashBusy || uploadBusy || !$('flash-parked').checked)return;
-    flashChallenge='';flashLock(true);
-    try {
-      const response=await request('/api/storage/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({action:'prepare',authorized:true,stationary:true})});
-      flashChallenge=response.challenge;flashExpires=Date.now()+response.expires_in_s*1000;flashBoot=lastState.boot_id;
-      message('flash-message','Confirmação preparada por 2 minutos. Nada foi apagado. Confira a perda dos arquivos e digite a frase.','warning');
-    }catch(error){message('flash-message',error.message,'error');}
-    finally{flashLock(false);}
-  });
   $('flash-format').addEventListener('click',async()=>{
-    if(!token || flashBusy || uploadBusy || $('flash-format').disabled)return;
-    if(!confirm('Apagar todos os arquivos locais de telemetria e recriar SOMENTE /tbflash? Esta ação não pode ser desfeita sem uma cópia.'))return;
-    const challenge=flashChallenge;flashChallenge='';flashLock(true);
-    message('flash-message','Recriando o volume e verificando escrita persistente. Mantenha a alimentação ligada.');
+    if(!token || role!=='core' || flashBusy || uploadBusy)return;
+    flashLock(true);message('flash-message','Recriando armazenamento… Mantenha a alimentação ligada.');
     try {
+      // The explicit click authorizes this operation. Exchange the existing
+      // one-shot nonce internally; no persisted intent or automatic retry.
+      const identity=await request('/api/health');
+      if(identity.role!=='core' || typeof identity.device_uid!=='string' || !Number.isSafeInteger(identity.boot_id))
+        throw new Error('Não foi possível confirmar a identidade do Core.');
+      const prepared=await request('/api/storage/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'prepare',authorized:true})});
+      if(typeof prepared.challenge!=='string' || !/^[0-9a-f]{32}$/.test(prepared.challenge) || !(prepared.expires_in_s>0))
+        throw new Error('A placa não liberou a manutenção.');
       const response=await request('/api/storage/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({action:'format',authorized:true,stationary:true,accept_data_loss:true,
-          confirmation:$('flash-phrase').value,challenge,device_uid:lastState.device_uid,boot_id:flashBoot})},120000);
-      message('flash-message',response.message+' Confira registros confirmados e ACK da Cloud.','success');
-    }catch(error){message('flash-message',error.message+' Não repita automaticamente; consulte o diagnóstico antes de preparar outra confirmação.','error');}
-    finally{$('flash-phrase').value='';$('flash-loss').checked=false;flashLock(false);refreshState();}
+        body:JSON.stringify({action:'format',authorized:true,accept_data_loss:true,confirmation:'FORMATAR TBFLASH',
+          challenge:prepared.challenge,device_uid:identity.device_uid,boot_id:identity.boot_id})},120000);
+      message('flash-message',response.message+' Aguarde telemetria e ACK da Cloud.','success');
+    }catch(error){message('flash-message',error.message+' A operação não será repetida automaticamente.','error');}
+    finally{flashLock(false);refreshState();}
   });
   $('flash-backup').addEventListener('click',async()=>{
-    if(!token || flashBusy || uploadBusy || !$('flash-parked').checked)return;
-    flashChallenge='';flashLock(true);message('flash-message','Lendo uma cópia da partição. Nenhum arquivo será apagado.');
+    if(!token || role!=='core' || flashBusy || uploadBusy)return;
+    flashLock(true);message('flash-message','Lendo uma cópia da partição. Nenhum arquivo será apagado.');
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);
     try {
       const response=await fetch('/api/storage/backup',{headers:{Authorization:'Bearer '+token},signal:controller.signal,cache:'no-store',credentials:'omit'});
-      if(!response.ok)throw new Error('Backup recusado (HTTP '+response.status+'). Confira velocidade recente zero e autorização.');
+      if(!response.ok)throw new Error('Backup recusado (HTTP '+response.status+'). Confira o acesso de administrador.');
       const blob=await response.blob();if(blob.size!==0x1e0000)throw new Error('Cópia incompleta; não usar como backup.');
       const url=URL.createObjectURL(blob),link=document.createElement('a');
       link.href=url;link.download='truckbox-storage-WL-backup.bin';link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
@@ -599,7 +585,7 @@
     const path = target === 'link' ? '/api/ota/link' : '/api/ota';
     const xhr = new XMLHttpRequest();
     uploadBusy = true;
-    flashChallenge='';updateFlashMaintenance();
+    updateFlashMaintenance();
     $('ota-fields').disabled = true;
     $('save-config').disabled = true;
     $('logout').disabled = true;

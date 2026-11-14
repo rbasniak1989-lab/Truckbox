@@ -10,12 +10,12 @@ static bool tb_http_require_admin(httpd_req_t *r){if(!admin)r->status=401;return
 static bool tb_web_begin_maintenance(void){if(ota_busy)return false;ota_busy=true;return true;}
 static void tb_web_set_ota_busy(bool busy){ota_busy=busy;}
 static esp_err_t tb_store_flash_backup(httpd_req_t *r){(void)r;++backup_calls;return ESP_OK;}
-static esp_err_t httpd_resp_send_err(httpd_req_t *r,int status,const char *text){(void)text;r->status=status;return ESP_FAIL;}
+static esp_err_t httpd_resp_set_status(httpd_req_t *r,const char *status){assert(!strcmp(status,"400 Bad Request"));r->status=400;return ESP_OK;}
 static esp_err_t tb_http_read_json(httpd_req_t *r,size_t n,cJSON **out){
     if(!r->body || strlen(r->body)>=n)return ESP_FAIL;
     *out=cJSON_Parse(r->body);return *out?ESP_OK:ESP_FAIL;
 }
-static esp_err_t tb_http_send_json(httpd_req_t *r,cJSON *owned){r->reply=owned;r->status=200;return ESP_OK;}
+static esp_err_t tb_http_send_json(httpd_req_t *r,cJSON *owned){r->reply=owned;if(!r->status)r->status=200;return ESP_OK;}
 #include "maintenance_handlers_under_test.h"
 
 /* Destruction ONLY of a disposable test directory, after real authorization
@@ -43,10 +43,10 @@ static void fixture(void){
     admin=true;ota_busy=false;
 }
 static void body_for(char body[512],const char *challenge){
-    snprintf(body,512,"{\"action\":\"format\",\"authorized\":true,\"stationary\":true,\"accept_data_loss\":true,\"confirmation\":\"FORMATAR TBFLASH\",\"device_uid\":\"%s\",\"boot_id\":42,\"challenge\":\"%s\"}",tb_device_uid(),challenge);
+    snprintf(body,512,"{\"action\":\"format\",\"authorized\":true,\"accept_data_loss\":true,\"confirmation\":\"FORMATAR TBFLASH\",\"device_uid\":\"%s\",\"boot_id\":42,\"challenge\":\"%s\"}",tb_device_uid(),challenge);
 }
 static void prepare(char out[33]){
-    httpd_req_t r={.body="{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}"};
+    httpd_req_t r={.body="{\"action\":\"prepare\",\"authorized\":true}"};
     assert(storage_maintenance_handler(&r)==ESP_OK && r.status==200 && !ota_busy);
     const cJSON *token=cJSON_GetObjectItemCaseSensitive(r.reply,"challenge");assert(cJSON_IsString(token) && strlen(token->valuestring)==32);
     memcpy(out,token->valuestring,33);cJSON_Delete(r.reply);
@@ -61,9 +61,10 @@ int main(void){
     admin=false;invoke("{}",401);assert(!host_format_calls);admin=true;
     invoke("{",0); /* invalid JSON never reaches formatting */
     invoke("{\"action\":\"format\",\"authorized\":true}",400);
-    host_parked=false;invoke("{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}",400);host_parked=true;
-    host_maintenance_target=false;invoke("{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}",400);host_maintenance_target=true;
-    ota_busy=true;invoke("{\"action\":\"prepare\",\"authorized\":true,\"stationary\":true}",400);assert(ota_busy);ota_busy=false;
+    host_parked=false;invoke("{\"action\":\"prepare\",\"authorized\":true}",200);
+    assert(!host_format_calls); /* storage preparation is allowed in motion */
+    host_maintenance_target=false;invoke("{\"action\":\"prepare\",\"authorized\":true}",400);host_maintenance_target=true;
+    ota_busy=true;invoke("{\"action\":\"prepare\",\"authorized\":true}",400);assert(ota_busy);ota_busy=false;
     prepare(challenge);assert(!host_format_calls && stat(old_path,&old)==0);
     body_for(body,challenge);host_now_us+=MAINTENANCE_TTL_US;invoke(body,400);assert(!host_format_calls);
     prepare(challenge);body_for(body,challenge);
@@ -100,8 +101,8 @@ int main(void){
     assert(!maintenance.challenge[0] && !maintenance.attempts && host_format_calls==1 && host_nvs_ack==sequence);
     invoke(body,400);assert(host_format_calls==1);
     httpd_req_t backup={0};admin=false;storage_backup_handler(&backup);assert(!backup_calls);admin=true;
-    host_parked=false;storage_backup_handler(&backup);assert(!backup_calls);host_parked=true;
-    assert(storage_backup_handler(&backup)==ESP_OK && backup_calls==1 && !ota_busy);
+    host_parked=false;assert(storage_backup_handler(&backup)==ESP_OK && backup_calls==1);
+    assert(storage_backup_handler(&backup)==ESP_OK && backup_calls==2 && !ota_busy);
     remove_probe();cleanup_store();
 
     fixture();prepare(challenge);body_for(body,challenge);host_format_result=ESP_FAIL;
@@ -110,5 +111,5 @@ int main(void){
     host_format_result=ESP_OK;prepare(challenge);body_for(body,challenge);host_fail_fsync_once=true;
     invoke(body,400);assert(!state.write_confirmed && !maintenance.probe_durable && state.io_paused);
     remove_probe();cleanup_store();
-    puts("Storage maintenance: no automatic wipe; admin/stationary/target/OTA/phrase/loss/UID/boot/nonce/expiry guards; format/probe/NVS failure; one-shot replay rejection; retained RAM and sequence/ACK; real post-format telemetry/ACK/reboot; backup authorization PASS");return 0;
+    puts("Storage maintenance: movement allowed, no automatic wipe; admin/target/OTA/protocol/UID/boot/nonce/expiry guards; format/probe/NVS failure; replay rejection; retained RAM and sequence/ACK; telemetry/ACK/reboot; JSON errors and backup authorization PASS");return 0;
 }
