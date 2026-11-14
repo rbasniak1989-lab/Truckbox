@@ -11,7 +11,7 @@ import re,sys
 s=Path(sys.argv[1]).read_text();chunks=[]
 end=s.index('} request_event_t;')+len('} request_event_t;');start=s.rfind('typedef struct {',0,end);assert start>=0
 chunks.append(s[start:end])
-for name in ['add_sample_identity','queue_sample','guard_values','guard_record','request_store_guard','request_store_event','tb_j1708_store_matched_response','request_metric_snapshot','volvo_operating_snapshot']:
+for name in ['add_sample_identity','queue_sample','guard_values','guard_record','request_store_guard','request_store_event','tb_j1708_store_matched_response','request_metric_snapshot','volvo_operating_snapshot','fuel_interval_snapshot']:
  m=re.search(r'^static (?:void|bool) '+name+r'\([^;]*?\)\s*\{',s,re.M);assert m,name
  end=s.index('{',m.start())+1;depth=1
  while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
@@ -40,7 +40,7 @@ done
 cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
  -fsanitize=address,undefined -fno-omit-frame-pointer -g \
  -I"$work" -I"$core" -I"$module" -I"$IDF_PATH/components/json/cJSON" \
- "$core/tbx_transmission.c" "$core/tbx_volvo_operating.c" "$core/tbx_ecu_counters.c" "$module/tbx_j1587_diagnostics.c" "$work/diagnostics.o" "$work/ecu_counters.o" "$core/tbx_j1708_auto.c" "$test_dir/offline_export.c" "$core/protocols.c" "$core/tbx_j1587_bridge.c" \
+ "$core/tbx_fuel_account.c" "$core/tbx_transmission.c" "$core/tbx_volvo_operating.c" "$core/tbx_ecu_counters.c" "$module/tbx_j1587_diagnostics.c" "$work/diagnostics.o" "$work/ecu_counters.o" "$core/tbx_j1708_auto.c" "$test_dir/offline_export.c" "$core/protocols.c" "$core/tbx_j1587_bridge.c" \
  "$module/tbx_j1587_decoder.c" "$module/tbx_j1587_passive.c" "$module/tbx_j1587_passive_full.c" \
  "$module/tbx_j1708_requests.c" "$core/tbx_j1708_rx_guard.c" "$core/tbx_j1708_active.c" "$core/tbx_j1708_field.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$work/export"
 cc -O1 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \

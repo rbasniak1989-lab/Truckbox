@@ -12,6 +12,7 @@ void tb_capture_add_json(cJSON *object);
 void tb_capture_add_json_compact(cJSON *object);
 cJSON *tb_capture_request_stats_json(unsigned offset,unsigned limit);
 void tb_capture_reset_trip(void);
+bool tb_capture_fuel_boundary(bool start,const char *uid,uint64_t requested_unix_ms,uint32_t queue_age_ms);
 void tb_live_can(uint32_t id, bool extended, uint8_t dlc, const uint8_t data[8]);
 uint64_t tb_clock_milliseconds(void);
 bool tb_core_append_gps(cJSON *sample);

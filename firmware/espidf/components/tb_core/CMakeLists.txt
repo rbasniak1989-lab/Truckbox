@@ -9,7 +9,7 @@ if(NOT CONFIG_TB_ROLE_LINK)
 endif()
 idf_component_register(SRCS ${core_sources}
     INCLUDE_DIRS "." "../../../j1708_17pid/src"
-    REQUIRES tb_base driver fatfs sdmmc esp_partition esp_timer esp_http_client nvs_flash json wear_levelling lwip)
+    REQUIRES tb_base driver fatfs sdmmc esp_partition esp_timer esp_http_client nvs_flash json wear_levelling lwip espcoredump)
 
 if(NOT CONFIG_TB_ROLE_LINK)
     target_compile_options(${COMPONENT_LIB} PRIVATE -fstack-usage)

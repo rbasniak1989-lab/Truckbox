@@ -1,0 +1,34 @@
+{
+  "baseline_0.2.22": {
+    ".iram0.text": 127468,
+    ".iram0.data": 4,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 68176,
+    "ram_static_bytes": 210436
+  },
+  "candidate_0.2.23": {
+    ".iram0.text": 127966,
+    ".iram0.data": 0,
+    ".iram0.bss": 0,
+    ".dram0.data": 14788,
+    ".noinit": 0,
+    ".dram0.bss": 68752,
+    "ram_static_bytes": 211506
+  },
+  "static_delta_bytes": 1070,
+  "OTA_bytes": 1583360,
+  "physical_heap": "NOT_MEASURED",
+  "new_tasks": 0,
+  "queue_capacities_changed": false,
+  "compiler_stack_frames_bytes": {
+    "persist_trip": 992,
+    "fuel_interval_snapshot": 848,
+    "snapshot_task": 368,
+    "fuel_boundary_record": 976,
+    "capture_json_mode": 5152,
+    "tb_capture_start": 1136,
+    "tb_capture_fuel_boundary": 720
+  }
+}

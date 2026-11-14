@@ -1,0 +1,52 @@
+{
+  "scope": "SELECT_ONLY",
+  "timezone": "UTC",
+  "device_uid": "tb-c6-d40592b9190c",
+  "rows": [
+    {
+      "window_end": "2026-11-14 05:42:31.136+00",
+      "boot_id": "562",
+      "desired_automatic": "true",
+      "work_mode": "true",
+      "sent_in_window": "60",
+      "answered_in_window": "57",
+      "heap_minimum": "12312"
+    },
+    {
+      "window_end": "2026-11-14 06:36:22.376+00",
+      "boot_id": "563",
+      "desired_automatic": "true",
+      "work_mode": "true",
+      "sent_in_window": "50",
+      "answered_in_window": "50",
+      "heap_minimum": "7824"
+    },
+    {
+      "window_end": "2026-11-14 07:07:26.589+00",
+      "boot_id": "564",
+      "desired_automatic": "false",
+      "work_mode": "false",
+      "sent_in_window": "0",
+      "answered_in_window": "0",
+      "heap_minimum": "10992"
+    },
+    {
+      "window_end": "2026-11-14 09:04:54.994+00",
+      "boot_id": "565",
+      "desired_automatic": "false",
+      "work_mode": "false",
+      "sent_in_window": "0",
+      "answered_in_window": "0",
+      "heap_minimum": "8568"
+    },
+    {
+      "window_end": "2026-11-14 09:29:05.753+00",
+      "boot_id": "566",
+      "desired_automatic": "false",
+      "work_mode": "false",
+      "sent_in_window": "0",
+      "answered_in_window": "0",
+      "heap_minimum": "12568"
+    }
+  ]
+}

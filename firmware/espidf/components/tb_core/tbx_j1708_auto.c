@@ -18,11 +18,21 @@ static bool healthy(const tbx_j1708_rx_guard_t *g,uint64_t after,uint64_t now)
 }
 static void pause(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const char *reason,tbx_auto_phase_t phase,uint64_t now)
 {
-    if(c->production_mode)tbx_j1708_active_stop(c,reason);
-    a->phase=phase;a->reason=reason;a->paused_us=now;
+    if(c->production_mode){a->last_stop_reason=reason;a->stopped_us=now;tbx_j1708_active_stop(c,reason);}
+    a->phase=phase;a->reason=reason;a->paused_us=now;a->due_since_us=0;
+}
+void tbx_j1708_auto_suspend(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const char *reason,uint64_t now)
+{
+    pause(a,c,reason,TBX_AUTO_BACKOFF,now);++a->pauses;
+    a->last_stop_reason=reason;a->stopped_us=now;
+    if(a->failures<4)++a->failures;
+    a->resume_us=now+(UINT64_C(60000000)<<(a->failures-1));
 }
 void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j1708_auto_env_t *e,bool launch,uint64_t now)
 {
+    uint64_t step=now>=a->checked_us?now-a->checked_us:0;
+    if(step>TBX_RX_WINDOW_US)step=0; /* No fictitious eligible time after a gap. */
+    a->checked_us=now;
     if(!e->enabled || e->operator_hold){
         const char *reason=!e->enabled?"PERSISTENT_OPERATOR_DISABLE":"OPERATOR_OR_MAINTENANCE_HOLD";
         if(a->phase!=TBX_AUTO_DISABLED || !a->reason || strcmp(a->reason,reason))pause(a,c,reason,TBX_AUTO_DISABLED,now);
@@ -40,9 +50,34 @@ void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j17
         ++a->pauses;if(a->failures<4)++a->failures;
         a->phase=TBX_AUTO_BACKOFF;a->paused_us=now;
         a->resume_us=now+(UINT64_C(60000000)<<(a->failures-1));
-        a->reason=tbx_j1708_guard_cause_name(c->rx_guard.decision.cause);return;
+        a->reason=tbx_j1708_guard_cause_name(c->rx_guard.decision.cause);
+        a->last_stop_reason=a->reason;a->stopped_us=now;return;
     }
     if(a->phase==TBX_AUTO_RUNNING){
+        /* Supervise actual send progress, not periodic statistics. The grace
+         * covers a complete healthy RX observation and a full queue rotation.
+         * A busy bus is a deferral, never a reason to force transmission. */
+        bool due=false;
+        for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)
+            if(c->scheduler->pids[i].enabled && (int32_t)((uint32_t)(now/1000)-c->scheduler->pids[i].next_due_ms)>=0)due=true;
+        if(c->scheduler->sent_total!=a->last_sent || c->scheduler->deferred_total!=a->last_deferred || !due){
+            a->last_sent=c->scheduler->sent_total;a->last_deferred=c->scheduler->deferred_total;
+            a->progress_us=now;a->due_since_us=0;a->eligible_stall_us=0;
+        }else{
+            if(!a->due_since_us)a->due_since_us=now;
+            if(!e->bus_busy)a->eligible_stall_us+=step;
+        }
+        uint64_t grace=3*TBX_RX_WINDOW_US;
+        uint64_t rotation=(uint64_t)(e->timeout_ms+(TBX_J1708_REQUEST_CAPACITY+1)*c->scheduler->min_spacing_ms)*1000;
+        if(rotation>grace)grace=rotation;
+        if(a->eligible_stall_us>grace &&
+           !c->tx_active && healthy(&c->rx_guard,0,now)){
+            ++a->stalls;pause(a,c,"SCHEDULER_NO_TX_PROGRESS",TBX_AUTO_BACKOFF,now);
+            if(a->failures<4)++a->failures;
+            a->resume_us=now+(UINT64_C(60000000)<<(a->failures-1));
+            return;
+        }
+        a->reason=e->bus_busy?"BUS_BUSY_DEFERRED":"PERSISTENT_POLICY_OPERATIONAL_INDIRECT";
         if(launch!=a->launch){tbx_j1708_request_production(c->scheduler,e->periods,launch,(uint32_t)(now/1000),false);a->launch=launch;}
         /* Noise warnings slow TX without attributing corrupt RX to our TX. */
         tbx_j1708_request_set_spacing(c->scheduler,c->rx_guard.suspect_streak || (a->failures && now-a->started_us<UINT64_C(30000000))?1000:500);
@@ -63,5 +98,6 @@ void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j17
     tbx_j1708_request_production(c->scheduler,e->periods,launch,(uint32_t)(now/1000),true);
     tbx_j1708_request_expansion(c->scheduler,e->extended,(uint32_t)(now/1000),true);
     a->phase=TBX_AUTO_RUNNING;a->reason="PERSISTENT_POLICY_OPERATIONAL_INDIRECT";
-    a->launch=launch;a->started_us=now;++a->starts;
+    a->launch=launch;a->started_us=now;a->progress_us=now;a->due_since_us=0;a->eligible_stall_us=0;
+    a->last_sent=c->scheduler->sent_total;a->last_deferred=c->scheduler->deferred_total;++a->starts;
 }

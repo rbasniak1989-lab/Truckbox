@@ -1,0 +1,111 @@
+{
+  "observed_utc": "2026-11-14",
+  "device_uid": "tb-c6-d40592b9190c",
+  "scope": "SELECT_ONLY_NO_DEPLOY_NO_PRODUCTION_CHANGES",
+  "evidence": [
+    {
+      "query": 0,
+      "rows": [
+        {
+          "ts": "2026-11-14 05:39:30.912+00",
+          "seq": 464129,
+          "boot_id": "562",
+          "firmware": "0.2.22",
+          "reset_reason": "3",
+          "app_elf_sha256": "c50ffe3d1fd59a26527d25641b65025b93064d4c2dc91d6d8ab3a5f33ded6f7b",
+          "heap_free": "132388",
+          "heap_minimum": "132328"
+        },
+        {
+          "ts": "2026-11-14 05:43:22.073+00",
+          "seq": 464385,
+          "boot_id": "563",
+          "firmware": "0.2.22",
+          "reset_reason": "1",
+          "app_elf_sha256": "c50ffe3d1fd59a26527d25641b65025b93064d4c2dc91d6d8ab3a5f33ded6f7b",
+          "heap_free": "131984",
+          "heap_minimum": "131924"
+        },
+        {
+          "ts": "2026-11-14 06:37:13.277+00",
+          "seq": 466433,
+          "boot_id": "564",
+          "firmware": "0.2.22",
+          "reset_reason": "4",
+          "app_elf_sha256": "c50ffe3d1fd59a26527d25641b65025b93064d4c2dc91d6d8ab3a5f33ded6f7b",
+          "heap_free": "131428",
+          "heap_minimum": "131368"
+        },
+        {
+          "ts": "2026-11-14 07:07:54.658+00",
+          "seq": 467713,
+          "boot_id": "565",
+          "firmware": "0.2.22",
+          "reset_reason": "1",
+          "app_elf_sha256": "c50ffe3d1fd59a26527d25641b65025b93064d4c2dc91d6d8ab3a5f33ded6f7b",
+          "heap_free": "132480",
+          "heap_minimum": "132420"
+        },
+        {
+          "ts": "2026-11-14 09:07:06.352+00",
+          "seq": 471041,
+          "boot_id": "566",
+          "firmware": "0.2.22",
+          "reset_reason": "1",
+          "app_elf_sha256": "c50ffe3d1fd59a26527d25641b65025b93064d4c2dc91d6d8ab3a5f33ded6f7b",
+          "heap_free": "131448",
+          "heap_minimum": "131388"
+        }
+      ]
+    },
+    {
+      "query": 1,
+      "rows": [
+        {
+          "ts": "2026-11-14 07:04:23.837+00",
+          "seq": 467344,
+          "boot_id": "564",
+          "event": "LINK_ERROR",
+          "detail": "TX_ECHO_MISMATCH_OR_COLLISION index=0 expected=AC received=88",
+          "pid": "161",
+          "local_mid": "172",
+          "tx_start_us": null,
+          "tx_frame": null
+        },
+        {
+          "ts": "2026-11-14 07:04:47.164+00",
+          "seq": 467370,
+          "boot_id": "564",
+          "event": "MID_CONFLICT_FRAME",
+          "detail": "rx=AC802282308222005C bytes=9 echo=5/5 tx_age_us=38362",
+          "pid": "34",
+          "local_mid": "172",
+          "tx_start_us": "1641354290",
+          "tx_frame": "AC80228230"
+        },
+        {
+          "ts": "2026-11-14 07:04:47.164+00",
+          "seq": 467371,
+          "boot_id": "564",
+          "event": "GUARD_DECISION",
+          "detail": null,
+          "pid": "34",
+          "local_mid": null,
+          "tx_start_us": null,
+          "tx_frame": null
+        },
+        {
+          "ts": "2026-11-14 07:04:47.164+00",
+          "seq": 467372,
+          "boot_id": "564",
+          "event": "STOPPED",
+          "detail": "LOCAL_MID_CONFLICT",
+          "pid": "34",
+          "local_mid": "172",
+          "tx_start_us": null,
+          "tx_frame": null
+        }
+      ]
+    }
+  ]
+}

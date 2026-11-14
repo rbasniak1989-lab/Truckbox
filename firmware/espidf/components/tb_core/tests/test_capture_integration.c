@@ -5,12 +5,20 @@
 #include <stdlib.h>
 #include <setjmp.h>
 static int64_t host_now_us;
+static uint64_t host_wall_origin_ms=1794600000000;
+static int host_gettimeofday(struct timeval *tv,void *zone){(void)zone;uint64_t ms=host_wall_origin_ms+(uint64_t)host_now_us/1000;tv->tv_sec=(time_t)(ms/1000);tv->tv_usec=(suseconds_t)(ms%1000)*1000;return 0;}
+#define gettimeofday host_gettimeofday
 static uint8_t host_nvs[256];
 static size_t host_nvs_size;
 static unsigned char slot_a[512],slot_b[512];
 static size_t slot_sizes[2];
+static unsigned char slot4_a[1024],slot4_b[1024];
+static size_t slot4_sizes[2];
+static tb_polling_guard_t guard_saved;
+static bool guard_present;
 static unsigned host_commits, host_mutexes;
-static unsigned host_held,host_audits;
+static unsigned host_held,host_audits,host_supervisor_events;
+static char host_boundary_record[768];
 typedef struct {int type;const uint8_t *bytes;size_t length;bool timeout;uint32_t delay_us;}host_rx_event_t;
 static host_rx_event_t host_rx_events[16];
 static unsigned host_rx_count,host_rx_cursor,host_rx_offset,host_rx_flushes;
@@ -66,6 +74,11 @@ static esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 static esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *buffer, size_t *size)
 {
     (void)handle;
+    if(!strcmp(key,"jguard")){if(!guard_present)return ESP_ERR_NVS_NOT_FOUND;assert(*size>=sizeof(guard_saved));*size=sizeof(guard_saved);memcpy(buffer,&guard_saved,*size);return ESP_OK;}
+    if(!strcmp(key,"trip4a") || !strcmp(key,"trip4b")){
+        unsigned i=!strcmp(key,"trip4b");if(!slot4_sizes[i])return ESP_ERR_NVS_NOT_FOUND;
+        assert(*size>=slot4_sizes[i]);*size=slot4_sizes[i];memcpy(buffer,i?slot4_b:slot4_a,*size);return ESP_OK;
+    }
     if(strcmp(key,"trip")){
         unsigned i=!strcmp(key,"trip3a")?0:1;assert(!strcmp(key,i?"trip3b":"trip3a"));
         if(!slot_sizes[i])return ESP_ERR_NVS_NOT_FOUND;
@@ -80,6 +93,11 @@ static esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *buffer
 static esp_err_t nvs_set_blob(nvs_handle_t handle, const char *key, const void *buffer, size_t size)
 {
     (void)handle;
+    if(!strcmp(key,"jguard")){assert(size==sizeof(guard_saved));memcpy(&guard_saved,buffer,size);guard_present=true;return ESP_OK;}
+    if(!strcmp(key,"trip4a") || !strcmp(key,"trip4b")){
+        unsigned i=!strcmp(key,"trip4b");assert(size<=1024);assert(!(host_held & (unsigned)(uintptr_t)s.lock));
+        memcpy(i?slot4_b:slot4_a,buffer,size);slot4_sizes[i]=size;return ESP_OK;
+    }
     if(strcmp(key,"trip")){
         unsigned i=!strcmp(key,"trip3a")?0:1;assert(!strcmp(key,i?"trip3b":"trip3a") && size<=512);
         assert(!(host_held & (unsigned)(uintptr_t)s.lock));
@@ -99,20 +117,25 @@ static esp_err_t nvs_commit(nvs_handle_t handle)
     return ESP_OK;
 }
 
+static esp_err_t tb_store_submit(const char *text)
+{
+    assert(!host_held && strlen(text)<sizeof(host_boundary_record));strcpy(host_boundary_record,text);return ESP_OK;
+}
+
 static void boot_with_checkpoint(const void *blob, size_t size)
 {
     assert(!host_held);
     memset(&s, 0, sizeof(s));
     host_mutexes = host_commits = 0;
-    host_now_us = 0;
-    memset(slot_sizes,0,sizeof(slot_sizes));
+    host_now_us = 0;host_boot_id=42;host_auto_enabled=false;host_supervisor_events=0;
+    memset(slot_sizes,0,sizeof(slot_sizes));memset(slot4_sizes,0,sizeof(slot4_sizes));guard_present=false;
     host_nvs_size = size;
     if (size) memcpy(host_nvs, blob, size);
     assert(host_start_restore() == ESP_OK);
     assert(!host_held);
 }
 static void close_to(double value, double expected)
-{ assert(isfinite(value) && fabs(value - expected) < 0.00000001); }
+{ if(!isfinite(value) || fabs(value-expected)>=0.00000001)fprintf(stderr,"close_to: actual=%.12f expected=%.12f\n",value,expected);assert(isfinite(value) && fabs(value - expected) < 0.00000001); }
 static void can_u32(uint32_t pgn, uint8_t sa, unsigned offset, uint32_t raw, uint64_t now)
 {
     assert(offset + 4 <= 8);
@@ -455,7 +478,7 @@ static void test_validated_counter_mids_and_real_checkpoint_restore(void)
     verified_counter_observation(245,128,1000,2000);verified_counter_observation(245,128,1001,5000);close_to(s.distance_trip,10.1609344);
     verified_counter_observation(250,130,1000,5001);assert(!s.fuel_account.direct_valid);
     verified_counter_observation(250,128,1000,5100);verified_counter_observation(250,128,1002,65000);close_to(s.fuel_trip,2+2*.473176473);
-    persist_trip();memset(&s,0,sizeof(s));host_mutexes=host_held=0;assert(host_start_restore()==ESP_OK);
+    persist_trip();memset(&s,0,sizeof(s));host_mutexes=host_held=0;host_boot_id++;host_wall_origin_ms+=65000;assert(host_start_restore()==ESP_OK);
     assert(s.trip.odo_restored && s.fuel_account.direct_valid);
     verified_counter_observation(245,128,1002,1000);close_to(s.distance_trip,10.3218688);
     verified_counter_observation(250,128,1003,1100);close_to(s.fuel_trip,2+3*.473176473);
@@ -479,8 +502,75 @@ static void test_storage_stationary_read_only(void)
     assert(!host_held && host_commits==commits && s.operator_hold==hold && s.emergency_stop==emergency);
 }
 
+
+static void test_boot564_delayed_echo_and_true_mid_conflict(void)
+{
+    const uint8_t combined[]={0xAC,0x80,0x22,0x82,0x30,0x82,0x22,0x00,0x5C};
+    const unsigned delays[]={6000,30001,38362,100000,449000};
+    for(unsigned d=0;d<sizeof(delays)/sizeof(*delays);d++)for(unsigned split=0;split<=5;split++){
+        boot_with_checkpoint(NULL,0);host_capture_config.j1708_local_mid=172;host_now_us=1000000;
+        const tbx_j1708_active_ops_t ops={.begin_tx=proof_begin,.abort_tx=proof_abort};
+        tbx_j1708_active_init(&s.active,&s.requests,&ops,NULL);
+        tbx_j1708_active_config_t cfg={.local_mid=172,.priority=8,.inverted_de21_attested=true};
+        for(unsigned i=0;i<17;i++)cfg.target_mid[i]=130;
+        assert(tbx_j1708_active_configure(&s.active,&cfg));assert(tbx_j1708_active_arm(&s.active,true,true,host_now_us));
+        for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++){s.requests.pids[i].enabled=s.requests.pids[i].pid==34;s.requests.pids[i].next_due_ms=1000;}
+        host_now_us+=5000;tbx_j1708_active_tick(&s.active,host_now_us);assert(s.active.tx_active);
+        assert(!memcmp(s.active.tx_frame,combined,5));host_rx_count=0;
+        if(split)host_rx_events[host_rx_count++]=(host_rx_event_t){UART_DATA,combined,split,false,1100*split};
+        host_rx_events[host_rx_count++]=(host_rx_event_t){UART_DATA,combined+split,sizeof(combined)-split,true,delays[d]};
+        run_rx();
+        assert(!(s.observed_mid[172>>3]&(1u<<(172&7))) && !s.guard_dirty);
+        assert(!s.requests.safety_stopped && s.requests.armed && s.active.echo_ok==1 && s.j1708_frames==1);
+        assert(!s.active.physical_validated);
+        /* The exact same bytes a second time are independent RX, not another
+         * free echo exclusion. Genuine MID conflict must still stop TX. */
+        host_rx_events[0]=(host_rx_event_t){UART_DATA,combined,5,true,6000};host_rx_count=1;run_rx();
+        assert(s.requests.safety_stopped && !s.requests.armed && s.guard_dirty && tb_polling_guard_valid(&s.polling_guard));
+        assert(s.polling_guard.mid==172);
+        persist_polling_guard();assert(guard_present && !s.guard_dirty && s.guard_persisted);
+        memset(&s,0,sizeof(s));host_mutexes=host_held=0;assert(host_start_restore()==ESP_OK);
+        assert(s.polling_guard.mid==172 && !s.guard_invalid && s.guard_persisted); /* True hold survives reboot, separate from desired policy. */
+        guard_saved.crc^=1;memset(&s,0,sizeof(s));host_mutexes=host_held=0;
+        assert(host_start_restore()==ESP_OK && s.guard_invalid); /* Corrupt safety state fails closed. */
+    }
+    puts("boot564 exact AC802282308222005C replay: 30 delayed/fragmented cases, one-time echo consumption and true MID hold PASS");
+}
+
+static void test_independent_polling_supervisor(void)
+{
+    boot_with_checkpoint(NULL,0);host_auto_enabled=true;s.j1708_ready=true;
+    const tbx_j1708_active_ops_t ops={.begin_tx=proof_begin,.abort_tx=proof_abort};
+    tbx_j1708_active_init(&s.active,&s.requests,&ops,NULL);
+    tbx_j1708_active_config_t cfg={.local_mid=172,.priority=8,.inverted_de21_attested=true};
+    for(unsigned i=0;i<17;i++)cfg.target_mid[i]=128;
+    assert(tbx_j1708_active_configure(&s.active,&cfg));assert(tbx_j1708_active_start_production(&s.active,1000000));
+    s.automatic.checked_us=1000000;host_now_us=35000000;
+    request_supervise(host_now_us);
+    assert(s.request_task_unresponsive && s.emergency_stop && !s.requests.armed && !s.active.work_mode);
+    assert(host_auto_enabled && !host_commits && host_supervisor_events==1);
+    assert(!strcmp(s.automatic.last_stop_reason,"REQUEST_TASK_UNRESPONSIVE"));
+    request_supervise(host_now_us+1000000);assert(host_supervisor_events==1);
+    puts("Independent snapshot-task supervisor: missing TX task heartbeat releases TX, diagnoses unavailable, retains desired policy, no reset/NVS disable PASS");
+}
+static void test_durable_operation_boundary_audit(void)
+{
+    boot_with_checkpoint(NULL,0);host_now_us=1000000;
+    assert(tb_capture_fuel_boundary(true,"trip-recorded",0,0));assert(host_commits==2);
+    cJSON *r=cJSON_Parse(host_boundary_record);assert(r);
+    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(r,"event")->valuestring,"FUEL_BOUNDARY"));
+    assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(r,"reference"))==10);cJSON_Delete(r);
+    host_now_us=2000000;assert(tb_capture_fuel_boundary(true,"trip-recorded",0,100000));
+    assert(!s.fuel_account.operation_reference_delayed); /* Duplicate does not invalidate original reference. */
+    host_now_us=3000000;assert(tb_capture_fuel_boundary(false,"trip-recorded",0,0));
+    assert(!tb_capture_fuel_boundary(true,"trip-recorded",0,0)); /* Late START cannot reopen closed trip. */
+    assert(tb_capture_fuel_boundary(true,"late-other-trip",0,UINT32_MAX));
+    assert(s.fuel_account.operation_reference_delayed);
+    puts("Operation audit: durable NVS before outbox, immutable boundary identity, duplicate/reordered events and delayed-reference quality PASS");
+}
 int main(void)
 {
+    test_durable_operation_boundary_audit();test_independent_polling_supervisor();test_boot564_delayed_echo_and_true_mid_conflict();
     test_storage_stationary_read_only();
     test_extended_echo_then_reply_same_uart_event();
     test_validated_counter_mids_and_real_checkpoint_restore();

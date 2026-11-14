@@ -551,6 +551,7 @@ static esp_err_t counter_boundary_handler(httpd_req_t *request)
     const cJSON *age=cJSON_GetObjectItemCaseSensitive(body,"queue_age_ms");
     if(age && (!cJSON_IsNumber(age) || !isfinite(age->valuedouble) || age->valuedouble<0 || age->valuedouble>UINT32_MAX || floor(age->valuedouble)!=age->valuedouble))valid=false;
     bool ok=valid && tb_ecu_counters_boundary_at(!strcmp(event->valuestring,"START"),uid->valuestring,at?(uint64_t)at->valuedouble:0,age?(uint32_t)age->valuedouble:UINT32_MAX);
+    if(ok)ok=tb_capture_fuel_boundary(!strcmp(event->valuestring,"START"),uid->valuestring,at?(uint64_t)at->valuedouble:0,age?(uint32_t)age->valuedouble:UINT32_MAX);
     cJSON_Delete(body);
     if(!valid)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"invalid trip boundary");
     if(!ok){httpd_resp_set_status(request,"503 Service Unavailable");httpd_resp_set_type(request,"application/json");

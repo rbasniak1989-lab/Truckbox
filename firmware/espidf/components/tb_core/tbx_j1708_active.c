@@ -224,6 +224,7 @@ static bool send_request(uint16_t pid, void *context)
     c->tx_frame[position++]=(uint8_t)(0u-sum);c->tx_length=(uint8_t)position;
     c->tx_pid=pid;
     c->echo_position=0;
+    c->echo_frame_pending=false;c->echo_received_us=0;
     c->tx_started_us=c->now_us;
     c->tx_active=true;
     const tbx_j1708_tx_result_t result=c->ops.begin_tx(c->tx_frame,c->tx_length,c->context);
@@ -331,6 +332,7 @@ void tbx_j1708_active_note_rx(tbx_j1708_active_t *c, const uint8_t *bytes, size_
             return;
         }
         if (++c->echo_position==c->tx_length) {
+            c->echo_frame_pending=true;c->echo_received_us=now_us;
             ++c->echo_ok;
             tbx_j1708_field_echo(c);
             if(!c->work_mode)c->scheduler->link_error_count=0; /* Travel resets after matching reply. */
@@ -364,7 +366,19 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
 
 bool tbx_j1708_active_is_tx_echo(const tbx_j1708_active_t *c, const uint8_t *frame, size_t length, uint64_t now_us)
 {
-    return c && frame && c->tx_length>=5 && c->echo_position==c->tx_length && length==c->tx_length &&
-        now_us>=c->tx_started_us && now_us-c->tx_started_us<=UINT64_C(30000) &&
+    /* UART delivery may be delayed by scheduling/flash IO. Match only the ONE
+     * echo already observed byte-for-byte by note_rx, timed from its receipt,
+     * not an arbitrary30ms from TX. Consumption prevents masking a later
+     * independent frame even if it repeats exactly the same bytes. */
+    return c && frame && c->echo_frame_pending && c->tx_length>=5 &&
+        c->echo_position==c->tx_length && length==c->tx_length &&
+        now_us>=c->echo_received_us && now_us-c->echo_received_us<=
+            (uint64_t)c->scheduler->timeout_ms*1000u &&
         memcmp(frame,c->tx_frame,c->tx_length)==0;
+}
+
+bool tbx_j1708_active_consume_tx_echo(tbx_j1708_active_t *c,const uint8_t *frame,size_t n,uint64_t now)
+{
+    if(!tbx_j1708_active_is_tx_echo(c,frame,n,now))return false;
+    c->echo_frame_pending=false;return true;
 }

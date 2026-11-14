@@ -1,0 +1,596 @@
+{
+  "baseline": "6707efb6668e4cb3d817e6e93461c188fb235531",
+  "protected_files": 118,
+  "files": [
+    {
+      "file": "app/build.gradle.kts",
+      "unchanged": true,
+      "sha256": "6bfbc0d9c68ea703355df98dab4dced64b3963717dea072b70794eb68b4b42e1"
+    },
+    {
+      "file": "app/releases/v0.6.2-driver-diagnostics/README.md",
+      "unchanged": true,
+      "sha256": "802eac8258425e92472c0959cc9bd67a8f51575ba4e55d8e5fbc7ec887485f4b"
+    },
+    {
+      "file": "app/releases/v0.6.2-driver-diagnostics/TruckBox-Motorista-v0.6.2-diagnostics-debug.apk",
+      "unchanged": true,
+      "sha256": "3de19ebf4f25ff568c04bbb22eaa7f07dadeb7deef68ada003d7f2f08e9fefea"
+    },
+    {
+      "file": "app/releases/v0.6.2-driver-diagnostics/manifest.json",
+      "unchanged": true,
+      "sha256": "72540fcd3cbba3d53ffa286b287743e30406bfd432c6e1bf2fdebbf2d84baacd"
+    },
+    {
+      "file": "app/src/main/AndroidManifest.xml",
+      "unchanged": true,
+      "sha256": "a2c0b2e6f818d63e14b1192bdaa1ffa6a8fc19937e6ed853ce7b6e73747eb0cb"
+    },
+    {
+      "file": "app/src/main/assets/volvo-diagnostics-cache.json",
+      "unchanged": true,
+      "sha256": "0679533bad4b977174d17412f32d2062328250a427aca038b1d5fc28b056b35f"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/MainActivity.kt",
+      "unchanged": true,
+      "sha256": "2510b6c617d268359be772454be00e949eebdca25c35e828212bba3d9cad494f"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/cloud/TruckBoxCloudClient.kt",
+      "unchanged": true,
+      "sha256": "2ba420154981db49e3ed994f99cbbcf47574410afbd1af640cf605ab44268fa0"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/data/TruckState.kt",
+      "unchanged": true,
+      "sha256": "0c8dceb97d977f8156607351bda303fea47d0e1e923aa25dac89dacb663b08a9"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/diagnostics/DiagnosticClient.kt",
+      "unchanged": true,
+      "sha256": "9c1cd5b560e68b653205b937c7f04d8c2045e1e7079dd3d5957ccbccec5bf5be"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/diagnostics/DiagnosticMerge.kt",
+      "unchanged": true,
+      "sha256": "b647b8b4c9fccfcc9b17342086d0c8012557335e0bd95655a51d8a15ff47f92f"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/diagnostics/DiagnosticsPage.kt",
+      "unchanged": true,
+      "sha256": "f4e0acc8da10608a18cbcecc376051c3c215e746c36a25df3eb0b42642a67643"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/domain/efficiency/EcoEfficiency.kt",
+      "unchanged": true,
+      "sha256": "81c90cc7c90a30c11e539119d68cf5229319d9bfc8f6d7ad8a6f8875af0a02df"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/domain/health/HealthModels.kt",
+      "unchanged": true,
+      "sha256": "e03a81642c9224b32c88ed5dc8e1ecb7e78d2cbecd0c363ed04fc32308e2eeea"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/domain/health/TruckHealthEngine.kt",
+      "unchanged": true,
+      "sha256": "684284ce25cf79201fdf24eba42a46270cae38c5c709a27d1b0e66406502f02a"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/domain/transmission/IShiftPredictionState.kt",
+      "unchanged": true,
+      "sha256": "94aa57b053d2911a8664988085cb54521576cb6d5c0936c97dece76956600363"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/domain/transmission/IShiftPredictor.kt",
+      "unchanged": true,
+      "sha256": "44cb1ddb9ce3243d7f3cfdf72cefa9374632ebef003980fb4e4b3af66d60e78b"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/fuel/FuelTankManager.kt",
+      "unchanged": true,
+      "sha256": "06d84d4eab00b64b88abb1f11188e23f3e2c5f7804f54da204115b316c7933c0"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/fuel/FuelTankMath.kt",
+      "unchanged": true,
+      "sha256": "1c0f0ba0175d00316f8ac42d7fe3e3773ed12cab174df62a2ba3a7fc78aad79c"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/gateway/CoreGatewayClient.kt",
+      "unchanged": true,
+      "sha256": "9f2b0c90f70171aa8937f524439be23033cfdebd5df1488245b471488d79081f"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/gateway/GatewayCloudClient.kt",
+      "unchanged": true,
+      "sha256": "72d3e485f25c74f496ff5af563ca2eeb6225ef376360beab9168ec85a413435a"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/gateway/GatewayStatus.kt",
+      "unchanged": true,
+      "sha256": "48816b5e3b108cc920604d7d8ac888b49cee2c17da515118432394f43105d783"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/gateway/TruckBoxGatewayService.kt",
+      "unchanged": true,
+      "sha256": "e932c14d46ebdf86dc842bc8325ccca4998da983bc745838c48d49e00f15b76a"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/operations/OperationsStore.kt",
+      "unchanged": true,
+      "sha256": "6ffe07739a4e3147ce90000ca01e71c60249735190421291d3948f9db933e44e"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/parser/J1939Frame.kt",
+      "unchanged": true,
+      "sha256": "23f0bbd9271d247baa4746a9c3b890ea81c04f4a9ea11487571c3958eedbdda8"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/parser/TruckBoxJ1939Decoder.kt",
+      "unchanged": true,
+      "sha256": "6b1760a4abd07820f8c9969afd9636b86c7298f09fe9a5060639f1e43c7f4e2a"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/preferences/TruckBoxPreferences.kt",
+      "unchanged": true,
+      "sha256": "7bfb153d2489049b4fee993a96ae6d1f5c75ebc889024a0c2ab7b57ca7dfc002"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/repository/FieldSessionStore.kt",
+      "unchanged": true,
+      "sha256": "ff83544c411f19b1bba69d4df6f4e45ac32d06a07b7a0fbf2a434537f3714c1f"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/repository/RawRingBuffer.kt",
+      "unchanged": true,
+      "sha256": "358b0528303ed91e14154bbbe12357fe5bbcc803b717d43222306cd1db6fcd5d"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/repository/TruckRepository.kt",
+      "unchanged": true,
+      "sha256": "52ce68f9afd92c8abbed71576f9da6e9dcaefffb351d2fb394b84fc60b544f8f"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/transport/CoreStateClient.kt",
+      "unchanged": true,
+      "sha256": "8d43c13b414376086e44d27cb4245b3609c15da1437d9a57a145005fc40d0849"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/transport/Esp32TcpClient.kt",
+      "unchanged": true,
+      "sha256": "e0c31bd5af37e4abd81ea219f413993249e17de1359fbbd8a1f5c1be866ae3cd"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/transport/WifiNetworkBinder.kt",
+      "unchanged": true,
+      "sha256": "d83c0e4aa48ba970b0d0b9f4d68b181e0cdcca04b47c18b86a9cd8e85f8314b1"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/CommonComponents.kt",
+      "unchanged": true,
+      "sha256": "5b623925b1c0a0519317213661a673ea7a408c294cacaccf84a264d4f69234b5"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/ConsumptionScreen.kt",
+      "unchanged": true,
+      "sha256": "045f3cb49485ec30bf4da6870ec45ce9fe68bfdeb0ec852290a0cd971803b85d"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/DashboardScreen.kt",
+      "unchanged": true,
+      "sha256": "409ca55e941b1ce9b373b5163e0d89626065ec51e3dfe67294eb000428a6b4f9"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/LoggerScreen.kt",
+      "unchanged": true,
+      "sha256": "7492c2c027969241f116e22d427e826acf6db3815a14ac7ab3be4485fb947bb8"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/MaintenanceScreen.kt",
+      "unchanged": true,
+      "sha256": "9e6422075792b4e20b4b9436ffc1cd13aea56344cbfb4f7a342bf9f1673c1e8e"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/SensorsScreen.kt",
+      "unchanged": true,
+      "sha256": "7b798eab20f2ad5b6e917e6739bd1505df76393c599c6412b55790e84da48d12"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/SettingsScreen.kt",
+      "unchanged": true,
+      "sha256": "205b993c09878b01df302a9fe3ab47653a3733cdaead1580dac6e916a683447c"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/screens/TripsScreen.kt",
+      "unchanged": true,
+      "sha256": "850cadf5ce2049000ca0376cdcae3925c353a866469f09f3ac0b0955184a2230"
+    },
+    {
+      "file": "app/src/main/java/br/com/truckbox/app/ui/theme/TruckBoxTheme.kt",
+      "unchanged": true,
+      "sha256": "e0f8adcd8605fe534feec2a9df82a38b9c55b29cff7724ea2444db439a522700"
+    },
+    {
+      "file": "app/src/main/res/values/styles.xml",
+      "unchanged": true,
+      "sha256": "d12f79ed58ea3c8721d02adc8e4fe945b5c4d82bc6df57cf826678e9beecd7e2"
+    },
+    {
+      "file": "app/src/test/java/br/com/truckbox/app/diagnostics/DiagnosticMergeTest.kt",
+      "unchanged": true,
+      "sha256": "01562eec3ae2b59d762eed44e0c3b1bb96082e6041a4dda7d436b4b7c331cbbc"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/diagnostics.c",
+      "unchanged": true,
+      "sha256": "2978478054f91c1a31f1fdcdb5e9a2d49f5c2dd858171b8e9f36c76dffce135d"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/diagnostics.h",
+      "unchanged": true,
+      "sha256": "7f5914c8c01efb9484db9ac34f0acd7c2880b9d0df8ef98a96528390f5756310"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/ecu_counters.c",
+      "unchanged": true,
+      "sha256": "6c2b9a2e891131ee5e534ee4a042c3b53cde5fa7d97245a37d5b3ebd321c1045"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/ecu_counters.h",
+      "unchanged": true,
+      "sha256": "6129b60ed780d5269f6fa4f39fee9179f8666c1111d85a961538013de2aed322"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/protocols.c",
+      "unchanged": true,
+      "sha256": "e2480f0616223f738f64b35d2f1e6e46dbbf90c77b025adbe3a26eeb55f266a8"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/protocols.h",
+      "unchanged": true,
+      "sha256": "42455143f21e9a3333fbc4b21cf6ae1fe95ac2eaee1ee9826818b6b0e73cba85"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/store.c",
+      "unchanged": true,
+      "sha256": "fa8525e84fe37e144cdc8263e6c8aaab40bc8f2f72d528bbc1d0f1f04af46241"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/store_codec.c",
+      "unchanged": true,
+      "sha256": "19e51ee15859a0eca932ab294a3bbeba28bb071e3ba3f2b6028944e85066f8d6"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/store_codec.h",
+      "unchanged": true,
+      "sha256": "065b20c278a3f22e120d2d997505a2a95b8d77fc0141aba0f06a1f9ac161e6cc"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/store_internal.h",
+      "unchanged": true,
+      "sha256": "71f57279cc72a348526243f2b70b25e2810a0616e438b1728e4c04d4f4ce5093"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/store_maintenance.h",
+      "unchanged": true,
+      "sha256": "12ae8a9939b8f6d9c0c07e397ea6effa4bd1856a3a492097b7cf62344dd0fb20"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_ecu_counters.c",
+      "unchanged": true,
+      "sha256": "9be25a359f1fe97496d4ea49b07cb768fa98db40586f0c4d0bd1cae4a5dd1e39"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_ecu_counters.h",
+      "unchanged": true,
+      "sha256": "81aafdfd9f962cb1465e61f23f64c498381a1ba61681da46dd53b0b4d8112931"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1587_bridge.c",
+      "unchanged": true,
+      "sha256": "42f5946d6f3ced10c36ca3f59ed173156a6e83753179aefb7611c77fa06ffdda"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1587_bridge.h",
+      "unchanged": true,
+      "sha256": "4362f768821edbf11b670f9763e28a5b7e79c9c1c1fb825254574866332b8f15"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1939.c",
+      "unchanged": true,
+      "sha256": "14129fcfc5817548ad24521a959c41fe932fa56c4f3d089ece18ae70ffbdf68d"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1939.h",
+      "unchanged": true,
+      "sha256": "89cc979908267f06d18f9bb92a991c9bf41dac9364878b57b4565ddf49e700a4"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1939_catalog.inc",
+      "unchanged": true,
+      "sha256": "52b7a2024a52b2f4d208387620ef62dded8f219481c5419beafb691aa5b26e52"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1939_tp.c",
+      "unchanged": true,
+      "sha256": "53a2e75c437f3bcce438fe2954922f639394f6091ac0b1e9bf6f044f39de49e6"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_j1939_tp.h",
+      "unchanged": true,
+      "sha256": "2db0f41f6cfe0365f28d9cb93e5e6f8b182f17088de62c5279a0a410aff11afe"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_volvo_operating.c",
+      "unchanged": true,
+      "sha256": "e18bfa2f686002a105511c0a2a960de83940eaf9a771896e33bb8a368218a942"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/tbx_volvo_operating.h",
+      "unchanged": true,
+      "sha256": "b6dd47d16f47f115789a53239c05de6b78f81cfc2ae38ddca886f962aafea013"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/telemetry.c",
+      "unchanged": true,
+      "sha256": "45551ef83a586fe0f3e300b6c1e0c07cea1317a6c062624bca035e0deaf2f24c"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/telemetry.h",
+      "unchanged": true,
+      "sha256": "b0a46df7d5e651f37bd9089cc729d7249b2e5486a14cdbe973b1d95ef76592d1"
+    },
+    {
+      "file": "firmware/espidf/components/tb_core/telemetry_profile.h",
+      "unchanged": true,
+      "sha256": "a071aab202f682c78e99410a9c81a9c114f3428b3540e372e3576177647dc8ab"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/CMakeLists.txt",
+      "unchanged": true,
+      "sha256": "40daacf0eb8f3fc8b5fbbcdda3721613259883ad248d9000a89e32a09f964cdf"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/README.md",
+      "unchanged": true,
+      "sha256": "d497d8228ecaf6bf05effecf35386bf325fb83610f822025dce010e27ca93a80"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/idf_component.yml",
+      "unchanged": true,
+      "sha256": "5e1f47e8bb6bcb76943ec1b95ee0b011b8777e4748091587b609798066da8b29"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tb_gps_outbox.c",
+      "unchanged": true,
+      "sha256": "bc6e9c7c449e00d6368454a75a8c2e7a537e33af0e991d741e513c0ee6d8d6ff"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tb_gps_outbox.h",
+      "unchanged": true,
+      "sha256": "92652fc91457ac6a682890ffc6f6b5f4172f9917239368825ba52412c8c5d535"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tb_link.c",
+      "unchanged": true,
+      "sha256": "747bfef1505769fe20bfab83ead805b09eb5a43ec712f3c258b381b97b2e18e3"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tb_nmea.c",
+      "unchanged": true,
+      "sha256": "72cfa2ef19e6e4939245ce5817522456541f7be0f4b974f9f14177b038d87ccb"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tb_nmea.h",
+      "unchanged": true,
+      "sha256": "e4cdc52695cbba3d16e07309c002310dbf6f4cb664a7842c91ae23eed63e2ed8"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tests/run_wifi_uplink.sh",
+      "unchanged": true,
+      "sha256": "030b78f56c71f35746ae28aa8a75e16392f367aa36b527e9c49745e130481083"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tests/test_gps_outbox.c",
+      "unchanged": true,
+      "sha256": "45236cc425813dac1693595e0b7a16e4c0f0d4699ac8deab58ed8441ab4b9702"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tests/test_nmea.c",
+      "unchanged": true,
+      "sha256": "e2b828b9ccdfe0b75460a552d310b23510fc72b5bfd1b2d7c793cd3c6ba88ecb"
+    },
+    {
+      "file": "firmware/espidf/components/tb_link/tests/test_wifi_uplink.c",
+      "unchanged": true,
+      "sha256": "adaf4030ddb9cb3f63a4e9fb64dedc9dd9540bbe098625cad69ad6dc45e79800"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/CMakeLists.txt",
+      "unchanged": true,
+      "sha256": "82ac29da95afa678d78d954acea5cee956d126da1104174f49beccfea9534503"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/index.html",
+      "unchanged": true,
+      "sha256": "3fff5c0202c4733ae1f0f94df177ed0cafbc1e559cd35e19c251630485fe9954"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tb_crash.c",
+      "unchanged": true,
+      "sha256": "6feab6c9ebffff17c9bd82e2496662c49981ed283a7cb6b32729f24598f8d0e9"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tb_crash.h",
+      "unchanged": true,
+      "sha256": "14db25f2a8e7fad4d0e39a1b68f8e7482774873875bb23f87c7a16536b630ff1"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tb_image_policy.c",
+      "unchanged": true,
+      "sha256": "12c53b75c651c64bd5e7478f1bdadb5aa0e1fbeb451eb113d12bffc78fb7f7a9"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tb_image_policy.h",
+      "unchanged": true,
+      "sha256": "8e7d5be40f5fdcc1b57c1589343cf1d8278988e14b91f47524f22e32f95dabf0"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tb_web.c",
+      "unchanged": true,
+      "sha256": "b55cc4b1ae732cf6eb39176bf15fd26445671b416548aac626b9fab17da70c88"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/crash_host_stubs.h",
+      "unchanged": true,
+      "sha256": "b83dc8e8fe1519ac7e01fcc0276daaf8caed73274a380a10834c8b246187f26d"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/host_include/esp_assert.h",
+      "unchanged": true,
+      "sha256": "4dde293bf38e9fb4a502701d501f33e6fe08d6b6c31871980e73906cf4ff78be"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/host_include/esp_attr.h",
+      "unchanged": true,
+      "sha256": "25915cf5277ceba411b6b9276b8342005a5b2c4a315943a1b981e8a4bd5d3da1"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/host_include/esp_err.h",
+      "unchanged": true,
+      "sha256": "b659e5e2f875eb1bb5c06f374a8a735c1379671d8860ef394f0958b39307f50f"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/run_crash.sh",
+      "unchanged": true,
+      "sha256": "3d855dce6c283ae96e4eaf95b58ab649e77bd124201c31ff4d2ca1ae2f9b80a4"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/run_json_http.sh",
+      "unchanged": true,
+      "sha256": "0100c496bf8e887cd0f268a3de9f10a44d56268ac36e4411660f93bdda689126"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/run_policy_test.sh",
+      "unchanged": true,
+      "sha256": "46f0c0c16e65b92dc84e492f3f0e3bce8c38115a33bc5a7034dd56bb2bae78d3"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/test_crash.c",
+      "unchanged": true,
+      "sha256": "683601278266c48ca972ff1f1239d7a4cc3ea4adf8e64b7ca83b0294a268d8fc"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/test_image_policy.c",
+      "unchanged": true,
+      "sha256": "64887f787b786cdf480f9a8a0aa90fa98f94bf5d6dd78ac629519e67de3bb280"
+    },
+    {
+      "file": "firmware/espidf/components/tb_web/tests/test_json_http.c",
+      "unchanged": true,
+      "sha256": "9aeedd31d95872cf32ed0bb57280b5b8bbd5d8c0ea57f3415a917eecf86c088c"
+    },
+    {
+      "file": "firmware/espidf/dependencies.lock",
+      "unchanged": true,
+      "sha256": "d75dd9b9809afc62f80f8237c83382e6a9419468e532cf292b35492e86958a84"
+    },
+    {
+      "file": "firmware/espidf/partitions.csv",
+      "unchanged": true,
+      "sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832"
+    },
+    {
+      "file": "firmware/espidf/sdkconfig.core.defaults",
+      "unchanged": true,
+      "sha256": "d18a20c9aae8ab14958d03deb5b4684036d312969938b62cb8c0b80e4b3633de"
+    },
+    {
+      "file": "firmware/espidf/sdkconfig.defaults",
+      "unchanged": true,
+      "sha256": "82fa96d698fd4a9d68f4018002e8525466850a2a6d2db9a88eb25b3e270185cc"
+    },
+    {
+      "file": "firmware/espidf/sdkconfig.link.defaults",
+      "unchanged": true,
+      "sha256": "55345d8de7d6725bb453f407ec0f3b6887e315addfa0f40857711106966a22ed"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.c",
+      "unchanged": true,
+      "sha256": "9d18e7846e59caeb573c28d5da406e17e6b8f83d15ea0f8e60be5e494eab7ef8"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.h",
+      "unchanged": true,
+      "sha256": "4fb7eb60f4c9f6f302b2e1348daf37a47e996664c876aa09f622d2d71b959c08"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.c",
+      "unchanged": true,
+      "sha256": "785f75435a21853207876a3b14b7d96714bde1bf24c2e12eca8fa7d445cdab7d"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.h",
+      "unchanged": true,
+      "sha256": "d7e98b8d74b55b56c5c237c8ab98ba9f74e20be943e0ac47a677e153eca60efc"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.c",
+      "unchanged": true,
+      "sha256": "2784306aca7c9c22ceab4e880d173db75a7cb469a87a6fdb9759b056a3a3986d"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.h",
+      "unchanged": true,
+      "sha256": "890d5c47caa330d5e94d4f0eaee680ddbbf12249869f5b50c4e40a497594ba85"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.c",
+      "unchanged": true,
+      "sha256": "d3174a09a1c8545091f3bf9751621ef82c7d23b76e33741c81c2f216e50e51ec"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.h",
+      "unchanged": true,
+      "sha256": "c585dd6a87784d3504cef82f1158918a9cefd1e251fd69ecda2a784c5983d841"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1708_policy.h",
+      "unchanged": true,
+      "sha256": "fa54cf24aeed91252a5fb54988f5b03f9f347bc5ae74180267916af97d1ce046"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.c",
+      "unchanged": true,
+      "sha256": "6a7521a5b4502191359cfccb83905d1d193cc67d4aff89bdc390fbc544753b63"
+    },
+    {
+      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.h",
+      "unchanged": true,
+      "sha256": "e21f405444c17e43f11c15e6426825f560e251e31852ded8bf8cffc0f72297f2"
+    },
+    {
+      "file": "firmware/releases/v0.1.0-b1/truckbox-b1.zip",
+      "unchanged": true,
+      "sha256": "43ec5b71d8c3346e0a6d4667c182080d8a900ea55bc526c9b1acf896fe0da1a5"
+    },
+    {
+      "file": "multimedia/build.gradle.kts",
+      "unchanged": true,
+      "sha256": "ce3ef7f390452900e3e1eb7fca3a474b4a9fd6b3000a4a5da977542561614c82"
+    },
+    {
+      "file": "multimedia/src/main/AndroidManifest.xml",
+      "unchanged": true,
+      "sha256": "bde368a44a8934b8bbdd49c37a5cfe6d2fa92c1db8c9e259d448faae4a6dc84f"
+    },
+    {
+      "file": "multimedia/src/main/java/br/com/truckbox/multimedia/MainActivity.kt",
+      "unchanged": true,
+      "sha256": "046cdae1e1e613373cd1338b04f85ef0ade84783f583e2777fcf0f7ddaf73dc2"
+    }
+  ]
+}

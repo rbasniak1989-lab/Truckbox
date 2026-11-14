@@ -15,10 +15,11 @@
 #define ESP_LOGW(tag,...) ((void)(tag))
 static const char *TAG="offline";
 static struct {tbx_transmission_t transmission;tbx_j1708_auto_t automatic;uint64_t transmission_snapshot_at;uint32_t transmission_last_flags,transmission_last_launches;tbx_j1708_active_t active;tbx_j1708_request_scheduler_t requests;uint32_t request_event_dropped;
-    uint32_t can_frames,j1708_frames,j1708_checksum_errors,uart_overruns;
+    uint32_t can_frames,j1708_frames,j1708_checksum_errors,uart_overruns,fuel_checkpoint_id;
+    uint64_t last_tx_uart_us;
     uint64_t speed_at,rpm_at,fuel_at,total_at;
     double speed,rpm,fuel_rate,distance_total,distance_trip,fuel_trip;
-    bool distance_trip_valid,fuel_trip_valid,speed_j1587,rpm_j1587,fuel_j1587,fuel_derived;
+    bool request_task_unresponsive,distance_trip_valid,fuel_trip_valid,speed_j1587,rpm_j1587,fuel_j1587,fuel_derived;
     void *lock;tbx_trip_t trip;tbx_fuel_account_t fuel_account;
 } capture_fixture;
 #define xSemaphoreTake(lock,wait) ((void)(lock),(void)(wait))
@@ -26,7 +27,7 @@ static struct {tbx_transmission_t transmission;tbx_j1708_auto_t automatic;uint64
 static bool tb_core_append_gps(cJSON *o){return tb_core_append_gps_at(o,host_now_us);}
 static unsigned esp_reset_reason(void){return 1;}
 static unsigned esp_get_minimum_free_heap_size(void){return 100000;}
-static const char *tb_version(void){return "0.2.17";}
+static const char *tb_version(void){return "0.2.23";}
 #define tb_config_j1708_auto_enabled() true
 
 static int simulated_gettimeofday(struct timeval *tv,void *zone)
@@ -55,9 +56,16 @@ int nvs_set_blob(unsigned handle,const char *key,const void *data,size_t size){u
 int nvs_commit(unsigned handle){(void)handle;return 0;}
 static void offline_observe(const tbx_j1587_observation_t *o,void *context){uint64_t utc=*(uint64_t *)context;tb_diagnostics_observe(o,utc,NULL);tb_ecu_counters_observe(o,false);}
 static FILE *output;
-static unsigned exported;static bool seen_pid[512];
+static unsigned exported,operational_rows,fuel_rows;static bool seen_pid[512];
 static void drain(void){for(unsigned i=0;i<host_record_count;i++){fprintf(output,"%s\n",host_records[i]);++exported;
         cJSON *row=cJSON_Parse(host_records[i]);assert(row);
+        const cJSON *kind=cJSON_GetObjectItemCaseSensitive(row,"sample_kind"),*event=cJSON_GetObjectItemCaseSensitive(row,"event");
+        if(cJSON_IsString(kind) && !strcmp(kind->valuestring,"OPERATIONAL")){
+            ++operational_rows;const cJSON *a=cJSON_GetObjectItemCaseSensitive(row,"trip_accounting");
+            assert(cJSON_GetObjectItemCaseSensitive(a,"v") && cJSON_GetObjectItemCaseSensitive(a,"pending_l"));
+            const cJSON *op=cJSON_GetObjectItemCaseSensitive(a,"op");assert(cJSON_IsArray(op) && cJSON_GetArraySize(op)==3);
+        }
+        if(cJSON_IsString(event) && !strcmp(event->valuestring,"FUEL_RECONCILIATION"))++fuel_rows;
         const char *buckets[]={"j1587_sensors","j1587_raw"};
         for(unsigned k=0;k<2;k++){const cJSON *entry;const cJSON *bucket=cJSON_GetObjectItemCaseSensitive(row,buckets[k]);cJSON_ArrayForEach(entry,bucket){unsigned pid=(unsigned)strtoul(entry->string,NULL,10);if(pid<512)seen_pid[pid]=true;}}
         cJSON_Delete(row);}host_record_count=0;}
@@ -168,7 +176,13 @@ int main(int argc,char **argv)
             capture_fixture.distance_trip_valid=capture_fixture.fuel_trip_valid=true;
             capture_fixture.speed_j1587=capture_fixture.rpm_j1587=capture_fixture.fuel_j1587=true;
             capture_fixture.trip.quality="DELTA_ODO_J1587_VALIDADO";
-            capture_fixture.fuel_account=(tbx_fuel_account_t){.integrated_l=sec*.0075,.estimated_l=.15,.gaps=2,.unknown_gap=true,.quality="INTEGRADO_VAZAO_J1587_EM_VALIDACAO"};
+            capture_fixture.fuel_account=(tbx_fuel_account_t){.observed_l=sec*.0075,.direct_l=sec*.007,.direct_valid=true,.direct_raw=600000+sec/60,.direct_mid=128,.counter_l=(600000+sec/60)*.473176473,
+                .direct_anchor_l=sec*.007,.integrated_l=sec*.0075,.estimated_l=.15,.gaps=2,.unknown_gap=true,.quality="PID250_COM_ESTIMATIVA_PENDENTE",
+                .anchor={.boot=1,.uptime_ms=sec*1000},.interval_start={.boot=1,.uptime_ms=(sec>300?sec-300:0)*1000},.interval_id=sec/300+1,
+                .last_delta_l=2.365882365,.last_integrated_l=2.25,.last_correction_l=.115882365};
+            strcpy(capture_fixture.fuel_account.operation_uid,"offline-01234567890123456789012345678901234567890123456789012345");
+            capture_fixture.fuel_account.operation_open=true;capture_fixture.fuel_account.operation_estimated=true;
+            capture_fixture.fuel_checkpoint_id=capture_fixture.fuel_account.interval_id;
             offline_operational(host_now_us/1000);
             offline_transmission(host_now_us/1000);
             size_t cursor=0;
@@ -179,7 +193,7 @@ int main(int argc,char **argv)
         }
         if(sec%60==0){
             capture_fixture.j1708_frames=(uint32_t)s.processed;capture_fixture.active.work_mode=true;
-            request_metric_snapshot();volvo_operating_snapshot();
+            request_metric_snapshot();volvo_operating_snapshot();fuel_interval_snapshot();
             cJSON *health=offline_health(host_now_us/1000);assert(health);queue_sample(health);
             size_t cursor=0;
             for(unsigned part=0;part<64;part++){
@@ -190,6 +204,7 @@ int main(int argc,char **argv)
         }
         drain();
     }
+    assert(operational_rows==720 && fuel_rows==120);
     assert(capture_fixture.requests.sent_total>4500 && capture_fixture.requests.sent_total==capture_fixture.requests.answered_total);
     for(unsigned i=0;i<17;i++){unsigned expected=7200000u/tbx_j1708_production_period(capture_fixture.requests.pids[i].pid,false);assert(capture_fixture.requests.pids[i].sent+1>=expected);}
     for(unsigned i=0;i<catalog_size;i++)assert(catalog[i].pid<512 && seen_pid[catalog[i].pid]);
