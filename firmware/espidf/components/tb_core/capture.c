@@ -1394,6 +1394,16 @@ cJSON *tb_capture_request_stats_json(unsigned offset,unsigned limit)
 
 bool tb_capture_tx_ready(void) { return s.j1708_ready && s.edge_ready; }
 
+/* Read-only maintenance interlock. Never changes acquisition or TX policy. */
+bool tb_capture_storage_stationary(void)
+{
+    if(!s.lock || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+    const uint64_t now=(uint64_t)esp_timer_get_time()/1000u;
+    bool parked=s.speed_at && now>=s.speed_at && now-s.speed_at<=5000u &&
+        isfinite(s.speed) && s.speed>=0 && s.speed<=0.1;
+    xSemaphoreGive(s.lock);return parked;
+}
+
 void tb_capture_pause_maintenance(void)
 {
     s.emergency_stop=true;s.operator_hold=true;request_abort_tx(NULL);

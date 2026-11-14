@@ -47,6 +47,8 @@ static bool begin_upload(void)
     return atomic_compare_exchange_strong(&s_ota_busy, &expected, true);
 }
 
+bool tb_web_begin_maintenance(void) { return begin_upload(); }
+
 static void response_headers(httpd_req_t *request)
 {
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");

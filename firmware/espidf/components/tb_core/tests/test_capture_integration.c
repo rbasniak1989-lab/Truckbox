@@ -463,8 +463,25 @@ static void test_validated_counter_mids_and_real_checkpoint_restore(void)
     memset(&host_capture_config,0,sizeof(host_capture_config));
 }
 
+static void test_storage_stationary_read_only(void)
+{
+    boot_with_checkpoint(NULL,0);
+    unsigned commits=host_commits;bool hold=s.operator_hold,emergency=s.emergency_stop;
+    host_now_us=1000000;s.speed_at=0;s.speed=0;assert(!tb_capture_storage_stationary());
+    s.speed_at=1000;assert(tb_capture_storage_stationary());
+    s.speed=1;assert(!tb_capture_storage_stationary());
+    s.speed=-1;assert(!tb_capture_storage_stationary());
+    s.speed=NAN;assert(!tb_capture_storage_stationary());
+    s.speed=INFINITY;assert(!tb_capture_storage_stationary());
+    s.speed=0;host_now_us=6001000;assert(!tb_capture_storage_stationary());
+    s.speed_at=7000;assert(!tb_capture_storage_stationary());
+    host_now_us=7000000;assert(tb_capture_storage_stationary());
+    assert(!host_held && host_commits==commits && s.operator_hold==hold && s.emergency_stop==emergency);
+}
+
 int main(void)
 {
+    test_storage_stationary_read_only();
     test_extended_echo_then_reply_same_uart_event();
     test_validated_counter_mids_and_real_checkpoint_restore();
     test_production_uart_partitioning_and_candidates();

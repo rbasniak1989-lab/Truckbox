@@ -1,5 +1,5 @@
 #ifndef TB_STORE_HOST_TEST
-#include "tb.h"
+#include "core_internal.h"
 #endif
 #include "store_internal.h"
 #include "store_codec.h"
@@ -30,6 +30,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
@@ -1544,6 +1545,8 @@ esp_err_t tb_store_ack(uint64_t sequence)
     return error;
 }
 
+#include "store_maintenance.h"
+
 void tb_store_add_json(cJSON *object)
 {
     cJSON *storage = cJSON_AddObjectToObject(object, "storage");
@@ -1580,6 +1583,7 @@ void tb_store_add_json(cJSON *object)
     cJSON_AddBoolToObject(storage, "ready", state.ready && state.write_confirmed && !state.io_paused);
     cJSON_AddBoolToObject(storage,"read_ready",state.ready && state.recovery_complete);
     cJSON_AddBoolToObject(storage,"durable_write_confirmed",state.write_confirmed);
+    maintenance_json(storage);
     cJSON_AddBoolToObject(storage, "initializing", false);
     cJSON_AddStringToObject(storage, "medium", state.medium ? state.medium : "unavailable");
     cJSON_AddStringToObject(storage, "directory", state.base_path ? state.base_path : "");

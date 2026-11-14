@@ -1,0 +1,1 @@
+Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/movement/mutex/OOM/read/send failure guards, released mutex, no writes PASS

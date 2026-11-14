@@ -50,11 +50,20 @@ static uint64_t host_nvs_ack, host_nvs_reserved;
 static uint64_t host_pending_ack, host_pending_reserved;
 static uint8_t host_pending_clean;
 static uint32_t host_pending_keep,host_nvs_keep;
+static uint64_t host_now_us=1234567;
+static bool host_parked,host_maintenance_target;
+static esp_err_t host_format_result;
+static unsigned host_format_calls;
+static esp_err_t (*host_format_callback)(void);
 
 static inline const tb_config_t *tb_config(void) { return &host_config; }
 static inline const char *tb_device_uid(void) { return "TB-HOST-0123456789AB"; }
 static inline uint32_t tb_boot_id(void) { return 42; }
-static inline int64_t esp_timer_get_time(void) { return 1234567; }
+static inline int64_t esp_timer_get_time(void) { return (int64_t)host_now_us; }
+static inline bool tb_capture_storage_stationary(void){return host_parked;}
+static inline bool maintenance_target_valid(void){return host_maintenance_target;}
+static inline esp_err_t maintenance_format_media(void){++host_format_calls;return host_format_callback?host_format_callback():host_format_result;}
+static inline void esp_fill_random(void *out,size_t length){static unsigned char n;unsigned char *p=out;for(size_t i=0;i<length;i++)p[i]=++n;}
 static inline bool xSemaphoreTake(void *lock, unsigned delay)
 { (void)lock; (void)delay; return !host_mutex_busy; }
 static inline void xSemaphoreGive(void *lock) { (void)lock; }

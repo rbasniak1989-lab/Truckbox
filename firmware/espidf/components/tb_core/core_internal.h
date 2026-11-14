@@ -3,6 +3,10 @@
 
 esp_err_t tb_store_init(void);
 esp_err_t tb_store_retry(void);
+esp_err_t tb_store_maintenance_prepare(char challenge[33]);
+esp_err_t tb_store_maintenance_format(const char *challenge);
+esp_err_t tb_store_flash_backup(httpd_req_t *request);
+bool tb_capture_storage_stationary(void);
 esp_err_t tb_capture_start(void);
 void tb_capture_add_json(cJSON *object);
 void tb_capture_add_json_compact(cJSON *object);

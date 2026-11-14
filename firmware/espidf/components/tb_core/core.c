@@ -473,6 +473,49 @@ static esp_err_t storage_retry_handler(httpd_req_t *request)
     return tb_http_send_json(request,reply);
 }
 
+static esp_err_t storage_maintenance_handler(httpd_req_t *request)
+{
+    if(!tb_http_require_admin(request))return ESP_OK;
+    cJSON *body=NULL;
+    if(tb_http_read_json(request,512,&body)!=ESP_OK){cJSON_Delete(body);return ESP_FAIL;}
+    const cJSON *action=cJSON_GetObjectItemCaseSensitive(body,"action");
+    bool prepare=cJSON_IsString(action) && !strcmp(action->valuestring,"prepare");
+    bool format=cJSON_IsString(action) && !strcmp(action->valuestring,"format");
+    bool allowed=(prepare || format) && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized")) &&
+        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"stationary")) && tb_capture_storage_stationary();
+    const cJSON *phrase=cJSON_GetObjectItemCaseSensitive(body,"confirmation");
+    const cJSON *uid=cJSON_GetObjectItemCaseSensitive(body,"device_uid");
+    const cJSON *boot=cJSON_GetObjectItemCaseSensitive(body,"boot_id");
+    if(format)allowed=allowed && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"accept_data_loss")) &&
+        cJSON_IsString(phrase) && !strcmp(phrase->valuestring,"FORMATAR TBFLASH") &&
+        cJSON_IsString(uid) && !strcmp(uid->valuestring,tb_device_uid()) &&
+        cJSON_IsNumber(boot) && boot->valuedouble==(double)tb_boot_id();
+    if(!allowed){cJSON_Delete(body);return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"Confirme caminhao parado, perda dos arquivos e identificacao correta; velocidade recente deve ser zero.");}
+    if(!tb_web_begin_maintenance()){cJSON_Delete(body);return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"OTA ou manutencao em andamento.");}
+    char challenge[33]={0};esp_err_t result;
+    if(prepare)result=tb_store_maintenance_prepare(challenge);
+    else{
+        const cJSON *nonce=cJSON_GetObjectItemCaseSensitive(body,"challenge");
+        result=cJSON_IsString(nonce)?tb_store_maintenance_format(nonce->valuestring):ESP_ERR_INVALID_ARG;
+    }
+    cJSON_Delete(body);tb_web_set_ota_busy(false);
+    if(result!=ESP_OK)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"Manutencao recusada ou falhou. Consulte storage.maintenance; prepare nova confirmacao para tentar novamente.");
+    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);
+    if(prepare){
+        cJSON_AddStringToObject(reply,"challenge",challenge);cJSON_AddNumberToObject(reply,"expires_in_s",120);
+        cJSON_AddStringToObject(reply,"scope","storage:/tbflash only; NVS, OTA, credentials and trip counters preserved");
+    }else cJSON_AddStringToObject(reply,"message","Volume recriado e prova de escrita/releitura concluida; aguarde telemetria real e ACK.");
+    tb_store_add_json(reply);return tb_http_send_json(request,reply);
+}
+
+static esp_err_t storage_backup_handler(httpd_req_t *request)
+{
+    if(!tb_http_require_admin(request))return ESP_OK;
+    if(!tb_capture_storage_stationary() || !tb_web_begin_maintenance())
+        return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"Estacione e aguarde velocidade recente zero; OTA/manutencao deve estar livre.");
+    esp_err_t result=tb_store_flash_backup(request);tb_web_set_ota_busy(false);return result;
+}
+
 static esp_err_t reset_handler(httpd_req_t *request)
 {
     if (!legacy_write_origin_ok(request)) return httpd_resp_send_err(request, HTTPD_403_FORBIDDEN, "cross-site write rejected");
@@ -672,6 +715,8 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
         { .uri = "/api/storage/prepare-rollback", .method = HTTP_POST, .handler = rollback_prepare_handler },
         { .uri = "/api/storage/discard", .method = HTTP_POST, .handler = discard_storage_handler },
         { .uri = "/api/storage/retry", .method = HTTP_POST, .handler = storage_retry_handler },
+        { .uri = "/api/storage/maintenance", .method = HTTP_POST, .handler = storage_maintenance_handler },
+        { .uri = "/api/storage/backup", .method = HTTP_GET, .handler = storage_backup_handler },
     };
     for (unsigned i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         esp_err_t err = httpd_register_uri_handler(server, &routes[i]);

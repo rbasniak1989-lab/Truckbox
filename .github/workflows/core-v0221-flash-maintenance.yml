@@ -1,0 +1,83 @@
+name: TruckBox Core 0.2.21 explicit WiFi storage maintenance
+on:
+  push:
+    branches: [feature/revb1-v0221-flash-maintenance]
+    paths: ['firmware/**', 'cloud/diagnostics/**', 'supabase/**', '.github/workflows/core-v0221-flash-maintenance.yml']
+  pull_request:
+    branches: [fix/revb1-v0220-flash-open]
+    paths: ['firmware/**', 'cloud/diagnostics/**', 'supabase/**', '.github/workflows/core-v0221-flash-maintenance.yml']
+  workflow_dispatch:
+concurrency:
+  group: core-v0221-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ESP32-C6 with exact ESP-IDF and exercise all host/fault/offline tests
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+      - name: Check Core identity, OTA fit, profile and unchanged partition table
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct,hashlib
+          p=Path('firmware/espidf/build-core')
+          data=(p/'truckbox_core.bin').read_bytes()
+          assert 512<len(data)<0x300000
+          text=lambda a,b:data[a:b].split(b'\0',1)[0].decode('ascii')
+          assert data[0]==0xe9 and data[3]>>4==3 and struct.unpack_from('<H',data,12)[0]==13
+          assert text(48,80)=='0.2.21' and text(80,112)=='truckbox_core' and text(144,176)=='v5.5.2'
+          assert hashlib.sha256(Path('firmware/espidf/partitions.csv').read_bytes()).hexdigest()=='5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832'
+          assert 'CONFIG_TB_J1708_ONLY=y' in (p/'sdkconfig').read_text()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-Core-0.2.21-CANDIDATA-NAO-INSTALADA
+          path: |
+            firmware/espidf/build-core/truckbox_core.bin
+            firmware/espidf/build-core/truckbox_core.elf
+            firmware/espidf/build-core/truckbox_core.map
+          retention-days: 30
+          if-no-files-found: error
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test dependencies in runner temporary directory
+        run: |
+          npm install --prefix "$RUNNER_TEMP/tb-web" --no-audit --no-fund playwright
+          "$RUNNER_TEMP/tb-web/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Exercise actual embedded HTML against local HTTP fixtures
+        run: |
+          NODE_PATH="$RUNNER_TEMP/tb-web/node_modules" node firmware/espidf/tests/web/test_flow.cjs
+          NODE_PATH="$RUNNER_TEMP/tb-web/node_modules" node firmware/espidf/tests/web/test_flash_maintenance.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-Core-0.2.21-painel-simulado
+          path: |
+            firmware/espidf/tests/web/result.json
+            firmware/espidf/tests/web/*.png
+          if-no-files-found: error
+  diagnostics-cloud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test cloud/diagnostics/test_diagnostics.mjs
+      - run: node cloud/diagnostics/check_entry.mjs

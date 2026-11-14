@@ -58,9 +58,11 @@ typedef struct{
 static struct{const char *medium,*base_path;wl_handle_t flash_handle;}state={"flash","/tbflash",17};
 #define ESP_PARTITION_TYPE_DATA 1
 #define ESP_PARTITION_SUBTYPE_DATA_FAT 2
-typedef struct{bool readonly;}esp_partition_t;
+typedef struct{bool readonly;uint32_t address,size;}esp_partition_t;
+static esp_partition_t partition={false,0x620000,0x1e0000};
+static struct{const char *stage;}maintenance;
 static const esp_partition_t *esp_partition_find_first(int type,int subtype,const char *label){
-    static const esp_partition_t partition={false};assert(type==1 && subtype==2 && !strcmp(label,"storage"));return &partition;
+    assert(type==1 && subtype==2 && !strcmp(label,"storage"));return &partition;
 }
 #include "rebind_under_test.h"
 static void put(const char *name,const char *s);
@@ -192,9 +194,29 @@ static void field_root_denied_cases(void){
             assert(rebind_flash_volume(17)==FR_OK);
             assert(disk_writes==writes_before && !memcmp(preserved,disk+root_offset,root_bytes));
         }
-        free(preserved);assert(f_mount(NULL,"0:",0)==FR_OK);
+        free(preserved);
+        /* Actual production formatter, authorized by a separately tested
+         * handler, clears either fixture while retaining the same VFS drive. */
+        assert(maintenance_partition()==&partition);
+        partition.address=0x9000;assert(maintenance_partition()==NULL);partition.address=0x620000;
+        partition.size=0x6000;assert(maintenance_partition()==NULL);partition.size=0x1e0000;
+        partition.readonly=true;assert(maintenance_partition()==NULL);partition.readonly=false;
+        assert(maintenance_reformat_volume(17)==FR_OK);
+        assert(visible_root_entries()==0 && fs.n_rootdir==512);
+        assert(f_open(&file,"0:/00000001.LOG",FA_READ|FA_WRITE|FA_CREATE_NEW)==FR_OK);
+        const char payload[]="REAL_TELEMETRY_AFTER_AUTHORIZED_FORMAT\n";UINT written;
+        assert(f_write(&file,payload,sizeof(payload)-1,&written)==FR_OK && written==sizeof(payload)-1);
+        assert(f_sync(&file)==FR_OK && f_close(&file)==FR_OK);
+        assert(rebind_flash_volume(17)==FR_OK);expect("0:/00000001.LOG",payload);
+        /* Failed media write cannot be reported as a successful format. A
+         * reboot/mount only reads; it does not replay the destructive call. */
+        fail_writes=true;assert(maintenance_reformat_volume(17)!=FR_OK);fail_writes=false;
+        unsigned writes_after_failure=disk_writes;
+        assert(rebind_flash_volume(17)==FR_OK && disk_writes==writes_after_failure);
+        expect("0:/00000001.LOG",payload);
+        assert(f_mount(NULL,"0:",0)==FR_OK);
     }
-    puts("Boot 559 reproduction: FAT12/512 slots, CREATE_NEW flags7, absent LOG, FR_DENIED7/EACCES13/stat4 with free clusters; full foreign directory OR invisible orphan LFNs; three rebinds do not fix either; zero writes and exact root bytes preserved PASS");
+    puts("Boot 559 reproduction: FAT12/512 slots, flags7, FR_DENIED7/stat4; full directory OR orphan LFNs; rebinds never fix; original bytes preserved until explicit production formatter; partition guard, new file/sync/readback/reboot PASS");
 }
 int main(void){
     FATFS fs;unsigned char work[SECTOR_SIZE];

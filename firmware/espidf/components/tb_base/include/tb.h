@@ -91,6 +91,8 @@ void tb_base_add_json(cJSON *object);
 esp_err_t tb_web_start(void);
 void tb_web_set_ota_busy(bool busy);
 bool tb_web_ota_busy(void);
+/* Shares the atomic OTA exclusion; caller must release on every exit. */
+bool tb_web_begin_maintenance(void);
 
 /* The selected role implements these entry points. Other-role files must not be linked. */
 esp_err_t tb_application_start(void);
