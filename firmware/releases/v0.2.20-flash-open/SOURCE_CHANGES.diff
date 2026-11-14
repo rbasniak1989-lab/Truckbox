@@ -1,0 +1,1904 @@
+diff --git a/.github/workflows/core-v0220-flash-open.yml b/.github/workflows/core-v0220-flash-open.yml
+new file mode 100644
+index 0000000..4abd387
+--- /dev/null
++++ b/.github/workflows/core-v0220-flash-open.yml
+@@ -0,0 +1,81 @@
++name: TruckBox Core 0.2.20 flash OPEN EACCES and durable recovery
++on:
++  push:
++    branches: [fix/revb1-v0220-flash-open]
++    paths: ['firmware/**', 'cloud/diagnostics/**', 'supabase/**', '.github/workflows/core-v0220-flash-open.yml']
++  pull_request:
++    branches: [fix/revb1-v0219-storage-recovery]
++    paths: ['firmware/**', 'cloud/diagnostics/**', 'supabase/**', '.github/workflows/core-v0220-flash-open.yml']
++  workflow_dispatch:
++concurrency:
++  group: core-v0220-${{ github.head_ref || github.ref_name }}
++  cancel-in-progress: true
++permissions:
++  contents: read
++jobs:
++  test-build:
++    runs-on: ubuntu-latest
++    timeout-minutes: 45
++    steps:
++      - uses: actions/checkout@v4
++      - name: Build ESP32-C6 with exact ESP-IDF and exercise all host/fault/offline tests
++        uses: espressif/esp-idf-ci-action@v1
++        with:
++          esp_idf_version: v5.5.2
++          target: esp32c6
++          path: firmware/espidf
++          command: bash tools/build_v020.sh core && sh tests/run_all.sh
++      - name: Check Core identity, OTA fit, profile and unchanged partition table
++        run: |
++          python3 - <<'PY'
++          from pathlib import Path
++          import struct,hashlib
++          p=Path('firmware/espidf/build-core')
++          data=(p/'truckbox_core.bin').read_bytes()
++          assert 512<len(data)<0x300000
++          text=lambda a,b:data[a:b].split(b'\0',1)[0].decode('ascii')
++          assert data[0]==0xe9 and data[3]>>4==3 and struct.unpack_from('<H',data,12)[0]==13
++          assert text(48,80)=='0.2.20' and text(80,112)=='truckbox_core' and text(144,176)=='v5.5.2'
++          assert hashlib.sha256(Path('firmware/espidf/partitions.csv').read_bytes()).hexdigest()=='5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832'
++          assert 'CONFIG_TB_J1708_ONLY=y' in (p/'sdkconfig').read_text()
++          PY
++      - uses: actions/upload-artifact@v4
++        with:
++          name: TruckBox-Core-0.2.20-CANDIDATA-NAO-INSTALADA
++          path: |
++            firmware/espidf/build-core/truckbox_core.bin
++            firmware/espidf/build-core/truckbox_core.elf
++            firmware/espidf/build-core/truckbox_core.map
++          retention-days: 30
++          if-no-files-found: error
++  browser:
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '22'
++      - name: Install browser test dependencies in runner temporary directory
++        run: |
++          npm install --prefix "$RUNNER_TEMP/tb-web" --no-audit --no-fund playwright
++          "$RUNNER_TEMP/tb-web/node_modules/.bin/playwright" install --with-deps chromium
++      - name: Exercise actual embedded HTML against local HTTP fixtures
++        run: NODE_PATH="$RUNNER_TEMP/tb-web/node_modules" node firmware/espidf/tests/web/test_flow.cjs
++      - uses: actions/upload-artifact@v4
++        with:
++          name: TruckBox-Core-0.2.20-painel-simulado
++          path: |
++            firmware/espidf/tests/web/result.json
++            firmware/espidf/tests/web/*.png
++          if-no-files-found: error
++  diagnostics-cloud:
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '22'
++      - run: node --test cloud/diagnostics/test_diagnostics.mjs
++      - run: node cloud/diagnostics/check_entry.mjs
+diff --git a/firmware/espidf/CHANGELOG_v0.2.20.md b/firmware/espidf/CHANGELOG_v0.2.20.md
+new file mode 100644
+index 0000000..a0f664b
+--- /dev/null
++++ b/firmware/espidf/CHANGELOG_v0.2.20.md
+@@ -0,0 +1,13 @@
++# 0.2.20 — candidata de correção OPEN/EACCES
++
++- Usa atributos FAT reais para reconhecer arquivos somente leitura; mantém o arquivo e continua em novo segmento.
++- Cria novos segmentos exclusivamente e mantém append sem truncamento nos arquivos próprios existentes.
++- Preserva arquivos anteriores à atualização e arquivos somente leitura, inclusive após ACK. Mantém a reciclagem normal de novos segmentos somente com ACK confirmado.
++- Separa releitura de recuperação com escrita durável; não conta montagem/scan como sucesso completo.
++- Registra caminho, flags, FRESULT original, atributos FAT e resultados de recuperação; códigos não medidos ficam nulos.
++- Limita falhas consecutivas, retém a fila/item em voo e oferece retry administrativo somente do armazenamento.
++- Desabilita formatação automática também em partição vazia.
++- Preserva código/configuração de J1708, requisições automáticas, contadores, Wi-Fi, Cloud e partições.
++- Build e testes de software passaram. Causa específica da recusa na placa ainda depende do FRESULT/atributos que a0.2.19 não registrava; diretório cheio não é corrigido apagando arquivos.
++
++Detalhes, evidências e limites: [FLASH_FIX_v0.2.20.md](FLASH_FIX_v0.2.20.md).
+diff --git a/firmware/espidf/CMakeLists.txt b/firmware/espidf/CMakeLists.txt
+index 246713c..33355e3 100644
+--- a/firmware/espidf/CMakeLists.txt
++++ b/firmware/espidf/CMakeLists.txt
+@@ -5,7 +5,7 @@ if(NOT TRUCKBOX_ROLE STREQUAL "core" AND NOT TRUCKBOX_ROLE STREQUAL "link")
+ endif()
+ set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
+ set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.${TRUCKBOX_ROLE}.defaults")
+-set(PROJECT_VER "0.2.19" CACHE STRING "Application version included in OTA images")
++set(PROJECT_VER "0.2.20" CACHE STRING "Application version included in OTA images")
+ set(IDF_TARGET "esp32c6")
+ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+ project(truckbox_${TRUCKBOX_ROLE})
+diff --git a/firmware/espidf/FLASH_FIX_v0.2.20.md b/firmware/espidf/FLASH_FIX_v0.2.20.md
+new file mode 100644
+index 0000000..2a3bba4
+--- /dev/null
++++ b/firmware/espidf/FLASH_FIX_v0.2.20.md
+@@ -0,0 +1,196 @@
++# Core Rev.B.1 0.2.20 — OPEN/EACCES e recuperação durável
++
++Data: 14/11/2026 UTC. Branch `fix/revb1-v0220-flash-open`.
++Base real: release 0.2.19, commit `c1165259d279cb4188574445a0ba89059a87b164`,
++fontes compilados da base `f13f0e7f422f048e29e8e00f036afb4063f17907`.
++ESP-IDF 5.5.2/ESP32-C6/8 MB. Candidata de software; não instalada pelo agente.
++
++## Conclusão e limite da evidência
++
++Foram corrigidos defeitos comprovados de seleção do arquivo e de contabilização
++da recuperação. O caso de arquivo FAT somente leitura foi reproduzido com o
++FatFs real e resolvido em teste, preservando bytes, atributos, nome e IDs antigos.
++
++**Ainda não é possível determinar a causa específica do EACCES na placa só
++com os campos da 0.2.19 fornecidos.** Dois cenários diferentes reproduzem a
++recusa com espaço livre e remontagem bem-sucedida: arquivo somente leitura e
++diretório FAT sem entrada disponível. Não se afirma que o diretório ou o
++atributo da placa foi medido neste trabalho. A 0.2.19 não registrava o FRESULT
++original ou os atributos FAT; esta versão passa a medi-los.
++
++O diagnóstico de entrada é o trecho enviado pelo operador: OPEN/errno 13,
++segmento 1, sequência 462617, 0/326 bytes, 24 tentativas/remontagens/releituras,
++zero registros confirmados no boot, 64 itens na fila, 15 descartes antes da
++durabilidade e 1.761.280 bytes disponíveis. Não houve consulta/alteração da
++Cloud nem acesso direto à placa. O trecho não inclui SHA ELF do equipamento.
++As 38 requisições/38 respostas/zero colisões são informações do operador,
++não um ensaio físico executado pelo agente.
++
++## Auditoria solicitada
++
++| Item | Constatação |
++|---|---|
++| Montagem/remontagem | A 0.2.19 remonta o mesmo FatFs usando o registro WL/VFS existente; sucesso de `f_mount` comprova montagem, não criação/escrita de arquivo; a releitura subsequente também não confirma escrita. |
++| Modo antigo | `append_record` usava `fopen(path,"a+b")`, que solicita escrita e, no IDF, chega a `FA_READ|FA_WRITE|FA_OPEN_ALWAYS`. Um AM_RDO continua recusando escrita depois de qualquer remontagem. Trocar apenas para `ab` não resolve essa proteção. |
++| Caminho/nome | Para segmento 1, o fonte constrói `/tbflash/00000001.LOG`, nome 8.3 válido. A 0.2.19 não o enviava no diagnóstico. |
++| Permissões | `vfs_fat_fstat`/`get_stat_mode` do SDK sempre incluem bits Unix de escrita; não expõem AM_RDO. A conferência correta usa `f_stat`/`FILINFO.fattrib`. Não foi aplicado chmod ou alteração de atributo. |
++| Descritores | `fclose` é tentado após erros; o VFS libera seu FIL mesmo quando `f_close` falha. FatFs pode deixar lock de compartilhamento até remontagem. O teste anterior dessa condição continua passando. A nova abertura fecha o descritor se `fdopen` falhar. |
++| Concorrência | Writer, recuperação, batch, ACK e manutenção do outbox usam `state.mutex`. Não foi encontrado outro consumidor de `/tbflash` que contorne esse mutex. O snapshot do FRESULT é limitado à abertura e à tarefa que a iniciou. |
++| Os 24 sucessos | `recover_after_failure` da 0.2.19 incrementava `recovery_successes` logo após `recover_records`, antes de qualquer `fwrite`/`fflush`/`fsync`/`fclose` bem-sucedido. Era sucesso de releitura, não de persistência. |
++| Espaço livre | Espaço de clusters não garante entrada de diretório, permissão de escrita ou ausência de lock. O teste enche apenas as entradas da raiz, com arquivos vazios, e reproduz FR_DENIED mantendo os clusters livres. |
++| Cloud | `tb_store_batch` recusa lote quando o índice não está pronto. O bridge só inicia HTTP para lotes válidos e não vazios; a falha persistente explica `bridge.attempts=0`. Não há bloqueio causado por GPS neste caminho. |
++
++Referências na base 0.2.19: `store.c`/`append_record:847`,
++`recover_after_failure:681–705`, `storage_task:989–1037`,
++`tb_store_batch`; `core.c`/`bridge_task`.
++Referências ESP-IDF: `components/fatfs/vfs/vfs_fat.c`, funções
++`fat_mode_conv`, `fresult_to_errno`, `vfs_fat_fstat`, `get_stat_mode`,
++`vfs_fat_open`/`close`; `components/fatfs/src/ff.c`, `f_open`,
++`dir_alloc`/`dir_register`, `f_close`/`f_mount`.
++
++## O que significa errno 13
++
++O mapeamento do SDK transforma vários códigos em EACCES:
++
++| FRESULT FatFs | Valor | Possibilidade |
++|---|---:|---|
++| FR_DENIED | 7 | AM_RDO, caminho de diretório ou criação de entrada negada/sem espaço no diretório |
++| FR_WRITE_PROTECTED | 10 | Meio protegido; o driver WL padrão da flash não anuncia STA_PROTECT |
++| FR_LOCKED | 16 | Conflito na tabela de compartilhamento |
++
++**errno 13 não é FRESULT 13**; este último significa FR_NO_FILESYSTEM.
++Uma partição marcada somente leitura no VFS é recusada com EROFS, não deve
++ser diagnosticada automaticamente como AM_RDO a partir do número 13.
++
++Faltam para atribuir a recusa do equipamento: FRESULT da abertura original,
++`f_stat` do caminho exato e atributos/tamanho desse objeto. Se o objeto não
++existir e a criação continuar retornando FR_DENIED, a análise dos slots/entradas
++do diretório ou uma cópia privada da partição será necessária para separar
++diretório cheio de inconsistência FAT. Não há acesso USB/VPN à placa aqui.
++
++## Correção implementada
++
++1. `recovered_file_readonly` lê atributos FAT reais. O writer não insiste no
++   último segmento AM_RDO: preserva-o e usa o próximo ID de segmento.
++2. Novo arquivo é criado com `O_RDWR|O_APPEND|O_CREAT|O_EXCL`; colisão não abre
++   um arquivo estrangeiro silenciosamente. Arquivos próprios existentes usam
++   append, sem O_TRUNC. Nenhum prefixo anterior é reescrito. O IDF pode mapear
++   O_APPEND a FA_OPEN_ALWAYS; o diagnóstico registra as flags FatFs reais,
++   além das flags POSIX fornecidas, para não esconder essa diferença.
++3. A migração persiste uma única marca `tb_store/keep_through` com o maior ID
++   antigo. Segmentos anteriores à atualização não são apagados ou renomeados,
++   mesmo com ACK; arquivos desconhecidos e `.BAD` também permanecem intocados.
++   Um arquivo antigo gravável pode receber somente append, mantendo seu prefixo
++   e seus IDs. A marca não altera ACK, reservas, identidade ou contadores de viagem.
++4. Arquivos AM_RDO permanecem protegidos também após ACK. Apenas segmentos novos
++   e graváveis continuam na reciclagem normal depois do ACK comprovado, já
++   autorizada no sistema anterior. A proteção dos arquivos antigos consome
++   espaço: não se promete autonomia adicional sobre uma flash já ocupada.
++5. `recovery_scans` conta releituras; `recovery_successes` só avança depois de
++   persistir um registro real com `fwrite` completo, `fflush`, `fsync` e `fclose`.
++   Não existe registro fictício de teste enviado à Cloud.
++6. `storage.ready` exige escrita confirmada. `read_ready` pode ser verdadeiro
++   antes: somente registros CRC válidos recuperados da flash podem ser ofertados
++   nesse estado. A fila RAM continua não durável e não é enviada diretamente.
++   O ACK continua exigindo alvo efetivamente ofertado, verificação do intervalo
++   e commit NVS; não há ACK inventado nem salto de pendências.
++7. Após três falhas consecutivas de IO ou recuperação, pausa as escritas,
++   preservando o item em voo e a fila. Quando possível, conclui a releitura
++   para permitir sincronizar registros antigos já duráveis. Não faz loop
++   infinito de aberturas/remontagens, reset, formatação ou mudança de backend.
++8. O GET de diagnóstico mostra caminho, modo, flags, errno original/close,
++   FRESULT e flags medidos via `--wrap=f_open`, resultado de `f_stat`, atributos,
++   tamanho, tipo FAT, slots totais da raiz e estado da montagem/remontagem.
++   Código não medido é nulo. O wrapper não modifica resultados, modos ou drivers.
++   O disassembly do binário confirma que `vfs_fat_open` chama o wrapper.
++9. `POST /api/storage/retry`, com Bearer administrativo e `{"authorized":true}`,
++   libera uma nova tentativa limitada após revisão do erro. Não limpa arquivos,
++   fila, IDs, ACK, viagens, combustível ou configurações J1708; não reinicia e
++   não pausa/rearma a aquisição. Não foi invocado na placa pelo agente.
++10. Formatação automática da flash é desabilitada inclusive em partição vazia.
++    Provisionar mídia vazia exige manutenção separada e explicitamente autorizada.
++
++## Testes executados
++
++- `tests/run_all.sh` completo com ASan/UBSan e 24 testes Python: PASS.
++- FatFs original ESP-IDF 5.5.2 sobre disco RAM descartável: 24 remontagens/
++  leituras com OPEN/EACCES em AM_RDO; novo segmento exclusivo permite gravar;
++  arquivo anterior mantém nome, atributos e bytes: PASS.
++- Instrumentação original compilada: FRESULT/flags reais, tarefa correta,
++  atributos FAT versus modo Unix e rastreio sem atribuir chamada alheia: PASS.
++- Diretório cheio com clusters livres, write protection, colisão exclusiva,
++  sync/close interrompidos, lock e erro persistente: PASS. Diretório cheio
++  permanece bloqueado; não se apaga nada para simular correção.
++- Store real: rollover do arquivo somente leitura, migração da marca de
++  preservação, falha do commit, append mantendo prefixo, IDs/ACK/reboot,
++  arquivos antigos/read-only preservados após ACK e colisão sem sobrescrita: PASS.
++- Dez etapas de IO, pausa após três falhas, 24 scans sem falso sucesso,
++  retomada limitada e erro de recuperação: PASS.
++- Handler administrativo real com guards de autorização, JSON, OTA e mutex;
++  retomada preserva 64 itens RAM, NVS, erro histórico e pendência: PASS.
++- Worker real com erros repetidos, retenção, espera fora do mutex, retry
++  supervisionado e fairness/IDLE; suíte passiva/ativa J1708 e demais regressões: PASS.
++- Duas horas offline em tempo virtual, sem UTC e com UTC: 441.135 frames,
++  3.789 registros, 14 reinícios simulados, 0 descartes por capacidade;
++  1.477.083 / 1.595.469 bytes físicos dentro do orçamento 1.818.624: PASS.
++- Reconexão com ACK perdido: 3.797 entregas, 3.789 registros únicos,
++  zero duplicação e zero registros válidos pendentes: PASS.
++- Build real ESP-IDF 5.5.2, ESP32-C6/8 MB: PASS; aplicação 1.556.512 bytes em
++  slot 3.145.728 bytes; partições iguais à base.
++
++Os testes usam falhas controladas/bytes sintéticos. Não são ensaio elétrico,
++campanha NEXIQ ou medição de sucesso no caminhão. Os testes só formatam um
++disco RAM temporário, nunca a flash de um dispositivo.
++
++RAM estática ELF: 210.172 B na 0.2.19 → 210.356 B na 0.2.20, aumento de 184 B,
++sem novas filas ou aumento de capacidades. Heap e latência reais da candidata
++não foram medidos na placa. Evidências: `test_evidence/v0220_*`.
++Foi conferida identidade byte a byte de 39 arquivos de aquisição, requisições,
++decodificação, viagens, rede, configuração e partições contra a base 0.2.19.
++
++## Arquivos e reprodução
++
++- `components/tb_core/store.c`: abertura, proteção, recuperação e diagnóstico.
++- `components/tb_core/CMakeLists.txt`: observação do FRESULT original pelo linker.
++- `components/tb_core/core.c`/`core_internal.h`: um endpoint de retry do armazenamento.
++- `components/tb_core/tests/*`, `tests/run_all.sh`: regressões e mocks de fronteira.
++- CMake/build/package e workflow: versão 0.2.20; docs e evidências.
++
++Não foram alterados captura/transmissão, PIDs, MIDs, cadências, arbitragem,
++proteções ou persistência J1708. O modo automático já habilitado na NVS
++permanece habilitado; não depende do endpoint de retry. Viagens/combustível,
++J1939, Wi-Fi, Link, OTA e protocolos Cloud permanecem preservados.
++Link instalado, microSD, FRAM e 4G não foram atualizados ou ativados.
++
++No projeto `firmware/espidf`, com ESP-IDF 5.5.2:
++
++```sh
++bash tools/build_v020.sh core
++sh tests/run_all.sh
++python3 tools/build_release.py --core-only --output-dir release-v0220 --package Truckbox_Core_B1_0.2.20_FLASH_OPEN_CANDIDATA.zip
++```
++
++## Atualização, verificação e pendências
++
++Não foi feita OTA, reset, mudança de configuração em produção ou transmissão
++de teste. Instalação exige aprovação explícita, caminhão parado e alimentação
++estável. Usar apenas `truckbox_core_0.2.20_ota.bin`, conferindo hash do manifesto;
++não gravar NVS, storage, partições, bootloader ou firmware do Link durante OTA.
++
++A versão antiga não exporta a fila RAM. Os 64 itens RAM e descartes anteriores
++não têm recuperação garantida ao reiniciar/atualizar; não foram reconstruídos
++ou enviados como valores fictícios. Arquivos e registros duráveis são preservados.
++
++Depois de atualização autorizada, conferir `readonly_segment_count` e
++`first_readonly_segment`, `ready`, `durable_write_confirmed`, `committed_this_boot`,
++`recovery_result`, fila, ACK e bridge. Se a falha persistir, são necessários
++`last_io_failure` completo e resultados do filesystem; não repetir indefinidamente
++o retry sem analisar esses dados. FR_DENIED com objeto ausente/diretório cheio
++exigirá evidência do diretório/backup e uma decisão de manutenção que respeite
++a preservação. Esta entrega não declara a escrita em campo restabelecida.
++
++Formato de registros, partições, ACK e rollback OTA continuam compatíveis.
++Para rollback manual, seguir `OTA.md`/`UPGRADE_RECOVERY.md`; não apagar dados
++para liberar a barreira de rollback. A 0.2.19 não conhece a nova marca de
++preservação e pode reciclar arquivos ACKados segundo sua política anterior;
++preservar cópia e avaliar esse limite antes de escolher retornar à versão antiga.
+diff --git a/firmware/espidf/README.md b/firmware/espidf/README.md
+index b5c1e79..8b87581 100644
+--- a/firmware/espidf/README.md
++++ b/firmware/espidf/README.md
+@@ -1,4 +1,6 @@
+-Core **0.2.19 — CANDIDATA, não instalada**: [recuperação da flash, reinícios e próximos passos](AUDITORIA_v0.2.19.md) e [changelog](CHANGELOG_v0.2.19.md). Recuperação do volume após erro de IO, diagnóstico da primeira falha e exportação administrativa de crash. Nenhuma OTA, reset, apagamento ou reativação de TX realizada.
++Core **0.2.20 — CANDIDATA, não instalada**: [OPEN/EACCES, correção, testes e evidência ainda necessária](FLASH_FIX_v0.2.20.md) e [changelog](CHANGELOG_v0.2.20.md). Reconhece AM_RDO pelos atributos FAT, cria segmentos exclusivos, preserva arquivos anteriores e só confirma recuperação após escrita durável. Requisições J1708/NVS permanecem intactas. Nenhuma OTA ou intervenção na placa realizada.
++
++Core **0.2.19 — referência observada em campo**: [recuperação da flash e reinícios](AUDITORIA_v0.2.19.md) e [changelog](CHANGELOG_v0.2.19.md). O operador informou OPEN/EACCES persistente; esta versão não registrava FRESULT ou atributos FAT e contava scans como recuperações. Corrigidos na candidata acima.
+ 
+ Core **0.2.18 — referência observada em campo**: [auditoria de RAM, eco PID439 e timeout PID153](AUDITORIA_v0.2.18.md) e [changelog](CHANGELOG_v0.2.18.md). Diagnóstico compacto por padrão, páginas pequenas e separação de eco estendido; proteções preservadas. Foi identificada na Cloud pelo SHA ELF; não foi instalada pelo agente.
+ 
+diff --git a/firmware/espidf/components/tb_core/CMakeLists.txt b/firmware/espidf/components/tb_core/CMakeLists.txt
+index e38823a..1e7c319 100644
+--- a/firmware/espidf/components/tb_core/CMakeLists.txt
++++ b/firmware/espidf/components/tb_core/CMakeLists.txt
+@@ -13,4 +13,5 @@ idf_component_register(SRCS ${core_sources}
+ 
+ if(NOT CONFIG_TB_ROLE_LINK)
+     target_compile_options(${COMPONENT_LIB} PRIVATE -fstack-usage)
++    target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=f_open")
+ endif()
+diff --git a/firmware/espidf/components/tb_core/core.c b/firmware/espidf/components/tb_core/core.c
+index 4780a59..ce4130b 100644
+--- a/firmware/espidf/components/tb_core/core.c
++++ b/firmware/espidf/components/tb_core/core.c
+@@ -460,6 +460,19 @@ static esp_err_t rollback_prepare_handler(httpd_req_t *request)
+     tb_store_add_json(reply);return tb_http_send_json(request,reply);
+ }
+ 
++static esp_err_t storage_retry_handler(httpd_req_t *request)
++{
++    if(!tb_http_require_admin(request))return ESP_OK;
++    if(tb_web_ota_busy())return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"OTA busy");
++    cJSON *body=NULL;
++    if(tb_http_read_json(request,128,&body)!=ESP_OK){cJSON_Delete(body);return ESP_FAIL;}
++    bool authorized=cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body,"authorized"));cJSON_Delete(body);
++    if(!authorized)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"explicit storage retry authorization required");
++    if(tb_store_retry()!=ESP_OK)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"storage unavailable");
++    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);tb_store_add_json(reply);
++    return tb_http_send_json(request,reply);
++}
++
+ static esp_err_t reset_handler(httpd_req_t *request)
+ {
+     if (!legacy_write_origin_ok(request)) return httpd_resp_send_err(request, HTTPD_403_FORBIDDEN, "cross-site write rejected");
+@@ -658,6 +671,7 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
+         { .uri = "/api/reset", .method = HTTP_POST, .handler = reset_handler },
+         { .uri = "/api/storage/prepare-rollback", .method = HTTP_POST, .handler = rollback_prepare_handler },
+         { .uri = "/api/storage/discard", .method = HTTP_POST, .handler = discard_storage_handler },
++        { .uri = "/api/storage/retry", .method = HTTP_POST, .handler = storage_retry_handler },
+     };
+     for (unsigned i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
+         esp_err_t err = httpd_register_uri_handler(server, &routes[i]);
+diff --git a/firmware/espidf/components/tb_core/core_internal.h b/firmware/espidf/components/tb_core/core_internal.h
+index e1ad7ea..72cf89e 100644
+--- a/firmware/espidf/components/tb_core/core_internal.h
++++ b/firmware/espidf/components/tb_core/core_internal.h
+@@ -2,6 +2,7 @@
+ #include "tb.h"
+ 
+ esp_err_t tb_store_init(void);
++esp_err_t tb_store_retry(void);
+ esp_err_t tb_capture_start(void);
+ void tb_capture_add_json(cJSON *object);
+ void tb_capture_add_json_compact(cJSON *object);
+diff --git a/firmware/espidf/components/tb_core/store.c b/firmware/espidf/components/tb_core/store.c
+index ef8c233..bdd1470 100644
+--- a/firmware/espidf/components/tb_core/store.c
++++ b/firmware/espidf/components/tb_core/store.c
+@@ -9,6 +9,7 @@
+ #include <dirent.h>
+ #include <ctype.h>
+ #include <errno.h>
++#include <fcntl.h>
+ #include <inttypes.h>
+ #include <math.h>
+ #include <stdio.h>
+@@ -49,6 +50,7 @@
+ #define STORE_LINE_MAX (TB_RECORD_MAX + 192U)
+ #define STORE_RESERVATION 256U
+ #define STORE_MAX_SEQUENCE UINT64_C(9007199254740991)
++#define STORE_IO_ATTEMPT_LIMIT 3U
+ 
+ typedef struct {
+     uint32_t id;
+@@ -58,6 +60,7 @@ typedef struct {
+     size_t records;
+     size_t pending_offset;
+     bool quarantined;
++    bool read_only, preserved, exists;
+ } segment_t;
+ 
+ typedef struct {
+@@ -71,6 +74,10 @@ typedef struct {
+     uint32_t segment;
+     uint64_t sequence, at_us;
+     size_t requested, written;
++    char path[96];
++    int open_flags, fatfs_result, fatfs_flags, stat_result, file_attributes;
++    uint32_t file_bytes, filesystem_type, root_entries;
++    bool fatfs_called, partition_readonly, stat_measured;
+ } store_io_failure_t;
+ 
+ typedef struct {
+@@ -120,6 +127,12 @@ typedef struct {
+     store_io_failure_t last_io_failure;
+     bool volume_rebind_required;
+     uint64_t recovery_attempts, recovery_successes, volume_rebinds;
++    uint64_t recovery_scans;
++    bool write_confirmed, recovery_awaits_write, io_paused;
++    unsigned consecutive_io_errors;
++    unsigned recovery_failures;
++    uint32_t preserve_through;
++    bool preserve_fence_set;
+     uint64_t last_recovery_us;
+     int volume_result;
+     uint64_t dropped_queue;
+@@ -139,6 +152,71 @@ static store_state_t state;
+ static const char *TAG = "tb_store";
+ static portMUX_TYPE counter_lock = portMUX_INITIALIZER_UNLOCKED;
+ 
++#ifndef TB_STORE_HOST_TEST
++/* Observe the ORIGINAL FatFs return, before VFS maps several causes to errno13.
++ * This wrapper returns the exact result, never retries or changes flags. Only
++ * the writer task's explicitly scoped open is recorded. */
++static struct { bool active,called;TaskHandle_t owner;int result,flags; } open_trace;
++FRESULT __real_f_open(FIL *file,const TCHAR *path,BYTE mode);
++FRESULT __wrap_f_open(FIL *file,const TCHAR *path,BYTE mode)
++{
++    FRESULT result=__real_f_open(file,path,mode);
++    if(open_trace.active && open_trace.owner==xTaskGetCurrentTaskHandle()){
++        open_trace.called=true;open_trace.result=result;open_trace.flags=mode;
++    }
++    return result;
++}
++#endif
++
++static void open_trace_begin(void)
++{
++#ifndef TB_STORE_HOST_TEST
++    memset(&open_trace,0,sizeof(open_trace));open_trace.owner=xTaskGetCurrentTaskHandle();open_trace.active=true;
++#endif
++}
++static void open_trace_end(store_io_failure_t *io)
++{
++#ifndef TB_STORE_HOST_TEST
++    open_trace.active=false;io->fatfs_called=open_trace.called;
++    io->fatfs_result=open_trace.result;io->fatfs_flags=open_trace.flags;
++#else
++    (void)io;
++#endif
++}
++
++static void inspect_open_failure(store_io_failure_t *io)
++{
++#ifndef TB_STORE_HOST_TEST
++    if(!state.medium || strcmp(state.medium,"flash"))return;
++    const esp_partition_t *partition=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_FAT,"storage");
++    io->partition_readonly=partition && partition->readonly;
++    unsigned char drive=ff_diskio_get_pdrv_wl(state.flash_handle);
++    if(drive==0xff){io->stat_result=FR_INVALID_DRIVE;return;}
++    char path[112];snprintf(path,sizeof(path),"%u:%s",(unsigned)drive,io->path+strlen(state.base_path));
++    FILINFO info;memset(&info,0,sizeof(info));
++    io->stat_measured=true;
++    io->stat_result=f_stat(path,&info);
++    if(io->stat_result==FR_OK){io->file_attributes=info.fattrib;io->file_bytes=(uint32_t)info.fsize;}
++    char volume[5];snprintf(volume,sizeof(volume),"%u:",(unsigned)drive);
++    FATFS *fs=NULL;DWORD free_clusters=0;
++    if(f_getfree(volume,&free_clusters,&fs)==FR_OK && fs){io->filesystem_type=fs->fs_type;io->root_entries=fs->n_rootdir;}
++#else
++    io->stat_measured=true;
++    struct stat info;
++    io->stat_result=stat(io->path,&info)==0?0:errno;
++    if(!io->stat_result){io->file_bytes=(uint32_t)info.st_size;io->file_attributes=(info.st_mode&S_IWUSR)?0:1;}
++#endif
++}
++
++static bool recovered_file_readonly(const char *path)
++{
++    store_io_failure_t info={0};snprintf(info.path,sizeof(info.path),"%s",path);
++    inspect_open_failure(&info);
++    /* IDF's fstat/stat always report writable Unix mode bits, including for
++     * AM_RDO files. Use f_stat's actual FAT attributes, never those mode bits. */
++    return info.stat_result==0 && (info.file_attributes&1)!=0;
++}
++
+ static void increment(uint64_t *counter)
+ {
+     portENTER_CRITICAL(&counter_lock);
+@@ -157,28 +235,39 @@ static uint64_t counter_value(const uint64_t *counter)
+ static void fail_store(const char *message)
+ {
+     state.ready = false;
++    state.write_confirmed=false;
+     snprintf(state.error, sizeof(state.error), "%s", message);
+     ESP_LOGE(TAG, "%s", message);
+ }
+ 
+ static void failed_record_io(const char *stage, int error, int close_error,
+                              uint32_t segment, uint64_t sequence,
+-                             size_t requested, size_t written)
++                             size_t requested, size_t written,const char *path,
++                             int flags,const store_io_failure_t *opened)
+ {
+     state.last_io_failure=(store_io_failure_t){
+         .stage=stage,.error=error,.close_error=close_error,
+         .segment=segment,.sequence=sequence,.requested=requested,.written=written,
+         .at_us=(uint64_t)esp_timer_get_time()
+     };
++    store_io_failure_t *io=&state.last_io_failure;
++    snprintf(io->path,sizeof(io->path),"%s",path);io->open_flags=flags;
++    io->fatfs_called=opened->fatfs_called;io->fatfs_result=opened->fatfs_result;io->fatfs_flags=opened->fatfs_flags;
++    if(!strcmp(stage,"OPEN") || !strcmp(stage,"FDOPEN"))inspect_open_failure(io);
+     /* A read-only scan cannot clear FatFs' in-memory window or sharing locks
+      * left by an unsuccessful close. Rebind this FLASH volume before scanning;
+      * do not reset the ESP32, change media or format an existing filesystem. */
+     if(state.medium && !strcmp(state.medium,"flash"))state.volume_rebind_required=true;
+     ++state.write_errors;
++    state.write_confirmed=false;
++    if(++state.consecutive_io_errors>=STORE_IO_ATTEMPT_LIMIT)state.io_paused=true;
+     fail_store("record write failed; stopped to preserve data");
++    if(state.io_paused)snprintf(state.error,sizeof(state.error),"persistent record IO failure; retries paused; see last_io_failure");
+     ESP_LOGE(TAG,"record IO stage=%s errno=%d close_errno=%d seg=%" PRIu32
+         " seq=%" PRIu64 " bytes=%u/%u boot=%" PRIu32,
+         stage,error,close_error,segment,sequence,(unsigned)written,(unsigned)requested,tb_boot_id());
++    ESP_LOGE(TAG,"path=%s flags=0x%x f_open_called=%u fresult=%d fat_flags=0x%x stat=%d attr=0x%x paused=%u",
++        io->path,flags,io->fatfs_called,io->fatfs_result,io->fatfs_flags,io->stat_result,io->file_attributes,state.io_paused);
+ }
+ 
+ static void segment_path(char *path, size_t capacity, uint32_t id)
+@@ -365,36 +454,6 @@ static cJSON *next_record(FILE *file,uint64_t *sequence,record_span_t *span)
+ }
+ 
+ #ifndef TB_STORE_HOST_TEST
+-static bool partition_erased(const esp_partition_t *partition)
+-{
+-    unsigned char *buffer = malloc(4096);
+-    if (!buffer) {
+-        return false;
+-    }
+-    bool erased = true;
+-    for (size_t offset = 0; offset < partition->size && erased; offset += 4096) {
+-        size_t length = partition->size - offset;
+-        if (length > 4096) {
+-            length = 4096;
+-        }
+-        if (esp_partition_read(partition, offset, buffer, length) != ESP_OK) {
+-            erased = false;
+-            break;
+-        }
+-        for (size_t i = 0; i < length; ++i) {
+-            if (buffer[i] != 0xff) {
+-                erased = false;
+-                break;
+-            }
+-        }
+-        if ((offset & UINT32_C(0x1ffff)) == 0) {
+-            vTaskDelay(1);
+-        }
+-    }
+-    free(buffer);
+-    return erased;
+-}
+-
+ static esp_err_t initialize_spi(void)
+ {
+     if (state.spi_ready) {
+@@ -526,11 +585,10 @@ static bool mount_storage(void)
+         snprintf(state.error, sizeof(state.error), "storage partition missing");
+         return false;
+     }
+-    /* Check BEFORE calling WL mount: WL initialization itself writes metadata
+-     * even if the FAT partition is otherwise completely erased. */
+-    bool blank = partition_erased(partition);
++    /* No formatting, including a blank partition. Provisioning an empty medium
++     * is a separate authorized maintenance operation, never this recovery. */
+     esp_vfs_fat_mount_config_t mount = {
+-        .format_if_mount_failed = blank,
++        .format_if_mount_failed = false,
+         .max_files = 5,
+         .allocation_unit_size = 4096,
+     };
+@@ -614,8 +672,10 @@ static bool recover_records(void)
+     memset(state.segments,0,sizeof(state.segments));
+     DIR *directory=opendir(state.base_path);
+     if(!directory){fail_store("cannot enumerate storage");return false;}
+-    uint32_t largest_id=0;struct dirent *entry;
+-    while((entry=readdir(directory))){
++    uint32_t largest_id=0;struct dirent *entry;int directory_error=0;
++    for(;;){
++        errno=0;entry=readdir(directory);
++        if(!entry){directory_error=errno;break;}
+         if(strlen(entry->d_name)!=12)continue; /* Preserve unrelated/backup files without treating a prefix as a LOG. */
+         uint32_t id;char name[13];snprintf(name,sizeof(name),"%.12s",entry->d_name);
+         bool bad=strlen(name)==12 && !strcasecmp(name+8,".BAD");
+@@ -630,7 +690,15 @@ static bool recover_records(void)
+         if(state.segment_count>=STORE_SEGMENTS){closedir(directory);fail_store("too many segments; pending count unknown");return false;}
+         state.segments[state.segment_count++].id=id;
+     }
+-    closedir(directory);
++    if(closedir(directory)!=0 && !directory_error)directory_error=errno;
++    if(directory_error){fail_store("directory recovery failed; pending count unknown");return false;}
++    /* One migration checkpoint: preserve every pre-0.2.20 segment, including
++     * ACKed files, without changing its attributes, name, bytes or record IDs.
++     * Newly created segments retain the existing ACK-only recycling policy. */
++    if(!state.preserve_fence_set){
++        if(nvs_set_u32(state.nvs,"keep_through",largest_id)!=ESP_OK || nvs_commit(state.nvs)!=ESP_OK){fail_store("cannot persist existing-file preservation fence");return false;}
++        state.preserve_through=largest_id;state.preserve_fence_set=true;
++    }
+     qsort(state.segments,state.segment_count,sizeof(state.segments[0]),compare_segments);
+     uint64_t previous=0;
+     for(size_t i=0;i<state.segment_count;i++){
+@@ -638,6 +706,8 @@ static bool recover_records(void)
+         FILE *file=fopen(path,"rb");struct stat info;
+         if(!file || fstat(fileno(file),&info)!=0){if(file)fclose(file);fail_store("cannot read existing segment");return false;}
+         segment->bytes=(size_t)info.st_size;
++        segment->preserved=segment->id<=state.preserve_through;
++        segment->read_only=recovered_file_readonly(path);segment->exists=true;
+         uint64_t seq;size_t valid_bytes=0;bool damaged=false;record_span_t span={0};
+         cJSON *record;errno=0;
+         while((record=next_record(file,&seq,&span))){
+@@ -658,7 +728,7 @@ static bool recover_records(void)
+             errno=0;
+         }
+         bool error=ferror(file)!=0 || errno==ENOMEM;
+-        fclose(file);
++        if(fclose(file)!=0)error=true;
+         if(error){fail_store("recovery read/allocation failed; pending count unknown");return false;}
+         if(valid_bytes<segment->bytes){damaged=true;state.isolated_bytes+=segment->bytes-valid_bytes;}
+         if(span.skipped || (!segment->records && segment->bytes)){++state.corrupt_records;damaged=true;}
+@@ -678,6 +748,12 @@ static bool recover_records(void)
+     state.recovery_complete=true;state.error[0]=0;return true;
+ }
+ 
++static bool recovery_failed(void)
++{
++    if(++state.recovery_failures>=STORE_IO_ATTEMPT_LIMIT)state.io_paused=true;
++    return false;
++}
++
+ static bool __attribute__((unused)) recover_after_failure(void)
+ {
+     ++state.recovery_attempts;
+@@ -688,12 +764,13 @@ static bool __attribute__((unused)) recover_after_failure(void)
+         state.volume_result=rebind_flash_volume(state.flash_handle);
+         if(state.volume_result!=0){
+             fail_store("flash volume rebind failed; data preserved");
+-            return false;
++            return recovery_failed();
+         }
+         ++state.volume_rebinds;
+         state.volume_rebind_required=false;
+     }
+-    if(!recover_records())return false;
++    if(!recover_records())return recovery_failed();
++    state.recovery_failures=0;
+     /* This is the SAME boot with one writer: consume the unused part of its
+      * already durable reservation, never the failed sequence itself. A retry
+      * every 5s must not reserve another 256 IDs/commit NVS each time. Startup
+@@ -701,41 +778,40 @@ static bool __attribute__((unused)) recover_after_failure(void)
+      * or a changed floor always win. */
+     if(next_before>state.highest_committed && next_before<=state.reserved_end+1 &&
+        next_before>=tb_config()->sequence_floor)state.next_sequence=next_before;
+-    ++state.recovery_successes;
++    ++state.recovery_scans;
++    state.write_confirmed=false;state.recovery_awaits_write=true;
++    if(state.io_paused)snprintf(state.error,sizeof(state.error),"persistent record IO failure; retries paused; see last_io_failure");
+     return true;
+ }
+ 
+ /* Called only under state.mutex, and only after the ack has been committed. */
+ static void prune_segments(void)
+ {
+-    size_t removed = 0;
++    size_t kept = 0;
+     for (size_t i = 0; i < state.segment_count; ++i) {
+         segment_t *segment = &state.segments[i];
+-        if (segment->records && segment->maximum > state.ack_sequence) {
+-            break;
++        if (segment->preserved || segment->read_only || (segment->records && segment->maximum > state.ack_sequence)) {
++            state.segments[kept++]=*segment;continue;
+         }
+         char path[64];
+         segment_path(path, sizeof(path), segment->id);
+         char bad[96];snprintf(bad,sizeof(bad),"%s/%08" PRIX32 ".BAD",state.base_path,segment->id);
+         /* Older firmware can reuse a LOG id after rollback. Never overwrite
+          * an existing forensic archive when upgrading again. */
++        bool archive_name_available=true;
+         while(segment->quarantined && access(bad,F_OK)==0){
+-            if(!state.next_segment_id){snprintf(state.error,sizeof(state.error),"archive identifier exhausted");return;}
++            if(!state.next_segment_id){snprintf(state.error,sizeof(state.error),"archive identifier exhausted");archive_name_available=false;break;}
+             snprintf(bad,sizeof(bad),"%s/%08" PRIX32 ".BAD",state.base_path,state.next_segment_id++);
+         }
++        if(!archive_name_available){state.segments[kept++]=*segment;continue;}
+         int result=segment->quarantined?rename(path,bad):unlink(path);
+         if (result != 0 && errno != ENOENT) {
+             snprintf(state.error, sizeof(state.error), "cannot prune acknowledged segment");
+-            break;
++            state.segments[kept++]=*segment;continue;
+         }
+         if(segment->quarantined)state.archived_bytes+=segment->bytes;
+-        ++removed;
+-    }
+-    if (removed) {
+-        memmove(state.segments, state.segments + removed,
+-                (state.segment_count - removed) * sizeof(state.segments[0]));
+-        state.segment_count -= removed;
+     }
++    state.segment_count=kept;
+ }
+ 
+ static esp_err_t reserve_sequence(uint64_t *sequence)
+@@ -778,6 +854,7 @@ static bool compression_allowed(void)
+ 
+ static void append_record(const queued_record_t *item)
+ {
++    if(state.io_paused)return; /* worker retains its row; no unbounded IO loop */
+     if (!state.ready) {
+         increment(&state.dropped_unavailable);
+         return;
+@@ -813,7 +890,7 @@ static void append_record(const queued_record_t *item)
+ #endif
+     segment_t *segment = state.segment_count
+         ? &state.segments[state.segment_count - 1] : NULL;
+-    if (!segment || segment->bytes + length + 1 > state.segment_bytes) {
++    if (!segment || segment->read_only || segment->bytes + length + 1 > state.segment_bytes) {
+         prune_segments();
+         if (state.segment_count >= state.maximum_segments || !state.next_segment_id) {
+             state.capacity_blocked=true;snprintf(state.error,sizeof(state.error),"segment capacity full; pending files preserved");
+@@ -841,12 +918,25 @@ static void append_record(const queued_record_t *item)
+         }
+         state.medium_clean = false;
+     }
+-    char path[64];
++    char path[96];
+     segment_path(path, sizeof(path), segment->id);
++    /* A new name MUST be exclusive. Never silently open a foreign/colliding
++     * file as writable. Existing owned files are append-only, without CREATE
++     * or TRUNC, and recovered read-only files are retained and rolled over. */
++    int flags=O_RDWR|O_APPEND;
++    if(!segment->exists)flags|=O_CREAT|O_EXCL;
++    store_io_failure_t opened={0};open_trace_begin();
+     errno=0;
+-    FILE *file = fopen(path, "a+b");
+-    const char *failed=file?NULL:"OPEN";
+-    int io_error=file?0:errno,close_error=0;
++    int descriptor=open(path,flags,0600),io_error=descriptor<0?errno:0;
++    open_trace_end(&opened);
++    FILE *file=NULL;
++    const char *failed=descriptor<0?"OPEN":NULL;
++    int close_error=0;
++    if(descriptor>=0){
++        segment->exists=true;
++        errno=0;file=fdopen(descriptor,"a+b");
++        if(!file){failed="FDOPEN";io_error=errno;errno=0;if(close(descriptor)!=0)close_error=errno;}
++    }
+     size_t separator=0,stored=0;
+     if(file && segment->quarantined && segment->bytes){
+         errno=0;
+@@ -871,7 +961,7 @@ static void append_record(const queued_record_t *item)
+     if(failed){
+         /* Keep the FIRST error even if close also fails or changes errno.
+          * errno==0 is reported as unknown; never invent a measured errno. */
+-        failed_record_io(failed,io_error,close_error,segment->id,sequence,length,stored);
++        failed_record_io(failed,io_error,close_error,segment->id,sequence,length,stored,path,flags,&opened);
+         return;
+     }
+     if(state.capacity_blocked){state.capacity_blocked=false;state.error[0]=0;}
+@@ -888,6 +978,8 @@ static void append_record(const queued_record_t *item)
+     if(state.pending_records==1){cJSON *sample=cJSON_Parse(item->json);oldest_metadata(sample,sequence);cJSON_Delete(sample);}
+     ++state.committed_this_boot;
+     state.highest_committed = sequence;
++    state.write_confirmed=true;state.consecutive_io_errors=0;
++    if(state.recovery_awaits_write){++state.recovery_successes;state.recovery_awaits_write=false;}
+ }
+ 
+ #ifndef TB_STORE_HOST_TEST
+@@ -1003,10 +1095,13 @@ static void storage_task(void *argument)
+          * the in-flight row, and requeue only if recovery did not find its
+          * CRC-valid sequence. This prevents duplicates after ambiguous fsync. */
+         if (!state.ready) {
++            if(state.io_paused && !state.recovery_complete){vTaskDelay(pdMS_TO_TICKS(1000));continue;}
+             vTaskDelay(pdMS_TO_TICKS(5000));
+             xSemaphoreTake(state.mutex,portMAX_DELAY);
+             state.initializing=true;
+-            if(!state.base_path || !state.medium_initialized){initialize_medium();}
++            if(!state.base_path || !state.medium_initialized){
++                if(!initialize_medium() && ++state.recovery_failures>=STORE_IO_ATTEMPT_LIMIT)state.io_paused=true;
++            }
+             else if(recover_after_failure()){
+                 state.ready=true;prune_segments();
+                 if(retained && state.highest_committed>=retained_sequence)retained=false;
+@@ -1015,6 +1110,7 @@ static void storage_task(void *argument)
+             xSemaphoreGive(state.mutex);
+             continue;
+         }
++        if(state.io_paused){vTaskDelay(pdMS_TO_TICKS(1000));continue;}
+         if(state.rollback_paused && !retained && !uxQueueMessagesWaiting(state.queue)){
+             xSemaphoreTake(state.mutex,portMAX_DELAY);state.rollback_drained=true;xSemaphoreGive(state.mutex);
+             vTaskDelay(pdMS_TO_TICKS(100));continue;
+@@ -1062,6 +1158,9 @@ esp_err_t tb_store_init(void)
+         return error;
+     }
+     state.nvs_open = true;
++    error=nvs_get_u32(state.nvs,"keep_through",&state.preserve_through);
++    if(error!=ESP_OK && error!=ESP_ERR_NVS_NOT_FOUND){fail_store("cannot load file preservation fence");return error;}
++    state.preserve_fence_set=error==ESP_OK;
+     size_t medium_length = sizeof(state.previous_medium);
+     error = nvs_get_str(state.nvs, "medium", state.previous_medium, &medium_length);
+     if (error != ESP_OK && error != ESP_ERR_NVS_NOT_FOUND) {
+@@ -1171,6 +1270,16 @@ esp_err_t tb_store_submit(const char *record_json)
+     return ESP_OK;
+ }
+ 
++esp_err_t tb_store_retry(void)
++{
++    if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
++    if(!state.base_path && !state.nvs_open){xSemaphoreGive(state.mutex);return ESP_ERR_INVALID_STATE;}
++    state.io_paused=false;state.consecutive_io_errors=0;state.recovery_failures=0;
++    state.ready=false;state.write_confirmed=false;
++    state.volume_rebind_required=state.medium && !strcmp(state.medium,"flash");
++    xSemaphoreGive(state.mutex);return ESP_OK;
++}
++
+ cJSON *tb_store_batch(size_t limit, size_t max_bytes)
+ {
+     cJSON *result = cJSON_CreateObject();
+@@ -1460,7 +1569,7 @@ void tb_store_add_json(cJSON *object)
+         return;
+     }
+     if (!state.mutex || xSemaphoreTake(state.mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+-        cJSON_AddBoolToObject(storage,"ready",state.mutex && state.ready);
++        cJSON_AddBoolToObject(storage,"ready",state.mutex && state.ready && state.write_confirmed && !state.io_paused);
+         cJSON_AddBoolToObject(storage,"busy",state.mutex!=NULL);
+         cJSON_AddStringToObject(storage,"phase",state.mutex && state.ready?"BUSY":"RECOVERY_REQUIRED");
+         cJSON_AddBoolToObject(storage,"pending_known",false);
+@@ -1468,7 +1577,9 @@ void tb_store_add_json(cJSON *object)
+         cJSON_AddStringToObject(storage,"error",state.mutex?"storage_busy":"storage_uninitialized");
+         return;
+     }
+-    cJSON_AddBoolToObject(storage, "ready", state.ready);
++    cJSON_AddBoolToObject(storage, "ready", state.ready && state.write_confirmed && !state.io_paused);
++    cJSON_AddBoolToObject(storage,"read_ready",state.ready && state.recovery_complete);
++    cJSON_AddBoolToObject(storage,"durable_write_confirmed",state.write_confirmed);
+     cJSON_AddBoolToObject(storage, "initializing", false);
+     cJSON_AddStringToObject(storage, "medium", state.medium ? state.medium : "unavailable");
+     cJSON_AddStringToObject(storage, "directory", state.base_path ? state.base_path : "");
+@@ -1489,7 +1600,7 @@ void tb_store_add_json(cJSON *object)
+     cJSON_AddBoolToObject(storage,"pending_known",state.ready && state.recovery_complete);
+     cJSON_AddBoolToObject(storage,"rollback_paused",state.rollback_paused);
+     cJSON_AddBoolToObject(storage,"rollback_ready",state.rollback_paused && state.rollback_drained && state.ready && state.recovery_complete && !state.pending_records && !uxQueueMessagesWaiting(state.queue));
+-    cJSON_AddStringToObject(storage,"phase",state.rollback_paused?"MAINTENANCE_PAUSED":state.ready && state.capacity_blocked?"FULL":state.ready?"NORMAL":state.initializing?"RECOVERING":"RECOVERY_REQUIRED");
++    cJSON_AddStringToObject(storage,"phase",state.io_paused?"PAUSED_PERSISTENT_IO":state.rollback_paused?"MAINTENANCE_PAUSED":state.ready && state.capacity_blocked?"FULL":state.ready && state.write_confirmed?"NORMAL":state.ready?"WRITE_VALIDATION_PENDING":state.initializing?"RECOVERING":"RECOVERY_REQUIRED");
+     uint64_t used=state.archived_bytes;
+     for(size_t i=0;i<state.segment_count;i++)used+=state.segments[i].bytes;
+     uint64_t budget=state.maximum_segments*state.segment_bytes;
+@@ -1538,6 +1649,22 @@ void tb_store_add_json(cJSON *object)
+     cJSON_AddNumberToObject(storage, "write_errors", (double)state.write_errors);
+     cJSON_AddNumberToObject(storage,"recovery_attempts",(double)state.recovery_attempts);
+     cJSON_AddNumberToObject(storage,"recovery_successes",(double)state.recovery_successes);
++    cJSON_AddNumberToObject(storage,"recovery_scans",(double)state.recovery_scans);
++    cJSON_AddStringToObject(storage,"recovery_result",state.io_paused?"WRITE_PAUSED":state.ready && state.write_confirmed?"DURABLE_WRITE_CONFIRMED":state.ready && state.recovery_complete?"READ_SCAN_ONLY":"RECOVERY_INCOMPLETE");
++    cJSON_AddBoolToObject(storage,"io_retry_paused",state.io_paused);
++    cJSON_AddNumberToObject(storage,"consecutive_io_errors",state.consecutive_io_errors);
++    cJSON_AddNumberToObject(storage,"consecutive_recovery_failures",state.recovery_failures);
++    cJSON_AddNumberToObject(storage,"io_attempt_limit",STORE_IO_ATTEMPT_LIMIT);
++    cJSON_AddNumberToObject(storage,"preserve_existing_through_segment",state.preserve_through);
++    size_t readonly_count=0,preserved_count=0;uint32_t first_readonly=0;
++    for(size_t i=0;i<state.segment_count;i++){
++        if(state.segments[i].read_only){if(!readonly_count)first_readonly=state.segments[i].id;++readonly_count;}
++        if(state.segments[i].preserved)++preserved_count;
++    }
++    cJSON_AddNumberToObject(storage,"readonly_segment_count",readonly_count);
++    cJSON_AddNumberToObject(storage,"preserved_segment_count",preserved_count);
++    if(readonly_count)cJSON_AddNumberToObject(storage,"first_readonly_segment",first_readonly);
++    else cJSON_AddNullToObject(storage,"first_readonly_segment");
+     cJSON_AddNumberToObject(storage,"volume_rebinds",(double)state.volume_rebinds);
+     cJSON_AddBoolToObject(storage,"volume_rebind_pending",state.volume_rebind_required);
+     if(state.volume_rebinds || state.volume_result)cJSON_AddNumberToObject(storage,"volume_rebind_fresult",state.volume_result);
+@@ -1557,7 +1684,27 @@ void tb_store_add_json(cJSON *object)
+         cJSON_AddNumberToObject(failure,"written_bytes",(double)io->written);
+         cJSON_AddNumberToObject(failure,"boot_id",tb_boot_id());
+         cJSON_AddNumberToObject(failure,"uptime_ms",(double)io->at_us/1000.0);
+-        cJSON_AddBoolToObject(failure,"historical",state.ready);
++        cJSON_AddBoolToObject(failure,"historical",state.write_confirmed && !state.io_paused);
++        cJSON_AddStringToObject(failure,"path",io->path);
++        cJSON_AddStringToObject(failure,"stdio_mode","a+b");
++        cJSON_AddNumberToObject(failure,"open_flags",io->open_flags);
++        cJSON_AddBoolToObject(failure,"exclusive_create",(io->open_flags&O_EXCL)!=0);
++        cJSON_AddBoolToObject(failure,"fatfs_called",io->fatfs_called);
++        if(io->fatfs_called){
++            cJSON_AddNumberToObject(failure,"fatfs_fresult",io->fatfs_result);
++            cJSON_AddNumberToObject(failure,"fatfs_open_flags",io->fatfs_flags);
++        }else cJSON_AddNullToObject(failure,"fatfs_fresult");
++        if(io->stat_measured)cJSON_AddNumberToObject(failure,"file_stat_result",io->stat_result);
++        else cJSON_AddNullToObject(failure,"file_stat_result");
++        if(io->stat_measured && io->stat_result==0){
++            cJSON_AddNumberToObject(failure,"file_attributes",io->file_attributes);
++            cJSON_AddNumberToObject(failure,"file_bytes",io->file_bytes);
++        }else{cJSON_AddNullToObject(failure,"file_attributes");cJSON_AddNullToObject(failure,"file_bytes");}
++        cJSON_AddBoolToObject(failure,"partition_readonly",io->partition_readonly);
++        cJSON_AddNumberToObject(failure,"filesystem_type",io->filesystem_type);
++        cJSON_AddNumberToObject(failure,"root_directory_slots",io->root_entries);
++        cJSON_AddBoolToObject(failure,"mount_initialized",state.medium_initialized);
++        cJSON_AddStringToObject(failure,"evidence","MEASURED_FIRST_ERROR_NOT_INFERRED_FROM_ERRNO");
+     }
+     cJSON_AddNumberToObject(storage, "queue_depth",
+                            state.queue ? uxQueueMessagesWaiting(state.queue) : 0);
+diff --git a/firmware/espidf/components/tb_core/tests/run_fatfs_rebind.sh b/firmware/espidf/components/tb_core/tests/run_fatfs_rebind.sh
+index d314d35..f8c507e 100644
+--- a/firmware/espidf/components/tb_core/tests/run_fatfs_rebind.sh
++++ b/firmware/espidf/components/tb_core/tests/run_fatfs_rebind.sh
+@@ -4,15 +4,22 @@ d=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ w=$(mktemp -d /tmp/tb-fatfs-rebind.XXXXXX)
+ trap 'rm -rf "$w"' EXIT HUP INT TERM
+ : "${IDF_PATH:?Activate ESP-IDF 5.5.2}"
+-python3 - "$d/../store.c" "$w/rebind_under_test.h" <<'PY'
++python3 - "$d/../store.c" "$w/rebind_under_test.h" "$IDF_PATH/components/fatfs/vfs/vfs_fat.c" <<'PY'
+ from pathlib import Path
+-import sys
+-s=Path(sys.argv[1]).read_text();start=s.index('static int rebind_flash_volume(')
+-end=s.index('{',start)+1;depth=1
+-while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
+-Path(sys.argv[2]).write_text(s[start:end])
++import sys,re
++s=Path(sys.argv[1]).read_text();sdk=Path(sys.argv[3]).read_text()
++def extract(source,name):
++ m=re.search(r'^[^\n;]*\b'+name+r'\([^;]*?\)\s*\{',source,re.M);assert m,name
++ start=m.start();end=source.index('{',start)+1;depth=1
++ while depth:depth+=(source[end]=='{')-(source[end]=='}');end+=1
++ return source[start:end]
++trace=re.search(r'static struct \{ bool active,called;TaskHandle_t owner;int result,flags; \} open_trace;',s).group()
++parts=[extract(s,'rebind_flash_volume'),trace,'FRESULT __real_f_open(FIL *,const TCHAR *,BYTE);']
++parts += [extract(s,n) for n in ['__wrap_f_open','open_trace_begin','open_trace_end','inspect_open_failure','recovered_file_readonly']]
++parts += [extract(sdk,n) for n in ['fat_mode_conv','fresult_to_errno','get_stat_mode']]
++Path(sys.argv[2]).write_text('\n'.join(parts))
+ PY
+-cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -g \
++cc -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -g -Wl,--wrap=f_open \
+     -I"$w" -I"$d/fatfs_stubs" -I"$IDF_PATH/components/fatfs/src" \
+     "$d/test_fatfs_rebind.c" "$IDF_PATH/components/fatfs/src/ff.c" \
+     "$IDF_PATH/components/fatfs/src/ffunicode.c" -o "$w/test"
+diff --git a/firmware/espidf/components/tb_core/tests/run_store_open.sh b/firmware/espidf/components/tb_core/tests/run_store_open.sh
+new file mode 100644
+index 0000000..cd15dd4
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/run_store_open.sh
+@@ -0,0 +1,10 @@
++#!/bin/sh
++set -eu
++d=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
++w=$(mktemp /tmp/tb-store-open.XXXXXX)
++trap 'rm -f "$w"' EXIT HUP INT TERM
++cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
++    -fsanitize=address,undefined -fno-omit-frame-pointer -g \
++    -I"$d/.." -I"$IDF_PATH/components/json/cJSON" \
++    "$d/test_store_open.c" "$d/../store_codec.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$w"
++ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$w"
+diff --git a/firmware/espidf/components/tb_core/tests/run_store_retry.sh b/firmware/espidf/components/tb_core/tests/run_store_retry.sh
+new file mode 100644
+index 0000000..5b60e04
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/run_store_retry.sh
+@@ -0,0 +1,18 @@
++#!/bin/sh
++set -eu
++d=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
++w=$(mktemp -d /tmp/tb-store-retry.XXXXXX)
++trap 'rm -rf "$w"' EXIT HUP INT TERM
++python3 - "$d/../core.c" "$w/retry_handler_under_test.h" <<'PY'
++from pathlib import Path
++import sys
++s=Path(sys.argv[1]).read_text();start=s.index('static esp_err_t storage_retry_handler(')
++end=s.index('{',start)+1;depth=1
++while depth:depth+=(s[end]=='{')-(s[end]=='}');end+=1
++Path(sys.argv[2]).write_text(s[start:end])
++PY
++cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wpedantic \
++    -fsanitize=address,undefined -fno-omit-frame-pointer -g \
++    -I"$w" -I"$d/.." -I"$IDF_PATH/components/json/cJSON" \
++    "$d/test_store_retry.c" "$d/../store_codec.c" "$IDF_PATH/components/json/cJSON/cJSON.c" -lm -o "$w/test"
++ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$w/test"
+diff --git a/firmware/espidf/components/tb_core/tests/store_host_stubs.h b/firmware/espidf/components/tb_core/tests/store_host_stubs.h
+index 34dbca7..bd66aa8 100644
+--- a/firmware/espidf/components/tb_core/tests/store_host_stubs.h
++++ b/firmware/espidf/components/tb_core/tests/store_host_stubs.h
+@@ -49,6 +49,7 @@ static int host_volume_rebind_result;
+ static uint64_t host_nvs_ack, host_nvs_reserved;
+ static uint64_t host_pending_ack, host_pending_reserved;
+ static uint8_t host_pending_clean;
++static uint32_t host_pending_keep,host_nvs_keep;
+ 
+ static inline const tb_config_t *tb_config(void) { return &host_config; }
+ static inline const char *tb_device_uid(void) { return "TB-HOST-0123456789AB"; }
+@@ -76,6 +77,8 @@ static inline esp_err_t nvs_set_u64(nvs_handle_t handle, const char *name, uint6
+ }
+ static inline esp_err_t nvs_set_u8(nvs_handle_t handle, const char *name, uint8_t value)
+ { (void)handle; (void)name; host_pending_clean = value; return ESP_OK; }
++static inline esp_err_t nvs_set_u32(nvs_handle_t handle,const char *name,uint32_t value)
++{ (void)handle;(void)name;host_pending_keep=value;return ESP_OK; }
+ static inline esp_err_t nvs_commit(nvs_handle_t handle)
+ {
+     (void)handle;
+@@ -83,6 +86,7 @@ static inline esp_err_t nvs_commit(nvs_handle_t handle)
+     if (host_fail_commit_once) { host_fail_commit_once = false; return ESP_FAIL; }
+     host_nvs_ack = host_pending_ack;
+     host_nvs_reserved = host_pending_reserved;
++    host_nvs_keep=host_pending_keep;
+     return ESP_OK;
+ }
+ static inline int store_host_fsync(int descriptor)
+diff --git a/firmware/espidf/components/tb_core/tests/test_fatfs_rebind.c b/firmware/espidf/components/tb_core/tests/test_fatfs_rebind.c
+index ffc6fd3..4089c62 100644
+--- a/firmware/espidf/components/tb_core/tests/test_fatfs_rebind.c
++++ b/firmware/espidf/components/tb_core/tests/test_fatfs_rebind.c
+@@ -4,17 +4,20 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <sys/stat.h>
+ #include "ff.h"
+ #include "diskio.h"
+ 
+ #define SECTORS 512u
+ #define SECTOR_SIZE 4096u
+ static unsigned char disk[SECTORS*SECTOR_SIZE];
+-static bool fail_writes,fail_reads;
++static bool fail_writes,fail_reads,write_protected;
+ static unsigned disk_writes;
+ PARTITION VolToPart[FF_VOLUMES]={{0,0},{1,0}};
+ DSTATUS disk_initialize(BYTE d){return d==0?0:STA_NOINIT;}
+-DSTATUS disk_status(BYTE d){return d==0?0:STA_NOINIT;}
++DSTATUS disk_status(BYTE d){return d==0?(write_protected?STA_PROTECT:0):STA_NOINIT;}
+ DRESULT disk_read(BYTE d,BYTE *out,LBA_t sector,UINT count){
+     if(d!=0 || sector+count>SECTORS)return RES_PARERR;
+     if(fail_reads)return RES_ERROR;
+@@ -45,7 +48,80 @@ int ff_mutex_take(int n){(void)n;return 1;}
+ void ff_mutex_give(int n){(void)n;}
+ typedef int wl_handle_t;
+ static unsigned char ff_diskio_get_pdrv_wl(wl_handle_t h){return h==17?0:0xff;}
++typedef void *TaskHandle_t;
++static TaskHandle_t current_task=(void *)17;
++static TaskHandle_t xTaskGetCurrentTaskHandle(void){return current_task;}
++typedef struct{
++    bool fatfs_called,stat_measured,partition_readonly;int fatfs_result,fatfs_flags,stat_result,file_attributes;
++    uint32_t file_bytes,filesystem_type,root_entries;char path[96];
++}store_io_failure_t;
++static struct{const char *medium,*base_path;wl_handle_t flash_handle;}state={"flash","/tbflash",17};
++#define ESP_PARTITION_TYPE_DATA 1
++#define ESP_PARTITION_SUBTYPE_DATA_FAT 2
++typedef struct{bool readonly;}esp_partition_t;
++static const esp_partition_t *esp_partition_find_first(int type,int subtype,const char *label){
++    static const esp_partition_t partition={false};assert(type==1 && subtype==2 && !strcmp(label,"storage"));return &partition;
++}
+ #include "rebind_under_test.h"
++static void put(const char *name,const char *s);
++static void expect(const char *name,const char *s);
++
++static void access_denied_cases(void){
++    FATFS fs;unsigned char work[SECTOR_SIZE];FIL file;FILINFO info;UINT n;
++    MKFS_PARM options={.fmt=FM_FAT|FM_SFD,.n_fat=2,.n_root=128,.au_size=SECTOR_SIZE};
++    memset(disk,0xff,sizeof(disk));assert(f_mkfs("0:",&options,work,sizeof(work))==FR_OK);
++    assert(f_mount(&fs,"0:",1)==FR_OK);
++    put("0:/00000001.LOG","PRESERVED\n");
++    assert(f_chmod("0:/00000001.LOG",AM_RDO,AM_RDO)==FR_OK);
++    assert(f_stat("0:/00000001.LOG",&info)==FR_OK && (info.fattrib&AM_RDO));
++    assert(get_stat_mode(false)&S_IWUSR); /* stock IDF Unix mode cannot detect AM_RDO */
++    assert(recovered_file_readonly("/tbflash/00000001.LOG"));
++    for(unsigned i=0;i<24;i++){
++        assert(rebind_flash_volume(17)==FR_OK);
++        expect("0:/00000001.LOG","PRESERVED\n");
++        store_io_failure_t traced={0};open_trace_begin();
++        FRESULT result=f_open(&file,"0:/00000001.LOG",fat_mode_conv(O_RDWR|O_APPEND|O_CREAT));
++        open_trace_end(&traced);
++        assert(result==FR_DENIED && fresult_to_errno(result)==EACCES);
++        assert(traced.fatfs_called && traced.fatfs_result==FR_DENIED && traced.fatfs_flags==(FA_READ|FA_WRITE|FA_OPEN_ALWAYS));
++        strcpy(traced.path,"/tbflash/00000001.LOG");inspect_open_failure(&traced);
++        assert(traced.stat_measured && traced.stat_result==FR_OK && (traced.file_attributes&AM_RDO) && traced.file_bytes==10);
++    }
++    assert(f_open(&file,"0:/00000002.LOG",fat_mode_conv(O_RDWR|O_APPEND|O_CREAT|O_EXCL))==FR_OK);
++    assert(f_write(&file,"NEW_DURABLE\n",12,&n)==FR_OK && n==12);
++    assert(f_sync(&file)==FR_OK && f_close(&file)==FR_OK);
++    expect("0:/00000001.LOG","PRESERVED\n");expect("0:/00000002.LOG","NEW_DURABLE\n");
++    assert(f_stat("0:/00000001.LOG",&info)==FR_OK && (info.fattrib&AM_RDO));
++    assert(f_open(&file,"0:/00000002.LOG",fat_mode_conv(O_RDWR|O_APPEND|O_CREAT|O_EXCL))==FR_EXIST);
++    expect("0:/00000002.LOG","NEW_DURABLE\n");
++    write_protected=true;
++    FRESULT result=f_open(&file,"0:/00000002.LOG",FA_WRITE);
++    assert(result==FR_WRITE_PROTECTED && fresult_to_errno(result)==EACCES);
++    write_protected=false;
++    open_trace_begin();current_task=(void *)18;
++    assert(f_open(&file,"0:/00000002.LOG",FA_READ)==FR_OK && f_close(&file)==FR_OK);
++    current_task=(void *)17;store_io_failure_t ignored={0};open_trace_end(&ignored);assert(!ignored.fatfs_called);
++    assert(f_mount(NULL,"0:",0)==FR_OK);
++    /* Separate disposable fixture: free data clusters do not imply free FAT
++     * directory entries. This case CANNOT be fixed by deleting protected data. */
++    memset(disk,0xff,sizeof(disk));assert(f_mkfs("0:",&options,work,sizeof(work))==FR_OK);
++    assert(f_mount(&fs,"0:",1)==FR_OK);
++    DWORD before,after;FATFS *mounted=NULL;
++    assert(f_getfree("0:",&before,&mounted)==FR_OK && before>100);
++    for(unsigned i=0;i<fs.n_rootdir;i++){
++        char path[24];snprintf(path,sizeof(path),"0:/F%07u.TMP",i);put(path,"");
++    }
++    assert(f_getfree("0:",&after,&mounted)==FR_OK && before==after);
++    assert(f_stat("0:/00000001.LOG",&info)==FR_NO_FILE);
++    result=f_open(&file,"0:/00000001.LOG",FA_READ|FA_WRITE|FA_CREATE_NEW);
++    assert(result==FR_DENIED && fresult_to_errno(result)==EACCES);
++    store_io_failure_t missing={0};strcpy(missing.path,"/tbflash/00000001.LOG");inspect_open_failure(&missing);
++    assert(missing.stat_measured && missing.stat_result==FR_NO_FILE && missing.root_entries==128);
++    assert(rebind_flash_volume(17)==FR_OK);
++    assert(f_open(&file,"0:/00000001.LOG",FA_READ|FA_WRITE|FA_CREATE_NEW)==FR_DENIED);
++    assert(f_mount(NULL,"0:",0)==FR_OK);
++    puts("Actual FatFs: 24 successful scans/remounts still OPEN/EACCES on AM_RDO; new exclusive segment works, old bytes/attrs remain; full directory with free clusters stays denied; exact FRESULT trace PASS");
++}
+ 
+ static void put(const char *name,const char *s){
+     FIL file;UINT n;assert(f_open(&file,name,FA_WRITE|FA_CREATE_ALWAYS)==FR_OK);
+@@ -101,6 +177,7 @@ int main(void){
+     expect("0:/00000002.BAD","EVIDENCE\n");
+     assert(rebind_flash_volume(99)==FR_INVALID_DRIVE);
+     assert(f_mount(NULL,"0:",0)==FR_OK);
++    access_denied_cases();
+     puts("Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS");
+     return 0;
+ }
+diff --git a/firmware/espidf/components/tb_core/tests/test_store_io.c b/firmware/espidf/components/tb_core/tests/test_store_io.c
+index b2bd73d..febaa64 100644
+--- a/firmware/espidf/components/tb_core/tests/test_store_io.c
++++ b/firmware/espidf/components/tb_core/tests/test_store_io.c
+@@ -7,9 +7,16 @@
+ #include <string.h>
+ #include <unistd.h>
+ #include <errno.h>
+-enum fault_kind { NONE, OPEN, WRITE, FLUSH, SYNC, CLOSE, SEEK_TAIL, READ_TAIL, FAULT_SEEK_END, SEPARATOR };
++#include <fcntl.h>
++enum fault_kind { NONE, OPEN, FDOPEN, WRITE, FLUSH, SYNC, CLOSE, SEEK_TAIL, READ_TAIL, FAULT_SEEK_END, SEPARATOR };
+ static enum fault_kind fault;
+ static bool secondary_close;
++static int io_open(const char *path,int flags,mode_t mode){
++    if(fault==OPEN){errno=EACCES;return -1;}return open(path,flags,mode);
++}
++static FILE *io_fdopen(int fd,const char *mode){
++    if(fault==FDOPEN){errno=ENOMEM;return NULL;}return fdopen(fd,mode);
++}
+ static FILE *io_fopen(const char *path,const char *mode){
+     if(fault==OPEN && !strcmp(mode,"a+b")){errno=EACCES;return NULL;}
+     return fopen(path,mode);
+@@ -31,6 +38,8 @@ static int io_fseek(FILE *f,long offset,int origin){
+ static int io_fgetc(FILE *f){if(fault==READ_TAIL){errno=EIO;return EOF;}return fgetc(f);}
+ static int io_fputc(int c,FILE *f){if(fault==SEPARATOR){errno=EIO;return EOF;}return fputc(c,f);}
+ #define fopen io_fopen
++#define open io_open
++#define fdopen io_fdopen
+ #define fwrite io_fwrite
+ #define fflush io_fflush
+ #define fclose io_fclose
+@@ -55,7 +64,7 @@ static void check_failure(enum fault_kind kind,const char *stage){
+     append_json("{\"raw\":\"RETAINED\"}",2);
+     assert(!state.ready && state.write_errors==1 && state.highest_committed==1);
+     assert(state.last_io_failure.stage && !strcmp(state.last_io_failure.stage,stage));
+-    int expected=kind==OPEN?EACCES:(kind==WRITE || kind==CLOSE)?ENOSPC:EIO;
++    int expected=kind==OPEN?EACCES:kind==FDOPEN?ENOMEM:(kind==WRITE || kind==CLOSE)?ENOSPC:EIO;
+     assert(state.last_io_failure.error==expected && state.volume_rebind_required);
+     if(kind==FLUSH)assert(state.last_io_failure.close_error==ENOSPC); /* first errno survives close */
+     cJSON *batch=tb_store_batch(8,12000);assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(batch,"ok")));cJSON_Delete(batch);
+@@ -70,12 +79,14 @@ static void check_failure(enum fault_kind kind,const char *stage){
+     assert(!recover_after_failure() && !state.ready && state.volume_rebind_required);
+     assert(state.ack_sequence==0 && host_nvs_ack==0);
+     host_volume_rebind_result=0;assert(recover_after_failure());state.ready=true;
+-    assert(host_volume_rebind_calls==2 && state.volume_rebinds==1 && state.recovery_attempts==2 && state.recovery_successes==1);
++    assert(host_volume_rebind_calls==2 && state.volume_rebinds==1 && state.recovery_attempts==2 && state.recovery_successes==0);
+     /* Exactly the production retained-row rule: recover a complete ambiguous
+      * write, otherwise append the retained payload once using a new sequence. */
+     if(state.highest_committed<state.last_io_failure.sequence)append_json("{\"raw\":\"RETAINED\"}",2);
++    append_json("{\"raw\":\"AFTER_RECOVERY\"}",3);
++    assert(state.write_confirmed && state.recovery_successes==1);
+     batch=tb_store_batch(8,12000);cJSON *samples=cJSON_GetObjectItemCaseSensitive(batch,"samples");
+-    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(batch,"ok")) && cJSON_GetArraySize(samples)==2);
++    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(batch,"ok")) && cJSON_GetArraySize(samples)==3);
+     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(sample_at(batch,0),"raw")->valuestring,"CONFIRMED"));
+     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(sample_at(batch,1),"raw")->valuestring,"RETAINED"));
+     uint64_t target=(uint64_t)cJSON_GetObjectItemCaseSensitive(batch,"max_seq")->valuedouble;cJSON_Delete(batch);
+@@ -83,16 +94,20 @@ static void check_failure(enum fault_kind kind,const char *stage){
+ }
+ static void repeated_failure_then_recover(void){
+     fault=NONE;reset_store();state.medium="flash";host_volume_rebind_result=0;host_volume_rebind_calls=0;
+-    for(unsigned i=0;i<11;i++){
++    for(unsigned i=0;i<3;i++){
+         fault=OPEN;append_json("{\"raw\":\"BUFFERED\"}",3);assert(!state.ready);
+         assert(state.committed_this_boot==0 && host_nvs_ack==0);
+-        fault=NONE;if(i<10){assert(recover_after_failure());state.ready=true;}
++        fault=NONE;assert(recover_after_failure());state.ready=true;
+     }
+-    assert(state.write_errors==11 && !state.ready);
++    assert(state.write_errors==3 && state.io_paused && !state.write_confirmed && state.recovery_successes==0);
++    uint64_t before=state.next_sequence;
++    for(unsigned i=0;i<24;i++)append_json("{\"raw\":\"STILL_BUFFERED\"}",3);
++    assert(state.write_errors==3 && state.next_sequence==before && state.recovery_successes==0);
++    assert(tb_store_retry()==ESP_OK && !state.io_paused);
+     assert(recover_after_failure());state.ready=true;
+     append_json("{\"raw\":\"BUFFERED\"}",3);
+     assert(state.ready && state.pending_records==1 && state.committed_this_boot==1);
+-    assert(host_nvs_reserved==256 && host_commit_calls==1 && state.highest_committed==12);
++    assert(host_nvs_reserved==256 && host_commit_calls==1 && state.highest_committed==4);
+     simulate_restart();assert(state.next_sequence==257); /* no reuse across boots */
+     cleanup_store();
+ }
+@@ -117,11 +132,11 @@ static void recovered_reservation_commit_must_be_retried(void){
+ }
+ int main(void){
+     for(enum fault_kind f=OPEN;f<=SEPARATOR;f++){
+-        static const char *const names[]={"NONE","OPEN","WRITE","FLUSH","SYNC","CLOSE","SEEK_TAIL","READ_TAIL","SEEK_END","SEPARATOR"};
++        static const char *const names[]={"NONE","OPEN","FDOPEN","WRITE","FLUSH","SYNC","CLOSE","SEEK_TAIL","READ_TAIL","SEEK_END","SEPARATOR"};
+         check_failure(f,names[f]);
+     }
+     repeated_failure_then_recover();
+     recovered_reservation_commit_must_be_retried();
+-    puts("Store IO: 9 failing stages, first/close errno, unknown pending, failed rebind, 11 consecutive failures, retained CRC recovery, no duplicate and ACK-only recycling PASS");
++    puts("Store IO: 10 failing stages, first/close errno, 3-attempt pause, no false recovery success, retained CRC recovery, NVS retry, no duplicate and ACK-only recycling PASS");
+     return 0;
+ }
+diff --git a/firmware/espidf/components/tb_core/tests/test_store_open.c b/firmware/espidf/components/tb_core/tests/test_store_open.c
+new file mode 100644
+index 0000000..1da68be
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/test_store_open.c
+@@ -0,0 +1,100 @@
++/* Real store/CRC/recovery/ACK; POSIX file-attribute boundary plus separate
++ * real-FatFs tests prove the corresponding AM_RDO/FR_DENIED behavior. */
++#define main existing_store_tests
++#include "test_store_transactions.c"
++#undef main
++
++static size_t bytes(const char *path,char *out,size_t cap){
++    FILE *f=fopen(path,"rb");assert(f);size_t n=fread(out,1,cap,f);assert(!ferror(f) && fclose(f)==0);return n;
++}
++static void legacy_readonly_rollover(void){
++    reset_store();append_json("{\"raw\":\"OLD_VALID\"}",1);
++    char old[96],before[2048],after[2048];segment_path(old,sizeof(old),1);
++    size_t length=bytes(old,before,sizeof(before));assert(chmod(old,0400)==0);
++    char other[96];snprintf(other,sizeof(other),"%s/foreign.txt",host_directory);
++    FILE *f=fopen(other,"wb");assert(f && fputs("FOREIGN",f)>=0 && fclose(f)==0);
++    state.preserve_fence_set=false;state.ready=false;state.write_confirmed=false;
++    assert(recover_after_failure());state.ready=true;
++    assert(state.preserve_fence_set && state.preserve_through==1 && host_nvs_keep==1);
++    assert(state.segments[0].read_only && state.segments[0].preserved);
++    assert(state.recovery_successes==0 && state.recovery_scans==1 && !state.write_confirmed);
++    cJSON *o=cJSON_CreateObject();tb_store_add_json(o);cJSON *status=cJSON_GetObjectItemCaseSensitive(o,"storage");
++    assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(status,"ready")) && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(status,"read_ready")));cJSON_Delete(o);
++    append_json("{\"raw\":\"NEW_DURABLE\"}",2);
++    assert(state.ready && state.write_confirmed && state.recovery_successes==1 && state.write_errors==0);
++    assert(state.segment_count==2 && state.segments[1].id==2);
++    assert(bytes(old,after,sizeof(after))==length && !memcmp(before,after,length));
++    struct stat info;assert(stat(old,&info)==0 && !(info.st_mode&S_IWUSR));
++    cJSON *batch=tb_store_batch(8,12000);assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(batch,"ok")));
++    assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(batch,"samples"))==2);
++    assert(cJSON_GetObjectItemCaseSensitive(sample_at(batch,0),"seq")->valuedouble==1);
++    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(sample_at(batch,0),"raw")->valuestring,"OLD_VALID"));
++    uint64_t ack=(uint64_t)cJSON_GetObjectItemCaseSensitive(batch,"max_seq")->valuedouble;cJSON_Delete(batch);
++    assert(tb_store_ack(ack)==ESP_OK && state.pending_records==0);
++    assert(access(old,F_OK)==0 && access(other,F_OK)==0 && state.segment_count==1);
++    uint64_t confirmed_ack=host_nvs_ack;
++    state.preserve_through=host_nvs_keep;state.preserve_fence_set=true;simulate_restart();
++    assert(state.pending_records==0 && host_nvs_ack==confirmed_ack && state.segments[0].preserved && state.segments[0].read_only);
++    append_json("{\"raw\":\"AFTER_REBOOT\"}",3);
++    assert(state.write_confirmed && state.highest_committed>ack);
++    assert(bytes(old,after,sizeof(after))==length && !memcmp(before,after,length));
++    assert(unlink(other)==0);cleanup_store();
++}
++static void writable_legacy_is_append_only(void){
++    reset_store();append_json("{\"raw\":\"VALID_PREFIX\"}",1);
++    char path[96],before[2048],after[2048];segment_path(path,sizeof(path),1);
++    size_t length=bytes(path,before,sizeof(before));state.preserve_fence_set=false;
++    simulate_restart();assert(state.segments[0].preserved && !state.segments[0].read_only);
++    append_json("{\"raw\":\"APPENDED\"}",2);
++    assert(bytes(path,after,sizeof(after))>length && !memcmp(before,after,length));
++    cJSON *batch=tb_store_batch(8,12000);uint64_t ack=(uint64_t)cJSON_GetObjectItemCaseSensitive(batch,"max_seq")->valuedouble;cJSON_Delete(batch);
++    assert(tb_store_ack(ack)==ESP_OK && access(path,F_OK)==0);
++    cleanup_store();
++}
++static void no_overwrite_on_name_collision(void){
++    reset_store();char path[96],before[128],after[128];segment_path(path,sizeof(path),1);
++    FILE *f=fopen(path,"wb");assert(f && fputs("EXISTING_FOREIGN_BYTES",f)>=0 && fclose(f)==0);
++    size_t n=bytes(path,before,sizeof(before));append_json("{\"raw\":\"DO_NOT_APPEND_TO_COLLISION\"}",1);
++    assert(!state.ready && state.write_errors==1 && !strcmp(state.last_io_failure.stage,"OPEN"));
++    assert(state.last_io_failure.error==EEXIST && (state.last_io_failure.open_flags&O_EXCL));
++    assert(!strcmp(state.last_io_failure.path,path));
++    assert(bytes(path,after,sizeof(after))==n && !memcmp(before,after,n));cleanup_store();
++}
++static void preservation_commit_failure_does_not_prune(void){
++    reset_store();append_json("{\"raw\":\"PRESERVE\"}",1);
++    char path[96];segment_path(path,sizeof(path),1);state.preserve_fence_set=false;state.ready=false;
++    host_fail_commit_once=true;assert(!recover_records() && !state.preserve_fence_set && host_nvs_keep==0);
++    assert(access(path,F_OK)==0);assert(recover_records() && host_nvs_keep==1);state.ready=true;
++    assert(state.segments[0].preserved);cleanup_store();
++}
++static void scans_never_count_as_write_recovery(void){
++    reset_store();append_json("{\"raw\":\"DURABLE_BEFORE_FAILURE\"}",1);state.ready=false;
++    for(unsigned i=0;i<24;i++){assert(recover_after_failure());state.ready=true;assert(state.recovery_successes==0 && !state.write_confirmed);}
++    assert(state.recovery_scans==24 && state.recovery_attempts==24);
++    append_json("{\"raw\":\"ACTUAL_DURABLE_RECOVERY\"}",2);
++    assert(state.recovery_successes==1 && state.write_confirmed);cleanup_store();
++}
++static void failed_recovery_budget(void){
++    reset_store();append_json("{\"raw\":\"KEPT\"}",1);state.ready=false;state.volume_rebind_required=true;
++    host_volume_rebind_result=1;
++    for(unsigned i=0;i<3;i++){assert(!recover_after_failure());assert(state.io_paused==(i==2));}
++    assert(state.recovery_failures==3 && !state.write_confirmed && host_nvs_ack==0);
++    assert(tb_store_retry()==ESP_OK && !state.io_paused && !state.recovery_failures);
++    host_volume_rebind_result=0;assert(recover_after_failure());state.ready=true;
++    append_json("{\"raw\":\"NEW\"}",2);assert(state.write_confirmed);cleanup_store();
++}
++static void newly_readonly_file_is_not_recycled(void){
++    reset_store();append_json("{\"raw\":\"KEEP_READONLY\"}",1);
++    char path[96];segment_path(path,sizeof(path),1);assert(chmod(path,0400)==0);
++    simulate_restart();assert(!state.segments[0].preserved && state.segments[0].read_only);
++    cJSON *batch=tb_store_batch(8,12000);cJSON_Delete(batch);
++    assert(tb_store_ack(1)==ESP_OK && access(path,F_OK)==0 && state.segment_count==1);
++    append_json("{\"raw\":\"NEW_SEGMENT\"}",2);assert(state.segments[1].id==2);cleanup_store();
++}
++int main(void){
++    legacy_readonly_rollover();writable_legacy_is_append_only();no_overwrite_on_name_collision();
++    preservation_commit_failure_does_not_prune();scans_never_count_as_write_recovery();
++    failed_recovery_budget();
++    newly_readonly_file_is_not_recycled();
++    puts("Store OPEN regression: readonly legacy rolled to new exclusive segment; preserved bytes/IDs/attrs across reboot+ACK; no collision overwrite; fence commit fault; 24 scans != durable recovery PASS");return 0;
++}
+diff --git a/firmware/espidf/components/tb_core/tests/test_store_retry.c b/firmware/espidf/components/tb_core/tests/test_store_retry.c
+new file mode 100644
+index 0000000..d74588f
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/test_store_retry.c
+@@ -0,0 +1,33 @@
++#define main prior_store_tests
++#include "test_store_transactions.c"
++#undef main
++typedef struct {const char *body;int status;cJSON *reply;}httpd_req_t;
++#define HTTPD_400_BAD_REQUEST 400
++static bool admin,busy;
++static bool tb_http_require_admin(httpd_req_t *r){if(!admin)r->status=401;return admin;}
++static bool tb_web_ota_busy(void){return busy;}
++static esp_err_t httpd_resp_send_err(httpd_req_t *r,int status,const char *text){(void)text;r->status=status;return ESP_FAIL;}
++static esp_err_t tb_http_read_json(httpd_req_t *r,size_t n,cJSON **out){
++    if(!r->body || strlen(r->body)>=n)return ESP_FAIL;
++    *out=cJSON_Parse(r->body);return *out?ESP_OK:ESP_FAIL;
++}
++static esp_err_t tb_http_send_json(httpd_req_t *r,cJSON *owned){r->reply=owned;r->status=200;return ESP_OK;}
++#include "retry_handler_under_test.h"
++int main(void){
++    reset_store();append_json("{\"raw\":\"PENDING\"}",1);
++    state.io_paused=true;state.consecutive_io_errors=3;state.write_confirmed=false;state.write_errors=3;
++    host_queue_length=64;uint64_t reserved=host_nvs_reserved,next=state.next_sequence;
++    httpd_req_t request={.body="{\"authorized\":true}"};
++    admin=false;assert(storage_retry_handler(&request)==ESP_OK && request.status==401 && state.io_paused);
++    admin=true;busy=true;assert(storage_retry_handler(&request)!=ESP_OK && state.io_paused);
++    busy=false;request.body="{";assert(storage_retry_handler(&request)!=ESP_OK && state.io_paused);
++    request.body="{\"authorized\":false}";assert(storage_retry_handler(&request)!=ESP_OK && state.io_paused);
++    request.body="{\"authorized\":true}";host_mutex_busy=true;
++    assert(storage_retry_handler(&request)!=ESP_OK && state.io_paused);host_mutex_busy=false;
++    assert(storage_retry_handler(&request)==ESP_OK && request.status==200 && !state.io_paused);
++    assert(!state.ready && !state.write_confirmed && state.write_errors==3 && state.pending_records==1);
++    assert(host_queue_length==64 && state.next_sequence==next && host_nvs_reserved==reserved && host_nvs_ack==0);
++    assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(request.reply,"storage"),"ready")));
++    cJSON_Delete(request.reply);cleanup_store();
++    puts("Storage retry route: admin, explicit authorization, JSON/OTA/mutex guards; actual retry preserves RAM queue, record IDs, durable pending, errors and NVS; no restart or acquisition control PASS");return 0;
++}
+diff --git a/firmware/espidf/components/tb_core/tests/test_store_transactions.c b/firmware/espidf/components/tb_core/tests/test_store_transactions.c
+index f1bb8b9..3da1aad 100644
+--- a/firmware/espidf/components/tb_core/tests/test_store_transactions.c
++++ b/firmware/espidf/components/tb_core/tests/test_store_transactions.c
+@@ -14,6 +14,7 @@ static void reset_store(void)
+     memset(&host_config, 0, sizeof(host_config));
+     host_nvs_ack = host_nvs_reserved = host_pending_ack = host_pending_reserved = 0;
+     host_pending_clean = 0;
++    host_pending_keep=host_nvs_keep=0;
+     host_queue_length = host_fsync_calls = host_commit_calls = 0;
+     host_fail_fsync_once = host_fail_commit_once = false;
+     snprintf(host_directory, sizeof(host_directory), "/tmp/tb-store-txn-XXXXXX");
+@@ -25,6 +26,8 @@ static void reset_store(void)
+     state.next_segment_id = 1;
+     state.next_sequence = 1;
+     state.ready = true;host_allow_compression=true;
++    state.preserve_fence_set=true; /* fresh 0.2.20: empty initial fence */
++    state.write_confirmed=true; /* healthy fixture; failure tests clear it */
+     state.mutex = state.queue = (void *)1;
+ }
+ 
+@@ -57,6 +60,7 @@ static void append_json(const char *json, uint64_t uptime)
+ 
+ static void simulate_restart(void)
+ {
++    state.write_confirmed=false;
+     state.ready = false;
+     state.segment_count = state.pending_bytes = state.pending_records = 0;
+     memset(state.segments, 0, sizeof(state.segments));
+diff --git a/firmware/espidf/components/tb_core/tests/test_store_worker.c b/firmware/espidf/components/tb_core/tests/test_store_worker.c
+index 5cc6720..6102e4b 100644
+--- a/firmware/espidf/components/tb_core/tests/test_store_worker.c
++++ b/firmware/espidf/components/tb_core/tests/test_store_worker.c
+@@ -9,21 +9,22 @@
+ #define pdTRUE 1
+ #define portMAX_DELAY UINT32_MAX
+ #define pdMS_TO_TICKS(v) (v)
++#define STORE_IO_ATTEMPT_LIMIT 3U
+ typedef struct{unsigned id;}queued_record_t;
+-static struct{void *mutex,*queue;const char *base_path;bool ready,medium_initialized,initializing,rollback_paused,rollback_drained;uint64_t highest_committed,next_sequence,scheduling_yields;}state;
++static struct{void *mutex,*queue;const char *base_path;bool ready,medium_initialized,initializing,rollback_paused,rollback_drained,io_paused,recovery_complete;unsigned recovery_failures;uint64_t highest_committed,next_sequence,scheduling_yields;}state;
+ static jmp_buf done;
+-static unsigned received,initializations,recoveries,attempts[11],written[11],mode,mutex;
++static unsigned received,initializations,recoveries,attempts[11],written[11],mode,mutex,paused_ticks;
+ static bool fault;
+ static uint64_t now,media_sequence;
+ static uint64_t esp_timer_get_time(void){return now;}
+ static void xSemaphoreTake(void *m,unsigned wait){(void)m;(void)wait;assert(!mutex);mutex=1;}
+ static void xSemaphoreGive(void *m){(void)m;assert(mutex);mutex=0;}
+ static void increment(uint64_t *v){++*v;}
+-static bool initialize_medium(void){++initializations;state.ready=true;state.medium_initialized=true;state.base_path="mounted-flash";return true;}
++static bool initialize_medium(void){++initializations;state.ready=true;state.recovery_complete=true;state.medium_initialized=true;state.base_path="mounted-flash";return true;}
+ static void prune_segments(void){assert(mutex);}
+ static bool recover_after_failure(void){assert(mutex);++recoveries;
+-    if(mode==3 && recoveries==1)return false;
+-    state.highest_committed=media_sequence;state.next_sequence=101;return true;
++    if(mode==3 && recoveries==1){state.recovery_complete=false;return false;}
++    state.recovery_complete=true;state.highest_committed=media_sequence;state.next_sequence=101;return true;
+ }
+ static unsigned uxQueueMessagesWaiting(void *q){(void)q;return 10-received;}
+ static int xQueueReceive(void *q,void *p,unsigned timeout){(void)q;(void)timeout;
+@@ -32,22 +33,25 @@ static int xQueueReceive(void *q,void *p,unsigned timeout){(void)q;(void)timeout
+ }
+ static void append_record(const queued_record_t *row){assert(mutex && row->id<=10);++attempts[row->id];
+     uint64_t seq=state.next_sequence++;now+=2000;
+-    if(mode && row->id==3 && !fault){fault=true;state.ready=false;
++    if(mode==4 && row->id==3 && attempts[3]<=3){state.ready=false;if(attempts[3]==3)state.io_paused=true;return;}
++    if(mode>0 && mode<4 && row->id==3 && !fault){fault=true;state.ready=false;
+         if(mode==2){++written[row->id];media_sequence=seq;}return;
+     }
+     assert(!written[row->id]);++written[row->id];state.highest_committed=media_sequence=seq;
+     if(row->id==10)state.rollback_paused=true;
+ }
+ static void vTaskDelay(unsigned ticks){assert(!mutex);now+=ticks*1000u;
++    if(mode==4 && state.io_paused && ticks==1000){if(++paused_ticks==2)state.io_paused=false; /* authorized retry mock; passive tasks ran */}
+     if(state.rollback_drained){assert(ticks==100 && state.rollback_paused);longjmp(done,1);}
+ }
+ #include "worker_under_test.h"
+-int main(void){for(mode=0;mode<4;mode++){
++int main(void){for(mode=0;mode<5;mode++){
+     memset(&state,0,sizeof(state));memset(written,0,sizeof(written));memset(attempts,0,sizeof(attempts));
+-    received=initializations=recoveries=mutex=0;fault=false;now=media_sequence=0;state.next_sequence=1;
++    received=initializations=recoveries=mutex=paused_ticks=0;fault=false;now=media_sequence=0;state.next_sequence=1;
+     if(!setjmp(done))storage_task(NULL);
+     for(unsigned i=1;i<=10;i++)assert(written[i]==1);
+     assert(received==10 && initializations==1 && !mutex && state.rollback_drained);
+-    if(mode){assert(recoveries>0);assert(attempts[3]==(mode==2?1u:2u));}
++    if(mode){assert(recoveries>0);assert(attempts[3]==(mode==4?4u:mode==2?1u:2u));}
++    if(mode==4)assert(paused_ticks==2);
+ }
+ puts("Real writer loop: retry uncommitted row, avoid duplicate after ambiguous fsync, repeated read-only recovery, drain barrier and maintenance pause PASS");return 0;}
+diff --git a/firmware/espidf/components/tb_core/tests/test_worker_fairness.c b/firmware/espidf/components/tb_core/tests/test_worker_fairness.c
+index 8493cd4..e5eb7eb 100644
+--- a/firmware/espidf/components/tb_core/tests/test_worker_fairness.c
++++ b/firmware/espidf/components/tb_core/tests/test_worker_fairness.c
+@@ -31,7 +31,8 @@ static int xQueueReceive(void *queue, void *item, unsigned timeout) {
+     return pdTRUE; /* Deliberately never empty: receive must NOT grant IDLE. */
+ }
+ #ifdef TEST_STORE
+-static struct { void *queue,*mutex; const char *base_path; bool ready,medium_initialized,initializing,rollback_paused,rollback_drained; uint64_t scheduling_yields,next_sequence,highest_committed; } state;
++#define STORE_IO_ATTEMPT_LIMIT 3U
++static struct { void *queue,*mutex; const char *base_path; bool ready,medium_initialized,initializing,rollback_paused,rollback_drained,io_paused,recovery_complete; unsigned recovery_failures;uint64_t scheduling_yields,next_sequence,highest_committed; } state;
+ typedef struct { unsigned payload; } queued_record_t;
+ static void xSemaphoreTake(void *lock,unsigned wait) { (void)lock;(void)wait;++mutex_depth; }
+ static void xSemaphoreGive(void *lock) { (void)lock;assert(mutex_depth==1);--mutex_depth; }
+diff --git a/firmware/espidf/test_evidence/v0220_fatfs_wrapper.txt b/firmware/espidf/test_evidence/v0220_fatfs_wrapper.txt
+new file mode 100644
+index 0000000..e08c83e
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0220_fatfs_wrapper.txt
+@@ -0,0 +1 @@
++4203232c:	ca1e90ef          	jal	4201bfcc <__wrap_f_open>
+diff --git a/firmware/espidf/test_evidence/v0220_host_tests.txt b/firmware/espidf/test_evidence/v0220_host_tests.txt
+new file mode 100644
+index 0000000..a9e9e01
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0220_host_tests.txt
+@@ -0,0 +1,110 @@
++config host tests passed (core)
++config host tests passed (link)
++config host tests passed (core)
++JSON memory: 25624-byte native tree / 14401-byte wire output: old print fails with 256 free bytes; streaming uses zero new cJSON allocations
++JSON equivalence, references, all sink failures, depth/size limits, OOM and insertion ownership passed
++Production diagnostics native cJSON: full tree 36328 bytes; old print peak 53283; compact tree 9168 (74.8% smaller); 27 stats fetched in pages <=8
++Production capture full: 918 individual allocation failures leave no orphan nodes
++Production capture compact: 244 individual allocation failures leave no orphan nodes
++Production diagnostics native cJSON: full tree 49960 bytes; old print peak 78274; compact tree 10373 (79.2% smaller); 27 stats fetched in pages <=8
++Production capture full: 1289 individual allocation failures leave no orphan nodes
++Production capture compact: 275 individual allocation failures leave no orphan nodes
++Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
++Real HTTP pressure: field budget41596, unbounded full peak41577 (incomplete), compact peak22894 including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS
++Production HTTP: chunked wire equivalence, maximum 1024-byte staging, zero serializer allocations and all client disconnect points free the tree
++Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved
++Crash evidence: admin/OTA guards, 512-byte streaming, CRC/bounds, unknown boot association, incomplete read refusal and allocation faults PASS
++Network peer cache: same LAN/private AP, own/foreign address rejection, DHCP change and stale fallback passed
++Real sockets: v0.2.2 IPv4-on-IPv6 regression reproduced; mapped IPv4 and native IPv4 learned; native IPv6/invalid FD rejected
++image policy: valid roles, malformed/truncated images, chip, hash and string boundaries passed
++Protocol tests passed
++Validated 4000 generated records with an independent JSON parser
++Storage record CRC and interrupted-tail tests passed
++FRAM codec tests passed: golden CRC, 512 corruptions, sequence bounds, generation wrap, 65 interrupted writes, NVS-reset checkpoint
++Independent Python CRC/serialization golden vector passed
++Storage transactions: no GPS/offline/reboot, late GPS immutability, ACK gaps/idempotence/NVS fault, fsync fault, torn tail, corruption, capacity and startup queue passed
++Storage codec: UTF-8/key tokens, lossless roundtrip, output bounds, all truncations, malformed base64/backreferences and 3000 deterministic fuzz inputs PASS
++Power cuts: 90 byte boundaries, CRC-valid completion without newline, append/reboot after every cut PASS
++0.2.11-compatible non-final/oversized/CRC corruption, repeated resets, suffix salvage, ACK refusal and immutable evidence PASS
++Real writer loop: retry uncommitted row, avoid duplicate after ambiguous fsync, repeated read-only recovery, drain barrier and maintenance pause PASS
++Actual FatFs: 24 successful scans/remounts still OPEN/EACCES on AM_RDO; new exclusive segment works, old bytes/attrs remain; full directory with free clusters stays denied; exact FRESULT trace PASS
++Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS
++Store IO: 10 failing stages, first/close errno, 3-attempt pause, no false recovery success, retained CRC recovery, NVS retry, no duplicate and ACK-only recycling PASS
++Store OPEN regression: readonly legacy rolled to new exclusive segment; preserved bytes/IDs/attrs across reboot+ACK; no collision overwrite; fence commit fault; 24 scans != durable recovery PASS
++Storage retry route: admin, explicit authorization, JSON/OTA/mutex guards; actual retry preserves RAM queue, record IDs, durable pending, errors and NVS; no restart or acquisition control PASS
++tb_decode: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++storage_task: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++OK: LEGACY=6/60 state snapshots; FULL=60/60
++J1939: 76 catalog rows / 29 PGNs; 55 evidenced mappings, 15 partial/raw, 6 pending/unavailable; SAE status, source isolation and delta tests PASS
++J1939 TP.BAM: complete30/19byte, interleaving, bounds, seq, timeout, capacity PASS
++OK: J1939 inventory 76 signal rows / 29 PGNs; 46 observed PGNs; confidence tags
++J1939 C/PythonV1: 80 scalar/component equivalence checks + explicit safety differences PASS; constructed Master vectors, no full Logs Mae replay
++OK: 17 PIDs, authorization, spacing, replies and cutoffs
++OK: 17 PID scales, raw retention, status bits, unavailable and malformed frames
++OK: 48 passive PIDs; numeric/raw/invalid/unavailable
++OK: 31/31 passive PID decoder paths, physical units, masks, codes and time
++PID194: actual A/B/C/D, page2 PID/SID, 119-code parser, unknowns, states/history/no absent-clear, bounded no-overwrite and concurrent PID192 assembly PASS
++OK: J1587 bridge48+17, multiparameter/page2, checksum/bounds/NA, counter deltas, hardware TX inhibit
++Trip: checkpoint/reboot, source priority, counter reset/jump/gap and fallback overlap PASS
++Accounting: validated odometer recovery, speed overlap replacement, isolated estimates, PID250 reconciliation/no duplication, unknown gap and CRC fallback PASS
++Actual UART PID439: six echo fragmentations + adjacent reply never self-conflict; genuine MID172 conflict still stops TX and keeps passive RX PASS
++Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS
++Actual capture functions passed: v1 migration/v2 reboot, GPS-independent trip/source selection, gap/reset rebasing, unavailable readings, NVS outside RX lock, canonical C0 derived fuel/fallback boundaries
++Actual Core GPS functions passed: absent GPS, no invented coordinates/time, receipt-vs-aged fix guard, no retroactive queued/history fixes, expiry/restart, source speed preservation
++J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
++Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
++Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS
++OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
++J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed
++Field J1708: baseline/control/3x17/after, measured latency/echo, indirect operator confirmation, ambiguity rejection, conflicts/faults/stop/reboot and existing travel cadence PASS
++0.2.14 synthetic 599 valid/6 invalid window stops; 0.2.15 isolated burst does not. Incident branch itself remains unidentifiable from minute aggregates.
++RX guard A-J: stable traffic, isolated noise, traffic/engine changes, persistent RX faults, TX faults, repeated timeouts, offline/reconnect, reboot, spontaneous candidates and stale calibration PASS
++PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS
++Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS
++PID194 OOM: 258 allocation fault points; no partial kind/raw identity accepted by store PASS
++Volvo real modules: PID194 wire length/Cloud bytes, dedup, A/B NVS/torn checkpoint, offline store retry, counter capture/start/end/reboot, unchanged suppression and reset/MID/time/range guards PASS (1055 bounded records, peak 689 bytes)
++Actual field audit: 482-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS
++Guard upper-range fixture fits 731 bytes (limit 767); Guard record: 522 bytes, live/ref counters and actual predicate/mode flags, atomic arrays and allocation failure ownership PASS
++J1708 event persistence policy: PASSED
++Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed
++Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed
++NMEA parser tests passed
++GPS outbox tests passed
++test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
++test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
++test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
++test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
++test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
++test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
++test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
++test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
++test_diff_cannot_overwrite_source_or_private_review (test_cloud_patch.CloudPatchTests.test_diff_cannot_overwrite_source_or_private_review) ... ok
++test_input_cannot_be_overwritten (test_cloud_patch.CloudPatchTests.test_input_cannot_be_overwritten) ... ok
++test_missing_or_duplicate_fragments_rejected (test_cloud_patch.CloudPatchTests.test_missing_or_duplicate_fragments_rejected) ... ok
++test_only_reviewed_fragments_change (test_cloud_patch.CloudPatchTests.test_only_reviewed_fragments_change) ... ok
++test_public_diff_contains_no_authentication_block (test_cloud_patch.CloudPatchTests.test_public_diff_contains_no_authentication_block) ... ok
++test_wrong_source_hash_leaves_input_and_output_untouched (test_cloud_patch.CloudPatchTests.test_wrong_source_hash_leaves_input_and_output_untouched) ... ok
++test_corrupt_file_rejected_before_usb (test_flash_package.FlashPackageTests.test_corrupt_file_rejected_before_usb) ... ok
++test_manifest_cannot_write_nvs (test_flash_package.FlashPackageTests.test_manifest_cannot_write_nvs) ... ok
++test_path_escape_rejected (test_flash_package.FlashPackageTests.test_path_escape_rejected) ... ok
++test_success_preserves_nvs_and_uses_argument_list (test_flash_package.FlashPackageTests.test_success_preserves_nvs_and_uses_argument_list) ... ok
++test_wrong_flash_size_never_writes (test_flash_package.FlashPackageTests.test_wrong_flash_size_never_writes) ... ok
++test_wrong_role_binary_rejected_even_with_matching_hash (test_flash_package.FlashPackageTests.test_wrong_role_binary_rejected_even_with_matching_hash) ... ok
++test_missing_invalid_reset_and_source_change_skip_intervals (test_fuel_equivalence.FuelEquivalence.test_missing_invalid_reset_and_source_change_skip_intervals) ... ok
++test_python_c_1000_generated_valid_samples (test_fuel_equivalence.FuelEquivalence.test_python_c_1000_generated_valid_samples) ... ok
++test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
++test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
++
++----------------------------------------------------------------------
++Ran 24 tests in 2.528s
++
++OK
++Offline source: clock=0 virtual_seconds=7200 frames=441135 records=3789 requests=8175 response_candidates=8175 latest=76 RAW_writes=0
++Offline storage: duration=7200s input_records=3789 original_JSON_bytes=2473390 physical_bytes=1477083 budget_bytes=1818624 segments=31 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 684772 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=3789 deliveries_including_retries=3797 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Offline source: clock=1 virtual_seconds=7200 frames=441135 records=3789 requests=8175 response_candidates=8175 latest=76 RAW_writes=0
++Offline storage: duration=7200s input_records=3789 original_JSON_bytes=2572474 physical_bytes=1595469 budget_bytes=1818624 segments=33 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 684788 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=3789 deliveries_including_retries=3797 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Host tests passed; ESP32 physical tests remain pending.
+diff --git a/firmware/espidf/test_evidence/v0220_memory.json b/firmware/espidf/test_evidence/v0220_memory.json
+new file mode 100644
+index 0000000..c218d27
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0220_memory.json
+@@ -0,0 +1,24 @@
++{
++  "baseline_0.2.19": {
++    ".iram0.text": 127468,
++    ".iram0.data": 4,
++    ".iram0.bss": 0,
++    ".dram0.data": 14788,
++    ".noinit": 0,
++    ".dram0.bss": 67912,
++    "ram_static_bytes": 210172
++  },
++  "candidate_0.2.20": {
++    ".iram0.text": 127468,
++    ".iram0.data": 4,
++    ".iram0.bss": 0,
++    ".dram0.data": 14788,
++    ".noinit": 0,
++    ".dram0.bss": 68096,
++    "ram_static_bytes": 210356
++  },
++  "static_delta_bytes": 184,
++  "OTA_bytes": 1556512,
++  "physical_heap": "NOT_MEASURED",
++  "queue_capacities_changed": false
++}
+diff --git a/firmware/espidf/test_evidence/v0220_preservation.json b/firmware/espidf/test_evidence/v0220_preservation.json
+new file mode 100644
+index 0000000..3dfdeea
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0220_preservation.json
+@@ -0,0 +1,200 @@
++{
++  "baseline": "c1165259d279cb4188574445a0ba89059a87b164",
++  "files": [
++    {
++      "file": "firmware/j1708_17pid/INVENTARIO_v0.2.17.csv",
++      "sha256": "c06ccfd83b4a0c8a8a1175ad08a4742f3e420f2f7d7fd868432d55bc3ae10a9d",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/README.md",
++      "sha256": "df2122bde6be56f17b7271db650c7be5c661226495320d1d97f8039b680d2738",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/SCALES.md",
++      "sha256": "5d8d9efcce2291a1c9d2a103eec405718ee72b7f1aa1a3ced8d1d63b6c1f7eda",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/PASSIVE.md",
++      "sha256": "10c13add523385ae1a47d5389d9a8c817cbef91348592aef8ce61ca559c863b6",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.h",
++      "sha256": "d7e98b8d74b55b56c5c237c8ab98ba9f74e20be943e0ac47a677e153eca60efc",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.c",
++      "sha256": "6a7521a5b4502191359cfccb83905d1d193cc67d4aff89bdc390fbc544753b63",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.h",
++      "sha256": "890d5c47caa330d5e94d4f0eaee680ddbbf12249869f5b50c4e40a497594ba85",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1708_requests.h",
++      "sha256": "e21f405444c17e43f11c15e6426825f560e251e31852ded8bf8cffc0f72297f2",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_diagnostics.c",
++      "sha256": "785f75435a21853207876a3b14b7d96714bde1bf24c2e12eca8fa7d445cdab7d",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.h",
++      "sha256": "c585dd6a87784d3504cef82f1158918a9cefd1e251fd69ecda2a784c5983d841",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.c",
++      "sha256": "9d18e7846e59caeb573c28d5da406e17e6b8f83d15ea0f8e60be5e494eab7ef8",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive.c",
++      "sha256": "2784306aca7c9c22ceab4e880d173db75a7cb469a87a6fdb9759b056a3a3986d",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_passive_full.c",
++      "sha256": "d3174a09a1c8545091f3bf9751621ef82c7d23b76e33741c81c2f216e50e51ec",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1708_policy.h",
++      "sha256": "fa54cf24aeed91252a5fb54988f5b03f9f347bc5ae74180267916af97d1ce046",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/src/tbx_j1587_decoder.h",
++      "sha256": "4fb7eb60f4c9f6f302b2e1348daf37a47e996664c876aa09f622d2d71b959c08",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/run_all.sh",
++      "sha256": "7b9528d21d17346ba107a576d22adbe572ba2d17b93ea7ab571ffcb0bc3dae85",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1708_requests.c",
++      "sha256": "16538458883b1b5c18ad04ec795db000bf8a91adb61ca3840fa95d8f34eb4efe",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_passive_full.c",
++      "sha256": "36897727784a32af51cc8d238642cc609b4fe4044463cdc3c159a091791a90cd",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_passive.c",
++      "sha256": "d1ea1be03be7b4bc5aa738a5bd0b2f7b5262ba4c4bef12bacd8af7eb02037825",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_diagnostics.c",
++      "sha256": "f973ef4be9569e03352a978dce567212e555a6b9c5da227c67370c176dae4dc4",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/j1708_17pid/tests/test_tbx_j1587_decoder.c",
++      "sha256": "1cb01f25cc74e15787f27544f789d776b2f1e927e6ffbf62d32bbe4064d25bd5",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/capture.c",
++      "sha256": "a5b688aff3e60e2f1d804253dbf097f09874672e5be5c18df075169e938f0075",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_active.c",
++      "sha256": "1652506865b5f30303566fcee0f966f0d98d0cfeb0c4b66b81bcd266e6c18792",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_auto.c",
++      "sha256": "8a49ca7968e2ed0e86d8a16c2f5580effe32c4e6e5a08cf7bafe4f76446bdffc",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_field.c",
++      "sha256": "a4d6be270b005380c8169113bad853e28016388420e761f670325a4f955ac203",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1708_rx_guard.c",
++      "sha256": "1c634c4026c763bf968650d3fb477828c4fdd5053714ba7b4ef07b62acfac95a",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_transmission.c",
++      "sha256": "e0cac603ce503db17865130d30a8ce8321303d8c8ed684f189598fbd7f3500bf",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_trip.c",
++      "sha256": "4f3c6d6a116bbfde31372bff1c3c745f0a96d39bc74fe98fbcfa3da4dd2cf8bf",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_fuel_account.c",
++      "sha256": "6311fbaaf689660229b0b5d5319e07e8b1c9f37fc1265b18b6c9a3090c4f4665",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_fuel.c",
++      "sha256": "3ddd41d03a34eeec5347dc5666ab558918af656f2be1c59c5332bc9f37266e9e",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1939.c",
++      "sha256": "14129fcfc5817548ad24521a959c41fe932fa56c4f3d089ece18ae70ffbdf68d",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/tbx_j1939_tp.c",
++      "sha256": "53a2e75c437f3bcce438fe2954922f639394f6091ac0b1e9bf6f044f39de49e6",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/telemetry.c",
++      "sha256": "45551ef83a586fe0f3e300b6c1e0c07cea1317a6c062624bca035e0deaf2f24c",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/protocols.c",
++      "sha256": "e2480f0616223f738f64b35d2f1e6e46dbbf90c77b025adbe3a26eeb55f266a8",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/diagnostics.c",
++      "sha256": "2978478054f91c1a31f1fdcdb5e9a2d49f5c2dd858171b8e9f36c76dffce135d",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_core/ecu_counters.c",
++      "sha256": "6c2b9a2e891131ee5e534ee4a042c3b53cde5fa7d97245a37d5b3ebd321c1045",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_base/config.c",
++      "sha256": "86ee6439521fed53541252a12994be29ee570d442811b1492303d4cefe84b013",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/components/tb_base/network.c",
++      "sha256": "90cae32602e13a621f14190dde4a3bb930ca938dbd4b69b67299e5d3dda64462",
++      "unchanged": true
++    },
++    {
++      "file": "firmware/espidf/partitions.csv",
++      "sha256": "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832",
++      "unchanged": true
++    }
++  ]
++}
+diff --git a/firmware/espidf/tests/run_all.sh b/firmware/espidf/tests/run_all.sh
+index a589c6d..47ecee8 100755
+--- a/firmware/espidf/tests/run_all.sh
++++ b/firmware/espidf/tests/run_all.sh
+@@ -21,6 +21,8 @@ sh components/tb_core/tests/run_store_recovery.sh
+ sh components/tb_core/tests/run_store_worker.sh
+ sh components/tb_core/tests/run_fatfs_rebind.sh
+ sh components/tb_core/tests/run_store_io.sh
++sh components/tb_core/tests/run_store_open.sh
++sh components/tb_core/tests/run_store_retry.sh
+ sh components/tb_core/tests/run_worker_fairness.sh
+ sh components/tb_core/tests/run_legacy_profile.sh
+ sh components/tb_core/tests/run_j1939.sh
+diff --git a/firmware/espidf/tools/build_release.py b/firmware/espidf/tools/build_release.py
+index d04e670..1f4227a 100644
+--- a/firmware/espidf/tools/build_release.py
++++ b/firmware/espidf/tools/build_release.py
+@@ -14,7 +14,7 @@ import zipfile
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-VERSION = "0.2.19"
++VERSION = "0.2.20"
+ EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
+ REQUIRED_SOURCE = (
+     "firmware/espidf/CMakeLists.txt",
+@@ -137,8 +137,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
+         "branch": git_value(project_root, "branch", "--show-current"),
+         "commit": git_value(project_root, "rev-parse", "HEAD"),
+         "dirty": bool(git_value(project_root, "status", "--porcelain")),
+-        "integration_base_branch": "fix/revb1-v0218-memory-echo",
+-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "48aff2f"),
++        "integration_base_branch": "fix/revb1-v0219-storage-recovery",
++        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "c116525"),
+         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
+     }
+     result["builds"] = {}
+diff --git a/firmware/espidf/tools/build_v020.sh b/firmware/espidf/tools/build_v020.sh
+index 993feac..bac1a1c 100755
+--- a/firmware/espidf/tools/build_v020.sh
++++ b/firmware/espidf/tools/build_v020.sh
+@@ -20,7 +20,7 @@ if [[ "$idf_version" != 'ESP-IDF v5.5.2' ]]; then
+   exit 2
+ fi
+ for build_role in "${roles[@]}"; do
+-  project_version=0.2.19
++  project_version=0.2.20
+   idf.py -C "$project_root" -B "$project_root/build-$build_role" \
+     -DTRUCKBOX_ROLE="$build_role" -DPROJECT_VER="$project_version" build
+ done

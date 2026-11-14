@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "source_commit": "bb0872ec8e70a87d444d0f1ba1abdbfff2943153",
+  "clean_source": true,
+  "checksums_verified": 178,
+  "source_files_compared": 477,
+  "unchanged_files_verified": 39,
+  "elf_matches_app_descriptor": true,
+  "partition_unchanged": true,
+  "ota_bytes": 1556512,
+  "ota_sha256": "927b863c5d3fc4f333633f4cffac2bc3490a124c9423f49893f51d8897130fb4",
+  "zip_bytes": 8372924,
+  "zip_sha256": "fe7b42f6712b9d791634396bfcbc89d98211226819a3a93b215e350eaba5fb3e"
+}
