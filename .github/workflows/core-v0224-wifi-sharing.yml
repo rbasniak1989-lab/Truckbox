@@ -18,13 +18,24 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Make Node available inside the ESP-IDF container
+        run: |
+          mkdir -p .ci-tools/node/bin
+          cp "$(command -v node)" .ci-tools/node/bin/node
       - name: ESP-IDF 5.5.2 compile and host regressions (no flash)
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.5.2
           target: esp32c6
           path: firmware/espidf
-          command: bash tools/build_v020.sh core && sh tests/run_all.sh
+          command: |
+            export PATH="$PWD/../../.ci-tools/node/bin:$PATH"
+            node --version
+            bash tools/build_v020.sh core
+            sh tests/run_all.sh
       - name: Verify Core image, unchanged partitions, J1708 profile and bounded NAT
         run: |
           python3 - <<'PY'
