@@ -7,7 +7,7 @@ Base: aplicação0.2.24 da PR27, commit `a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3a
 - Mantém um único transmissor,500ms entre consultas, arbitragem/idle mínimo5ms, checksum, correlação MID/PID/tempo, timeout450ms, parada manual, suspensão para OTA e recuperação após perda real de RX. Não força TX em barramento ocupado.
 - Aplica uma migração NVS única para117/MID140,118/MID140 e250/MID128 a10.000ms. Primeiras fases1s/4s/7s; mantém MID local escolhido e outras cadências.
 - Reconfigura o perfil ativo após uma alteração salva do MID, terminando a transação em curso e aguardando RX saudável. Não retorna silenciosamente ao172.
-- Preserva a reconciliação PID183/PID250 e acrescenta média consolidada somente com combustível e odômetro dos mesmos extremos; não adiciona estimativa ao combustível confirmado. Referências SAE permanecem EM VALIDAÇÃO física.
+- Preserva a reconciliação PID183/PID250 e acrescenta média consolidada somente com combustível e odômetro dos mesmos extremos; não adiciona estimativa ao combustível confirmado. Mantém a média encerrada enquanto o modo vazio continua consumindo. Referências SAE permanecem EM VALIDAÇÃO física.
 - Mantém checkpoints v3/v4 para rollback e acrescenta pequeno slot A/B com CRC para os extremos da média. Não grava a configuração a cada consulta.
 - Em pressão de RAM, `/api/state` entrega diagnóstico mínimo sem alocar árvore JSON; `/api/health` mantém heap, maior bloco e contadores J1708. HEALTH publica também heap atual/maior bloco.
 - Acrescenta replay do boot602, cadência crítica, falhas isoladas, migração preservando MID, média/reboot e viagem virtual300km com três reinícios e duas horas offline. Sem envio bruto contínuo.

@@ -10,11 +10,11 @@ Aplicação do Core ESP32-C6/8MB. **Não instalada pelo desenvolvimento.** Link,
 - [Diff completo desde a fonte0.2.24](changes-0.2.24-to-0.2.25.patch)
 - [Verificação independente do pacote](verification.json)
 
-Fonte compilada limpa: `0c9eefcfdbf2e902558fc677fd4d891081ef6a97`, baseada na PR27 `a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3aa`, cujo ELF coincide com o boot602. ESP-IDF5.5.2. A imagem tem1.591.584bytes, checksum/hash internos válidos e cabe no slot OTA de3MiB. Não gravar bootloader/partições na atualização OTA.
+Fonte compilada limpa: `7e089d6739529ae6f96b4192cc5f5228c70a6952`, baseada na PR27 `a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3aa`, cujo ELF coincide com o boot602. ESP-IDF5.5.2. A imagem tem1.591.584bytes, checksum/hash internos válidos e cabe no slot OTA de3MiB. Não gravar bootloader/partições na atualização OTA.
 
-SHA256 OTA: `66b9798f06ab8b393ba4b21a142a863dfaa5065f1a5ea332565752bdc2b2b7a0`.
+SHA256 OTA: `38b0dbded81d0656cb5de3427d18435f1054e112fe6bfba436f6656d92d8e77d`.
 
-SHA256 ZIP: `8257cca9c4f2698331da9f7d10f351d35b1a83575d769d421b87c2ba3871dd88` (9.608.036bytes).
+SHA256 ZIP: `c79cb6a88f577fafdf27421f4a1830ad2432134cce54335fcb250eb798df31d6` (9.608.298bytes).
 
 Rollback incluído: [Core0.2.24 verificado](rollback/truckbox_core_0.2.24_ota.bin), SHA256 `5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d`. Contém o defeito antigo e deve ser usado somente como retorno deliberado autorizado.
 

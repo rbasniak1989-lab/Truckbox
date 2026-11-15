@@ -13,7 +13,7 @@
   "esp_idf": "v5.5.2",
   "development": {
     "branch": "fix/revb1-v0225-native-polling",
-    "commit": "0c9eefcfdbf2e902558fc677fd4d891081ef6a97",
+    "commit": "7e089d6739529ae6f96b4192cc5f5228c70a6952",
     "dirty": false,
     "integration_base_branch": "PR27/firmware-0.2.24",
     "integration_base_commit": "a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3aa",

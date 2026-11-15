@@ -110,7 +110,7 @@ index 0000000..5fd8f0b
 +O rollback automático dos dois slots e do bootloader existentes permanece habilitado, segundo os critérios já existentes. Sua atuação elétrica/boot real não foi ensaiada pelo agente. Se HTTP ficar indisponível, os arquivos de recuperação e scripts Windows do pacote continuam disponíveis para acesso físico autorizado; não executar `erase_flash`.
 diff --git a/firmware/espidf/CHANGELOG_v0.2.25.md b/firmware/espidf/CHANGELOG_v0.2.25.md
 new file mode 100644
-index 0000000..711676c
+index 0000000..6eaffa0
 --- /dev/null
 +++ b/firmware/espidf/CHANGELOG_v0.2.25.md
 @@ -0,0 +1,15 @@
@@ -123,7 +123,7 @@ index 0000000..711676c
 +- Mantém um único transmissor,500ms entre consultas, arbitragem/idle mínimo5ms, checksum, correlação MID/PID/tempo, timeout450ms, parada manual, suspensão para OTA e recuperação após perda real de RX. Não força TX em barramento ocupado.
 +- Aplica uma migração NVS única para117/MID140,118/MID140 e250/MID128 a10.000ms. Primeiras fases1s/4s/7s; mantém MID local escolhido e outras cadências.
 +- Reconfigura o perfil ativo após uma alteração salva do MID, terminando a transação em curso e aguardando RX saudável. Não retorna silenciosamente ao172.
-+- Preserva a reconciliação PID183/PID250 e acrescenta média consolidada somente com combustível e odômetro dos mesmos extremos; não adiciona estimativa ao combustível confirmado. Referências SAE permanecem EM VALIDAÇÃO física.
++- Preserva a reconciliação PID183/PID250 e acrescenta média consolidada somente com combustível e odômetro dos mesmos extremos; não adiciona estimativa ao combustível confirmado. Mantém a média encerrada enquanto o modo vazio continua consumindo. Referências SAE permanecem EM VALIDAÇÃO física.
 +- Mantém checkpoints v3/v4 para rollback e acrescenta pequeno slot A/B com CRC para os extremos da média. Não grava a configuração a cada consulta.
 +- Em pressão de RAM, `/api/state` entrega diagnóstico mínimo sem alocar árvore JSON; `/api/health` mantém heap, maior bloco e contadores J1708. HEALTH publica também heap atual/maior bloco.
 +- Acrescenta replay do boot602, cadência crítica, falhas isoladas, migração preservando MID, média/reboot e viagem virtual300km com três reinícios e duas horas offline. Sem envio bruto contínuo.
@@ -156,7 +156,7 @@ index bbc4dda..ee44eaf 100644
  
 diff --git a/firmware/espidf/RELATORIO_v0.2.25.md b/firmware/espidf/RELATORIO_v0.2.25.md
 new file mode 100644
-index 0000000..3552e8f
+index 0000000..0b053d6
 --- /dev/null
 +++ b/firmware/espidf/RELATORIO_v0.2.25.md
 @@ -0,0 +1,117 @@
@@ -224,7 +224,7 @@ index 0000000..3552e8f
 +
 +PID183 integra `L/h × dt/3600` com timestamps monotônicos; lacunas permanecem estimadas/desconhecidas. PID250 do MID configurado, com bytes/escala/ordem válidos, substitui a estimativa do mesmo intervalo. A leitura inalterada é aceita; redução/salto/duplicata ou tempo incompatível não avançam a âncora. Entre boots exige referência UTC compatível para reconciliar um intervalo; sem ela preserva saldo e não inventa duração.
 +
-+Os exemplos automatizados9L→10L e5L→4L terminam em14L confirmados;12L→13L termina em13L, nunca25L. A média consolidada usa a diferença do odômetro e o combustível confirmado dos mesmos extremos, exclui o combustível ainda provisório e não apresenta divisão por zero. Uma nova operação reinicia apenas a cobertura dessa média; não apaga os saldos gerais nem entrega a ela um intervalo inteiro que atravessou outra operação. A cobertura parcial é explícita.
++Os exemplos automatizados9L→10L e5L→4L terminam em14L confirmados;12L→13L termina em13L, nunca25L. A média consolidada usa a diferença do odômetro e o combustível confirmado dos mesmos extremos, exclui o combustível ainda provisório e não apresenta divisão por zero. Uma nova operação reinicia apenas a cobertura dessa média; não apaga os saldos gerais nem entrega a ela um intervalo inteiro que atravessou outra operação. Ao encerrar, a média parcial consolidada permanece congelada enquanto o modo vazio continua somando combustível ao equipamento. A cobertura parcial é explícita.
 +
 +O formato PID250 tem resolução aproximada de0,473176473L por incremento. Consultar a cada10s não aumenta essa resolução; em marcha lenta várias leituras consecutivas podem ser iguais e a média só muda quando há diferença válida. A média também depende de odômetro recente e coerente. Não há comprovação física nova das escalas nesta entrega.
 +
@@ -688,7 +688,7 @@ index b7646d6..3bf9813 100644
      cJSON_AddStringToObject(object, "telemetry_profile",
          tb_profile_raw(tb_config()->full_decode_enabled) ? "COMPLETO" : "LEGACY");
 diff --git a/firmware/espidf/components/tb_core/tbx_fuel_account.c b/firmware/espidf/components/tb_core/tbx_fuel_account.c
-index 80cc31b..f73eeae 100644
+index 80cc31b..8243dbd 100644
 --- a/firmware/espidf/components/tb_core/tbx_fuel_account.c
 +++ b/firmware/espidf/components/tb_core/tbx_fuel_account.c
 @@ -25,6 +25,16 @@ double tbx_fuel_unanchored(const tbx_fuel_account_t *a)
@@ -724,7 +724,7 @@ index 80cc31b..f73eeae 100644
 +            if(odo>=s->end_odometer_km || !s->end.uptime_ms){
 +                s->end=t;s->end_odometer_km=odo;s->end_confirmed_l=a->direct_l+delta;
 +            }
-+        }else if(isfinite(odo) && isfinite(a->anchor_odometer_km))memset(&a->span,0,sizeof(a->span));
++        }else if(within_operation && isfinite(odo) && isfinite(a->anchor_odometer_km))memset(&a->span,0,sizeof(a->span));
          a->boundary_correction_l=0;
          if(a->operation_interval_id==a->interval_id && a->operation_stamp.uptime_ms){
              /* A boundary within this interval is an allocation estimate. Never
@@ -1174,10 +1174,10 @@ index 4f71f45..b8cfe18 100644
  static uint32_t tb_boot_id(void) { return 42; }
  static void vTaskDelay(unsigned ticks) { (void)ticks; }
 diff --git a/firmware/espidf/components/tb_core/tests/test_accounting.c b/firmware/espidf/components/tb_core/tests/test_accounting.c
-index a1e1de9..4ea09db 100644
+index a1e1de9..14c1cb1 100644
 --- a/firmware/espidf/components/tb_core/tests/test_accounting.c
 +++ b/firmware/espidf/components/tb_core/tests/test_accounting.c
-@@ -107,5 +107,39 @@ static void gaps_and_operation_boundaries(void)
+@@ -107,5 +107,44 @@ static void gaps_and_operation_boundaries(void)
      assert(tbx_fuel_account_boundary(&a,true,"trip-B",stamp(1,311000,0),106));near(tbx_fuel_operation_litres(&a),0);
      puts("Offline integration, unknown vs bounded estimated gaps, trip/empty/trip boundaries and explicit estimated allocation PASS");
  }
@@ -1211,10 +1211,15 @@ index a1e1de9..4ea09db 100644
 +    assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* Crossing interval stays explicitly allocated/estimated. */
 +    tbx_fuel_account_counter_litres(&a,128,1003,stamp(2,201000,1794600411000),106);
 +    assert(tbx_fuel_average(&a,&km,&l,&avg));near(km,1);near(l,.5);
++    tbx_fuel_account_t closed=a;
++    assert(tbx_fuel_account_boundary(&closed,false,"trip-new",stamp(2,211000,1794600421000),106));
++    assert(tbx_fuel_account_counter_litres(&closed,128,1004,stamp(2,301000,1794600511000),107));
++    assert(tbx_fuel_average(&closed,&km,&l,&avg));near(km,1);near(l,.5); /* Empty mode freezes the closed trip mean. */
++    assert(closed.direct_l>a.direct_l); /* Vehicle fuel keeps advancing independently. */
 +    tbx_fuel_account_counter_litres(&a,128,1003.5,stamp(2,301000,1794600511000),10);
 +    assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* Odometer reset invalidates paired mean, not ECU fuel. */
 +    near(a.direct_l,3.5);
-+    puts("PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip boundary and odometer reset PASS");
++    puts("PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip/empty frozen mean and odometer reset PASS");
 +}
 +int main(void){distance();fuel_reconciliation_examples();wire_counter_validation();restart_and_crc();gaps_and_operation_boundaries();matched_average_and_v5();
      printf("Fuel state %zuB; v4 checkpoint %zuB; all accounting tests PASS\n",sizeof(tbx_fuel_account_t),sizeof(tb_trip_checkpoint_v4_t));return 0;}
@@ -1824,14 +1829,14 @@ index 3f04078..fb1e57e 100644
  static bool tb_web_ota_busy(void){return false;}
 diff --git a/firmware/espidf/test_evidence/v0225_accounting.txt b/firmware/espidf/test_evidence/v0225_accounting.txt
 new file mode 100644
-index 0000000..1cffdde
+index 0000000..cb1d3dd
 --- /dev/null
 +++ b/firmware/espidf/test_evidence/v0225_accounting.txt
 @@ -0,0 +1,5 @@
 +Required SI examples: 9->10 (+1), 5->4 (-1) =14 confirmed; 12->13 =13, never25 PASS
 +A/B scalar checkpoint: restart inside pending interval, no duplicate, UTC gap recovery, missing-clock hold, CRC corruption and v3 import PASS
 +Offline integration, unknown vs bounded estimated gaps, trip/empty/trip boundaries and explicit estimated allocation PASS
-+PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip boundary and odometer reset PASS
++PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip/empty frozen mean and odometer reset PASS
 +Fuel state 672B; v4 checkpoint 736B; all accounting tests PASS
 diff --git a/firmware/espidf/test_evidence/v0225_baseline_boot602_reproduction.txt b/firmware/espidf/test_evidence/v0225_baseline_boot602_reproduction.txt
 new file mode 100644
@@ -2425,12 +2430,12 @@ index 0000000..bfd2cf0
 +Real HTTP pressure: field budget41596, unbounded full peak41550 (incomplete), compact peak13187 including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS
 diff --git a/firmware/espidf/test_evidence/v0225_drive300.txt b/firmware/espidf/test_evidence/v0225_drive300.txt
 new file mode 100644
-index 0000000..f1f0ce6
+index 0000000..8ae9a81
 --- /dev/null
 +++ b/firmware/espidf/test_evidence/v0225_drive300.txt
 @@ -0,0 +1,2 @@
 +Drive300: virtual_seconds=12000 nominal_km=300 measured_trip_km=299.98172160 canonical_l=59.81502658 confirmed_paired_l=25.07835307 core_reboots=3 resets=POWERON/TASK_WDT/OTA polling_boots=4 records=1207 local_mid=188 PID117/118/250_sent=1188/1188/1188 zero_global_request_stops PASS
-+Drive300 outbox: offline=7200s rows=1207 unique_mock_Cloud=1207 deliveries=1208 duplicates_in_Cloud=0 peak_pending=725 peak_bytes=329997 torn_write_reboots=2 valid_pending=0 evidence_preserved=97742 PASS
++Drive300 outbox: offline=7200s rows=1207 unique_mock_Cloud=1207 deliveries=1208 duplicates_in_Cloud=0 peak_pending=725 peak_bytes=343633 torn_write_reboots=2 valid_pending=0 evidence_preserved=98109 PASS
 diff --git a/firmware/espidf/test_evidence/v0225_host_tests.txt b/firmware/espidf/test_evidence/v0225_host_tests.txt
 new file mode 100644
 index 0000000..1ceafe6
