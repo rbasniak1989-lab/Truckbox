@@ -136,10 +136,15 @@ static void matched_average_and_v5(void)
     assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* Crossing interval stays explicitly allocated/estimated. */
     tbx_fuel_account_counter_litres(&a,128,1003,stamp(2,201000,1794600411000),106);
     assert(tbx_fuel_average(&a,&km,&l,&avg));near(km,1);near(l,.5);
+    tbx_fuel_account_t closed=a;
+    assert(tbx_fuel_account_boundary(&closed,false,"trip-new",stamp(2,211000,1794600421000),106));
+    assert(tbx_fuel_account_counter_litres(&closed,128,1004,stamp(2,301000,1794600511000),107));
+    assert(tbx_fuel_average(&closed,&km,&l,&avg));near(km,1);near(l,.5); /* Empty mode freezes the closed trip mean. */
+    assert(closed.direct_l>a.direct_l); /* Vehicle fuel keeps advancing independently. */
     tbx_fuel_account_counter_litres(&a,128,1003.5,stamp(2,301000,1794600511000),10);
     assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* Odometer reset invalidates paired mean, not ECU fuel. */
     near(a.direct_l,3.5);
-    puts("PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip boundary and odometer reset PASS");
+    puts("PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip/empty frozen mean and odometer reset PASS");
 }
 int main(void){distance();fuel_reconciliation_examples();wire_counter_validation();restart_and_crc();gaps_and_operation_boundaries();matched_average_and_v5();
     printf("Fuel state %zuB; v4 checkpoint %zuB; all accounting tests PASS\n",sizeof(tbx_fuel_account_t),sizeof(tb_trip_checkpoint_v4_t));return 0;}

@@ -128,7 +128,7 @@ bool tbx_fuel_account_counter_litres(tbx_fuel_account_t *a,uint8_t mid,double li
             if(odo>=s->end_odometer_km || !s->end.uptime_ms){
                 s->end=t;s->end_odometer_km=odo;s->end_confirmed_l=a->direct_l+delta;
             }
-        }else if(isfinite(odo) && isfinite(a->anchor_odometer_km))memset(&a->span,0,sizeof(a->span));
+        }else if(within_operation && isfinite(odo) && isfinite(a->anchor_odometer_km))memset(&a->span,0,sizeof(a->span));
         a->boundary_correction_l=0;
         if(a->operation_interval_id==a->interval_id && a->operation_stamp.uptime_ms){
             /* A boundary within this interval is an allocation estimate. Never

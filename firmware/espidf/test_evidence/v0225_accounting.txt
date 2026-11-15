@@ -1,5 +1,5 @@
 Required SI examples: 9->10 (+1), 5->4 (-1) =14 confirmed; 12->13 =13, never25 PASS
 A/B scalar checkpoint: restart inside pending interval, no duplicate, UTC gap recovery, missing-clock hold, CRC corruption and v3 import PASS
 Offline integration, unknown vs bounded estimated gaps, trip/empty/trip boundaries and explicit estimated allocation PASS
-PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip boundary and odometer reset PASS
+PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip/empty frozen mean and odometer reset PASS
 Fuel state 672B; v4 checkpoint 736B; all accounting tests PASS
