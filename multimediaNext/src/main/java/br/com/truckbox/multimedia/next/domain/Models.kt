@@ -120,6 +120,13 @@ data class AppState(
     val coreDeviceUid: String? = null,
     val coreInternetSharing: CoreInternetSharing? = null,
     val coreDiagnostics: CoreDiagnostics? = null,
+    // Evidência real de PID194; registros conservados, ausência de frame não encerra DTC.
+    val coreFaults: List<EcuFault> = emptyList(),
+    val faultUid: String? = null,
+    val faultSnapshotAt: Instant? = null,
+    val faultReadable: Boolean = false,
+    val faultIncomplete: Boolean = true,
+    val faultOverflow: Int = 0,
     val speed: Reading? = null,
     val fuelRate: Reading? = null,
     val trip: TripView? = null,
