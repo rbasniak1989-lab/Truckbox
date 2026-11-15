@@ -31,8 +31,9 @@ class CoreLiveClient(
             connection.requestMethod="GET";connection.instanceFollowRedirects=false
             connection.useCaches=false
             if(connection.responseCode!=200)return null
+            val conn=connection
             val data=ByteArrayOutputStream().also {out->
-                connection.inputStream.use {input->
+                conn.inputStream.use {input->
                     val buffer=ByteArray(1024)
                     while(true) {
                         val n=input.read(buffer)
