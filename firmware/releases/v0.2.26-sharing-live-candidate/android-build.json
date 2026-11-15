@@ -1,0 +1,20 @@
+{
+  "ci_run": 43710526273,
+  "source_commit": "27449ab33f84b2ac0b3414f811d3937a2e66a360",
+  "artifact_id": 14160447021,
+  "artifact_sha256": "b42311d87c91f08930b5cecc28a709688dcb9215fb86ab28eede5a55cb3dacb6",
+  "file": "TruckBox-Multimedia-0.3.1-core-live-debug.apk",
+  "bytes": 18546530,
+  "sha256": "7a4e0a7a96693b99b5f6fd16096e2ed8c0203d0fb2add28c7602e3a2504a8ec9",
+  "manifest": {
+    "versionCode": 4,
+    "versionName": "0.3.1-core-live",
+    "compileSdkVersion": 36,
+    "compileSdkVersionCodename": "16",
+    "package": "br.com.truckbox.multimedia",
+    "platformBuildVersionCode": 36,
+    "platformBuildVersionName": 16
+  },
+  "signer_certificate_sha256": "8a09560271967c9af4b71892503b9f84e4384eb51fe866371fd910c62f14b795",
+  "signing_compatibility_with_installed_app": "UNKNOWN; requires original signing key if Android rejects update"
+}

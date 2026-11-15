@@ -1,0 +1,16 @@
+{
+  "source_commit": "27449ab33f84b2ac0b3414f811d3937a2e66a360",
+  "core": {
+    "run_id": 43710526271,
+    "conclusion": "success",
+    "scope": "clean real ESP32-C6 compile and full host suite"
+  },
+  "android": {
+    "run_id": 43710526273,
+    "conclusion": "success",
+    "tests": 10,
+    "multimedia_tests": 8
+  },
+  "shipped_bytes_audit_local": "success; see verification.json",
+  "shipped_bytes_audit_in_ci": "runs when artifact commit is pushed; final result is tracked in PR30"
+}

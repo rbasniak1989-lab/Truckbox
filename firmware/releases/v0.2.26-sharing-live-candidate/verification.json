@@ -1,0 +1,13 @@
+{
+  "version": "0.2.26",
+  "ota_bytes": 1601488,
+  "ota_sha256": "d396d4481645c2fe3752b5394960323264c2fc49cdfc7f2bb20a594c26a95375",
+  "package_sha256": "527712371d5c6b8fa37fa60e2a6f6ec18772b9fbbbab1ddf7a7307f5853ac525",
+  "source_commit": "27449ab33f84b2ac0b3414f811d3937a2e66a360",
+  "effective_forwarding_napt": true,
+  "raw_tcp_disabled": true,
+  "partition_table_preserved": true,
+  "rollback_verified": true,
+  "shipped_bytes_audited": true,
+  "physical_internet_test": "PENDING"
+}

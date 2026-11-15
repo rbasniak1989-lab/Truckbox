@@ -1,0 +1,2110 @@
+diff --git a/.github/workflows/android-build.yml b/.github/workflows/android-build.yml
+index 3438d61..896df2e 100644
+--- a/.github/workflows/android-build.yml
++++ b/.github/workflows/android-build.yml
+@@ -54,7 +54,7 @@ jobs:
+           sed -i 's/item.findValue(keys, depth + 1)/item.findValue(wantedKeys, depth + 1)/g' "$FILE"
+ 
+       - name: Build debug APKs
+-        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug :multimedia:assembleDebug
++        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :multimedia:testDebugUnitTest :app:assembleDebug :multimedia:assembleDebug
+ 
+       - name: Upload Motorista APK
+         uses: actions/upload-artifact@v4
+@@ -67,7 +67,18 @@ jobs:
+       - name: Upload Multimedia APK
+         uses: actions/upload-artifact@v4
+         with:
+-          name: TruckBox-Multimedia-v0.3.0-FanExperimental-debug
++          name: TruckBox-Multimedia-v0.3.1-CoreLive-debug
+           path: multimedia/build/outputs/apk/debug/multimedia-debug.apk
+           if-no-files-found: error
+           retention-days: 30
++
++      - name: Upload unit test reports
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: TruckBox-Android-unit-test-results
++          path: |
++            app/build/test-results/testDebugUnitTest/*.xml
++            multimedia/build/test-results/testDebugUnitTest/*.xml
++          if-no-files-found: warn
++          retention-days: 30
+diff --git a/.github/workflows/core-v0226-wifi-build.yml b/.github/workflows/core-v0226-wifi-build.yml
+new file mode 100644
+index 0000000..0e121cd
+--- /dev/null
++++ b/.github/workflows/core-v0226-wifi-build.yml
+@@ -0,0 +1,80 @@
++name: Core 0.2.26 sharing and live data candidate
++on:
++  push:
++    branches: [fix/revb1-v0226-wifi-build-contract]
++    paths: ['firmware/**', '.github/workflows/core-v0226-wifi-build.yml']
++  pull_request:
++    branches: [fix/revb1-v0225-native-polling]
++    paths: ['firmware/**', '.github/workflows/core-v0226-wifi-build.yml']
++  workflow_dispatch:
++concurrency:
++  group: core-v0226-${{ github.head_ref || github.ref_name }}
++  cancel-in-progress: true
++permissions:
++  contents: read
++jobs:
++  build-test:
++    runs-on: ubuntu-latest
++    timeout-minutes: 45
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '24.22.1'
++      - name: Make Node available inside the ESP-IDF container
++        run: |
++          mkdir -p .ci-tools/node/bin
++          cp "$(command -v node)" .ci-tools/node/bin/node
++      - name: ESP-IDF 5.5.2 compile and host regressions (no flash)
++        uses: espressif/esp-idf-ci-action@v1
++        with:
++          esp_idf_version: v5.5.2
++          target: esp32c6
++          path: firmware/espidf
++          command: |
++            set -eu
++            export PATH="$PWD/../../.ci-tools/node/bin:$PATH"
++            node --version
++            bash tools/build_v020.sh core
++            sh tests/run_all.sh
++      - name: Verify Core image, unchanged partitions, J1708 profile and bounded NAT
++        run: |
++          python3 - <<'PY'
++          from pathlib import Path
++          import struct,hashlib
++          p=Path('firmware/espidf/build-core')
++          data=(p/'truckbox_core.bin').read_bytes()
++          assert 512<len(data)<0x300000
++          text=lambda a,b:data[a:b].split(b'\0',1)[0].decode('ascii')
++          assert data[0]==0xe9 and data[3]>>4==3 and struct.unpack_from('<H',data,12)[0]==13
++          assert text(48,80)=='0.2.26' and text(80,112)=='truckbox_core' and text(144,176)=='v5.5.2'
++          assert hashlib.sha256(Path('firmware/espidf/partitions.csv').read_bytes()).hexdigest()=='5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832'
++          config=(p/'sdkconfig').read_text()
++          assert all(x in config for x in ['CONFIG_TB_J1708_ONLY=y','CONFIG_LWIP_IPV4_NAPT=y','CONFIG_LWIP_IP_FORWARD=y'])
++          assert 'CONFIG_LWIP_IPV4_NAPT_PORTMAP=y' not in config
++          assert '-DIP_NAPT_MAX=64' in (p/'compile_commands.json').read_text()
++          assert b'TBX_CORE_IPV4_FORWARD_NAPT64_V1' in data
++          assert 'CONFIG_TB_RAW_TCP=y' not in config
++          print('Candidate compiled:',len(data),'bytes; sha256:',hashlib.sha256(data).hexdigest())
++          PY
++      - name: Audit shipped OTA and ZIP bytes separately from the clean CI build
++        run: |
++          RELEASE=firmware/releases/v0.2.26-sharing-live-candidate
++          if test -d "$RELEASE"; then
++            python3 firmware/espidf/tools/verify_shipped_core.py \
++              "$RELEASE/Truckbox_Core_B1_0.2.26_SHARING_LIVE_CANDIDATA.zip" \
++              "$RELEASE/truckbox_core_0.2.26_ota.bin"
++          else
++            echo 'Source review stage: shipped archive will be audited when added.'
++          fi
++      - uses: actions/upload-artifact@v4
++        if: success()
++        with:
++          name: TruckBox-Core-0.2.26-CANDIDATA-NAO-INSTALADA
++          path: |
++            firmware/espidf/build-core/truckbox_core.bin
++            firmware/espidf/build-core/truckbox_core.elf
++            firmware/espidf/build-core/truckbox_core.map
++            firmware/espidf/build-core/sdkconfig
++          retention-days: 30
++          if-no-files-found: error
+diff --git a/firmware/espidf/ATUALIZACAO_v0.2.26.md b/firmware/espidf/ATUALIZACAO_v0.2.26.md
+new file mode 100644
+index 0000000..997b577
+--- /dev/null
++++ b/firmware/espidf/ATUALIZACAO_v0.2.26.md
+@@ -0,0 +1,21 @@
++# Atualização manual — Core Rev.B.1 0.2.26 candidata
++
++Nada é instalado automaticamente. O arquivo `truckbox_core_0.2.26_ota.bin` é exclusivamente do Core ESP32-C6 Rev.B.1. O firmware Link continua instalado como está.
++
++1. Compare o SHA256 da BIN com `SHA256SUMS.txt` da release.
++2. Quando decidir realizar a atualização, use o painel atual do Core (`http://truckbox.local` ou `http://192.168.4.1` conectado ao AP). Entre com a chave administrativa já existente e abra a atualização OTA do Core.
++3. Selecione somente `truckbox_core_0.2.26_ota.bin`, envie e mantenha alimentação estável até o reboot e a confirmação da aplicação. Não use o ZIP, APK, bootloader ou tabela de partições nesse campo.
++4. Depois consulte `/api/live`: versão 0.2.26, RAM, contadores J1708 e `network.internet_sharing`. `/api/state?compact=1` e os endpoints paginados continuam disponíveis. O polling nativo preserva a política/MID salvos e espera condições operacionais; atualizar não apaga uma desativação explícita do operador.
++5. A multimídia pode permanecer conectada a `Truckbox-Core-190C`. Quando o Core estiver conectado à Starlink e o diagnóstico indicar NAPT ativo, a internet poderá atravessar o AP. `internet_verified=false` lembra que a BIN não executa um teste externo. Atualize a aplicação separadamente para `TruckBox-Multimedia-0.3.1-core-live-debug.apk` para usar a leitura limitada e a exibição de códigos PID194.
++
++A aplicação Android mantém `br.com.truckbox.multimedia` e versãoCode4. O Android só aceita atualização sobre a instalação anterior se a assinatura coincidir. APK de CI é debug e não comprova que tem a chave da instalação em campo. Se o Android recusar por assinatura, não desinstale nem apague dados: será necessário compilar com a chave da instalação anterior. A candidata não altera automaticamente nenhum aplicativo.
++
++Credenciais, identidade, NVS, partições OTA, histórico, fila e contadores de viagem/combustível não são apagados. Os arquivos USB existentes no ZIP são para recuperação manual; não use erase_flash nem restauração de fábrica para esta atualização. Não habilite microSD/FRAM/SIM por causa desta release.
++
++## Rollback
++
++O mecanismo de rollback da aplicação permanece habilitado e as partições não foram alteradas. Se a nova aplicação não confirmar a inicialização, o bootloader pode retornar à aplicação anterior conforme seu estado OTA. Isso não recupera dados que um operador apague separadamente.
++
++O ZIP inclui `rollback/truckbox_core_0.2.24_ota.bin`, obtido do artefato auditado do PR27. SHA256: `5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d`. É compatível com a tabela de partições e pode ser enviado manualmente pelo mesmo campo OTA; mantém dados/NVS, mas reintroduz o detector antigo de MID/eco e suas limitações. A 0.2.25 também foi preservada no repositório, porém sua BIN publicada tem o defeito de compartilhamento de internet documentado.
++
++Os símbolos exatos da nova BIN ficam no pacote para investigação de panic/watchdog. Em caso de erro, consulte o diagnóstico compacto em vez de limpar a flash. Esta entrega não executa OTA, rollback, reset ou comando na placa.
+diff --git a/firmware/espidf/CHANGELOG_v0.2.26.md b/firmware/espidf/CHANGELOG_v0.2.26.md
+new file mode 100644
+index 0000000..318d566
+--- /dev/null
++++ b/firmware/espidf/CHANGELOG_v0.2.26.md
+@@ -0,0 +1,11 @@
++# TruckBox Core Rev.B.1 — 0.2.26 candidata
++
++- Corrige o compartilhamento de internet do Core: a BIN 0.2.25 publicada tinha encaminhamento IPv4/NAPT desabilitados na configuração efetiva. Agora Kconfig, compilador, empacotador e CI verificam também os bytes entregues.
++- Adiciona `/api/live`, leitura limitada e sem árvore JSON no heap para instrumentos, saúde e estado do roteamento. O diagnóstico parcial por falta de RAM também oferece as leituras disponíveis.
++- Disponibiliza marcha atual PID163, torque PID93 em Nm, percentual derivado da referência histórica de 2643 Nm do perfil conhecido e pressão de combustível PID94. Mantém origem, bytes, idade e qualidade; dados ausentes/desatualizados continuam nulos.
++- PID94/MID128 passa a cada 10 segundos na fila de produção existente. PID117/118/250 continuam a cada 10 segundos. Não amplia a lista de requisições nem o limite de duas por segundo.
++- Desativa TCP bruto 35000 e sua fila/tarefa no perfil J1708_ONLY. O cache continua com 128 leituras; seus bytes brutos passam a comportar o máximo integral de um parâmetro de um quadro J1708 válido.
++- Multimídia 0.3.1-core-live usa `/api/live`, combina instrumentos locais com contexto de viagem da Cloud e exibe os códigos PID194 já decodificados pelo Core. Requisições Cloud/diagnóstico ficam independentes da atualização dos instrumentos.
++- Preserva recepção passiva, polling automático/NVS/MID configurado, limites do barramento, armazenamento/ACK, contabilidade de combustível/viagem, OTA/rollback e interfaces existentes. Não modifica o firmware Link.
++
++Sem OTA automática, formatação, limpeza de arquivos, alteração de viagens ou deploy de Cloud. É candidata de software; internet através da placa e leituras exibidas na multimídia ainda precisam de observação após uma atualização autorizada.
+diff --git a/firmware/espidf/CMakeLists.txt b/firmware/espidf/CMakeLists.txt
+index 898c3fb..4b312b8 100644
+--- a/firmware/espidf/CMakeLists.txt
++++ b/firmware/espidf/CMakeLists.txt
+@@ -5,11 +5,14 @@ if(NOT TRUCKBOX_ROLE STREQUAL "core" AND NOT TRUCKBOX_ROLE STREQUAL "link")
+ endif()
+ set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
+ set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.${TRUCKBOX_ROLE}.defaults")
+-set(PROJECT_VER "0.2.25" CACHE STRING "Application version included in OTA images")
++set(PROJECT_VER "0.2.26" CACHE STRING "Application version included in OTA images")
+ set(IDF_TARGET "esp32c6")
+ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+ project(truckbox_${TRUCKBOX_ROLE})
+ if(TRUCKBOX_ROLE STREQUAL "core")
++    if(NOT CONFIG_LWIP_IP_FORWARD OR NOT CONFIG_LWIP_IPV4_NAPT)
++        message(FATAL_ERROR "Core requires effective IPv4 forwarding and NAPT; refusing a non-sharing image")
++    endif()
+     # The IDF default is 512 entries; constrain RAM for capture/HTTP on Core C6.
+     idf_component_get_property(truckbox_lwip_lib lwip COMPONENT_LIB)
+     target_compile_definitions(${truckbox_lwip_lib} PRIVATE IP_NAPT_MAX=64)
+diff --git a/firmware/espidf/RELATORIO_v0.2.26.md b/firmware/espidf/RELATORIO_v0.2.26.md
+new file mode 100644
+index 0000000..902b870
+--- /dev/null
++++ b/firmware/espidf/RELATORIO_v0.2.26.md
+@@ -0,0 +1,107 @@
++# TruckBox Core Rev.B.1 — relatório da candidata 0.2.26
++
++Data: 15/11/2026. Base incremental: `233e7bceda92116748a053637b1b311ce45a0a80`, release final 0.2.25. Branch: `fix/revb1-v0226-wifi-build-contract`. Revisão: PR30. Hardware ESP32-C6, flash 8 MB, ESP-IDF 5.5.2, GCC RISC-V 14.2.0. As fontes e artefatos anteriores continuam preservados. Esta entrega não instala firmware, não ativa TX remoto e não modifica Cloud, configurações ou viagens do dispositivo.
++
++## 1. Causa comprovada da perda de internet
++
++A configuração extraída do ZIP 0.2.25 publicado contém `CONFIG_LWIP_IP_FORWARD` e `CONFIG_LWIP_IPV4_NAPT` desabilitados. O SHA de aplicação ELF `85e905c41485514e94bfc0cc099682d2c200f3e89bd8c5015baf171091342f0b` corresponde ao firmware observado no boot610. O ELF publicado não contém a implementação `ip_napt_enable_netif`. Nessa configuração a API IDF não disponibiliza NAPT; ter código de roteamento e defaults corretos não faz a BIN compartilhar internet.
++
++O build local reutilizou `build-core/sdkconfig` antigo. Os defaults não substituíam seus valores negativos persistentes. A CI fazia um build limpo com NAPT habilitado, portanto seu sucesso não verificou a BIN local efetivamente publicada. Esse foi um erro na validação da entrega anterior.
++
++Correção: `main/Kconfig.projbuild` seleciona encaminhamento/NAPT para o Core; `CMakeLists.txt` recusa configuração efetiva incompatível; `tb_network_contract.h` faz a mesma verificação durante a compilação. O código de rede inclui a marca `TBX_CORE_IPV4_FORWARD_NAPT64_V1` no binário. O empacotador verifica SDK efetivo e BIN. `tools/verify_shipped_core.py` e a CI auditam o ZIP e a OTA publicados separadamente do build limpo da CI, incluindo igualdade das duas OTAs, hashes internos, fonte limpa, rollback e tabela de partições.
++
++O primeiro rebuild local desta candidata reutilizou a configuração problemática e produziu IP_FORWARD/NAPT habilitados. O novo ELF contém a implementação NAPT. Limite da tabela: 64 conexões; port mapping de entrada continua desabilitado. DNS, DHCP, AP/STA, detecção de sub-redes sobrepostas e reação aos eventos de Wi-Fi foram preservados e testados com mocks. `napt_active=true` significa que o roteamento foi habilitado, não que um site externo foi testado: `internet_verified=false` permanece explícito.
++
++## 2. RAM e tarefas
++
++Comparação dos ELFs reais, com a mesma IDF:
++
++| Item | BIN publicada 0.2.25 | Candidata 0.2.26 | Diferença |
++|---|---:|---:|---:|
++| `.dram0.data` | 14.796 B | 14.796 B | 0 |
++| `.dram0.bss` | 69.112 B | 67.080 B | -2.032 B |
++| DRAM estática dessas seções | 83.908 B | 81.876 B | -2.032 B |
++| `.iram0.text` | 127.966 B | 127.966 B | 0 |
++| Reserva da fila TCP bruto | 8.448 B | 0 | -8.448 B |
++| Pilha solicitada de `tb_tcp` | 4.096 B | 0 | -4.096 B |
++
++A fila e a tarefa deixam de reservar **12.544 B (12,25 KiB)**, além dos custos de controle/socket não medidos. A economia estática de 2.032 B é medida pelo ELF; a reserva dinâmica removida é calculada das alocações RV32. Não se declara aumento equivalente do heap em campo: NAPT foi restaurado e também aloca memória. O teste de startup compila a função real nas opções TCP ligado/desligado e verifica que armazenamento, captura e bridge continuam iniciando. O ELF da candidata não contém `live_task`.
++
++No perfil J1708_ONLY, cada entrada do cache retém até 17 bytes de parâmetro, máximo de um quadro J1708 de 21 bytes após MID/PID/comprimento/checksum. O teste usa PID194 com 17 bytes e confirma preservação integral. A quantidade de leituras continua 128; não foram reduzidas as filas de aquisição, armazenamento ou eventos. A montagem multisseção e o histórico de DTCs continuam no módulo existente, que recebe os dados antes da cópia ao cache. Outros perfis mantêm o campo de 32 bytes e o código J1939.
++
++O endpoint `/api/live` reutiliza buffer de 1.536 B e transmite partes sem construir uma árvore cJSON. Os provedores de números usam formatação inteira, evitando dtoa/printf de ponto flutuante nesse caminho. Pilha estática indicada pelo GCC para o provedor principal: 1.456 B; isso não representa toda a cadeia de chamadas nem substitui a medição de high-water mark no hardware. O diagnóstico completo continua opcional, paginado quando necessário.
++
++Não há outra tarefa não utilizada comparável que possa ser excluída com segurança neste Core. `tb_j1708`, `tb_j1708_tx`, `tb_decode`, `tb_store`, `tb_bridge`, `tb_snapshot` e `tb_trip` fazem aquisição, polling, decodificação, persistência, sincronização e checkpoint. Wi-Fi/lwIP/HTTP sustentam internet, comunicação e OTA. CAN já não inicia neste perfil. GPS/modem são tarefas do firmware Link, que não foi alterado; desativá-las no Core não liberaria sua RAM. Não foram diminuídas pilhas essenciais por suposição.
++
++## 3. Leituras para a multimídia
++
++Vetores extraídos dos registros já existentes do boot610, usados em testes de software:
++
++| Sinal | Origem | Bytes | Resultado | Qualidade |
++|---|---|---|---|---|
++| Marcha atual | MID130/PID163 | `31 32` | 12 | EM_VALIDACAO |
++| Seletor | MID130/PID162 | `20 41` | A, automático; marcha numérica nula | EM_VALIDACAO |
++| Torque absoluto | MID128/PID93 | `20` | 867,2 Nm | EM_VALIDACAO |
++| Torque percentual | PID93 + referência histórica | `20` e 2643 Nm | aproximadamente 32,8112% | DERIVADO_REFERENCIA_HISTORICA_EM_VALIDACAO |
++| Pressão de alimentação | MID128/PID94 | `81` | 4,4505 bar | EM_VALIDACAO |
++
++2643 Nm é a correção do Documento Mestre J1939 v1.1 para o perfil histórico, não uma nova leitura da ECU nem prova externa atual. A referência antiga de 2600 Nm não é usada. A derivação só é publicada para `tb-c6-d40592b9190c`; outro dispositivo recebe percentual nulo sem uma referência comprovada. PID92 continua carga do motor e não substitui torque. TTLs: marcha 5 s, pressão 15 s, torque 65 s, conforme a atualização existente. Falta, indisponibilidade e dados antigos produzem nulos; MID, bytes e idade continuam acessíveis em `live_readings`.
++
++PID93 mantém a cadência existente de 60 s. Não se promete percentual de torque atualizado a cada segundo; a candidata apenas disponibiliza corretamente a leitura e sua qualidade. As demais leituras passivas existentes permanecem no cache/API, e o endpoint limitado oferece também temperaturas, pressões, carga, rotações e VEB disponíveis.
++
++## 4. Polling e pressão de combustível
++
++Somente PID94/MID128 mudou de 30 s para **10.000 ms**. Continua na mesma fila e recebe prioridade compatível com a pressão solicitada. Os demais MIDs, bytes e períodos permanecem inalterados, inclusive PID117/MID140, PID118/MID140 e PID250/MID128 em 10 s.
++
++| PIDs | MID | Período normal | Durante arrancada |
++|---|---|---|---|
++| 31 | 130 | 10 s | 2 s |
++| 33 | 130 | 5 s | 2 s |
++| 34, 63 | 130 | 15 s | 5 s |
++| 32, 160 | 130 | 30 s | 10 s |
++| 37 | 130 | 30 s | 15 s |
++| 117, 118 | 140 | 10 s | 10 s |
++| 250 | 128 | 10 s | 10 s |
++| 94 | 128 | 10 s | 10 s |
++| 161 | 130 | 10 s | 10 s |
++| 153 | 128 | 30 s | 30 s |
++| 26, 68, 93, 108, 158 | 128 | 60 s | 60 s |
++| 62 | 144 | 60 s | 60 s |
++| 107, 154, 182, 244, 439 | 128 | 300 s | 300 s |
++| 235, 236, 188 | 128 | 900 s | 900 s |
++
++As metas não autorizam rajadas: continuam uma requisição pendente, pelo menos 500 ms entre transmissões, timeout 450 ms e arbitragem/barramento livre. A soma de metas durante arrancada pode exceder duas por segundo; o scheduler adia parâmetros secundários. Respostas continuam candidatas correlacionadas por MID/PID/timestamp, nunca promovidas a validação elétrica. Política NVS, MID atual, recuperação controlada e separação entre operação automática e ensaio manual foram preservados. A tarefa não altera integrações PID183/PID250, limites de validação, âncoras ou persistência de viagem.
++
++## 5. Multimídia e viagem em andamento
++
++O APK `0.3.1-core-live` mantém aplicação e navegação existentes. Prefere `/api/live`; aceita os endpoints anteriores quando trazem instrumentos, mas não trata um diagnóstico parcial antigo contendo só RAM como telemetria completa. Isso evitava que a aplicação buscasse contexto da Cloud ao receber HTTP200 com somente contadores.
++
++Instrumentos do Core permanecem a fonte local. Contexto da viagem é consultado independentemente na infraestrutura read-only existente, no máximo a cada 10 s; falhas PID194 são consultadas a cada 30 s, em páginas de até oito entradas, até 32 posições. A falta de internet não impede as leituras locais. O parser passa a aceitar o nome real `trip_fuel_l`. Só utiliza dados da operação ativa/EMPTY_MODE; não transforma totais de vida do Core ou viagens históricas em uma viagem atual. Uma consulta sem viagem ACTIVE não comprova apagamento de viagem: pode ser modo vazio ou contexto ainda não sincronizado.
++
++A tela existente de diagnóstico mostra MID, PID/SID/PPID/PSID, FMI, estado explicitamente informado pela ECU, contador opcional inclusive zero, bruto e último momento conhecido. Descrições Volvo mantêm classificação candidata e desconhecidos são preservados. Sumir da próxima mensagem não resolve uma falha. O cache em memória é limitado a 32 códigos e isolado por UID; esta alteração não cria um histórico OEM completo nem envia comando de limpeza.
++
++Não houve deploy na Cloud. A Edge Function de ingestão v26 consultada ainda utiliza a projeção legada `SPN183_RATE_CLOUD_V1`; a migração financeira/reconciliação está preparada separadamente e não foi aplicada. O Core mantém sua contabilidade canônica e qualidade. Não se declara que atualizar esta BIN migra médias históricas da Cloud.
++
++## 6. Testes executados e limites
++
++Evidências em `test_evidence/v0.2.26/`; logs completos da CI ficam ligados no PR.
++
++- Suíte host completa: base/configuração, DHCP/NAT/DNS, crash/HTTP/JSON, parsers J1939 e equivalência Python/C, J1587 passiva/ativa, enquadramento UART, RX guard, colisões/timeout/eco, política nativa, PID194/multisseção, viagens/consumo, armazenamento/CRC/recuperação/ACK e fairness: passou.
++- PID94 em 10 s/MID128, limite global e resposta candidata correlacionada: passou. PID117/118/250 preservados, inclusive timeout de um PID sem bloqueio global.
++- Vetores reais de marcha/torque/pressão, valores ausentes, referência por UID, stale e zero heap cJSON na leitura limitada: passou. Testes também injetam falhas em cada alocação do estado de telemetria/adapter JSON.
++- Diagnóstico host com orçamento de campo 41.596 B: resumo compacto com pico de 13.665 B incluindo reservas simuladas de upload/checkpoint, 200 repetições, zero vazamentos. Essa medição isola o diagnóstico de captura/bridge; não representa o heap total da placa. O provedor real de sensores também tem teste próprio de todas as alocações.
++- Testes do painel em navegador: fluxo de autenticação, configuração, OTA, manutenção e controles existentes: passaram. Nenhuma chamada foi feita à placa.
++- Duas horas offline em relógio virtual com tráfego equivalente a 443.209 quadros e 10.249 requisições/candidatas: passaram sem gravação bruta contínua. Com relógio UTC, 4.341 registros ocuparam 1.803.282 B de orçamento 1.818.624 B, 37 segmentos, 14 falhas/reboots simulados; 4.349 entregas geraram 4.341 registros únicos no mock Cloud, sem duplicação nem pendências válidas ao final. Sem UTC: 3.909 registros, 1.631.250 B. Evidência isolada permaneceu preservada.
++- Simulação nominal 300 km: 299,98172160 km amostrados, 59,81502658 L canônicos, três reinícios POWERON/TASK_WDT/OTA, duas horas offline, MID188 preservado, 1.207 registros únicos após 1.208 entregas; sem parada global do polling. São reinícios modelados, não resets provocados no caminhão.
++- Build real Core ESP32-C6/IDF5.5.2 e CI independentes: passaram. Build/testes Android Motorista e Multimídia: passaram; a CI guarda também os XMLs dos testes. Os IDs e os hashes finais estão no diretório da release.
++- Empacotador recusa configuração sem NAPT e BIN sem marca mesmo se o SDK alegar habilitação; a auditoria também recusa OTA avulsa diferente da contida no ZIP.
++
++O cenário offline de duas horas tem margem pequena: 15.342 B no caso UTC. Evidência corrompida preservada, filas prévias ou tráfego diferente reduzem a autonomia disponível; não é promessa irrestrita de duas horas em qualquer volume já ocupado. Esta candidata não altera armazenamento ou partições para esconder esse limite. microSD/FRAM/4G continuam sem habilitação nova.
++
++Ainda pendem observações físicas após autorização: internet real da Starlink atravessando o AP, leituras na multimídia instalada, heap/high-water em viagem, condições elétricas e reset da placa. Os testes host não constituem prova elétrica TX. A correção da causa de todos os reinícios não é declarada: não há novo panic dump ou medição de EN/tensão nesta tarefa. O único defeito novo de conectividade foi comprovado nos bytes da entrega anterior e corrigido no build.
++
++## 7. Arquivos principais e entrega
++
++`main/Kconfig.projbuild`, `CMakeLists.txt`, `tb_base/network.c`, `tb_network_contract.h`, `tb_web/tb_web.c`, `tb_core/core.c`, `telemetry.c`, `live_fields.inc`, `live_number.h`, interfaces em `include/`, tabela/prioridade J1708, scripts de release/auditoria, testes nativos, workflows CI e adaptadores/testes da multimídia. O diff completo está na release. Wi-Fi continua com as credenciais salvas; não há nova senha, GPIO ou ligação física.
++
++Pacote contém fontes completas, BIN Core OTA, bootloader/partições para recuperação manual, símbolos, sdkconfig efetivo, manifesto e SHA256, ferramentas Windows, evidências e rollback Core0.2.24 auditado. Não há nova BIN Link. Consulte `ATUALIZACAO_v0.2.26.md` para atualização e limitações do rollback.
+diff --git a/firmware/espidf/components/tb_base/include/tb.h b/firmware/espidf/components/tb_base/include/tb.h
+index 978113e..625b65a 100644
+--- a/firmware/espidf/components/tb_base/include/tb.h
++++ b/firmware/espidf/components/tb_base/include/tb.h
+@@ -81,6 +81,7 @@ void tb_schedule_restart(uint32_t delay_ms);
+ esp_err_t tb_network_start(void);
+ void tb_network_status(tb_network_status_t *status);
+ void tb_network_add_json(cJSON *object);
++size_t tb_network_health_fields(char *buffer,size_t capacity);
+ bool tb_network_wifi_uplink(void);
+ void tb_network_start_time_sync(void);
+ void tb_network_note_link_address(const char *address);
+@@ -100,6 +101,8 @@ void tb_application_add_json(cJSON *object);
+ void tb_application_add_json_compact(cJSON *object);
+ #if !CONFIG_TB_ROLE_LINK
+ size_t tb_capture_health_fields(char *buffer,size_t capacity);
++size_t tb_telemetry_live_fields(char *buffer,size_t capacity);
++size_t tb_telemetry_live_extra_fields(char *buffer,size_t capacity);
+ #endif
+ esp_err_t tb_application_register_routes(httpd_handle_t server);
+ 
+diff --git a/firmware/espidf/components/tb_base/include/tb_network_contract.h b/firmware/espidf/components/tb_base/include/tb_network_contract.h
+new file mode 100644
+index 0000000..7bab2dc
+--- /dev/null
++++ b/firmware/espidf/components/tb_base/include/tb_network_contract.h
+@@ -0,0 +1,7 @@
++#pragma once
++#define TB_CORE_NETWORK_BUILD_CONTRACT "TBX_CORE_IPV4_FORWARD_NAPT64_V1"
++#if defined(CONFIG_TB_ROLE_CORE) && CONFIG_TB_ROLE_CORE
++#if !defined(CONFIG_LWIP_IP_FORWARD) || !CONFIG_LWIP_IP_FORWARD || !defined(CONFIG_LWIP_IPV4_NAPT) || !CONFIG_LWIP_IPV4_NAPT
++#error "Core internet sharing requires actual IPv4 forwarding and NAPT, not defaults alone"
++#endif
++#endif
+diff --git a/firmware/espidf/components/tb_base/network.c b/firmware/espidf/components/tb_base/network.c
+index 5b376d2..a2345b3 100644
+--- a/firmware/espidf/components/tb_base/network.c
++++ b/firmware/espidf/components/tb_base/network.c
+@@ -1,4 +1,5 @@
+ #include "tb.h"
++#include "tb_network_contract.h"
+ #include <stdio.h>
+ #include <string.h>
+ #include "esp_event.h"
+@@ -433,6 +434,21 @@ void tb_network_status(tb_network_status_t *status)
+     }
+ }
+ 
++size_t tb_network_health_fields(char *buffer,size_t capacity)
++{
++    char station_ip[16],ap_ip[16],dns[16];bool connected,ap_ready,active,conflict;const char *reason;
++    portENTER_CRITICAL(&s_status_lock);
++    connected=s_status.station_connected;ap_ready=s_status.access_point_running;
++    active=s_napt_active;conflict=s_subnet_conflict;reason=s_router_state;
++    memcpy(station_ip,s_status.station_ip,sizeof(station_ip));memcpy(ap_ip,s_status.ap_ip,sizeof(ap_ip));memcpy(dns,s_router_dns,sizeof(dns));
++    portEXIT_CRITICAL(&s_status_lock);
++    if(!buffer || !capacity)return 0;
++    int n=snprintf(buffer,capacity,",\"network\":{\"station_connected\":%s,\"station_ip\":\"%.15s\",\"access_point_running\":%s,\"ap_ip\":\"%.15s\",\"subnet_conflict\":%s,\"internet_sharing\":{\"build_contract\":\"%s\",\"napt_active\":%s,\"internet_verified\":false,\"status\":\"%s\",\"dns_server\":\"%.15s\",\"max_connections\":64}}",
++        connected?"true":"false",station_ip,ap_ready?"true":"false",ap_ip,conflict?"true":"false",TB_CORE_NETWORK_BUILD_CONTRACT,
++        active?"true":"false",reason?reason:"WAITING_UPLINK",dns);
++    if(n<=0 || (size_t)n>=capacity){buffer[0]=0;return 0;}return (size_t)n;
++}
++
+ void tb_network_add_json(cJSON *object)
+ {
+     tb_network_status_t status;
+@@ -460,6 +476,7 @@ void tb_network_add_json(cJSON *object)
+         portEXIT_CRITICAL(&s_status_lock);
+         cJSON *sharing = cJSON_AddObjectToObject(network, "internet_sharing");
+         if (sharing) {
++            cJSON_AddStringToObject(sharing,"build_contract",TB_CORE_NETWORK_BUILD_CONTRACT);
+             cJSON_AddBoolToObject(sharing, "napt_active", active);
+             cJSON_AddBoolToObject(sharing, "internet_verified", false);
+             cJSON_AddStringToObject(sharing, "status", reason);
+diff --git a/firmware/espidf/components/tb_base/tests/run_wifi_sharing.sh b/firmware/espidf/components/tb_base/tests/run_wifi_sharing.sh
+index 4f059f2..fc3c3c5 100644
+--- a/firmware/espidf/components/tb_base/tests/run_wifi_sharing.sh
++++ b/firmware/espidf/components/tb_base/tests/run_wifi_sharing.sh
+@@ -7,8 +7,8 @@ python3 - "$test_dir/../network.c" "$work_dir/router_under_test.h" <<'PY'
+ from pathlib import Path
+ import re,sys
+ s=Path(sys.argv[1]).read_text();chunks=[]
+-for name in ['subnets_overlap','router_state','router_disable','router_dns','router_refresh','network_event']:
+-    m=re.search(r'^static\s+(?:bool|void|esp_err_t)\s+'+name+r'\([^;]*?\)\s*\{',s,re.M)
++for name in ['subnets_overlap','router_state','router_disable','router_dns','router_refresh','network_event','tb_network_health_fields']:
++    m=re.search(r'^(?:static\s+)?(?:bool|void|esp_err_t|size_t)\s+'+name+r'\([^;]*?\)\s*\{',s,re.M)
+     assert m,name
+     p=s.index('{',m.start())+1;depth=1
+     while depth:
+diff --git a/firmware/espidf/components/tb_base/tests/test_wifi_sharing.c b/firmware/espidf/components/tb_base/tests/test_wifi_sharing.c
+index 96c14fc..bc270e6 100644
+--- a/firmware/espidf/components/tb_base/tests/test_wifi_sharing.c
++++ b/firmware/espidf/components/tb_base/tests/test_wifi_sharing.c
+@@ -43,7 +43,8 @@ typedef struct { esp_netif_ip_info_t info; } esp_netif_t;
+ static const char *TAG="test";
+ static esp_netif_t ap,sta;
+ static esp_netif_t *s_access_point=&ap,*s_station=&sta;
+-static struct { bool station_connected; char station_ip[16],hostname[40]; } s_status;
++static struct { bool station_connected,access_point_running; char station_ip[16],hostname[40],ap_ip[16]; } s_status;
++#define TB_CORE_NETWORK_BUILD_CONTRACT "TBX_CORE_IPV4_FORWARD_NAPT64_V1"
+ static int s_status_lock;
+ static bool s_subnet_conflict,s_ap_ready,s_napt_active,s_router_dns_fallback=true,s_retry_pending;
+ static uint32_t s_napt_uplink;
+@@ -82,7 +83,7 @@ static esp_netif_ip_info_t address(const char *ip,const char *mask,const char *g
+ }
+ static void reset(void) {
+     role=TB_ROLE_CORE;ssid="TEST-STARLINK";s_napt_active=false;s_napt_uplink=0;s_ap_ready=true;
+-    s_status.station_connected=true;s_subnet_conflict=false;s_router_dns[0]=0;s_router_state="WAITING_UPLINK";
++    s_status.station_connected=true;s_status.access_point_running=true;snprintf(s_status.station_ip,16,"192.168.1.20");snprintf(s_status.ap_ip,16,"192.168.4.1");s_subnet_conflict=false;s_router_dns[0]=0;s_router_state="WAITING_UPLINK";
+     napt_on=napt_off=dns_writes=dhcp_restarts=napt_result=dns_result=upstream_dns_result=0;
+     free_heap=65536;largest_heap=32768;
+     ap.info=address("192.168.4.1","255.255.255.0","192.168.4.1");
+@@ -91,6 +92,8 @@ static void reset(void) {
+ }
+ int main(void) {
+     reset();router_refresh();assert(s_napt_active&&napt_on==1&&dns_writes==1&&dhcp_restarts==1);
++    char json[512];assert(tb_network_health_fields(json,sizeof(json)) && strstr(json,"\"napt_active\":true") && strstr(json,TB_CORE_NETWORK_BUILD_CONTRACT));
++    char too_small[8];assert(!tb_network_health_fields(too_small,sizeof(too_small)) && !too_small[0]);
+     assert(!strcmp(s_router_state,"NAPT_ACTIVE_NOT_VERIFIED"));assert(!strcmp(s_router_dns,"192.168.1.1"));assert(!s_router_dns_fallback);
+     router_refresh();assert(napt_on==1&&dns_writes==1); /* DHCP renewal must not break current TCP flows. */
+     network_event(NULL,WIFI_EVENT,WIFI_EVENT_STA_DISCONNECTED,NULL);assert(!s_napt_active&&napt_off==1&&!s_status.station_connected&&s_ap_ready);
+@@ -104,6 +107,7 @@ int main(void) {
+     reset();upstream_dns_result=-1;router_refresh();assert(s_napt_active&&s_router_dns_fallback&&!strcmp(s_router_dns,"1.1.1.1"));
+     reset();dns_result=-1;router_refresh();assert(!napt_on&&dhcp_restarts==1&&!strcmp(s_router_state,"DHCP_DNS_ERROR"));
+     reset();free_heap=32767;router_refresh();assert(!napt_on&&!strcmp(s_router_state,"INSUFFICIENT_HEAP"));
++    assert(tb_network_health_fields(json,sizeof(json)) && strstr(json,"INSUFFICIENT_HEAP") && strstr(json,"\"napt_active\":false"));
+     reset();largest_heap=8191;router_refresh();assert(!napt_on);
+     reset();napt_result=-1;router_refresh();assert(!s_napt_active&&!strcmp(s_router_state,"NAPT_ENABLE_ERROR"));
+     reset();router_refresh();sta.info.ip.addr=inet_addr("192.168.1.21");router_refresh();assert(napt_off==1&&napt_on==2&&s_napt_active);
+diff --git a/firmware/espidf/components/tb_core/core.c b/firmware/espidf/components/tb_core/core.c
+index 94b2534..dc7b81b 100644
+--- a/firmware/espidf/components/tb_core/core.c
++++ b/firmware/espidf/components/tb_core/core.c
+@@ -94,6 +94,7 @@ bool tb_core_append_gps_at(cJSON *sample, uint64_t captured_us)
+ 
+ void tb_live_can(uint32_t id, bool extended, uint8_t dlc, const uint8_t data[8])
+ {
++#if CONFIG_TB_RAW_TCP
+     /* Never format/queue a TCP RAW frame without an actual consumer. */
+     if (!s.live || !s.live_clients || !extended || dlc > 8) return;
+     live_line_t line;
+@@ -107,8 +108,12 @@ void tb_live_can(uint32_t id, bool extended, uint8_t dlc, const uint8_t data[8])
+     if (length <= 0 || (size_t)length >= sizeof(line.line)) return;
+     line.length = length;
+     if (xQueueSend(s.live, &line, 0) != pdTRUE) ++s.live_dropped;
++#else
++    (void)id;(void)extended;(void)dlc;(void)data;
++#endif
+ }
+ 
++#if CONFIG_TB_RAW_TCP
+ static void live_task(void *unused)
+ {
+     int clients[LIVE_CLIENTS];
+@@ -142,6 +147,7 @@ static void live_task(void *unused)
+         }
+     }
+ }
++#endif
+ 
+ typedef struct { char bytes[2048]; size_t length; bool overflow; } response_t;
+ static esp_err_t response_event(esp_http_client_event_t *event)
+@@ -735,13 +741,19 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
+ esp_err_t tb_application_start(void)
+ {
+     s.lock = xSemaphoreCreateMutex();
++#if CONFIG_TB_RAW_TCP
+     s.live = xQueueCreate(64, sizeof(live_line_t));
+     if (!s.lock || !s.live) return ESP_ERR_NO_MEM;
++#else
++    if (!s.lock) return ESP_ERR_NO_MEM;
++#endif
+     esp_err_t err = tb_store_init();
+     if (err != ESP_OK) return err;
+     err = tb_capture_start();
+     if (err != ESP_OK) return err;
++#if CONFIG_TB_RAW_TCP
+     if (xTaskCreate(live_task, "tb_tcp", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
++#endif
+     if (xTaskCreate(bridge_task, "tb_bridge", 10240, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+     return ESP_OK;
+ }
+@@ -751,6 +763,8 @@ static void application_json_mode(cJSON *object,bool compact)
+     if(compact)tb_capture_add_json_compact(object);else tb_capture_add_json(object);
+     tb_store_add_json(object);
+     cJSON *live = cJSON_AddObjectToObject(object, "live_stream");
++    cJSON_AddBoolToObject(live,"enabled",s.live!=NULL);
++    cJSON_AddNumberToObject(live,"reserved_queue_stack_bytes",s.live?64*sizeof(live_line_t)+4096:0);
+     cJSON_AddNumberToObject(live, "port", 35000);
+     cJSON_AddNumberToObject(live, "clients", s.live_clients);
+     cJSON_AddNumberToObject(live, "frames_sent", s.live_sent);
+diff --git a/firmware/espidf/components/tb_core/live_fields.inc b/firmware/espidf/components/tb_core/live_fields.inc
+new file mode 100644
+index 0000000..cd4185b
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/live_fields.inc
+@@ -0,0 +1,94 @@
++/* Read-only live adapter: reuse the bounded decoder cache, allocate no heap.
++ * Reference2643Nm is the historical profile documented in Master v1.1;
++ * only the owner's device may derive percent from J1587 PID93 absolute Nm. */
++static bool live_latest(uint16_t pid,uint8_t mid,uint64_t now,latest_t *out)
++{
++    memset(out,0,sizeof(*out));
++    portENTER_CRITICAL(&s_mux);
++    for(size_t i=0;i<s.latest_count;i++){
++        const latest_t *p=&s.latest[i];
++        if(p->used && !p->can && p->signal==pid && p->component_index==UINT8_MAX &&
++           (!mid || p->address==mid) && p->captured_us>out->captured_us)*out=*p;
++    }
++    portEXIT_CRITICAL(&s_mux);
++    return out->used && out->captured_us && now>=out->captured_us;
++}
++static bool live_valid(const latest_t *p,uint64_t now,uint64_t max_age)
++{return p->used && p->captured_us && now>=p->captured_us && now-p->captured_us<=max_age && p->quality && !strcmp(p->quality,"EM_VALIDACAO");}
++static const char *live_quality(const latest_t *p,uint64_t now,uint64_t max_age)
++{
++    if(!p->used || !p->captured_us || now<p->captured_us)return "SEM_LEITURA";
++    if(now-p->captured_us>max_age)return "DESATUALIZADO";
++    return p->quality?p->quality:"SEM_LEITURA";
++}
++static bool live_gear(const latest_t *p,uint64_t now,char number[40],char label[4])
++{
++    snprintf(number,40,"null");label[0]=0;
++    if(!live_valid(p,now,5000000))return false;
++    char *end;long value=strtol(p->text,&end,10);bool valid=end!=p->text && !*end;
++    if(!strcmp(p->text,"N")){value=0;valid=true;}
++    else if(!strcmp(p->text,"R")){value=-1;valid=true;}
++    if(valid && value>=-99 && value<=99){snprintf(number,40,"%ld",value);snprintf(label,4,"%.3s",p->text);return true;}
++    if(!strcmp(p->text,"A") || !strcmp(p->text,"M"))snprintf(label,4,"%.3s",p->text);
++    return false;
++}
++static void live_age(char out[32],const latest_t *p,uint64_t now)
++{
++    if(p->used && p->captured_us && now>=p->captured_us)snprintf(out,32,"%" PRIu64,(now-p->captured_us)/1000);
++    else snprintf(out,32,"null");
++}
++size_t tb_telemetry_live_fields(char *buffer,size_t capacity)
++{
++    if(!buffer || !capacity)return 0;
++    const uint64_t now=(uint64_t)esp_timer_get_time();latest_t p={0};
++    char speed[40],rpm[40],pedal[40],odo[40],flow[40],gear[40],selected[40],nm[40],pct[40],pressure[40];
++    const uint16_t pids[]={84,190,91,245,183};char *outputs[]={speed,rpm,pedal,odo,flow};
++    for(unsigned i=0;i<5;i++){
++        (void)live_latest(pids[i],i==1 || i==4?128:0,now,&p);
++        tb_live_number(outputs[i],live_valid(&p,now,i==3?30000000:5000000) && p.has_value,p.value);
++    }
++    latest_t g={0},t={0},f={0};char gear_text[4],selected_text[4],graw[65],traw[65],fraw[65],ga[32],ta[32],fa[32];
++    (void)live_latest(163,130,now,&g);(void)live_gear(&g,now,gear,gear_text);
++    (void)live_latest(162,130,now,&p);(void)live_gear(&p,now,selected,selected_text);
++    (void)live_latest(93,128,now,&t);bool torque=live_valid(&t,now,65000000) && t.has_value && isfinite(t.value);
++    bool reference=!strcmp(tb_device_uid(),"tb-c6-d40592b9190c");
++    tb_live_number(nm,torque,t.value);tb_live_number(pct,torque && reference,t.value*100.0/2643.0);
++    (void)live_latest(94,128,now,&f);tb_live_number(pressure,live_valid(&f,now,15000000) && f.has_value,f.value);
++    hex(graw,g.raw,g.raw_length);hex(traw,t.raw,t.raw_length);hex(fraw,f.raw,f.raw_length);
++    live_age(ga,&g,now);live_age(ta,&t,now);live_age(fa,&f,now);
++    const char *tq=torque && reference?"DERIVADO_REFERENCIA_HISTORICA_EM_VALIDACAO":live_quality(&t,now,65000000);
++    int n=snprintf(buffer,capacity,",\"live_contract\":\"TBX_CORE_LIVE_V1\",\"speedKph\":%s,\"rpm\":%s,\"pedal_pct\":%s,\"distanceTotalKm\":%s,\"fuel_rate_lph\":%s,\"gear\":%s,\"gear_text\":\"%s\",\"selected_gear\":%s,\"selected_gear_text\":\"%s\",\"torqueNm\":%s,\"actualTorquePct\":%s,\"fuel_pressure_bar\":%s,\"live_readings\":{\"gear\":{\"pid\":163,\"mid\":%u,\"raw\":\"%s\",\"age_ms\":%s,\"quality\":\"%s\"},\"torque\":{\"pid\":93,\"mid\":%u,\"raw\":\"%s\",\"age_ms\":%s,\"quality\":\"%s\",\"reference_nm\":%s,\"reference_source\":\"MASTER_V1_1_PGN65251_HISTORICAL\"},\"fuel_pressure\":{\"pid\":94,\"mid\":%u,\"raw\":\"%s\",\"age_ms\":%s,\"quality\":\"%s\"}},\"diagnostics_pid\":194,\"diagnostics_endpoint\":\"/api/diagnostics?offset=0\"",
++        speed,rpm,pedal,odo,flow,gear,gear_text,selected,selected_text,nm,pct,pressure,
++        g.address,graw,ga,live_quality(&g,now,5000000),t.address,traw,ta,tq,reference?"2643":"null",
++        f.address,fraw,fa,live_quality(&f,now,15000000));
++    if(n<=0 || (size_t)n>=capacity){buffer[0]=0;return 0;}return (size_t)n;
++}
++static void add_live_json(cJSON *object)
++{
++    char encoded[1538];encoded[0]='{';size_t n=tb_telemetry_live_fields(encoded+1,sizeof(encoded)-3);
++    if(!n)return;
++    encoded[1]=' ';encoded[n+1]='}';encoded[n+2]=0;
++    cJSON *live=cJSON_Parse(encoded);if(live)tb_json_add_object(object,"live",live);
++}
++size_t tb_telemetry_live_extra_fields(char *buffer,size_t capacity)
++{
++    if(!buffer || !capacity)return 0;
++    static const struct {uint16_t pid;uint8_t mid;const char *key;} fields[]={
++        {110,128,"coolant_temp_c"},{175,128,"oil_temp_c"},{90,128,"fuel_temp_c"},
++        {171,0,"ambient_temp_c"},{105,128,"intake_temp_c"},{98,128,"oil_level_pct"},
++        {111,128,"coolant_level_pct"},{100,128,"oil_pressure_bar"},{109,128,"coolant_pressure_bar"},
++        {153,128,"crankcase_pressure_kpa"},{106,128,"air_inlet_pressure_kpa"},{107,128,"air_cleaner_diff_pressure_kpa"},
++        {102,128,"boost_bar"},{177,130,"gearbox_temp_c"},{161,130,"trans_input_rpm"},
++        {191,130,"trans_output_rpm"},{73,0,"brake_pedal_pct"},{92,128,"load_pct"},
++        {168,0,"battery_voltage_v"},{117,140,"brake_air_primary_bar"},{118,140,"brake_air_secondary_bar"},
++        {122,128,"veb_pct"}
++    };
++    uint64_t now=(uint64_t)esp_timer_get_time();size_t used=0;buffer[0]=0;
++    for(unsigned i=0;i<sizeof(fields)/sizeof(*fields);i++){
++        latest_t p={0};char number[40];(void)live_latest(fields[i].pid,fields[i].mid,now,&p);
++        tb_live_number(number,live_valid(&p,now,40000000) && p.has_value,p.value);
++        int n=snprintf(buffer+used,capacity-used,",\"%s\":%s",fields[i].key,number);
++        if(n<=0 || (size_t)n>=capacity-used){buffer[0]=0;return 0;}used+=(size_t)n;
++    }
++    return used;
++}
+diff --git a/firmware/espidf/components/tb_core/live_number.h b/firmware/espidf/components/tb_core/live_number.h
+new file mode 100644
+index 0000000..b4b6534
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/live_number.h
+@@ -0,0 +1,13 @@
++#pragma once
++#include <stdbool.h>
++#include <math.h>
++#include <stdint.h>
++#include <inttypes.h>
++#include <stdio.h>
++/* A fixed six-decimal JSON number without printf floating point/dtoa heap. */
++static inline void tb_live_number(char out[40],bool valid,double value)
++{
++    if(!valid || !isfinite(value) || fabs(value)>9e12){snprintf(out,40,"null");return;}
++    bool negative=value<0;uint64_t scaled=(uint64_t)llround(fabs(value)*1000000.0);
++    snprintf(out,40,"%s%" PRIu64 ".%06u",negative?"-":"",scaled/1000000u,(unsigned)(scaled%1000000u));
++}
+diff --git a/firmware/espidf/components/tb_core/telemetry.c b/firmware/espidf/components/tb_core/telemetry.c
+index 5815bed..74a3c1d 100644
+--- a/firmware/espidf/components/tb_core/telemetry.c
++++ b/firmware/espidf/components/tb_core/telemetry.c
+@@ -15,6 +15,9 @@
+ #include "tbx_j1587_bridge.h"
+ #include "tbx_transmission.h"
+ #include "tbx_volvo_operating.h"
++#include "live_number.h"
++
++static void add_live_json(cJSON *object);
+ 
+ #include <inttypes.h>
+ #include <math.h>
+@@ -33,9 +36,11 @@
+ #ifdef CONFIG_TB_J1708_ONLY
+ #define TELEMETRY_QUEUE 64u
+ #define TELEMETRY_LATEST 128u
++#define TELEMETRY_RAW_MAX 17u /*21-byte J1708 frame minus MID/PID/length/checksum. */
+ #else
+ #define TELEMETRY_QUEUE 128u
+ #define TELEMETRY_LATEST 192u
++#define TELEMETRY_RAW_MAX 32u
+ #endif
+ #define TELEMETRY_FRAME_MAX 64u
+ #define TELEMETRY_STALE_MS 5000u
+@@ -59,7 +64,7 @@ typedef struct {
+     double value, last_valid_value;
+     const char *name, *unit, *validation, *quality, *component;
+     const char *last_valid_quality, *last_valid_validation;
+-    uint8_t raw[32];
++    uint8_t raw[TELEMETRY_RAW_MAX];
+     char text[32];
+ } latest_t;
+ 
+@@ -345,7 +350,7 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
+         .name = signal->name, .unit = signal->unit, .validation = validation,
+         .quality = quality, .has_value = observation->has_value,
+         .raw_only = observation->raw_only,
+-        .value = observation->value, .raw_length = observation->dlc > 32 ? 32 : observation->dlc,
++        .value = observation->value, .raw_length = observation->dlc > TELEMETRY_RAW_MAX ? TELEMETRY_RAW_MAX : observation->dlc,
+         .full_raw_length = observation->dlc, .component_index = UINT8_MAX,
+         .component_count = observation->component_count };
+     memcpy(latest.raw, observation->raw, latest.raw_length);
+@@ -433,7 +438,7 @@ static void j1587_observation(const tbx_j1587_observation_t *observation, void *
+         .capture_id = worker->packet->capture_id, .name = observation->name,
+         .unit = observation->unit, .validation = "EM_VALIDACAO", .quality = quality,
+         .has_value = observation->has_numeric, .value = observation->value,
+-        .raw_length = observation->raw_len > 32 ? 32 : observation->raw_len,
++        .raw_length = observation->raw_len > TELEMETRY_RAW_MAX ? TELEMETRY_RAW_MAX : observation->raw_len,
+         .full_raw_length = observation->raw_len, .component_index = UINT8_MAX };
+     memcpy(latest.raw, observation->raw, latest.raw_length);
+     snprintf(latest.text, sizeof(latest.text), "%s", observation->passive.text);
+@@ -605,6 +610,7 @@ esp_err_t tb_telemetry_start(void)
+ static void critical_readings(cJSON *);
+ void tb_telemetry_add_json(cJSON *object)
+ {
++    add_live_json(object);
+     cJSON *telemetry = cJSON_AddObjectToObject(object, "telemetry_v2");
+     if (!telemetry) return;
+     portENTER_CRITICAL(&s_mux);
+@@ -758,7 +764,7 @@ bool tb_telemetry_append_j1587_operational(cJSON *sample)
+ {
+     if (!sample) return false;
+     static const struct { uint16_t pid; const char *key; } fields[] = {
+-        {110,"coolant_temp_c"}, {175,"oil_temp_c"}, {100,"oil_pressure_bar"},
++        {94,"fuel_pressure_bar"}, {110,"coolant_temp_c"}, {175,"oil_temp_c"}, {100,"oil_pressure_bar"},
+         {102,"boost_bar"}, {440,"boost_bar"}, {177,"gearbox_temp_c"},
+         {105,"intake_temp_c"}, {92,"load_pct"}, {91,"pedal_pct"},
+         {168,"battery_voltage_v"}, {46,"air_pressure_bar"},
+@@ -1062,3 +1068,5 @@ cJSON *tb_telemetry_volvo_json(void)
+     cJSON_AddStringToObject(row,"quality","PROVAVEL_EM_VALIDACAO");
+     return row;
+ }
++
++#include "live_fields.inc"
+diff --git a/firmware/espidf/components/tb_core/tests/offline_export.c b/firmware/espidf/components/tb_core/tests/offline_export.c
+index 863279e..f8db8b1 100644
+--- a/firmware/espidf/components/tb_core/tests/offline_export.c
++++ b/firmware/espidf/components/tb_core/tests/offline_export.c
+@@ -48,7 +48,6 @@ int64_t offline_clock(void){return (int64_t)host_now_us;}
+ uint32_t offline_boot(void){return tb_boot_id();}
+ int offline_submit(const char *json){return tb_store_submit(json);}
+ int offline_gettimeofday(struct timeval *tv,void *zone){return simulated_gettimeofday(tv,zone);}
+-const char *tb_device_uid(void){return "tb-c6-d40592b9190c";}
+ unsigned offline_mutex(void){return 1;}
+ int offline_take(unsigned lock,unsigned ticks){assert(lock==1 && ticks==1000);return 1;}
+ void offline_give(unsigned lock){assert(lock==1);}
+diff --git a/firmware/espidf/components/tb_core/tests/run_telemetry.sh b/firmware/espidf/components/tb_core/tests/run_telemetry.sh
+index 3979f74..19f3596 100755
+--- a/firmware/espidf/components/tb_core/tests/run_telemetry.sh
++++ b/firmware/espidf/components/tb_core/tests/run_telemetry.sh
+@@ -10,7 +10,7 @@ trap 'rm -f "$test_binary"' EXIT HUP INT TERM
+ cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic \
+     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+     -I"$core_dir" -I"$module" -I"$cjson_dir" \
+-    "$test_dir/test_telemetry.c" "$core_dir/tbx_transmission.c" "$core_dir/tbx_volvo_operating.c" "$core_dir/protocols.c" \
++    "${TELEMETRY_TEST_FILE:-$test_dir/test_telemetry.c}" "$core_dir/tbx_transmission.c" "$core_dir/tbx_volvo_operating.c" "$core_dir/protocols.c" \
+     "$core_dir/tbx_j1939.c" "$core_dir/tbx_j1939_tp.c" "$core_dir/tbx_j1587_bridge.c" \
+     "$module/tbx_j1587_decoder.c" "$module/tbx_j1587_passive.c" \
+     "$module/tbx_j1587_passive_full.c" "$module/tbx_j1708_requests.c" \
+diff --git a/firmware/espidf/components/tb_core/tests/telemetry_host_stubs.h b/firmware/espidf/components/tb_core/tests/telemetry_host_stubs.h
+index b8cfe18..42c823a 100644
+--- a/firmware/espidf/components/tb_core/tests/telemetry_host_stubs.h
++++ b/firmware/espidf/components/tb_core/tests/telemetry_host_stubs.h
+@@ -33,6 +33,8 @@ static unsigned host_record_count;
+ typedef struct { bool full_decode_enabled;uint8_t j1708_targets[17]; } tb_config_t;
+ static tb_config_t host_telemetry_config = { .full_decode_enabled = true,.j1708_targets={[6]=140,[7]=140,[10]=128} };
+ static const tb_config_t *tb_config(void) { return &host_telemetry_config; }
++static const char *host_live_device_uid="tb-c6-d40592b9190c";
++const char *tb_device_uid(void){return host_live_device_uid;}
+ static uint32_t tb_boot_id(void) { return 42; }
+ static void vTaskDelay(unsigned ticks) { (void)ticks; }
+ static int64_t esp_timer_get_time(void) { return (int64_t)host_now_us; }
+diff --git a/firmware/espidf/components/tb_core/tests/test_diagnostic_memory.c b/firmware/espidf/components/tb_core/tests/test_diagnostic_memory.c
+index 2e1774f..a6b7a8f 100644
+--- a/firmware/espidf/components/tb_core/tests/test_diagnostic_memory.c
++++ b/firmware/espidf/components/tb_core/tests/test_diagnostic_memory.c
+@@ -159,6 +159,9 @@ static esp_err_t httpd_req_get_url_query_str(httpd_req_t *r,char *b,size_t n){if
+ static esp_err_t httpd_query_key_value(const char *q,const char *k,char *b,size_t n){if(strcmp(k,"compact") || strncmp(q,"compact=",8) || n<2)return ESP_FAIL;snprintf(b,n,"%s",q+8);return ESP_OK;}
+ static void tb_base_add_json(cJSON *o){cJSON_AddStringToObject(o,"role","core");cJSON_AddNumberToObject(o,"boot_id",42);}
+ static void tb_network_add_json(cJSON *o){cJSON_AddObjectToObject(o,"network");}
++static size_t tb_network_health_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"network\":{\"internet_sharing\":{\"napt_active\":true}}");}
++static size_t tb_telemetry_live_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"live_contract\":\"TBX_CORE_LIVE_V1\",\"gear\":12");}
++static size_t tb_telemetry_live_extra_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"coolant_temp_c\":75");}
+ static void tb_application_add_json(cJSON *o){tb_capture_add_json(o);}
+ static void tb_application_add_json_compact(cJSON *o){tb_capture_add_json_compact(o);}
+ static bool tb_web_ota_busy(void){return false;}
+diff --git a/firmware/espidf/components/tb_core/tests/test_j1708_production.c b/firmware/espidf/components/tb_core/tests/test_j1708_production.c
+index 8711471..5d74c1c 100644
+--- a/firmware/espidf/components/tb_core/tests/test_j1708_production.c
++++ b/firmware/espidf/components/tb_core/tests/test_j1708_production.c
+@@ -43,7 +43,7 @@ static void step(fixture_t *f)
+     tbx_j1708_active_tick(&f->c,f->now);
+ }
+ static void seconds(fixture_t *f,unsigned n){for(unsigned i=0;i<n*100;i++)step(f);}
+-static unsigned index_of(fixture_t *f,unsigned pid){for(unsigned i=0;i<17;i++)if(f->s.pids[i].pid==pid)return i;assert(false);return 0;}
++static unsigned index_of(fixture_t *f,unsigned pid){for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)if(f->s.pids[i].pid==pid)return i;assert(false);return 0;}
+ static void automatic_and_cadences(void)
+ {
+     fixture_t f;initialize(&f);seconds(&f,29);assert(!f.writes);
+@@ -203,8 +203,26 @@ static void critical_ten_second_cadences(void)
+     assert(!tbx_j1708_active_note_response(&f.c,f.c.config.target_mid[i],f.s.pids[i].pid,f.c.tx_started_us+450000));
+     puts("PID117/MID140,118/MID140,250/MID128: 10s targets staggered >=2s, gaps9.99..11s with silent117; stale captures rejected and all other PIDs continue PASS");
+ }
++static void fuel_pressure_ten_second_cadence(void)
++{
++    fixture_t f;initialize(&f);f.env.extended=true;unsigned index=index_of(&f,94),sent=0;uint32_t prior=0;
++    for(unsigned i=0;i<30000;i++){
++        step(&f);
++        if(f.s.pids[index].sent!=sent){
++            uint32_t now=f.s.pids[index].last_sent_ms;
++            /* A late slot may catch up to its absolute10s phase. Global500ms
++             * spacing is checked on every UART submission in write_tx(). */
++            if(sent)assert(now-prior>=500 && now-prior<=12000);
++            prior=now;sent=f.s.pids[index].sent;
++        }
++    }
++    assert(f.c.config.target_mid[index]==128 && f.s.pids[index].period_ms==10000 && sent>=24 && sent<=27);
++    assert(f.s.pids[index].answered==sent && f.s.armed);
++    puts("PID94/MID128 fuel pressure: single existing scheduler, 10.000ms configuration, <=2requests/s and matching candidates PASS");
++}
+ int main(void)
+ {
++    fuel_pressure_ten_second_cadence();
+     critical_ten_second_cadences();
+     scheduler_supervision_and_stale_baseline();automatic_and_cadences();expansion_in_one_scheduler();pid153_transient_timeout_does_not_stop_passive_or_work();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
+     puts("Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
+diff --git a/firmware/espidf/components/tb_core/tests/test_live_profile.c b/firmware/espidf/components/tb_core/tests/test_live_profile.c
+new file mode 100644
+index 0000000..c38c2ca
+--- /dev/null
++++ b/firmware/espidf/components/tb_core/tests/test_live_profile.c
+@@ -0,0 +1,17 @@
++#define TB_TELEMETRY_HOST_TEST
++#define CONFIG_TB_J1708_ONLY 1
++#include "../telemetry.c"
++#include <assert.h>
++int main(void)
++{
++    assert(tb_telemetry_start()==ESP_OK);
++    assert(TELEMETRY_LATEST==128 && sizeof(((latest_t *)0)->raw)==17);
++    const uint8_t payload[]={0x12,0xb5,1,0x12,0xb5,2,0x12,0xb5,3,0x12,0xb5,4,0x12,0xb5,5,2,0x35};
++    packet_t p={.length=21,.supplied_length=21,.captured_us=host_now_us,.capture_id=1};
++    p.bytes[0]=128;p.bytes[1]=194;p.bytes[2]=17;memcpy(p.bytes+3,payload,sizeof(payload));
++    unsigned sum=0;for(unsigned i=0;i<20;i++)sum+=p.bytes[i];p.bytes[20]=(uint8_t)(0u-sum);
++    process_packet(&p);assert(s.latest_count==1);
++    assert(s.latest[0].raw_length==17 && s.latest[0].full_raw_length==17 && !memcmp(s.latest[0].raw,payload,17));
++    printf("J1708_ONLY cache:128 entries, complete maximum17-byte PID payload retained; latest_t=%zuB, no capacity reduction PASS\n",sizeof(latest_t));
++    vQueueDelete(s.queue);return 0;
++}
+diff --git a/firmware/espidf/components/tb_core/tests/test_telemetry.c b/firmware/espidf/components/tb_core/tests/test_telemetry.c
+index 7316a2c..7bde00e 100644
+--- a/firmware/espidf/components/tb_core/tests/test_telemetry.c
++++ b/firmware/espidf/components/tb_core/tests/test_telemetry.c
+@@ -667,6 +667,49 @@ static void critical_latest_keeps_origin_raw_and_age(void)
+     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(critical,"j1587_quality"),"118")->valuestring,"DESATUALIZADO"));
+     cJSON_Delete(o);puts("Critical current API: configured MID, original raw, age and explicit stale quality retained PASS");
+ }
++static void live_packet(uint8_t mid,uint8_t pid,uint8_t a,uint8_t b)
++{
++    packet_t p={.captured_us=host_now_us-1000000,.capture_id=++s.next_capture};
++    p.bytes[0]=mid;p.bytes[1]=pid;p.bytes[2]=a;p.length=4;
++    if(pid>=128){p.bytes[3]=b;p.length=5;}
++    checksum(&p);process_packet(&p);
++}
++static cJSON *live_document(void)
++{
++    char text[1540];text[0]='{';size_t n=tb_telemetry_live_fields(text+1,sizeof(text)-3);assert(n);
++    text[1]=' ';text[n+1]='}';text[n+2]=0;return cJSON_Parse(text);
++}
++static void live_cloud_vectors_and_no_heap(void)
++{
++    memset(s.latest,0,sizeof(s.latest));s.latest_count=0;host_now_us=20000000;
++    live_packet(130,163,0x31,0x32);live_packet(130,162,0x20,0x41);
++    live_packet(128,93,0x20,0);live_packet(128,94,0x81,0);live_packet(128,92,200,0);
++    heap_reset();heap_budget=0;char bytes[1536];assert(tb_telemetry_live_fields(bytes,sizeof(bytes)) && !heap_calls);
++    heap_budget=SIZE_MAX;cJSON *o=live_document();assert(o);
++    assert(cJSON_GetObjectItemCaseSensitive(o,"gear")->valueint==12);
++    assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"selected_gear")));
++    assert(fabs(cJSON_GetObjectItemCaseSensitive(o,"torqueNm")->valuedouble-867.2)<1e-6);
++    assert(fabs(cJSON_GetObjectItemCaseSensitive(o,"actualTorquePct")->valuedouble-867.2/2643.0*100)<1e-6);
++    assert(fabs(cJSON_GetObjectItemCaseSensitive(o,"fuel_pressure_bar")->valuedouble-4.4505)<1e-6);
++    cJSON *g=cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(o,"live_readings"),"gear");
++    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(g,"raw")->valuestring,"3132") && cJSON_GetObjectItemCaseSensitive(g,"age_ms")->valueint==1000);
++    assert(cJSON_GetObjectItemCaseSensitive(o,"diagnostics_pid")->valueint==194);cJSON_Delete(o);
++    heap_reset();o=cJSON_CreateObject();tb_telemetry_add_json(o);
++    assert(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(o,"live"),"gear")->valueint==12);
++    size_t calls=heap_calls,peak=heap_peak;assert(peak<24u*1024u);cJSON_Delete(o);assert(!heap_used);
++    for(size_t fail=2;fail<=calls;fail++){
++        heap_reset();o=cJSON_CreateObject();heap_fail_call=fail;tb_telemetry_add_json(o);
++        cJSON_Delete(o);assert(!heap_used);
++    }
++    printf("Actual telemetry state/live JSON: native peak=%zu bytes, %zu allocation fault points, no leaks; streaming live remains allocation-free PASS\n",peak,calls-1);
++    heap_reset();
++    host_live_device_uid="another-Core";o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"actualTorquePct")));cJSON_Delete(o);host_live_device_uid="tb-c6-d40592b9190c";
++    host_now_us+=6000000;o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"gear")));cJSON_Delete(o);
++    host_now_us+=10000000;o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"fuel_pressure_bar")));cJSON_Delete(o);
++    live_packet(128,93,0xff,0);o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"torqueNm")));cJSON_Delete(o);
++    char short_buffer[16];assert(!tb_telemetry_live_fields(short_buffer,sizeof(short_buffer)) && short_buffer[0]==0);
++    assert(!heap_used);puts("Core live: real boot610 gear3132=12, torque20=867.2Nm/2643 derived%, fuel81=4.4505bar; load92 never torque, profile isolation, stale/NA/raw/age, zero JSON heap PASS");
++}
+ int main(void)
+ {
+     assert(tb_telemetry_start() == ESP_OK);
+@@ -681,6 +724,7 @@ int main(void)
+     test_transmission_snapshot();
+     sensor_pages_and_oom_are_bounded();
+     critical_latest_keeps_origin_raw_and_age();
++    live_cloud_vectors_and_no_heap();
+     vQueueDelete(s.queue);
+     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
+     return 0;
+diff --git a/firmware/espidf/components/tb_web/tb_web.c b/firmware/espidf/components/tb_web/tb_web.c
+index bcb7652..01803ef 100644
+--- a/firmware/espidf/components/tb_web/tb_web.c
++++ b/firmware/espidf/components/tb_web/tb_web.c
+@@ -60,18 +60,23 @@ static esp_err_t health_reply(httpd_req_t *request,bool low_memory)
+ {
+     /* No cJSON allocation: diagnostics remain possible after an allocation
+      * failure, and report largest block as well as total/minimum free RAM. */
+-    char body[1024],extra[384]={0};
+-#if !CONFIG_TB_ROLE_LINK
+-    (void)tb_capture_health_fields(extra,sizeof(extra));
+-#endif
+-    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"boot_id\":%u,\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u%s}",
++    char body[1536];
++    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"boot_id\":%u,\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u",
+         low_memory?"false":"true",low_memory?"Sem memoria RAM para diagnostico completo":"",tb_role_name(),tb_device_uid(),tb_version(),
+         (unsigned)tb_boot_id(),(uint64_t)esp_timer_get_time()/1000u,(unsigned)esp_get_free_heap_size(),(unsigned)esp_get_minimum_free_heap_size(),
+-        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),extra);
++        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+     if(n<=0 || (size_t)n>=sizeof(body))return ESP_FAIL;
+     if(low_memory)httpd_resp_set_status(request,"503 Service Unavailable");
+     response_headers(request);httpd_resp_set_type(request,"application/json; charset=utf-8");
+-    return httpd_resp_send(request,body,n);
++    esp_err_t err=httpd_resp_send_chunk(request,body,(size_t)n);if(err!=ESP_OK)return err;
++#if !CONFIG_TB_ROLE_LINK
++    size_t (*const sources[])(char *,size_t)={tb_capture_health_fields,tb_network_health_fields,tb_telemetry_live_fields,tb_telemetry_live_extra_fields};
++    for(unsigned i=0;i<sizeof(sources)/sizeof(*sources);i++){
++        size_t length=sources[i](body,sizeof(body));
++        if(length && (err=httpd_resp_send_chunk(request,body,length))!=ESP_OK)return err;
++    }
++#endif
++    err=httpd_resp_send_chunk(request,"}",1);return err==ESP_OK?httpd_resp_send_chunk(request,NULL,0):err;
+ }
+ static esp_err_t health_handler(httpd_req_t *request){return health_reply(request,false);}
+ 
+@@ -672,6 +677,7 @@ esp_err_t tb_web_start(void)
+     const httpd_uri_t routes[] = {
+         { .uri = "/", .method = HTTP_GET, .handler = home_handler },
+         { .uri = "/api/health", .method = HTTP_GET, .handler = health_handler },
++        { .uri = "/api/live", .method = HTTP_GET, .handler = health_handler },
+         { .uri = "/api/crash", .method = HTTP_GET, .handler = tb_crash_info_handler },
+         { .uri = "/api/crash.bin", .method = HTTP_GET, .handler = tb_crash_download_handler },
+         { .uri = "/api/state", .method = HTTP_GET, .handler = state_handler },
+diff --git a/firmware/espidf/components/tb_web/tests/test_json_http.c b/firmware/espidf/components/tb_web/tests/test_json_http.c
+index fb1e57e..4366aaf 100644
+--- a/firmware/espidf/components/tb_web/tests/test_json_http.c
++++ b/firmware/espidf/components/tb_web/tests/test_json_http.c
+@@ -36,6 +36,9 @@ static esp_err_t httpd_query_key_value(const char *q,const char *key,char *buffe
+ static void tb_base_add_json(cJSON *o){cJSON_AddStringToObject(o,"role","core");}
+ static void tb_network_add_json(cJSON *o){cJSON_AddObjectToObject(o,"network");}
+ static size_t tb_capture_health_fields(char *out,size_t size){const char *s=",\"j1708_automatic\":true,\"j1708_work_mode\":true,\"j1708_request_sent\":42";assert(strlen(s)<size);strcpy(out,s);return strlen(s);}
++static size_t tb_network_health_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"network\":{\"internet_sharing\":{\"napt_active\":true}}");}
++static size_t tb_telemetry_live_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"live_contract\":\"TBX_CORE_LIVE_V1\",\"gear\":12,\"actualTorquePct\":32.8112,\"fuel_pressure_bar\":4.4505");}
++static size_t tb_telemetry_live_extra_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"coolant_temp_c\":75");}
+ static void tb_application_add_json(cJSON *o){cJSON_AddStringToObject(o,"mode","full");}
+ static void tb_application_add_json_compact(cJSON *o){cJSON_AddStringToObject(o,"mode","compact");}
+ static bool tb_web_ota_busy(void){return false;}
+diff --git a/firmware/espidf/main/Kconfig.projbuild b/firmware/espidf/main/Kconfig.projbuild
+index 58dc8f8..178e8e6 100644
+--- a/firmware/espidf/main/Kconfig.projbuild
++++ b/firmware/espidf/main/Kconfig.projbuild
+@@ -7,8 +7,23 @@ config TB_ROLE_CORE
+ config TB_ROLE_LINK
+     bool "Link"
+ endchoice
++config TB_CORE_WIFI_SHARING_REQUIRED
++    bool
++    default y if TB_ROLE_CORE
++    select LWIP_IP_FORWARD
++    select LWIP_IPV4_NAPT
++    help
++        Core AP internet sharing is part of the production contract. Select
++        effective lwIP features even when an older sdkconfig disabled them.
+ config TB_J1708_ONLY
+     bool "Rev.B.1 J1708_ONLY (no CAN acquisition resources)"
+     depends on TB_ROLE_CORE
+     default y
++config TB_RAW_TCP
++    bool "Legacy CAN RAW TCP35000 server"
++    depends on TB_ROLE_CORE && !TB_J1708_ONLY
++    default y
++    help
++        Legacy CAN profiles only. J1708_ONLY uses HTTP/Cloud and does not
++        reserve the raw CAN queue, worker stack or TCP listening socket.
+ endmenu
+diff --git a/firmware/espidf/test_evidence/v0.2.26/android/RESULTS.json b/firmware/espidf/test_evidence/v0.2.26/android/RESULTS.json
+new file mode 100644
+index 0000000..cba918c
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/android/RESULTS.json
+@@ -0,0 +1,32 @@
++{
++  "ci_run": 43709982978,
++  "head": "14c76a8ac6879400dd8a072fec6aa8c69d1b8dd0",
++  "artifact_id": 14160475902,
++  "suites": [
++    {
++      "name": "br.com.truckbox.app.diagnostics.DiagnosticMergeTest",
++      "tests": "2",
++      "failures": "0",
++      "errors": "0",
++      "skipped": "0",
++      "file": "app/build/test-results/testDebugUnitTest/TEST-br.com.truckbox.app.diagnostics.DiagnosticMergeTest.xml"
++    },
++    {
++      "name": "br.com.truckbox.multimedia.EcuFaultTest",
++      "tests": "4",
++      "failures": "0",
++      "errors": "0",
++      "skipped": "0",
++      "file": "multimedia/build/test-results/testDebugUnitTest/TEST-br.com.truckbox.multimedia.EcuFaultTest.xml"
++    },
++    {
++      "name": "br.com.truckbox.multimedia.LiveRepositoryTest",
++      "tests": "4",
++      "failures": "0",
++      "errors": "0",
++      "skipped": "0",
++      "file": "multimedia/build/test-results/testDebugUnitTest/TEST-br.com.truckbox.multimedia.LiveRepositoryTest.xml"
++    }
++  ],
++  "multimedia_tests": 8
++}
+diff --git a/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.app.diagnostics.DiagnosticMergeTest.xml b/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.app.diagnostics.DiagnosticMergeTest.xml
+new file mode 100644
+index 0000000..a767993
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.app.diagnostics.DiagnosticMergeTest.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<testsuite name="br.com.truckbox.app.diagnostics.DiagnosticMergeTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-15T11:40:54.446Z" hostname="runnervmccnms" time="0.025">
++  <properties/>
++  <testcase name="olderPagesDoNotReviveFaultsAndModulesStaySeparate" classname="br.com.truckbox.app.diagnostics.DiagnosticMergeTest" time="0.023"/>
++  <testcase name="counterPreferenceNeedsSameTripFreshDataAndValidDelta" classname="br.com.truckbox.app.diagnostics.DiagnosticMergeTest" time="0.0"/>
++  <system-out><![CDATA[]]></system-out>
++  <system-err><![CDATA[]]></system-err>
++</testsuite>
+diff --git a/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.multimedia.EcuFaultTest.xml b/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.multimedia.EcuFaultTest.xml
+new file mode 100644
+index 0000000..162c50c
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.multimedia.EcuFaultTest.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<testsuite name="br.com.truckbox.multimedia.EcuFaultTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-15T11:40:49.980Z" hostname="runnervmccnms" time="0.106">
++  <properties/>
++  <testcase name="inactiveZeroAndMissingCounterStayDistinct" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.064"/>
++  <testcase name="engineWaterCircuitIsNotWaterDetection" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.005"/>
++  <testcase name="modulesAndUnknownExtendedCodesArePreserved" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.008"/>
++  <testcase name="absenceDoesNotResolveAndTransitionsDoNotDuplicate" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.018"/>
++  <system-out><![CDATA[]]></system-out>
++  <system-err><![CDATA[]]></system-err>
++</testsuite>
+diff --git a/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.multimedia.LiveRepositoryTest.xml b/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.multimedia.LiveRepositoryTest.xml
+new file mode 100644
+index 0000000..7157163
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/android/TEST-br.com.truckbox.multimedia.LiveRepositoryTest.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<testsuite name="br.com.truckbox.multimedia.LiveRepositoryTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-15T11:40:50.091Z" hostname="runnervmccnms" time="0.046">
++  <properties/>
++  <testcase name="noInternetDoesNotBlockLocalReadingsOrEraseFaultHistory" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.029"/>
++  <testcase name="coreLiveAndTripCloudAreMergedWithoutReplacingSensors" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.009"/>
++  <testcase name="oldDiagnosticOnlyStateIsNotAcceptedAsAnInstrumentPayload" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.004"/>
++  <testcase name="tripParserNeverUsesLifetimeCountersOrOldHistory" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.001"/>
++  <system-out><![CDATA[]]></system-out>
++  <system-err><![CDATA[]]></system-err>
++</testsuite>
+diff --git a/firmware/espidf/test_evidence/v0.2.26/diagnostic-memory.txt b/firmware/espidf/test_evidence/v0.2.26/diagnostic-memory.txt
+new file mode 100644
+index 0000000..d589de0
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/diagnostic-memory.txt
+@@ -0,0 +1,8 @@
++Production diagnostics native cJSON: full tree 42913 bytes; old print peak 70266; compact tree 11649 (72.9% smaller); 27 stats fetched in pages <=8
++Production capture full: 1093 individual allocation failures leave no orphan nodes
++Production capture compact: 311 individual allocation failures leave no orphan nodes
++Production diagnostics native cJSON: full tree 56545 bytes; old print peak 86615; compact tree 12854 (77.3% smaller); 27 stats fetched in pages <=8
++Production capture full: 1464 individual allocation failures leave no orphan nodes
++Production capture compact: 342 individual allocation failures leave no orphan nodes
++Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
++Real HTTP pressure: field budget41596, unbounded full peak41550 (incomplete), compact peak13665 including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS
+diff --git a/firmware/espidf/test_evidence/v0.2.26/host-suite.txt b/firmware/espidf/test_evidence/v0.2.26/host-suite.txt
+new file mode 100644
+index 0000000..2551896
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/host-suite.txt
+@@ -0,0 +1,142 @@
++config host tests passed (core)
++config host tests passed (link)
++config host tests passed (core)
++JSON memory: 25624-byte native tree / 14401-byte wire output: old print fails with 256 free bytes; streaming uses zero new cJSON allocations
++JSON equivalence, references, all sink failures, depth/size limits, OOM and insertion ownership passed
++Production diagnostics native cJSON: full tree 42913 bytes; old print peak 70266; compact tree 11649 (72.9% smaller); 27 stats fetched in pages <=8
++Production capture full: 1093 individual allocation failures leave no orphan nodes
++Production capture compact: 311 individual allocation failures leave no orphan nodes
++Production diagnostics native cJSON: full tree 56545 bytes; old print peak 86615; compact tree 12854 (77.3% smaller); 27 stats fetched in pages <=8
++Production capture full: 1464 individual allocation failures leave no orphan nodes
++Production capture compact: 342 individual allocation failures leave no orphan nodes
++Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
++Real HTTP pressure: field budget41596, unbounded full peak41550 (incomplete), compact peak13665 including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS
++Production HTTP: chunked wire equivalence, maximum 1024-byte staging, zero serializer allocations and all client disconnect points free the tree
++Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved
++Crash evidence: admin/OTA guards, 512-byte streaming, CRC/bounds, unknown boot association, incomplete read refusal and allocation faults PASS
++Network peer cache: same LAN/private AP, own/foreign address rejection, DHCP change and stale fallback passed
++Real sockets: v0.2.2 IPv4-on-IPv6 regression reproduced; mapped IPv4 and native IPv4 learned; native IPv6/invalid FD rejected
++Wi-Fi sharing: routing, DNS, overlap, disconnect/lost IP, recovery and RAM guards passed (host stubs; physical NAT pending).
++image policy: valid roles, malformed/truncated images, chip, hash and string boundaries passed
++Protocol tests passed
++Validated 4000 generated records with an independent JSON parser
++Storage record CRC and interrupted-tail tests passed
++FRAM codec tests passed: golden CRC, 512 corruptions, sequence bounds, generation wrap, 65 interrupted writes, NVS-reset checkpoint
++Independent Python CRC/serialization golden vector passed
++Storage transactions: no GPS/offline/reboot, late GPS immutability, ACK gaps/idempotence/NVS fault, fsync fault, torn tail, corruption, capacity and startup queue passed
++Storage codec: UTF-8/key tokens, lossless roundtrip, output bounds, all truncations, malformed base64/backreferences and 3000 deterministic fuzz inputs PASS
++Power cuts: 90 byte boundaries, CRC-valid completion without newline, append/reboot after every cut PASS
++0.2.11-compatible non-final/oversized/CRC corruption, repeated resets, suffix salvage, ACK refusal and immutable evidence PASS
++Real writer loop: retry uncommitted row, avoid duplicate after ambiguous fsync, repeated read-only recovery, drain barrier and maintenance pause PASS
++Actual FatFs: 24 successful scans/remounts still OPEN/EACCES on AM_RDO; new exclusive segment works, old bytes/attrs remain; full directory with free clusters stays denied; exact FRESULT trace PASS
++Boot 559 reproduction: FAT12/512 slots, flags7, FR_DENIED7/stat4; full directory OR orphan LFNs; rebinds never fix; original bytes preserved until explicit production formatter; partition guard, new file/sync/readback/reboot PASS
++Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS
++Store IO: 10 failing stages, first/close errno, 3-attempt pause, no false recovery success, retained CRC recovery, NVS retry, no duplicate and ACK-only recycling PASS
++Store OPEN regression: readonly legacy rolled to new exclusive segment; preserved bytes/IDs/attrs across reboot+ACK; no collision overwrite; fence commit fault; 24 scans != durable recovery PASS
++Storage retry route: admin, explicit authorization, JSON/OTA/mutex guards; actual retry preserves RAM queue, record IDs, durable pending, errors and NVS; no restart or acquisition control PASS
++Storage maintenance: movement allowed, no automatic wipe; admin/target/OTA/protocol/UID/boot/nonce/expiry guards; format/probe/NVS failure; replay rejection; retained RAM and sequence/ACK; telemetry/ACK/reboot; JSON errors and backup authorization PASS
++Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/mutex/OOM/read/send failure guards; no speed dependency, released mutex, no writes PASS
++tb_decode: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++storage_task: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
++OK: LEGACY=6/60 state snapshots; FULL=60/60
++J1939: 76 catalog rows / 29 PGNs; 55 evidenced mappings, 15 partial/raw, 6 pending/unavailable; SAE status, source isolation and delta tests PASS
++J1939 TP.BAM: complete30/19byte, interleaving, bounds, seq, timeout, capacity PASS
++OK: J1939 inventory 76 signal rows / 29 PGNs; 46 observed PGNs; confidence tags
++J1939 C/PythonV1: 80 scalar/component equivalence checks + explicit safety differences PASS; constructed Master vectors, no full Logs Mae replay
++OK: 17 PIDs, authorization, spacing, replies and cutoffs
++OK: 17 PID scales, raw retention, status bits, unavailable and malformed frames
++OK: 48 passive PIDs; numeric/raw/invalid/unavailable
++OK: 31/31 passive PID decoder paths, physical units, masks, codes and time
++PID194: actual A/B/C/D, page2 PID/SID, 119-code parser, unknowns, states/history/no absent-clear, bounded no-overwrite and concurrent PID192 assembly PASS
++OK: J1587 bridge48+17, multiparameter/page2, checksum/bounds/NA, counter deltas, hardware TX inhibit
++Trip: checkpoint/reboot, source priority, counter reset/jump/gap and fallback overlap PASS
++Required SI examples: 9->10 (+1), 5->4 (-1) =14 confirmed; 12->13 =13, never25 PASS
++A/B scalar checkpoint: restart inside pending interval, no duplicate, UTC gap recovery, missing-clock hold, CRC corruption and v3 import PASS
++Offline integration, unknown vs bounded estimated gaps, trip/empty/trip boundaries and explicit estimated allocation PASS
++PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip/empty frozen mean and odometer reset PASS
++Fuel state 672B; v4 checkpoint 736B; all accounting tests PASS
++boot602 exact AC80218231: 1..4/5 echo,20ms electrical abort,21.589ms complete frame, late echo not external proof, matched reply and diagnostic-only MID observation PASS
++Operation audit: durable NVS before outbox, immutable boundary identity, duplicate/reordered events and delayed-reference quality PASS
++Independent snapshot-task supervisor: missing TX task heartbeat releases TX, diagnoses unavailable, retains desired policy, no reset/NVS disable PASS
++boot564 exact AC802282308222005C replay: 30 delayed/fragmented cases, one-time echo consumption and manual-trial MID hold PASS
++Actual UART PID439: six echo fragmentations + adjacent reply never self-conflict; independent MID172 fixture keeps the manual-trial stop and passive RX PASS
++Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS
++Actual capture functions passed: v1 migration/v2 reboot, GPS-independent trip/source selection, gap/reset rebasing, unavailable readings, NVS outside RX lock, canonical C0 derived fuel/fallback boundaries
++Actual Core GPS functions passed: absent GPS, no invented coordinates/time, receipt-vs-aged fix guard, no retroactive queued/history fixes, expiry/restart, source speed preservation
++J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
++Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
++Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS
++Critical current API: configured MID, original raw, age and explicit stale quality retained PASS
++Core live: real boot610 gear3132=12, torque20=867.2Nm/2643 derived%, fuel81=4.4505bar; load92 never torque, profile isolation, stale/NA/raw/age, zero JSON heap PASS
++OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
++J1708_ONLY cache:128 entries, complete maximum17-byte PID payload retained; latest_t=176B, no capacity reduction PASS
++J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed
++Field J1708: baseline/control/3x17/after, measured latency/echo, indirect operator confirmation, ambiguity rejection, conflicts/faults/stop/reboot and existing travel cadence PASS
++0.2.14 synthetic 599 valid/6 invalid window stops; 0.2.15 isolated burst does not. Incident branch itself remains unidentifiable from minute aggregates.
++RX guard A-J: stable traffic, isolated noise, traffic/engine changes, persistent RX faults, TX faults, repeated timeouts, offline/reconnect, reboot, spontaneous candidates and stale calibration PASS
++PID94/MID128 fuel pressure: single existing scheduler, 10.000ms configuration, <=2requests/s and matching candidates PASS
++PID117/MID140,118/MID140,250/MID128: 10s targets staggered >=2s, gaps9.99..11s with silent117; stale captures rejected and all other PIDs continue PASS
++Polling supervisor: real TX stall -> controlled backoff/restart; MID suspicion is diagnostic, saved MID174 is used, desired policy stays ON PASS
++PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS
++Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS
++PID194 OOM: 258 allocation fault points; no partial kind/raw identity accepted by store PASS
++Volvo real modules: PID194 wire length/Cloud bytes, dedup, A/B NVS/torn checkpoint, offline store retry, counter capture/start/end/reboot, unchanged suppression and reset/MID/time/range guards PASS (1055 bounded records, peak 689 bytes)
++Actual field audit: 482-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS
++Guard upper-range fixture fits 731 bytes (limit 767); Guard record: 522 bytes, live/ref counters and actual predicate/mode flags, atomic arrays and allocation failure ownership PASS
++J1708 event persistence policy: PASSED
++Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed
++Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed
++NMEA parser tests passed
++GPS outbox tests passed
++test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
++test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
++test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
++test_binary_contract_required_even_if_sdkconfig_claims_enabled (test_build_release.ReleasePackageTests.test_binary_contract_required_even_if_sdkconfig_claims_enabled) ... ok
++test_cached_sdkconfig_cannot_disable_sharing (test_build_release.ReleasePackageTests.test_cached_sdkconfig_cannot_disable_sharing) ... ok
++test_checked_rollback_is_separate_from_install_regions (test_build_release.ReleasePackageTests.test_checked_rollback_is_separate_from_install_regions) ... ok
++test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
++test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
++test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
++test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
++test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
++test_rollback_is_checked_before_publishing (test_build_release.ReleasePackageTests.test_rollback_is_checked_before_publishing) ... ok
++test_diff_cannot_overwrite_source_or_private_review (test_cloud_patch.CloudPatchTests.test_diff_cannot_overwrite_source_or_private_review) ... ok
++test_input_cannot_be_overwritten (test_cloud_patch.CloudPatchTests.test_input_cannot_be_overwritten) ... ok
++test_missing_or_duplicate_fragments_rejected (test_cloud_patch.CloudPatchTests.test_missing_or_duplicate_fragments_rejected) ... ok
++test_only_reviewed_fragments_change (test_cloud_patch.CloudPatchTests.test_only_reviewed_fragments_change) ... ok
++test_public_diff_contains_no_authentication_block (test_cloud_patch.CloudPatchTests.test_public_diff_contains_no_authentication_block) ... ok
++test_wrong_source_hash_leaves_input_and_output_untouched (test_cloud_patch.CloudPatchTests.test_wrong_source_hash_leaves_input_and_output_untouched) ... ok
++test_raw_tcp_optional_without_disabling_capture_storage_or_bridge (test_core_profile_resources.CoreProfileResources.test_raw_tcp_optional_without_disabling_capture_storage_or_bridge) ... ok
++test_corrupt_file_rejected_before_usb (test_flash_package.FlashPackageTests.test_corrupt_file_rejected_before_usb) ... ok
++test_manifest_cannot_write_nvs (test_flash_package.FlashPackageTests.test_manifest_cannot_write_nvs) ... ok
++test_path_escape_rejected (test_flash_package.FlashPackageTests.test_path_escape_rejected) ... ok
++test_success_preserves_nvs_and_uses_argument_list (test_flash_package.FlashPackageTests.test_success_preserves_nvs_and_uses_argument_list) ... ok
++test_wrong_flash_size_never_writes (test_flash_package.FlashPackageTests.test_wrong_flash_size_never_writes) ... ok
++test_wrong_role_binary_rejected_even_with_matching_hash (test_flash_package.FlashPackageTests.test_wrong_role_binary_rejected_even_with_matching_hash) ... ok
++test_missing_invalid_reset_and_source_change_skip_intervals (test_fuel_equivalence.FuelEquivalence.test_missing_invalid_reset_and_source_change_skip_intervals) ... ok
++test_python_c_1000_generated_valid_samples (test_fuel_equivalence.FuelEquivalence.test_python_c_1000_generated_valid_samples) ... ok
++test_data_policy_only_no_auth_or_transport_change (test_fuel_v2_patch.FuelPatchTests.test_data_policy_only_no_auth_or_transport_change) ... ok
++test_output_aliases_cannot_destroy_input (test_fuel_v2_patch.FuelPatchTests.test_output_aliases_cannot_destroy_input) ... ok
++test_public_diff_does_not_contain_authentication_block (test_fuel_v2_patch.FuelPatchTests.test_public_diff_does_not_contain_authentication_block) ... ok
++test_unreviewed_source_is_preserved (test_fuel_v2_patch.FuelPatchTests.test_unreviewed_source_is_preserved) ... ok
++test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
++test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
++
++----------------------------------------------------------------------
++Ran 33 tests in 3.994s
++
++OK
++Cloud fuel v2: canonical replacement/idempotence, negative correction, no cross-trip allocation, zero denominator, immutable legacy and repeated interval dedup PASS
++Offline scheduler counts: sent=10249 answered=10249 timeouts=0
++Offline source: clock=0 virtual_seconds=7200 frames=443209 records=3909 requests=10249 response_candidates=10249 latest=76 RAW_writes=0
++Offline storage: duration=7200s input_records=3909 original_JSON_bytes=2643165 physical_bytes=1631250 budget_bytes=1818624 segments=34 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 686003 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=3909 deliveries_including_retries=3917 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Offline scheduler counts: sent=10249 answered=10249 timeouts=0
++Offline source: clock=1 virtual_seconds=7200 frames=443209 records=4341 requests=10249 response_candidates=10249 latest=76 RAW_writes=0
++Offline storage: duration=7200s input_records=4341 original_JSON_bytes=2835991 physical_bytes=1803282 budget_bytes=1818624 segments=37 reboots=14 dropped_full=0
++Preserved archive evidence after ACK: 685174 bytes; remains on disk and reduces future offline space until explicit review
++Reconnect: unique_Cloud_rows=4341 deliveries_including_retries=4349 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
++Drive300: virtual_seconds=12000 nominal_km=300 measured_trip_km=299.98172160 canonical_l=59.81502658 confirmed_paired_l=25.07835307 core_reboots=3 resets=POWERON/TASK_WDT/OTA polling_boots=4 records=1207 local_mid=188 PID117/118/250_sent=1188/1188/1188 zero_global_request_stops PASS
++Drive300 outbox: offline=7200s rows=1207 unique_mock_Cloud=1207 deliveries=1208 duplicates_in_Cloud=0 peak_pending=725 peak_bytes=343633 torn_write_reboots=2 valid_pending=0 evidence_preserved=98109 PASS
++Host tests passed; ESP32 physical tests remain pending.
+diff --git a/firmware/espidf/test_evidence/v0.2.26/json-http.txt b/firmware/espidf/test_evidence/v0.2.26/json-http.txt
+new file mode 100644
+index 0000000..f62dbb7
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/json-http.txt
+@@ -0,0 +1,2 @@
++Production HTTP: chunked wire equivalence, maximum 1024-byte staging, zero serializer allocations and all client disconnect points free the tree
++Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved
+diff --git a/firmware/espidf/test_evidence/v0.2.26/live-vectors-and-oom.txt b/firmware/espidf/test_evidence/v0.2.26/live-vectors-and-oom.txt
+new file mode 100644
+index 0000000..2a591d2
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/live-vectors-and-oom.txt
+@@ -0,0 +1,7 @@
++J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
++Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
++Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS
++Critical current API: configured MID, original raw, age and explicit stale quality retained PASS
++Actual telemetry state/live JSON: native peak=5826 bytes, 172 allocation fault points, no leaks; streaming live remains allocation-free PASS
++Core live: real boot610 gear3132=12, torque20=867.2Nm/2643 derived%, fuel81=4.4505bar; load92 never torque, profile isolation, stale/NA/raw/age, zero JSON heap PASS
++OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
+diff --git a/firmware/espidf/test_evidence/v0.2.26/memory-and-compiled-features.json b/firmware/espidf/test_evidence/v0.2.26/memory-and-compiled-features.json
+new file mode 100644
+index 0000000..f926c67
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/memory-and-compiled-features.json
+@@ -0,0 +1,38 @@
++{
++  "comparison": "actual published 0.2.25 ELF versus compiled 0.2.26 ELF",
++  "old": {
++    "sections": {
++      ".iram0.text": 127966,
++      ".dram0.data": 14796,
++      ".dram0.bss": 69112
++    },
++    "static_dram_bytes": 83908,
++    "live_task_present": true,
++    "napt_implementation_present": false
++  },
++  "new": {
++    "sections": {
++      ".iram0.text": 127966,
++      ".dram0.data": 14796,
++      ".dram0.bss": 67080
++    },
++    "static_dram_bytes": 81876,
++    "live_task_present": false,
++    "napt_implementation_present": true
++  },
++  "static_dram_saved_bytes": 2032,
++  "raw_tcp_queue_bytes_removed": 8448,
++  "raw_tcp_task_stack_bytes_removed": 4096,
++  "dynamic_reservation_removed_bytes": 12544,
++  "estimated_additional_freertos_socket_overhead_saved": "not measured",
++  "field_heap_delta": "NOT_MEASURED; NAPT restored also allocates RAM",
++  "old_published_forwarding": false,
++  "old_published_napt": false,
++  "new_effective_forwarding": true,
++  "new_effective_napt": true,
++  "new_effective_raw_tcp": false,
++  "old_app_elf_sha256": "85e905c41485514e94bfc0cc099682d2c200f3e89bd8c5015baf171091342f0b",
++  "new_binary_sharing_contract": true,
++  "memory_measurement_implementation_commit": "ec5d0b7a482102b00ec05efc928f49fa1ebc0354",
++  "final_image_identity": "see release verification.json; memory sections are rechecked after frozen build"
++}
+diff --git a/firmware/espidf/test_evidence/v0.2.26/panel-browser-flow.txt b/firmware/espidf/test_evidence/v0.2.26/panel-browser-flow.txt
+new file mode 100644
+index 0000000..a9bd103
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/panel-browser-flow.txt
+@@ -0,0 +1,22 @@
++PASS public status stays read-only and renders untrusted JSON as text
++PASS wrong administrator key leaves configuration locked
++PASS authenticated login enables Core controls without persisting its key
++PASS configuration submits only dirty fields and omits emptied secrets
++PASS explicit open-network checkbox clears Wi-Fi password
++PASS existing-cloud sequence accepts the largest safe JSON integer
++PASS pairing data is authenticated and copyable
++PASS OTA rejects extension, short file, oversized file and invalid magic before upload
++PASS server role rejection is shown and local OTA sends authenticated raw binary
++PASS Core forwards Link OTA to its dedicated route and presents progress
++PASS J1708 timeout and validated source MIDs submit numeric configuration
++PASS J1708 one-shot, external evidence gate, explicit travel activation and stop
++PASS supervised field path requires parked authorization and separate indirect confirmation; external fields remain empty
++PASS compact diagnostics paginate all 17 PID statistics without the large full-state response
++PASS latched RX fault explains the stop and blocks new TX controls while manual stop stays available
++PASS RAM failure shows partial health, preserves OTA access and stop, and never enables a stale active test
++PASS persistent automatic status needs no arm command; manual tests stay separate and re-enable only saves policy
++PASS mobile page has no horizontal overflow
++PASS logout clears pairing and removes authorization from future state requests
++PASS Link profile shows pairing/GPS/modem and hides Core forwarding/capture
++PASS Link submits separate GPS credentials and pairing then clears secret inputs
++PASS configuration server errors stay visible without claiming successful save
+diff --git a/firmware/espidf/test_evidence/v0.2.26/panel-maintenance-browser.txt b/firmware/espidf/test_evidence/v0.2.26/panel-maintenance-browser.txt
+new file mode 100644
+index 0000000..84d5245
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/panel-maintenance-browser.txt
+@@ -0,0 +1 @@
++Browser maintenance PASS: single click, no phrase/checkbox/dialog, partial diagnostic works, internal nonce/identity, duplicate suppression, no auto-format on load/login, failures without retry, backup/logout/Core-Link guards; loopback fixtures only.
+diff --git a/firmware/espidf/test_evidence/v0.2.26/polling-periods.txt b/firmware/espidf/test_evidence/v0.2.26/polling-periods.txt
+new file mode 100644
+index 0000000..ec009e5
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/polling-periods.txt
+@@ -0,0 +1,5 @@
++PID94/MID128 fuel pressure: single existing scheduler, 10.000ms configuration, <=2requests/s and matching candidates PASS
++PID117/MID140,118/MID140,250/MID128: 10s targets staggered >=2s, gaps9.99..11s with silent117; stale captures rejected and all other PIDs continue PASS
++Polling supervisor: real TX stall -> controlled backoff/restart; MID suspicion is diagnostic, saved MID174 is used, desired policy stays ON PASS
++PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS
++Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS
+diff --git a/firmware/espidf/test_evidence/v0.2.26/shipped-package-tests.txt b/firmware/espidf/test_evidence/v0.2.26/shipped-package-tests.txt
+new file mode 100644
+index 0000000..3445b41
+--- /dev/null
++++ b/firmware/espidf/test_evidence/v0.2.26/shipped-package-tests.txt
+@@ -0,0 +1,18 @@
++test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
++test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
++test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
++test_binary_contract_required_even_if_sdkconfig_claims_enabled (test_build_release.ReleasePackageTests.test_binary_contract_required_even_if_sdkconfig_claims_enabled) ... ok
++test_cached_sdkconfig_cannot_disable_sharing (test_build_release.ReleasePackageTests.test_cached_sdkconfig_cannot_disable_sharing) ... ok
++test_checked_rollback_is_separate_from_install_regions (test_build_release.ReleasePackageTests.test_checked_rollback_is_separate_from_install_regions) ... ok
++test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
++test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
++test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
++test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
++test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
++test_rollback_is_checked_before_publishing (test_build_release.ReleasePackageTests.test_rollback_is_checked_before_publishing) ... ok
++test_shipped_archive_is_audited_and_different_standalone_ota_is_rejected (test_build_release.ReleasePackageTests.test_shipped_archive_is_audited_and_different_standalone_ota_is_rejected) ... ok
++
++----------------------------------------------------------------------
++Ran 13 tests in 4.568s
++
++OK
+diff --git a/firmware/espidf/tests/run_all.sh b/firmware/espidf/tests/run_all.sh
+index 2414cf5..4c8cb5c 100755
+--- a/firmware/espidf/tests/run_all.sh
++++ b/firmware/espidf/tests/run_all.sh
+@@ -39,6 +39,7 @@ sh components/tb_core/tests/run_accounting.sh
+ sh components/tb_core/tests/run_capture_integration.sh
+ sh components/tb_core/tests/run_core_gps.sh
+ sh components/tb_core/tests/run_telemetry.sh
++TELEMETRY_TEST_FILE="$PWD/components/tb_core/tests/test_live_profile.c" sh components/tb_core/tests/run_telemetry.sh
+ sh components/tb_core/tests/run_j1708_active.sh
+ sh components/tb_core/tests/run_j1708_field.sh
+ sh components/tb_core/tests/run_j1708_rx_guard.sh
+diff --git a/firmware/espidf/tests/test_build_release.py b/firmware/espidf/tests/test_build_release.py
+index 9924418..2675739 100644
+--- a/firmware/espidf/tests/test_build_release.py
++++ b/firmware/espidf/tests/test_build_release.py
+@@ -6,6 +6,7 @@ import json
+ import shutil
+ import struct
+ import subprocess
++import sys
+ import tempfile
+ import unittest
+ from unittest.mock import patch
+@@ -16,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
+ SPEC = importlib.util.spec_from_file_location("tb_package", ROOT / "tools/build_release.py")
+ package = importlib.util.module_from_spec(SPEC)
+ SPEC.loader.exec_module(package)
++sys.path.insert(0, str(ROOT / "tools"))
++import verify_shipped_core as shipped
+ 
+ 
+ class ReleasePackageTests(unittest.TestCase):
+@@ -45,10 +48,11 @@ class ReleasePackageTests(unittest.TestCase):
+             name = f"truckbox_{role}".encode()
+             app[80:80 + len(name)] = name
+             app[144:150] = b"v5.5.2"
++            if role=="core":app[288:288+len(package.CORE_NETWORK_BUILD_CONTRACT)]=package.CORE_NETWORK_BUILD_CONTRACT
+             (build / f"truckbox_{role}.bin").write_bytes(app)
+             for filename in ("bootloader.bin", "partition-table.bin", "ota_data_initial.bin"):
+                 (build / filename).write_bytes(b"UNIT-TEST FIXTURE ONLY")
+-            (build / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32c6"\n')
++            (build / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32c6"\n'+('CONFIG_TB_J1708_ONLY=y\nCONFIG_LWIP_IP_FORWARD=y\nCONFIG_LWIP_IPV4_NAPT=y\n' if role=="core" else ''))
+             (build / "project_description.json").write_text(json.dumps({
+                 "project_name": f"truckbox_{role}", "target": "esp32c6", "project_version": package.VERSION,
+                 "git_revision": "v5.5.2", "idf_path": str(self.temp / "no-idf-checkout"),
+@@ -63,6 +67,18 @@ class ReleasePackageTests(unittest.TestCase):
+     def make_package(self):
+         return package.package_release(self.project, self.output, self.archive)
+ 
++    def test_cached_sdkconfig_cannot_disable_sharing(self):
++        (self.project/"build-core/sdkconfig").write_text('# CONFIG_LWIP_IP_FORWARD is not set\n')
++        with self.assertRaisesRegex(ValueError,"Effective Core sdkconfig"):
++            self.make_package()
++        self.assertFalse(self.archive.exists())
++
++    def test_binary_contract_required_even_if_sdkconfig_claims_enabled(self):
++        p=self.project/"build-core/truckbox_core.bin";data=p.read_bytes().replace(package.CORE_NETWORK_BUILD_CONTRACT,b'X'*len(package.CORE_NETWORK_BUILD_CONTRACT));p.write_bytes(data)
++        with self.assertRaisesRegex(ValueError,"Core binary lacks compiled"):
++            self.make_package()
++        self.assertFalse(self.archive.exists())
++
+     def test_core_only_keeps_link_untouched(self):
+         shutil.rmtree(self.project / "build-link")
+         result=package.package_release(self.project,self.output,self.archive,roles=("core",))
+@@ -91,6 +107,17 @@ class ReleasePackageTests(unittest.TestCase):
+             self.assertEqual(z.read(r["file"]),image.read_bytes());self.assertEqual(r["sha256"],digest)
+             self.assertFalse(any("rollback" in f["file"] for f in m["images"]["core"]["usb_files"]))
+ 
++    def test_shipped_archive_is_audited_and_different_standalone_ota_is_rejected(self):
++        image=self.rollback_fixture();digest=hashlib.sha256(image.read_bytes()).hexdigest()
++        with patch.object(package,"ROLLBACK_CORE_SHA256",digest), patch.object(shipped,"ROLLBACK_CORE_SHA256",digest):
++            package.package_release(self.project,self.output,self.archive,roles=("core",),rollback_core=image)
++            ota=self.output/f"truckbox_core_{package.VERSION}_ota.bin"
++            result=shipped.verify(self.archive,ota)
++            self.assertTrue(result["shipped_bytes_audited"])
++            changed=bytearray(ota.read_bytes());changed[-1]^=1;ota.write_bytes(changed)
++            with self.assertRaisesRegex(AssertionError,"Standalone OTA differs"):
++                shipped.verify(self.archive,ota)
++
+     def test_archive_contains_compilable_sibling_sources_and_integrity_manifest(self):
+         result = self.make_package()
+         self.assertEqual(result["version"], package.VERSION)
+diff --git a/firmware/espidf/tests/test_core_profile_resources.py b/firmware/espidf/tests/test_core_profile_resources.py
+new file mode 100644
+index 0000000..dab3afd
+--- /dev/null
++++ b/firmware/espidf/tests/test_core_profile_resources.py
+@@ -0,0 +1,47 @@
++"""Compile the actual startup function: disabled RAW must reserve no queue/task."""
++import re
++import subprocess
++import tempfile
++import unittest
++from pathlib import Path
++
++ROOT=Path(__file__).resolve().parents[1]
++
++class CoreProfileResources(unittest.TestCase):
++    def test_raw_tcp_optional_without_disabling_capture_storage_or_bridge(self):
++        text=(ROOT/'components/tb_core/core.c').read_text()
++        start=text.index('esp_err_t tb_application_start(void)');end=text.index('\nstatic void application_json_mode',start)
++        function=text[start:end]
++        fixture='''
++#include <assert.h>
++#include <stddef.h>
++#include <string.h>
++typedef int esp_err_t;
++#define ESP_OK 0
++#define ESP_ERR_NO_MEM 1
++#define pdPASS 1
++typedef struct {char line[128];size_t length;} live_line_t;
++static struct {void *lock,*live;}s;
++static int queues,raw_tasks,bridge_tasks,stores,captures;
++static void *xSemaphoreCreateMutex(void){return (void *)1;}
++static __attribute__((unused)) void *xQueueCreate(int n,size_t bytes){assert(n==64 && bytes==sizeof(live_line_t));++queues;return (void *)1;}
++static void __attribute__((unused)) live_task(void *p){(void)p;}
++static void bridge_task(void *p){(void)p;}
++static int tb_store_init(void){++stores;return 0;}
++static int tb_capture_start(void){++captures;return 0;}
++static int xTaskCreate(void (*fn)(void *),const char *name,int stack,void *p,int priority,void *h){
++ (void)p;(void)priority;(void)h;
++ if(!strcmp(name,"tb_tcp")){assert(fn==live_task && stack==4096);++raw_tasks;}
++ else {assert(fn==bridge_task && stack==10240);++bridge_tasks;}return pdPASS;
++}
++'''+function+'''
++int main(void){assert(tb_application_start()==0);assert(stores==1 && captures==1 && bridge_tasks==1);
++ assert(queues==CONFIG_TB_RAW_TCP && raw_tasks==CONFIG_TB_RAW_TCP);return 0;}
++'''
++        with tempfile.TemporaryDirectory() as d:
++            source=Path(d)/'start.c';source.write_text(fixture)
++            for enabled in [0,1]:
++                exe=Path(d)/f'test-{enabled}'
++                result=subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',f'-DCONFIG_TB_RAW_TCP={enabled}',str(source),'-o',str(exe)],capture_output=True,text=True)
++                self.assertEqual(result.returncode,0,result.stderr)
++                subprocess.run([str(exe)],check=True,capture_output=True)
+diff --git a/firmware/espidf/tools/build_release.py b/firmware/espidf/tools/build_release.py
+index f659408..feb7639 100644
+--- a/firmware/espidf/tools/build_release.py
++++ b/firmware/espidf/tools/build_release.py
+@@ -14,7 +14,8 @@ import zipfile
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-VERSION = "0.2.25"
++VERSION = "0.2.26"
++CORE_NETWORK_BUILD_CONTRACT = b"TBX_CORE_IPV4_FORWARD_NAPT64_V1"
+ ROLLBACK_CORE_SHA256 = "5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d"
+ EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
+ REQUIRED_SOURCE = (
+@@ -138,8 +139,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
+         "branch": git_value(project_root, "branch", "--show-current"),
+         "commit": git_value(project_root, "rev-parse", "HEAD"),
+         "dirty": bool(git_value(project_root, "status", "--porcelain")),
+-        "integration_base_branch": "PR27/firmware-0.2.24",
+-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3aa"),
++        "integration_base_branch": "fix/revb1-v0225-native-polling",
++        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "233e7bceda92116748a053637b1b311ce45a0a80"),
+         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
+     }
+     result["builds"] = {}
+@@ -178,6 +179,16 @@ def validate_build(project_root: Path, role: str) -> dict:
+         if start == 0x20000 and descriptor(path) != (VERSION, f"truckbox_{role}"):
+             raise ValueError(f"Wrong application role/version: {role}")
+         checked.append((offset, path))
++    if role=="core":
++        effective=set((build/"sdkconfig").read_text().splitlines())
++        if not {"CONFIG_LWIP_IP_FORWARD=y","CONFIG_LWIP_IPV4_NAPT=y"}.issubset(effective):
++            raise ValueError("Effective Core sdkconfig disables IPv4 forwarding/NAPT; refusing package")
++        if "CONFIG_LWIP_IPV4_NAPT_PORTMAP=y" in effective:
++            raise ValueError("Core candidate must not enable inbound NAT port mapping")
++        if "CONFIG_TB_J1708_ONLY=y" in effective and "CONFIG_TB_RAW_TCP=y" in effective:
++            raise ValueError("J1708_ONLY must not reserve the unused CAN RAW TCP service")
++        if CORE_NETWORK_BUILD_CONTRACT not in (build/"truckbox_core.bin").read_bytes():
++            raise ValueError("Core binary lacks compiled internet-sharing contract; refusing package")
+     return {"description": description, "args": args, "files": checked,
+             "app": build / f"truckbox_{role}.bin", "build": build}
+ 
+diff --git a/firmware/espidf/tools/build_v020.sh b/firmware/espidf/tools/build_v020.sh
+index eef9ca5..fb5871e 100755
+--- a/firmware/espidf/tools/build_v020.sh
++++ b/firmware/espidf/tools/build_v020.sh
+@@ -20,7 +20,7 @@ if [[ "$idf_version" != 'ESP-IDF v5.5.2' ]]; then
+   exit 2
+ fi
+ for build_role in "${roles[@]}"; do
+-  project_version=0.2.25
++  project_version=0.2.26
+   idf.py -C "$project_root" -B "$project_root/build-$build_role" \
+     -DTRUCKBOX_ROLE="$build_role" -DPROJECT_VER="$project_version" build
+ done
+diff --git a/firmware/espidf/tools/verify_shipped_core.py b/firmware/espidf/tools/verify_shipped_core.py
+new file mode 100644
+index 0000000..902e3d7
+--- /dev/null
++++ b/firmware/espidf/tools/verify_shipped_core.py
+@@ -0,0 +1,65 @@
++#!/usr/bin/env python3
++"""Audit the published Core archive and OTA bytes, independently of a fresh CI build."""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import io
++import json
++from pathlib import Path
++import struct
++import zipfile
++
++from build_release import CORE_NETWORK_BUILD_CONTRACT, ROLLBACK_CORE_SHA256, VERSION
++
++
++def sha(data: bytes) -> str:
++    return hashlib.sha256(data).hexdigest()
++
++
++def verify(package: Path, ota: Path) -> dict:
++    data = ota.read_bytes()
++    assert data[0] == 0xE9 and data[3] >> 4 == 3, "Expected 8 MB ESP image"
++    assert struct.unpack_from("<H", data, 12)[0] == 13, "Expected ESP32-C6"
++    for start, end, expected in ((48, 80, VERSION), (80, 112, "truckbox_core"), (144, 176, "v5.5.2")):
++        assert data[start:end].split(b"\0", 1)[0].decode() == expected, "Wrong image identity"
++    assert len(data) < 0x300000 and CORE_NETWORK_BUILD_CONTRACT in data, "Compiled sharing contract absent"
++    with zipfile.ZipFile(package) as z:
++        assert z.testzip() is None, "ZIP CRC failure"
++        for line in z.read("SHA256SUMS.txt").decode().splitlines():
++            digest, name = line.split("  ", 1)
++            assert sha(z.read(name)) == digest, f"Archive checksum mismatch: {name}"
++        manifest = json.loads(z.read("manifest.json"))
++        assert manifest["version"] == VERSION and set(manifest["images"]) == {"core"}
++        assert manifest["preserves_nvs_and_storage"] and not manifest["automatic_flash"]
++        image = manifest["images"]["core"]
++        assert z.read(image["ota_file"]) == data, "Standalone OTA differs from packaged OTA"
++        assert image["ota_sha256"] == sha(data)
++        effective = set(z.read("build_metadata/core/sdkconfig").decode().splitlines())
++        assert {"CONFIG_TB_J1708_ONLY=y", "CONFIG_LWIP_IP_FORWARD=y", "CONFIG_LWIP_IPV4_NAPT=y"} <= effective
++        assert "CONFIG_TB_RAW_TCP=y" not in effective and "CONFIG_LWIP_IPV4_NAPT_PORTMAP=y" not in effective
++        assert sha(z.read("partitions.csv")) == "5e25baf13060f871fb6e9103f6cec4000a6c0e36bdf4d554fa037a26f3f91832"
++        rollback = manifest["rollback"]["core"]
++        assert sha(z.read(rollback["file"])) == ROLLBACK_CORE_SHA256 == rollback["sha256"]
++        provenance = json.loads(z.read("SOURCE_PROVENANCE.json"))
++        assert not provenance["development"]["dirty"], "Source tree was dirty when packaged"
++        source = manifest["source"]
++        assert sha(z.read(source["file"])) == source["sha256"]
++        with zipfile.ZipFile(io.BytesIO(z.read(source["file"]))) as src:
++            assert json.loads(src.read("firmware/espidf/SOURCE_PROVENANCE.json")) == provenance
++            assert f'set(PROJECT_VER "{VERSION}" ' in src.read("firmware/espidf/CMakeLists.txt").decode()
++            assert b"/api/live" in src.read("firmware/espidf/components/tb_web/tb_web.c")
++            assert "multimedia/src/main/java/br/com/truckbox/multimedia/LiveRepository.kt" in src.namelist()
++        return {"version": VERSION, "ota_bytes": len(data), "ota_sha256": sha(data),
++                "package_sha256": sha(package.read_bytes()), "source_commit": provenance["development"]["commit"],
++                "effective_forwarding_napt": True, "raw_tcp_disabled": True,
++                "partition_table_preserved": True, "rollback_verified": True,
++                "shipped_bytes_audited": True, "physical_internet_test": "PENDING"}
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("package", type=Path)
++    parser.add_argument("ota", type=Path)
++    args = parser.parse_args()
++    print(json.dumps(verify(args.package, args.ota), ensure_ascii=False, indent=2))
+diff --git a/firmware/j1708_17pid/src/tbx_j1708_policy.h b/firmware/j1708_17pid/src/tbx_j1708_policy.h
+index b13917f..84a60ee 100644
+--- a/firmware/j1708_17pid/src/tbx_j1708_policy.h
++++ b/firmware/j1708_17pid/src/tbx_j1708_policy.h
+@@ -34,7 +34,7 @@ static inline uint32_t tbx_j1708_production_period(uint16_t pid,bool launch)
+ static inline const tbx_j1708_policy_t *tbx_j1708_candidate_policy(void)
+ {
+     static const tbx_j1708_policy_t p[10]={
+-        {93,128,60000},{94,128,30000},{107,128,300000},{153,128,30000},
++        {93,128,60000},{94,128,10000},{107,128,300000},{153,128,30000},
+         {154,128,300000},{161,130,10000},{182,128,300000},{188,128,900000},
+         {244,128,300000},{439,128,300000}
+     };
+diff --git a/firmware/j1708_17pid/src/tbx_j1708_requests.c b/firmware/j1708_17pid/src/tbx_j1708_requests.c
+index f69d918..f3638de 100644
+--- a/firmware/j1708_17pid/src/tbx_j1708_requests.c
++++ b/firmware/j1708_17pid/src/tbx_j1708_requests.c
+@@ -190,7 +190,7 @@ void tbx_j1708_request_expansion(tbx_j1708_request_scheduler_t *s,bool enabled,u
+ {
+     for(unsigned i=17;i<TBX_J1708_REQUEST_CAPACITY;i++){
+         tbx_j1708_request_stat_t *p=&s->pids[i];p->enabled=enabled;
+-        p->priority=(p->pid==94 || p->pid==153 || p->pid==161)?1:2;
++        p->priority=p->pid==94?0:(p->pid==153 || p->pid==161)?1:2;
+         if(initial){p->next_due_ms=now+15000+(i-17)*1500;p->retries=0;}
+     }
+ }
+diff --git a/multimedia/build.gradle.kts b/multimedia/build.gradle.kts
+index 4d45c62..03758a3 100644
+--- a/multimedia/build.gradle.kts
++++ b/multimedia/build.gradle.kts
+@@ -11,12 +11,13 @@ android {
+         applicationId = "br.com.truckbox.multimedia"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 1
+-        versionName = "0.1.0-multimedia"
++        versionCode = 4
++        versionName = "0.3.1-core-live"
+     }
+ 
+     buildFeatures {
+         compose = true
++        buildConfig = true
+     }
+ 
+     compileOptions {
+@@ -26,6 +27,8 @@ android {
+ }
+ 
+ dependencies {
++    testImplementation("junit:junit:4.13.2")
++    testImplementation("org.json:json:20240303")
+     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
+     implementation(composeBom)
+ 
+diff --git a/multimedia/src/main/java/br/com/truckbox/multimedia/EcuFault.kt b/multimedia/src/main/java/br/com/truckbox/multimedia/EcuFault.kt
+new file mode 100644
+index 0000000..b61b525
+--- /dev/null
++++ b/multimedia/src/main/java/br/com/truckbox/multimedia/EcuFault.kt
+@@ -0,0 +1,61 @@
++package br.com.truckbox.multimedia
++
++import org.json.JSONObject
++
++/** Display ECU reports; absence from a later page is never a resolution. */
++internal data class EcuFault(
++    val mid: Int,
++    val identifierType: String,
++    val identifier: Int,
++    val fmi: Int,
++    val state: String,
++    val occurrences: Int?,
++    val raw: String,
++    val lastBoot: Long?,
++    val lastUptimeMs: Long?,
++    val lastUnixMs: Long?,
++    val page2: Boolean,
++) {
++    val key: String get() = "$mid:$identifierType:$identifier:$fmi"
++    fun technicalCode(): String = "MID $mid • $identifierType $identifier${if(page2) " (página 2)" else ""} • FMI $fmi"
++    fun stateText(): String = when (state) { "ACTIVE" -> "ATIVA"; "INACTIVE" -> "INATIVA"; else -> "ESTADO DESCONHECIDO" }
++    fun candidateDescription(): String? = when {
++        mid == 128 && identifierType == "SID" && identifier == 18 && fmi == 5 ->
++            "Correspondência candidata: circuito do sensor de água no combustível, corrente baixa/aberto. Não confirma água no diesel."
++        mid == 136 && identifierType == "SID" && identifier == 2 && fmi == 5 ->
++            "Correspondência candidata: circuito do sensor da roda dianteira direita; depende da configuração ABS."
++        mid == 130 && identifierType == "PID" && identifier == 37 && fmi == 1 ->
++            "Pressão de ar da transmissão abaixo da faixa operacional; descrição em validação."
++        else -> null
++    }
++}
++
++internal fun parseEcuFaults(page: JSONObject): List<EcuFault> {
++    val rows = page.optJSONArray("faults") ?: return emptyList()
++    fun JSONObject.optionalLong(name: String): Long? = if (has(name) && !isNull(name)) optLong(name) else null
++    return (0 until rows.length()).mapNotNull { i ->
++        val row = rows.optJSONObject(i) ?: return@mapNotNull null
++        val mid = row.optInt("mid", -1)
++        val number = row.optInt("identifier", -1)
++        val fmi = row.optInt("fmi", -1)
++        val type = row.optString("identifier_type", "")
++        if (mid !in 128..255 || number !in 0..511 || fmi !in 0..15 || type !in setOf("PID", "SID", "PPID", "PSID")) return@mapNotNull null
++        val last = row.optJSONArray("last")
++        EcuFault(mid, type, number, fmi, row.optString("state", "UNKNOWN"),
++            row.optionalLong("occurrences")?.toInt(), row.optString("parameter_hex", ""),
++            last?.takeIf { !it.isNull(0) }?.optLong(0), last?.takeIf { !it.isNull(1) }?.optLong(1),
++            last?.takeIf { !it.isNull(2) }?.optLong(2), row.optBoolean("page2", false))
++    }
++}
++
++internal class EcuFaultCache {
++    private var uid: String? = null
++    private val entries = linkedMapOf<String, EcuFault>()
++    fun update(deviceUid: String, faults: List<EcuFault>): List<EcuFault> {
++        if (uid != deviceUid) { entries.clear(); uid = deviceUid }
++        faults.forEach { entries[it.key] = it }
++        while (entries.size > 32) entries.remove(entries.keys.first())
++        return entries.values.toList()
++    }
++    fun snapshot(): List<EcuFault> = entries.values.toList()
++}
+diff --git a/multimedia/src/main/java/br/com/truckbox/multimedia/LiveRepository.kt b/multimedia/src/main/java/br/com/truckbox/multimedia/LiveRepository.kt
+new file mode 100644
+index 0000000..74c178d
+--- /dev/null
++++ b/multimedia/src/main/java/br/com/truckbox/multimedia/LiveRepository.kt
+@@ -0,0 +1,124 @@
++package br.com.truckbox.multimedia
++
++import org.json.JSONObject
++import java.net.HttpURLConnection
++import java.net.URL
++import java.util.concurrent.CompletableFuture
++import java.util.concurrent.Executor
++import java.util.concurrent.ForkJoinPool
++
++internal data class CloudTripSummary(
++    val distance: Double?, val fuel: Double?, val average: Double?,
++    val origin: String?, val destination: String?, val weight: Double?, val mode: String?,
++)
++
++internal fun cloudTripSummary(j: JSONObject): CloudTripSummary? {
++    val trip = j.optJSONObject("trip")
++    val mode = j.optJSONObject("operation")?.optString("mode")
++    if (trip?.optString("status") != "ACTIVE" && mode != "EMPTY_MODE") return null
++    val data = j.optJSONObject("latest")?.optJSONObject("data") ?: j
++    fun number(key: String): Double? {
++        val source = if (j.has(key) && !j.isNull(key)) j else data
++        return if (!source.has(key) || source.isNull(key)) null else source.optDouble(key).takeIf { it.isFinite() && it >= 0 }
++    }
++    return CloudTripSummary(number("trip_distance_km"),number("trip_fuel_l"),number("trip_average_kml"),
++        trip?.optString("origin")?.takeIf { it.isNotBlank() },trip?.optString("destination")?.takeIf { it.isNotBlank() },
++        trip?.takeIf { !it.isNull("weight_t") }?.optDouble("weight_t")?.takeIf { it.isFinite() },mode)
++}
++
++private fun requestLiveJson(url: String, connectTimeout: Int, readTimeout: Int): JSONObject? {
++    val c=(URL(url).openConnection() as HttpURLConnection).apply {
++        requestMethod="GET";this.connectTimeout=connectTimeout;this.readTimeout=readTimeout
++        useCaches=false;setRequestProperty("Accept","application/json");setRequestProperty("Connection","close")
++    }
++    return try {
++        if(c.responseCode !in 200..299)null else c.inputStream.bufferedReader().use { JSONObject(it.readText()) }
++    } finally { c.disconnect() }
++}
++
++/** Local readings and Cloud trip context are independent; background requests
++ * never block local instruments or send commands to the vehicle. */
++internal class LiveRepository(
++    private val configuredHost: String,
++    private val parse: (JSONObject,String)->LiveState,
++    private val request: (String,Int,Int)->JSONObject? = ::requestLiveJson,
++    private val executor: Executor = ForkJoinPool.commonPool(),
++    private val clock: ()->Long = System::currentTimeMillis,
++) {
++    private val cloudUrl="https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-dashboard-data?key=tbx-public-ro-20260828-7f2c91"
++    private var cloudFuture: CompletableFuture<JSONObject?>? = null
++    private var cloud: JSONObject? = null
++    private var cloudAttempt: Long? = null
++    private var cloudReceived=0L
++    private var diagnosticFuture: CompletableFuture<Pair<String,List<EcuFault>>?>? = null
++    private var diagnosticAttempt: Long? = null
++    private var diagnosticsAvailable=false
++    private val faults=EcuFaultCache()
++    private var currentUid: String? = null
++    private var coreBase: String? = null
++
++    fun fetch(): LiveState? {
++        val now=clock()
++        cloudFuture?.takeIf { it.isDone }?.let { future ->
++            cloud=try { future.getNow(null) } catch (_:Exception) { null };cloudReceived=now;cloudFuture=null
++        }
++        diagnosticFuture?.takeIf { it.isDone }?.let { future ->
++            val batch=try { future.getNow(null) } catch (_:Exception) { null }
++            diagnosticsAvailable=batch!=null && batch.first==currentUid
++            if(diagnosticsAvailable)faults.update(batch!!.first,batch.second)
++            diagnosticFuture=null
++        }
++        if(cloudFuture==null && (cloudAttempt==null || now-cloudAttempt!!>=10000)) {
++            cloudAttempt=now;cloudFuture=CompletableFuture.supplyAsync({try { request(cloudUrl,2500,3500)?.takeIf { it.optBoolean("ok",true) } } catch (_:Exception) { null }},executor)
++        }
++        val local=fetchCore()
++        if(local!=null) {
++            if(diagnosticFuture==null && (diagnosticAttempt==null || now-diagnosticAttempt!!>=30000)) {
++                diagnosticAttempt=now;val base=coreBase!!;val uid=currentUid!!
++                diagnosticFuture=CompletableFuture.supplyAsync({fetchDiagnostics(base,uid)},executor)
++            }
++            val recent=cloud?.takeIf { now-cloudReceived<=30000 }
++            val trip=recent?.let(::cloudTripSummary)
++            val cloudState=recent?.takeIf { it.optBoolean("online",true) }?.let { parse(it,"CLOUD") }
++            val cloudPosition=cloudState?.takeIf { it.latitude!=null && it.longitude!=null && (it.latitude!=0.0 || it.longitude!=0.0) }
++            return local.copy(tripDistanceKm=trip?.distance,tripFuelLiters=trip?.fuel,tripAverageKml=trip?.average,
++                origin=trip?.origin,destination=trip?.destination,tripWeightT=trip?.weight,operationMode=trip?.mode,
++                latitude=local.latitude?:cloudPosition?.latitude,longitude=local.longitude?:cloudPosition?.longitude,
++                tripCloudAvailable=recent!=null,ecuFaults=faults.snapshot(),diagnosticsAvailable=diagnosticsAvailable)
++        }
++        return cloud?.takeIf { now-cloudReceived<=30000 }?.let { j ->
++            val trip=cloudTripSummary(j)
++            parse(j,"CLOUD").copy(tripDistanceKm=trip?.distance,tripFuelLiters=trip?.fuel,tripAverageKml=trip?.average,
++                origin=trip?.origin,destination=trip?.destination,tripWeightT=trip?.weight,operationMode=trip?.mode,
++                tripCloudAvailable=true,ecuFaults=faults.snapshot(),diagnosticsAvailable=false)
++        }
++    }
++    private fun fetchCore(): LiveState? {
++        val bases=linkedSetOf<String>()
++        fun add(host:String) { if(host.isNotBlank())bases+=if(host.startsWith("http://") || host.startsWith("https://"))host.trimEnd('/') else "http://${host.trimEnd('/')}" }
++        coreBase?.let(::add);add(configuredHost);add("192.168.4.1");add("truckbox.local")
++        for(base in bases)try {
++            for(path in listOf("/api/live","/api/state?compact=1")) {
++                val j=request(base+path,1200,1800)?:continue
++                if(!j.optBoolean("ok",true))continue
++                if(j.optBoolean("diagnostic_partial") && !j.has("live_contract"))continue
++                val uid=j.optString("device_uid").takeIf { it.isNotBlank() }?:continue
++                if(uid!=currentUid) { currentUid=uid;faults.update(uid,emptyList());diagnosticAttempt=null;diagnosticsAvailable=false }
++                coreBase=base;return parse(j,"CORE")
++            }
++        } catch (_:Exception) { /* Try the next existing host, never issue a control request. */ }
++        return null
++    }
++    private fun fetchDiagnostics(base:String,uid:String): Pair<String,List<EcuFault>>? { return try {
++        var offset=0;val result=mutableListOf<EcuFault>()
++        for(page in 0 until 4) {
++            val j=request("$base/api/diagnostics?offset=$offset",1200,1800)?:return null
++            if(!j.optBoolean("ok") || j.optString("device_uid")!=uid)return null
++            result+=parseEcuFaults(j);val next=j.optInt("next_offset",32)
++            if(next>=32)break
++            if(next<=offset)return null
++            offset=next
++        }
++        uid to result
++    } catch (_:Exception) { null } }
++}
+diff --git a/multimedia/src/main/java/br/com/truckbox/multimedia/MainActivity.kt b/multimedia/src/main/java/br/com/truckbox/multimedia/MainActivity.kt
+index 3b0efb8..6bc14be 100644
+--- a/multimedia/src/main/java/br/com/truckbox/multimedia/MainActivity.kt
++++ b/multimedia/src/main/java/br/com/truckbox/multimedia/MainActivity.kt
+@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.width
+-import androidx.compose.foundation.layout.weight
+ import androidx.compose.foundation.pager.HorizontalPager
+ import androidx.compose.foundation.pager.rememberPagerState
+ import androidx.compose.foundation.rememberScrollState
+@@ -94,7 +93,7 @@ private enum class Page(val title: String) {
+     SETTINGS("Config")
+ }
+ 
+-private data class LiveState(
++internal data class LiveState(
+     val online: Boolean = false,
+     val source: String = "OFFLINE",
+     val updatedAtMs: Long = 0L,
+@@ -152,6 +151,10 @@ private data class LiveState(
+     val latitude: Double? = null,
+     val longitude: Double? = null,
+     val error: String? = null,
++    val ecuFaults: List<EcuFault> = emptyList(),
++    val diagnosticsAvailable: Boolean = false,
++    val tripCloudAvailable: Boolean = false,
++    val operationMode: String? = null,
+ )
+ 
+ @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@@ -166,7 +169,7 @@ private fun TruckBoxMultimediaApp() {
+     val scope = rememberCoroutineScope()
+ 
+     LaunchedEffect(coreHost) {
+-        val repository = LiveRepository(coreHost)
++        val repository = LiveRepository(coreHost, ::parseLiveState)
+         while (isActive) {
+             val fresh = withContext(Dispatchers.IO) { repository.fetch() }
+             live = if (fresh != null) fresh else live.copy(online = false, source = "OFFLINE", error = "Sem resposta do Core/Cloud")
+@@ -413,10 +416,12 @@ private fun SensorsPage(s: LiveState) {
+         Text("Sensores", fontSize = 25.sp, fontWeight = FontWeight.Bold)
+         Text("Todos os sinais mapeados pelo Core V0.6.2. Quando a ECU publica FF/indisponível, mostramos —.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+ 
++        Text("Torque J1708 percentual: derivado do PID 93 e referência histórica de 2.643 Nm; EM VALIDAÇÃO.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
++
+         val sensors = listOf(
+             Triple("Rotação", s.rpm, "rpm"),
+             Triple("Pedal acelerador", s.acceleratorPct, "%"),
+-            Triple("Torque", s.torquePct, "%"),
++            Triple("Torque derivado", s.torquePct, "%"),
+             Triple("Torque motor", s.torqueNm, "Nm"),
+             Triple("Potência", s.powerKw, "kW"),
+             Triple("Torque fricção", s.nominalFrictionTorquePct, "%"),
+@@ -491,6 +496,18 @@ private fun DiagnosticsPage(s: LiveState) {
+         }
+         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF151A20))) {
+             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Text("Falhas da ECU — J1587 PID 194", fontWeight = FontWeight.Bold)
++                if (!s.diagnosticsAvailable) Text("Diagnóstico sem atualização; códigos já observados são mantidos.")
++                if (s.ecuFaults.isEmpty()) Text("Nenhum código armazenado pelo Core. Isso não comprova ausência de falhas na ECU.")
++                s.ecuFaults.forEach { fault ->
++                    Text("${fault.technicalCode()} • último estado: ${fault.stateText()}", fontWeight = FontWeight.Bold)
++                    Text("Ocorrências: ${fault.occurrences?.toString() ?: "não informadas"} • RAW ${fault.raw}")
++                    if(fault.lastUnixMs!=null) Text("Última observação: ${java.time.Instant.ofEpochMilli(fault.lastUnixMs).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm:ss"))}",fontSize=12.sp)
++                    else Text("Última observação: boot ${fault.lastBoot ?: "?"}, uptime ${fault.lastUptimeMs ?: "?"} ms; sem horário civil.",fontSize=12.sp)
++                    fault.candidateDescription()?.let { Text(it, fontSize = 12.sp) }
++                    if (fault.candidateDescription() == null) Text("Descrição específica desconhecida; sem gravidade atribuída automaticamente.", fontSize = 12.sp)
++                }
++                HorizontalDivider()
+                 Text("Alertas instantâneos", fontWeight = FontWeight.Bold)
+                 if (alerts.isEmpty()) Text("Nenhum alerta pelos limites operacionais atuais.", color = MaterialTheme.colorScheme.primary)
+                 else alerts.forEach { Text("• $it", color = MaterialTheme.colorScheme.error) }
+@@ -619,61 +636,13 @@ private fun instantConsumption(s: LiveState): Double? {
+     return if (speed > 1.0 && rate > 0.01) speed / rate else null
+ }
+ 
+-private class LiveRepository(private val configuredHost: String) {
+-    private val cloudUrl = "https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-dashboard-data?key=tbx-public-ro-20260828-7f2c91"
+-
+-    fun fetch(): LiveState? {
+-        fetchCore()?.let { return it }
+-        return fetchCloud()
+-    }
+-
+-    private fun fetchCore(): LiveState? {
+-        val bases = linkedSetOf<String>()
+-        fun add(raw: String) {
+-            if (raw.isBlank()) return
+-            bases += if (raw.startsWith("http://") || raw.startsWith("https://")) raw.trimEnd('/') else "http://${raw.trimEnd('/')}"
+-        }
+-        add(configuredHost)
+-        add("192.168.4.1")
+-        add("truckbox.local")
+-        for (base in bases) {
+-            try {
+-                val json = getJson("$base/api/state?nocache=${System.currentTimeMillis()}", 1200, 1800) ?: continue
+-                return parse(json, "CORE")
+-            } catch (_: Throwable) { }
+-        }
+-        return null
+-    }
+-
+-    private fun fetchCloud(): LiveState? = try {
+-        getJson(cloudUrl, 2500, 3500)?.let { parse(it, "CLOUD") }
+-    } catch (_: Throwable) { null }
+-
+-    private fun getJson(url: String, connectTimeout: Int, readTimeout: Int): JSONObject? {
+-        val c = (URL(url).openConnection() as HttpURLConnection).apply {
+-            requestMethod = "GET"
+-            this.connectTimeout = connectTimeout
+-            this.readTimeout = readTimeout
+-            useCaches = false
+-            setRequestProperty("Accept", "application/json")
+-            setRequestProperty("Connection", "close")
+-        }
+-        return try {
+-            if (c.responseCode !in 200..299) return null
+-            val text = c.inputStream.bufferedReader().use { it.readText() }
+-            if (text.isBlank()) null else JSONObject(text)
+-        } finally {
+-            c.disconnect()
+-        }
+-    }
+-
+-    private fun parse(j: JSONObject, source: String): LiveState {
++internal fun parseLiveState(j: JSONObject, source: String): LiveState {
+         val tripDistance = j.number("tripDistanceKm", "trip_distance_km", "distanceKm", "distance_km", "live_distance_km", "sessionDistanceKm")
+-        val tripFuel = j.number("tripFuelLiters", "trip_fuel_liters", "fuelLiters", "fuel_liters", "live_fuel_liters", "sessionLiters")
++        val tripFuel = j.number("tripFuelLiters", "trip_fuel_l", "trip_fuel_liters", "fuelLiters", "fuel_liters", "live_fuel_liters", "sessionLiters")
+         val avg = j.number("tripAverageKml", "trip_average_kml", "averageKml", "average_kml", "avgKml", "sessionAverageKml")
+             ?: if (tripDistance != null && tripFuel != null && tripFuel > 0.01) tripDistance / tripFuel else null
+         return LiveState(
+-            online = true,
++            online = j.optBoolean("online",true),
+             source = source,
+             updatedAtMs = System.currentTimeMillis(),
+             speedKmh = j.number("speedKph", "speedKmh", "speed_kmh", "vehicleSpeedKph"),
+@@ -731,11 +700,10 @@ private class LiveRepository(private val configuredHost: String) {
+             longitude = j.number("lon", "longitude", "gps_lon"),
+         )
+     }
+-}
+ 
+-private fun JSONObject.findValue(keys: Set<String>, depth: Int = 0): Any? {
++private fun JSONObject.findValue(wantedKeys: Set<String>, depth: Int = 0): Any? {
+     if (depth > 7) return null
+-    val names = keys.map { it.lowercase(Locale.US) }.toSet()
++    val names = wantedKeys.map { it.lowercase(Locale.US) }.toSet()
+     val iter = keys()
+     while (iter.hasNext()) {
+         val key = iter.next()
+@@ -745,11 +713,11 @@ private fun JSONObject.findValue(keys: Set<String>, depth: Int = 0): Any? {
+     while (nested.hasNext()) {
+         val key = nested.next()
+         when (val v = opt(key)) {
+-            is JSONObject -> v.findValue(keys, depth + 1)?.let { return it }
++            is JSONObject -> v.findValue(wantedKeys, depth + 1)?.let { return it }
+             is JSONArray -> {
+                 for (i in 0 until minOf(v.length(), 20)) {
+                     val item = v.opt(i)
+-                    if (item is JSONObject) item.findValue(keys, depth + 1)?.let { return it }
++                    if (item is JSONObject) item.findValue(wantedKeys, depth + 1)?.let { return it }
+                 }
+             }
+         }
+diff --git a/multimedia/src/test/java/br/com/truckbox/multimedia/EcuFaultTest.kt b/multimedia/src/test/java/br/com/truckbox/multimedia/EcuFaultTest.kt
+new file mode 100644
+index 0000000..6d14f76
+--- /dev/null
++++ b/multimedia/src/test/java/br/com/truckbox/multimedia/EcuFaultTest.kt
+@@ -0,0 +1,31 @@
++package br.com.truckbox.multimedia
++
++import org.json.JSONObject
++import org.junit.Assert.*
++import org.junit.Test
++
++class EcuFaultTest {
++    private fun page(mid: Int, type: String, number: Int, fmi: Int, state: String, count: String) = JSONObject(
++        """{"faults":[{"mid":$mid,"identifier_type":"$type","identifier":$number,"fmi":$fmi,"state":"$state","occurrences":$count,"parameter_hex":"12B501","last":[610,1000,null]}]}""")
++    @Test fun engineWaterCircuitIsNotWaterDetection() {
++        val f = parseEcuFaults(page(128,"SID",18,5,"ACTIVE","1")).single()
++        assertEquals(1,f.occurrences);assertEquals("ATIVA",f.stateText())
++        assertTrue(f.candidateDescription()!!.contains("Não confirma água"));assertNull(f.lastUnixMs)
++    }
++    @Test fun inactiveZeroAndMissingCounterStayDistinct() {
++        assertEquals(0,parseEcuFaults(page(130,"PID",37,1,"INACTIVE","0")).single().occurrences)
++        assertNull(parseEcuFaults(page(136,"SID",2,5,"ACTIVE","null")).single().occurrences)
++    }
++    @Test fun modulesAndUnknownExtendedCodesArePreserved() {
++        val f = parseEcuFaults(page(223,"PSID",439,15,"UNKNOWN","null")).single()
++        assertNull(f.candidateDescription());assertTrue(f.technicalCode().contains("439"))
++        assertTrue(parseEcuFaults(page(10,"PID",37,1,"ACTIVE","1")).isEmpty())
++    }
++    @Test fun absenceDoesNotResolveAndTransitionsDoNotDuplicate() {
++        val c=EcuFaultCache();val active=parseEcuFaults(page(130,"PID",37,1,"ACTIVE","1"))
++        c.update("core-A",active);assertEquals("ACTIVE",c.update("core-A",emptyList()).single().state)
++        val inactive=parseEcuFaults(page(130,"PID",37,1,"INACTIVE","0"))
++        assertEquals("INACTIVE",c.update("core-A",inactive).single().state)
++        assertEquals(1,c.snapshot().size);assertTrue(c.update("core-B",emptyList()).isEmpty())
++    }
++}
+diff --git a/multimedia/src/test/java/br/com/truckbox/multimedia/LiveRepositoryTest.kt b/multimedia/src/test/java/br/com/truckbox/multimedia/LiveRepositoryTest.kt
+new file mode 100644
+index 0000000..3572f64
+--- /dev/null
++++ b/multimedia/src/test/java/br/com/truckbox/multimedia/LiveRepositoryTest.kt
+@@ -0,0 +1,48 @@
++package br.com.truckbox.multimedia
++
++import org.json.JSONObject
++import org.junit.Assert.*
++import org.junit.Test
++import java.util.concurrent.Executor
++
++class LiveRepositoryTest {
++    private val immediate=Executor { it.run() }
++    private fun local()=JSONObject("""{"ok":true,"diagnostic_partial":true,"live_contract":"TBX_CORE_LIVE_V1","device_uid":"core-A","rpm":1500,"gear":12,"actualTorquePct":32.811199,"torqueNm":867.2,"fuel_pressure_bar":4.4505}""")
++    private fun cloud()=JSONObject("""{"ok":true,"rpm":1000,"gear":4,"trip_distance_km":20,"trip_fuel_l":4,"trip_average_kml":5,"trip":{"status":"ACTIVE","origin":"A","destination":"B"},"operation":{"mode":"LOADED"}}""")
++    private fun diagnostics()=JSONObject("""{"ok":true,"device_uid":"core-A","next_offset":32,"faults":[{"mid":130,"identifier_type":"PID","identifier":37,"fmi":1,"state":"INACTIVE","occurrences":0,"parameter_hex":"25E100","last":[610,1000,null]}]}""")
++    @Test fun coreLiveAndTripCloudAreMergedWithoutReplacingSensors() {
++        var now=0L;var cloudCalls=0;var diagnosticCalls=0
++        val repo=LiveRepository("192.168.4.1",::parseLiveState,{u,_,_->
++            when {u.contains("/api/live")->local();u.contains("/api/diagnostics")-> {diagnosticCalls++;diagnostics()};else->{cloudCalls++;cloud()} }
++        },immediate,{now})
++        repo.fetch();now=1000;val s=repo.fetch()!!
++        assertEquals(12,s.currentGear);assertEquals(1500.0,s.rpm!!,.0001)
++        assertEquals(32.811199,s.torquePct!!,.000001);assertEquals(4.4505,s.fuelPressureBar!!,.000001)
++        assertEquals(20.0,s.tripDistanceKm!!,.0001);assertEquals(4.0,s.tripFuelLiters!!,.0001)
++        assertEquals(0,s.ecuFaults.single().occurrences);assertTrue(s.diagnosticsAvailable)
++        repeat(4){now+=1000;repo.fetch()};assertEquals(1,cloudCalls);assertEquals(1,diagnosticCalls)
++    }
++    @Test fun noInternetDoesNotBlockLocalReadingsOrEraseFaultHistory() {
++        var now=0L;var online=true
++        val repo=LiveRepository("192.168.4.1",::parseLiveState,{u,_,_->
++            when {u.contains("/api/live")->local();u.contains("/api/diagnostics")->if(online)diagnostics() else null;else->if(online)cloud() else null}
++        },immediate,{now})
++        repo.fetch();now=1;repo.fetch();online=false;now=31000;repo.fetch();now=31001
++        val s=repo.fetch()!!;assertTrue(s.online);assertEquals(12,s.currentGear)
++        assertNull(s.tripDistanceKm);assertFalse(s.tripCloudAvailable);assertFalse(s.diagnosticsAvailable)
++        assertEquals(1,s.ecuFaults.size)
++    }
++    @Test fun oldDiagnosticOnlyStateIsNotAcceptedAsAnInstrumentPayload() {
++        var now=0L
++        val repo=LiveRepository("192.168.4.1",::parseLiveState,{u,_,_->
++            when {u.contains("/api/live")->null;u.contains("/api/state")->JSONObject("""{"ok":true,"diagnostic_partial":true,"device_uid":"core-A","heap_free":40144}""");else->cloud()}
++        },immediate,{now})
++        assertNull(repo.fetch());now=1;assertEquals("CLOUD",repo.fetch()!!.source)
++    }
++    @Test fun tripParserNeverUsesLifetimeCountersOrOldHistory() {
++        val j=JSONObject("""{"fuelLitersTest":9000,"distanceTestKm":1000,"history":[{"trip_fuel_l":99,"trip_distance_km":999}]}""")
++        assertNull(cloudTripSummary(j));j.put("trip",JSONObject("""{"status":"ACTIVE"}"""))
++        val trip=cloudTripSummary(j)!!;assertNull(trip.fuel);assertNull(trip.distance);assertNull(trip.average)
++        j.put("trip_fuel_l",0);j.put("trip_distance_km",0);assertEquals(0.0,cloudTripSummary(j)!!.fuel!!,.0)
++    }
++}
+diff --git a/scripts/patch_multimedia_fan.py b/scripts/patch_multimedia_fan.py
+index 4df48c3..2832ab4 100644
+--- a/scripts/patch_multimedia_fan.py
++++ b/scripts/patch_multimedia_fan.py
+@@ -12,7 +12,7 @@ def replace_once(old: str, new: str, label: str):
+ 
+ replace_once(
+     'Text("Multimídia • v0.2", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)',
+-    'Text("Multimídia • v0.3", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)',
++    'Text("Multimídia • ${br.com.truckbox.multimedia.BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)',
+     'version',
+ )
+ 
