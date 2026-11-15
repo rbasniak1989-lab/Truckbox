@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="br.com.truckbox.app.diagnostics.DiagnosticMergeTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-15T11:47:56.339Z" hostname="ip-10-0-137-233" time="0.026">
+  <properties/>
+  <testcase name="olderPagesDoNotReviveFaultsAndModulesStaySeparate" classname="br.com.truckbox.app.diagnostics.DiagnosticMergeTest" time="0.023"/>
+  <testcase name="counterPreferenceNeedsSameTripFreshDataAndValidDelta" classname="br.com.truckbox.app.diagnostics.DiagnosticMergeTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

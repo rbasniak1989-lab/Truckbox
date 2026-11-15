@@ -1,0 +1,38 @@
+{
+  "comparison": "actual published 0.2.25 ELF versus compiled 0.2.26 ELF",
+  "old": {
+    "sections": {
+      ".iram0.text": 127966,
+      ".dram0.data": 14796,
+      ".dram0.bss": 69112
+    },
+    "static_dram_bytes": 83908,
+    "live_task_present": true,
+    "napt_implementation_present": false
+  },
+  "new": {
+    "sections": {
+      ".iram0.text": 127966,
+      ".dram0.data": 14796,
+      ".dram0.bss": 67080
+    },
+    "static_dram_bytes": 81876,
+    "live_task_present": false,
+    "napt_implementation_present": true
+  },
+  "static_dram_saved_bytes": 2032,
+  "raw_tcp_queue_bytes_removed": 8448,
+  "raw_tcp_task_stack_bytes_removed": 4096,
+  "dynamic_reservation_removed_bytes": 12544,
+  "estimated_additional_freertos_socket_overhead_saved": "not measured",
+  "field_heap_delta": "NOT_MEASURED; NAPT restored also allocates RAM",
+  "old_published_forwarding": false,
+  "old_published_napt": false,
+  "new_effective_forwarding": true,
+  "new_effective_napt": true,
+  "new_effective_raw_tcp": false,
+  "old_app_elf_sha256": "85e905c41485514e94bfc0cc099682d2c200f3e89bd8c5015baf171091342f0b",
+  "new_binary_sharing_contract": true,
+  "memory_measurement_implementation_commit": "ec5d0b7a482102b00ec05efc928f49fa1ebc0354",
+  "final_image_identity": "see release verification.json; memory sections are rechecked after frozen build"
+}

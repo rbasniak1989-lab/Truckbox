@@ -43,7 +43,8 @@ typedef struct { esp_netif_ip_info_t info; } esp_netif_t;
 static const char *TAG="test";
 static esp_netif_t ap,sta;
 static esp_netif_t *s_access_point=&ap,*s_station=&sta;
-static struct { bool station_connected; char station_ip[16],hostname[40]; } s_status;
+static struct { bool station_connected,access_point_running; char station_ip[16],hostname[40],ap_ip[16]; } s_status;
+#define TB_CORE_NETWORK_BUILD_CONTRACT "TBX_CORE_IPV4_FORWARD_NAPT64_V1"
 static int s_status_lock;
 static bool s_subnet_conflict,s_ap_ready,s_napt_active,s_router_dns_fallback=true,s_retry_pending;
 static uint32_t s_napt_uplink;
@@ -82,7 +83,7 @@ static esp_netif_ip_info_t address(const char *ip,const char *mask,const char *g
 }
 static void reset(void) {
     role=TB_ROLE_CORE;ssid="TEST-STARLINK";s_napt_active=false;s_napt_uplink=0;s_ap_ready=true;
-    s_status.station_connected=true;s_subnet_conflict=false;s_router_dns[0]=0;s_router_state="WAITING_UPLINK";
+    s_status.station_connected=true;s_status.access_point_running=true;snprintf(s_status.station_ip,16,"192.168.1.20");snprintf(s_status.ap_ip,16,"192.168.4.1");s_subnet_conflict=false;s_router_dns[0]=0;s_router_state="WAITING_UPLINK";
     napt_on=napt_off=dns_writes=dhcp_restarts=napt_result=dns_result=upstream_dns_result=0;
     free_heap=65536;largest_heap=32768;
     ap.info=address("192.168.4.1","255.255.255.0","192.168.4.1");
@@ -91,6 +92,8 @@ static void reset(void) {
 }
 int main(void) {
     reset();router_refresh();assert(s_napt_active&&napt_on==1&&dns_writes==1&&dhcp_restarts==1);
+    char json[512];assert(tb_network_health_fields(json,sizeof(json)) && strstr(json,"\"napt_active\":true") && strstr(json,TB_CORE_NETWORK_BUILD_CONTRACT));
+    char too_small[8];assert(!tb_network_health_fields(too_small,sizeof(too_small)) && !too_small[0]);
     assert(!strcmp(s_router_state,"NAPT_ACTIVE_NOT_VERIFIED"));assert(!strcmp(s_router_dns,"192.168.1.1"));assert(!s_router_dns_fallback);
     router_refresh();assert(napt_on==1&&dns_writes==1); /* DHCP renewal must not break current TCP flows. */
     network_event(NULL,WIFI_EVENT,WIFI_EVENT_STA_DISCONNECTED,NULL);assert(!s_napt_active&&napt_off==1&&!s_status.station_connected&&s_ap_ready);
@@ -104,6 +107,7 @@ int main(void) {
     reset();upstream_dns_result=-1;router_refresh();assert(s_napt_active&&s_router_dns_fallback&&!strcmp(s_router_dns,"1.1.1.1"));
     reset();dns_result=-1;router_refresh();assert(!napt_on&&dhcp_restarts==1&&!strcmp(s_router_state,"DHCP_DNS_ERROR"));
     reset();free_heap=32767;router_refresh();assert(!napt_on&&!strcmp(s_router_state,"INSUFFICIENT_HEAP"));
+    assert(tb_network_health_fields(json,sizeof(json)) && strstr(json,"INSUFFICIENT_HEAP") && strstr(json,"\"napt_active\":false"));
     reset();largest_heap=8191;router_refresh();assert(!napt_on);
     reset();napt_result=-1;router_refresh();assert(!s_napt_active&&!strcmp(s_router_state,"NAPT_ENABLE_ERROR"));
     reset();router_refresh();sta.info.ip.addr=inet_addr("192.168.1.21");router_refresh();assert(napt_off==1&&napt_on==2&&s_napt_active);

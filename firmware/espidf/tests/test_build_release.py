@@ -6,6 +6,7 @@ import json
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -16,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("tb_package", ROOT / "tools/build_release.py")
 package = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(package)
+sys.path.insert(0, str(ROOT / "tools"))
+import verify_shipped_core as shipped
 
 
 class ReleasePackageTests(unittest.TestCase):
@@ -45,10 +48,11 @@ class ReleasePackageTests(unittest.TestCase):
             name = f"truckbox_{role}".encode()
             app[80:80 + len(name)] = name
             app[144:150] = b"v5.5.2"
+            if role=="core":app[288:288+len(package.CORE_NETWORK_BUILD_CONTRACT)]=package.CORE_NETWORK_BUILD_CONTRACT
             (build / f"truckbox_{role}.bin").write_bytes(app)
             for filename in ("bootloader.bin", "partition-table.bin", "ota_data_initial.bin"):
                 (build / filename).write_bytes(b"UNIT-TEST FIXTURE ONLY")
-            (build / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32c6"\n')
+            (build / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32c6"\n'+('CONFIG_TB_J1708_ONLY=y\nCONFIG_LWIP_IP_FORWARD=y\nCONFIG_LWIP_IPV4_NAPT=y\n' if role=="core" else ''))
             (build / "project_description.json").write_text(json.dumps({
                 "project_name": f"truckbox_{role}", "target": "esp32c6", "project_version": package.VERSION,
                 "git_revision": "v5.5.2", "idf_path": str(self.temp / "no-idf-checkout"),
@@ -62,6 +66,18 @@ class ReleasePackageTests(unittest.TestCase):
 
     def make_package(self):
         return package.package_release(self.project, self.output, self.archive)
+
+    def test_cached_sdkconfig_cannot_disable_sharing(self):
+        (self.project/"build-core/sdkconfig").write_text('# CONFIG_LWIP_IP_FORWARD is not set\n')
+        with self.assertRaisesRegex(ValueError,"Effective Core sdkconfig"):
+            self.make_package()
+        self.assertFalse(self.archive.exists())
+
+    def test_binary_contract_required_even_if_sdkconfig_claims_enabled(self):
+        p=self.project/"build-core/truckbox_core.bin";data=p.read_bytes().replace(package.CORE_NETWORK_BUILD_CONTRACT,b'X'*len(package.CORE_NETWORK_BUILD_CONTRACT));p.write_bytes(data)
+        with self.assertRaisesRegex(ValueError,"Core binary lacks compiled"):
+            self.make_package()
+        self.assertFalse(self.archive.exists())
 
     def test_core_only_keeps_link_untouched(self):
         shutil.rmtree(self.project / "build-link")
@@ -90,6 +106,17 @@ class ReleasePackageTests(unittest.TestCase):
             m=json.loads(z.read("manifest.json"));r=m["rollback"]["core"]
             self.assertEqual(z.read(r["file"]),image.read_bytes());self.assertEqual(r["sha256"],digest)
             self.assertFalse(any("rollback" in f["file"] for f in m["images"]["core"]["usb_files"]))
+
+    def test_shipped_archive_is_audited_and_different_standalone_ota_is_rejected(self):
+        image=self.rollback_fixture();digest=hashlib.sha256(image.read_bytes()).hexdigest()
+        with patch.object(package,"ROLLBACK_CORE_SHA256",digest), patch.object(shipped,"ROLLBACK_CORE_SHA256",digest):
+            package.package_release(self.project,self.output,self.archive,roles=("core",),rollback_core=image)
+            ota=self.output/f"truckbox_core_{package.VERSION}_ota.bin"
+            result=shipped.verify(self.archive,ota)
+            self.assertTrue(result["shipped_bytes_audited"])
+            changed=bytearray(ota.read_bytes());changed[-1]^=1;ota.write_bytes(changed)
+            with self.assertRaisesRegex(AssertionError,"Standalone OTA differs"):
+                shipped.verify(self.archive,ota)
 
     def test_archive_contains_compilable_sibling_sources_and_integrity_manifest(self):
         result = self.make_package()

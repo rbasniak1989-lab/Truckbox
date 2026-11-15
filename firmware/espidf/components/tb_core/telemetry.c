@@ -15,6 +15,9 @@
 #include "tbx_j1587_bridge.h"
 #include "tbx_transmission.h"
 #include "tbx_volvo_operating.h"
+#include "live_number.h"
+
+static void add_live_json(cJSON *object);
 
 #include <inttypes.h>
 #include <math.h>
@@ -33,9 +36,11 @@
 #ifdef CONFIG_TB_J1708_ONLY
 #define TELEMETRY_QUEUE 64u
 #define TELEMETRY_LATEST 128u
+#define TELEMETRY_RAW_MAX 17u /*21-byte J1708 frame minus MID/PID/length/checksum. */
 #else
 #define TELEMETRY_QUEUE 128u
 #define TELEMETRY_LATEST 192u
+#define TELEMETRY_RAW_MAX 32u
 #endif
 #define TELEMETRY_FRAME_MAX 64u
 #define TELEMETRY_STALE_MS 5000u
@@ -59,7 +64,7 @@ typedef struct {
     double value, last_valid_value;
     const char *name, *unit, *validation, *quality, *component;
     const char *last_valid_quality, *last_valid_validation;
-    uint8_t raw[32];
+    uint8_t raw[TELEMETRY_RAW_MAX];
     char text[32];
 } latest_t;
 
@@ -345,7 +350,7 @@ static void j1939_observation(const tbx_j1939_observation_t *observation, void *
         .name = signal->name, .unit = signal->unit, .validation = validation,
         .quality = quality, .has_value = observation->has_value,
         .raw_only = observation->raw_only,
-        .value = observation->value, .raw_length = observation->dlc > 32 ? 32 : observation->dlc,
+        .value = observation->value, .raw_length = observation->dlc > TELEMETRY_RAW_MAX ? TELEMETRY_RAW_MAX : observation->dlc,
         .full_raw_length = observation->dlc, .component_index = UINT8_MAX,
         .component_count = observation->component_count };
     memcpy(latest.raw, observation->raw, latest.raw_length);
@@ -433,7 +438,7 @@ static void j1587_observation(const tbx_j1587_observation_t *observation, void *
         .capture_id = worker->packet->capture_id, .name = observation->name,
         .unit = observation->unit, .validation = "EM_VALIDACAO", .quality = quality,
         .has_value = observation->has_numeric, .value = observation->value,
-        .raw_length = observation->raw_len > 32 ? 32 : observation->raw_len,
+        .raw_length = observation->raw_len > TELEMETRY_RAW_MAX ? TELEMETRY_RAW_MAX : observation->raw_len,
         .full_raw_length = observation->raw_len, .component_index = UINT8_MAX };
     memcpy(latest.raw, observation->raw, latest.raw_length);
     snprintf(latest.text, sizeof(latest.text), "%s", observation->passive.text);
@@ -605,6 +610,7 @@ esp_err_t tb_telemetry_start(void)
 static void critical_readings(cJSON *);
 void tb_telemetry_add_json(cJSON *object)
 {
+    add_live_json(object);
     cJSON *telemetry = cJSON_AddObjectToObject(object, "telemetry_v2");
     if (!telemetry) return;
     portENTER_CRITICAL(&s_mux);
@@ -758,7 +764,7 @@ bool tb_telemetry_append_j1587_operational(cJSON *sample)
 {
     if (!sample) return false;
     static const struct { uint16_t pid; const char *key; } fields[] = {
-        {110,"coolant_temp_c"}, {175,"oil_temp_c"}, {100,"oil_pressure_bar"},
+        {94,"fuel_pressure_bar"}, {110,"coolant_temp_c"}, {175,"oil_temp_c"}, {100,"oil_pressure_bar"},
         {102,"boost_bar"}, {440,"boost_bar"}, {177,"gearbox_temp_c"},
         {105,"intake_temp_c"}, {92,"load_pct"}, {91,"pedal_pct"},
         {168,"battery_voltage_v"}, {46,"air_pressure_bar"},
@@ -1062,3 +1068,5 @@ cJSON *tb_telemetry_volvo_json(void)
     cJSON_AddStringToObject(row,"quality","PROVAVEL_EM_VALIDACAO");
     return row;
 }
+
+#include "live_fields.inc"

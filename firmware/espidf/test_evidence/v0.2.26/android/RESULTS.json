@@ -1,0 +1,32 @@
+{
+  "ci_run": 43709982978,
+  "head": "14c76a8ac6879400dd8a072fec6aa8c69d1b8dd0",
+  "artifact_id": 14160475902,
+  "suites": [
+    {
+      "name": "br.com.truckbox.app.diagnostics.DiagnosticMergeTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "file": "app/build/test-results/testDebugUnitTest/TEST-br.com.truckbox.app.diagnostics.DiagnosticMergeTest.xml"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.EcuFaultTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "file": "multimedia/build/test-results/testDebugUnitTest/TEST-br.com.truckbox.multimedia.EcuFaultTest.xml"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.LiveRepositoryTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "file": "multimedia/build/test-results/testDebugUnitTest/TEST-br.com.truckbox.multimedia.LiveRepositoryTest.xml"
+    }
+  ],
+  "multimedia_tests": 8
+}

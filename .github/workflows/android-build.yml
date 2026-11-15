@@ -54,7 +54,7 @@ jobs:
           sed -i 's/item.findValue(keys, depth + 1)/item.findValue(wantedKeys, depth + 1)/g' "$FILE"
 
       - name: Build debug APKs
-        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug :multimedia:assembleDebug
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :multimedia:testDebugUnitTest :app:assembleDebug :multimedia:assembleDebug
 
       - name: Upload Motorista APK
         uses: actions/upload-artifact@v4
@@ -67,7 +67,18 @@ jobs:
       - name: Upload Multimedia APK
         uses: actions/upload-artifact@v4
         with:
-          name: TruckBox-Multimedia-v0.3.0-FanExperimental-debug
+          name: TruckBox-Multimedia-v0.3.1-CoreLive-debug
           path: multimedia/build/outputs/apk/debug/multimedia-debug.apk
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-Android-unit-test-results
+          path: |
+            app/build/test-results/testDebugUnitTest/*.xml
+            multimedia/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: warn
           retention-days: 30

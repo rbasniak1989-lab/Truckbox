@@ -1,0 +1,1 @@
+Browser maintenance PASS: single click, no phrase/checkbox/dialog, partial diagnostic works, internal nonce/identity, duplicate suppression, no auto-format on load/login, failures without retry, backup/logout/Core-Link guards; loopback fixtures only.

@@ -7,8 +7,8 @@ python3 - "$test_dir/../network.c" "$work_dir/router_under_test.h" <<'PY'
 from pathlib import Path
 import re,sys
 s=Path(sys.argv[1]).read_text();chunks=[]
-for name in ['subnets_overlap','router_state','router_disable','router_dns','router_refresh','network_event']:
-    m=re.search(r'^static\s+(?:bool|void|esp_err_t)\s+'+name+r'\([^;]*?\)\s*\{',s,re.M)
+for name in ['subnets_overlap','router_state','router_disable','router_dns','router_refresh','network_event','tb_network_health_fields']:
+    m=re.search(r'^(?:static\s+)?(?:bool|void|esp_err_t|size_t)\s+'+name+r'\([^;]*?\)\s*\{',s,re.M)
     assert m,name
     p=s.index('{',m.start())+1;depth=1
     while depth:

@@ -14,7 +14,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.25"
+VERSION = "0.2.26"
+CORE_NETWORK_BUILD_CONTRACT = b"TBX_CORE_IPV4_FORWARD_NAPT64_V1"
 ROLLBACK_CORE_SHA256 = "5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d"
 EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
 REQUIRED_SOURCE = (
@@ -138,8 +139,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
         "branch": git_value(project_root, "branch", "--show-current"),
         "commit": git_value(project_root, "rev-parse", "HEAD"),
         "dirty": bool(git_value(project_root, "status", "--porcelain")),
-        "integration_base_branch": "PR27/firmware-0.2.24",
-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3aa"),
+        "integration_base_branch": "fix/revb1-v0225-native-polling",
+        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "233e7bceda92116748a053637b1b311ce45a0a80"),
         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
     }
     result["builds"] = {}
@@ -178,6 +179,16 @@ def validate_build(project_root: Path, role: str) -> dict:
         if start == 0x20000 and descriptor(path) != (VERSION, f"truckbox_{role}"):
             raise ValueError(f"Wrong application role/version: {role}")
         checked.append((offset, path))
+    if role=="core":
+        effective=set((build/"sdkconfig").read_text().splitlines())
+        if not {"CONFIG_LWIP_IP_FORWARD=y","CONFIG_LWIP_IPV4_NAPT=y"}.issubset(effective):
+            raise ValueError("Effective Core sdkconfig disables IPv4 forwarding/NAPT; refusing package")
+        if "CONFIG_LWIP_IPV4_NAPT_PORTMAP=y" in effective:
+            raise ValueError("Core candidate must not enable inbound NAT port mapping")
+        if "CONFIG_TB_J1708_ONLY=y" in effective and "CONFIG_TB_RAW_TCP=y" in effective:
+            raise ValueError("J1708_ONLY must not reserve the unused CAN RAW TCP service")
+        if CORE_NETWORK_BUILD_CONTRACT not in (build/"truckbox_core.bin").read_bytes():
+            raise ValueError("Core binary lacks compiled internet-sharing contract; refusing package")
     return {"description": description, "args": args, "files": checked,
             "app": build / f"truckbox_{role}.bin", "build": build}
 

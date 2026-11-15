@@ -94,6 +94,7 @@ bool tb_core_append_gps_at(cJSON *sample, uint64_t captured_us)
 
 void tb_live_can(uint32_t id, bool extended, uint8_t dlc, const uint8_t data[8])
 {
+#if CONFIG_TB_RAW_TCP
     /* Never format/queue a TCP RAW frame without an actual consumer. */
     if (!s.live || !s.live_clients || !extended || dlc > 8) return;
     live_line_t line;
@@ -107,8 +108,12 @@ void tb_live_can(uint32_t id, bool extended, uint8_t dlc, const uint8_t data[8])
     if (length <= 0 || (size_t)length >= sizeof(line.line)) return;
     line.length = length;
     if (xQueueSend(s.live, &line, 0) != pdTRUE) ++s.live_dropped;
+#else
+    (void)id;(void)extended;(void)dlc;(void)data;
+#endif
 }
 
+#if CONFIG_TB_RAW_TCP
 static void live_task(void *unused)
 {
     int clients[LIVE_CLIENTS];
@@ -142,6 +147,7 @@ static void live_task(void *unused)
         }
     }
 }
+#endif
 
 typedef struct { char bytes[2048]; size_t length; bool overflow; } response_t;
 static esp_err_t response_event(esp_http_client_event_t *event)
@@ -735,13 +741,19 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
 esp_err_t tb_application_start(void)
 {
     s.lock = xSemaphoreCreateMutex();
+#if CONFIG_TB_RAW_TCP
     s.live = xQueueCreate(64, sizeof(live_line_t));
     if (!s.lock || !s.live) return ESP_ERR_NO_MEM;
+#else
+    if (!s.lock) return ESP_ERR_NO_MEM;
+#endif
     esp_err_t err = tb_store_init();
     if (err != ESP_OK) return err;
     err = tb_capture_start();
     if (err != ESP_OK) return err;
+#if CONFIG_TB_RAW_TCP
     if (xTaskCreate(live_task, "tb_tcp", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+#endif
     if (xTaskCreate(bridge_task, "tb_bridge", 10240, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
@@ -751,6 +763,8 @@ static void application_json_mode(cJSON *object,bool compact)
     if(compact)tb_capture_add_json_compact(object);else tb_capture_add_json(object);
     tb_store_add_json(object);
     cJSON *live = cJSON_AddObjectToObject(object, "live_stream");
+    cJSON_AddBoolToObject(live,"enabled",s.live!=NULL);
+    cJSON_AddNumberToObject(live,"reserved_queue_stack_bytes",s.live?64*sizeof(live_line_t)+4096:0);
     cJSON_AddNumberToObject(live, "port", 35000);
     cJSON_AddNumberToObject(live, "clients", s.live_clients);
     cJSON_AddNumberToObject(live, "frames_sent", s.live_sent);

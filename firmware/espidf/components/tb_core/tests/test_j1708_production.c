@@ -43,7 +43,7 @@ static void step(fixture_t *f)
     tbx_j1708_active_tick(&f->c,f->now);
 }
 static void seconds(fixture_t *f,unsigned n){for(unsigned i=0;i<n*100;i++)step(f);}
-static unsigned index_of(fixture_t *f,unsigned pid){for(unsigned i=0;i<17;i++)if(f->s.pids[i].pid==pid)return i;assert(false);return 0;}
+static unsigned index_of(fixture_t *f,unsigned pid){for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)if(f->s.pids[i].pid==pid)return i;assert(false);return 0;}
 static void automatic_and_cadences(void)
 {
     fixture_t f;initialize(&f);seconds(&f,29);assert(!f.writes);
@@ -203,8 +203,26 @@ static void critical_ten_second_cadences(void)
     assert(!tbx_j1708_active_note_response(&f.c,f.c.config.target_mid[i],f.s.pids[i].pid,f.c.tx_started_us+450000));
     puts("PID117/MID140,118/MID140,250/MID128: 10s targets staggered >=2s, gaps9.99..11s with silent117; stale captures rejected and all other PIDs continue PASS");
 }
+static void fuel_pressure_ten_second_cadence(void)
+{
+    fixture_t f;initialize(&f);f.env.extended=true;unsigned index=index_of(&f,94),sent=0;uint32_t prior=0;
+    for(unsigned i=0;i<30000;i++){
+        step(&f);
+        if(f.s.pids[index].sent!=sent){
+            uint32_t now=f.s.pids[index].last_sent_ms;
+            /* A late slot may catch up to its absolute10s phase. Global500ms
+             * spacing is checked on every UART submission in write_tx(). */
+            if(sent)assert(now-prior>=500 && now-prior<=12000);
+            prior=now;sent=f.s.pids[index].sent;
+        }
+    }
+    assert(f.c.config.target_mid[index]==128 && f.s.pids[index].period_ms==10000 && sent>=24 && sent<=27);
+    assert(f.s.pids[index].answered==sent && f.s.armed);
+    puts("PID94/MID128 fuel pressure: single existing scheduler, 10.000ms configuration, <=2requests/s and matching candidates PASS");
+}
 int main(void)
 {
+    fuel_pressure_ten_second_cadence();
     critical_ten_second_cadences();
     scheduler_supervision_and_stale_baseline();automatic_and_cadences();expansion_in_one_scheduler();pid153_transient_timeout_does_not_stop_passive_or_work();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
     puts("Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");

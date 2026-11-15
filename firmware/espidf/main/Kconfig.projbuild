@@ -7,8 +7,23 @@ config TB_ROLE_CORE
 config TB_ROLE_LINK
     bool "Link"
 endchoice
+config TB_CORE_WIFI_SHARING_REQUIRED
+    bool
+    default y if TB_ROLE_CORE
+    select LWIP_IP_FORWARD
+    select LWIP_IPV4_NAPT
+    help
+        Core AP internet sharing is part of the production contract. Select
+        effective lwIP features even when an older sdkconfig disabled them.
 config TB_J1708_ONLY
     bool "Rev.B.1 J1708_ONLY (no CAN acquisition resources)"
     depends on TB_ROLE_CORE
     default y
+config TB_RAW_TCP
+    bool "Legacy CAN RAW TCP35000 server"
+    depends on TB_ROLE_CORE && !TB_J1708_ONLY
+    default y
+    help
+        Legacy CAN profiles only. J1708_ONLY uses HTTP/Cloud and does not
+        reserve the raw CAN queue, worker stack or TCP listening socket.
 endmenu

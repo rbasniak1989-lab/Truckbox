@@ -48,7 +48,6 @@ int64_t offline_clock(void){return (int64_t)host_now_us;}
 uint32_t offline_boot(void){return tb_boot_id();}
 int offline_submit(const char *json){return tb_store_submit(json);}
 int offline_gettimeofday(struct timeval *tv,void *zone){return simulated_gettimeofday(tv,zone);}
-const char *tb_device_uid(void){return "tb-c6-d40592b9190c";}
 unsigned offline_mutex(void){return 1;}
 int offline_take(unsigned lock,unsigned ticks){assert(lock==1 && ticks==1000);return 1;}
 void offline_give(unsigned lock){assert(lock==1);}

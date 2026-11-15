@@ -1,0 +1,27 @@
+{
+  "ci_run": 43710526273,
+  "source_commit": "27449ab33f84b2ac0b3414f811d3937a2e66a360",
+  "suites": [
+    {
+      "name": "br.com.truckbox.app.diagnostics.DiagnosticMergeTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.EcuFaultTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "br.com.truckbox.multimedia.LiveRepositoryTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  ]
+}
