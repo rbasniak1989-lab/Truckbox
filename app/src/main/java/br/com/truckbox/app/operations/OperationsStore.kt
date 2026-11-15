@@ -8,6 +8,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import br.com.truckbox.app.preferences.TruckBoxPreferences
+import br.com.truckbox.app.cloud.cloudInstant
 
 
 data class RoutePlanSnapshot(
@@ -42,7 +46,7 @@ data class TripRecord(
     val endedAtMs: Long? = null,
     val startOdometerKm: Double? = null,
     val endOdometerKm: Double? = null,
-    val startFuelCounterL: Double = 0.0,
+    val startFuelCounterL: Double? = null,
     val endFuelCounterL: Double? = null,
     val weightT: Double? = null,
     val ratePerT: Double? = null,
@@ -107,6 +111,7 @@ data class OperationsSnapshot(
     val emptyStartFuelCounterL: Double? = null,
     val emptyDistanceKm: Double? = null,
     val emptyFuelLiters: Double? = null,
+    val pendingCommands: List<PendingCloudCommand> = emptyList(),
 )
 
 /**
@@ -114,21 +119,27 @@ data class OperationsSnapshot(
  * O formato JSON em SharedPreferences é deliberadamente simples para o Field Test;
  * os IDs clientUid são estáveis e já servem para upsert na nuvem.
  */
-class OperationsStore(context: Context) {
+class OperationsStore private constructor(context: Context, private val prefs: TruckBoxPreferences=TruckBoxPreferences(context)) {
+    companion object {
+        @Volatile private var instance: OperationsStore?=null
+        fun get(context: Context): OperationsStore=instance ?: synchronized(this) {instance ?: OperationsStore(context.applicationContext).also {instance=it}}
+        internal fun isolatedForTest(context: Context,prefs: TruckBoxPreferences=TruckBoxPreferences(context))=OperationsStore(context,prefs)
+    }
     private val p = context.getSharedPreferences("truckbox_operations_v041", Context.MODE_PRIVATE)
+    private val gson=Gson()
     private val _state = MutableStateFlow(load())
     val state: StateFlow<OperationsSnapshot> = _state.asStateFlow()
 
-    fun startTrip(
+    @Synchronized fun startTrip(
         origin: String,
         destination: String,
         weightT: Double?,
         ratePerT: Double?,
         currentOdometerKm: Double?,
-        currentFuelCounterL: Double,
+        currentFuelCounterL: Double?,
         plan: RoutePlanSnapshot? = null,
     ) {
-        if (origin.isBlank() || destination.isBlank()) return
+        if (origin.isBlank() || destination.isBlank() || _state.value.activeTrip != null) return
         val freightTotal = if (weightT != null && ratePerT != null) weightT * ratePerT else null
         val trip = TripRecord(
             origin = origin.trim(),
@@ -160,16 +171,17 @@ class OperationsStore(context: Context) {
             emptyStartFuelCounterL = null,
             emptyDistanceKm = null,
             emptyFuelLiters = null,
+            pendingCommands = _state.value.pendingCommands+PendingCloudCommand(scope=currentScope(),action=DriverAction.UPSERT_TRIP,trip=trip),
         ))
     }
 
-    fun endActiveTrip(currentOdometerKm: Double?, currentFuelCounterL: Double) {
+    @Synchronized fun endActiveTrip(currentOdometerKm: Double?, currentFuelCounterL: Double?) {
         val current = _state.value.activeTrip ?: return
         val distance = if (current.startOdometerKm != null && currentOdometerKm != null) {
-            (currentOdometerKm - current.startOdometerKm).coerceAtLeast(0.0)
+            (currentOdometerKm - current.startOdometerKm).takeIf {it>=0}
         } else null
-        val fuel = (currentFuelCounterL - current.startFuelCounterL).coerceAtLeast(0.0)
-        val avg = if (distance != null && fuel > 0.02) distance / fuel else null
+        val fuel = if(currentFuelCounterL!=null&&current.startFuelCounterL!=null)(currentFuelCounterL-current.startFuelCounterL).takeIf {it>=0} else null
+        val avg = if (distance != null && fuel != null && fuel > 0.02) distance / fuel else null
         val ended = current.copy(
             endedAtMs = System.currentTimeMillis(),
             endOdometerKm = currentOdometerKm,
@@ -186,12 +198,13 @@ class OperationsStore(context: Context) {
             emptyStartedAtMs = ended.endedAtMs,
             emptyStartOdometerKm = currentOdometerKm,
             emptyStartFuelCounterL = currentFuelCounterL,
-            emptyDistanceKm = 0.0,
-            emptyFuelLiters = 0.0,
+            emptyDistanceKm = null,
+            emptyFuelLiters = null,
+            pendingCommands = _state.value.pendingCommands+PendingCloudCommand(scope=currentScope(),action=DriverAction.END_TRIP,trip=ended),
         ))
     }
 
-    fun addFueling(
+    @Synchronized fun addFueling(
         liters: Double,
         pricePerL: Double,
         station: String,
@@ -210,11 +223,12 @@ class OperationsStore(context: Context) {
             fullTank = fullTank,
             odometerKm = odometerKm,
         )
-        update(_state.value.copy(fuelings = listOf(item) + _state.value.fuelings))
+        update(_state.value.copy(fuelings = listOf(item) + _state.value.fuelings,
+            pendingCommands=_state.value.pendingCommands+PendingCloudCommand(scope=currentScope(),action=DriverAction.UPSERT_FUELING,fueling=item)))
         return item
     }
 
-    fun addExpense(category: String, description: String, amount: Double) {
+    @Synchronized fun addExpense(category: String, description: String, amount: Double) {
         if (amount < 0.0) return
         val item = ExpenseRecord(
             tsMs = System.currentTimeMillis(),
@@ -223,10 +237,11 @@ class OperationsStore(context: Context) {
             amount = amount,
             tripClientUid = _state.value.activeTrip?.clientUid,
         )
-        update(_state.value.copy(expenses = listOf(item) + _state.value.expenses))
+        update(_state.value.copy(expenses = listOf(item) + _state.value.expenses,
+            pendingCommands=_state.value.pendingCommands+PendingCloudCommand(scope=currentScope(),action=DriverAction.UPSERT_EXPENSE,expense=item)))
     }
 
-    fun addMaintenance(
+    @Synchronized fun addMaintenance(
         serviceType: String,
         odometerKm: Double?,
         nextDueKm: Double?,
@@ -242,7 +257,8 @@ class OperationsStore(context: Context) {
             cost = cost,
             notes = notes.trim(),
         )
-        update(_state.value.copy(maintenance = listOf(item) + _state.value.maintenance))
+        update(_state.value.copy(maintenance = listOf(item) + _state.value.maintenance,
+            pendingCommands=_state.value.pendingCommands+PendingCloudCommand(scope=currentScope(),action=DriverAction.UPSERT_MAINTENANCE,maintenance=item)))
     }
 
     /**
@@ -250,7 +266,7 @@ class OperationsStore(context: Context) {
      * estado operacional quando ele possui uma viagem ativa/remotamente encerrada,
      * mas registros locais ainda não enviados são preservados pelo clientUid.
      */
-    fun applyCloudSnapshot(root: JSONObject) {
+    @Synchronized fun applyCloudSnapshot(root: JSONObject) {
         if (!root.optBoolean("ok", false)) return
 
         val cloudTrips = root.optJSONArray("trips").toList(::tripFromCloudJson)
@@ -259,10 +275,12 @@ class OperationsStore(context: Context) {
         val cloudMaintenance = root.optJSONArray("maintenance").toList(::maintenanceFromCloudJson)
         val op = root.optJSONObject("operation")
 
-        val mergedTrips = mergeByUid(cloudTrips, _state.value.trips) { it.clientUid }
-        val mergedFuelings = mergeByUid(cloudFuelings, _state.value.fuelings) { it.clientUid }
-        val mergedExpenses = mergeByUid(cloudExpenses, _state.value.expenses) { it.clientUid }
-        val mergedMaintenance = mergeByUid(cloudMaintenance, _state.value.maintenance) { it.clientUid }
+        val dirty=_state.value.pendingCommands.map {it.entityUid}.toSet()
+        fun <T> preservePending(cloud: List<T>,local: List<T>,id: (T)->String)=mergeByUid(local.filter {id(it) in dirty},mergeByUid(cloud,local,id),id)
+        val mergedTrips = preservePending(cloudTrips, _state.value.trips) { it.clientUid }
+        val mergedFuelings = preservePending(cloudFuelings, _state.value.fuelings) { it.clientUid }
+        val mergedExpenses = preservePending(cloudExpenses, _state.value.expenses) { it.clientUid }
+        val mergedMaintenance = preservePending(cloudMaintenance, _state.value.maintenance) { it.clientUid }
 
         val cloudActive = cloudTrips.firstOrNull { it.status == "ACTIVE" }
         val cloudMode = op?.optString("mode")?.let { runCatching { OperationMode.valueOf(it) }.getOrNull() }
@@ -272,12 +290,15 @@ class OperationsStore(context: Context) {
         // Uma viagem local offline ainda inexistente no Cloud não é apagada por engano.
         val localActive = _state.value.activeTrip
         val cloudHasLocalActive = localActive?.let { a -> cloudTrips.any { it.clientUid == a.clientUid } } == true
+        val pendingTrip=_state.value.pendingCommands.any {it.action==DriverAction.UPSERT_TRIP||it.action==DriverAction.END_TRIP}
         val active = when {
+            pendingTrip -> localActive
             cloudActive != null -> cloudActive
             localActive != null && !cloudHasLocalActive -> localActive
             else -> null
         }
         val mode = when {
+            pendingTrip -> _state.value.mode
             active != null -> OperationMode.LOADED_TRIP
             cloudMode != null -> cloudMode
             else -> _state.value.mode
@@ -301,8 +322,8 @@ class OperationsStore(context: Context) {
     }
 
     private fun update(value: OperationsSnapshot) {
-        _state.value = value
         save(value)
+        _state.value = value
     }
 
     private fun save(s: OperationsSnapshot) {
@@ -318,7 +339,8 @@ class OperationsStore(context: Context) {
         root.put("fuelings", JSONArray().apply { s.fuelings.forEach { put(it.toJson()) } })
         root.put("expenses", JSONArray().apply { s.expenses.forEach { put(it.toJson()) } })
         root.put("maintenance", JSONArray().apply { s.maintenance.forEach { put(it.toJson()) } })
-        p.edit().putString("snapshot", root.toString()).apply()
+        root.put("pendingCommands",gson.toJson(s.pendingCommands))
+        check(p.edit().putString("snapshot", root.toString()).commit()) {"Não foi possível salvar os dados locais"}
     }
 
     private fun load(): OperationsSnapshot {
@@ -339,9 +361,14 @@ class OperationsStore(context: Context) {
                 emptyStartFuelCounterL = root.optNullableDouble("emptyStartFuelCounterL"),
                 emptyDistanceKm = root.optNullableDouble("emptyDistanceKm"),
                 emptyFuelLiters = root.optNullableDouble("emptyFuelLiters"),
+                pendingCommands = gson.fromJson<List<PendingCloudCommand>>(root.optString("pendingCommands","[]"),object: TypeToken<List<PendingCloudCommand>>(){}.type) ?: emptyList(),
             )
         }.getOrElse { OperationsSnapshot() }
     }
+
+    private fun currentScope(): String?=prefs.cloudCredentials().takeIf {it.configured}?.scope
+    @Synchronized fun bindUnassignedCommands(scope: String) {update(_state.value.copy(pendingCommands=_state.value.pendingCommands.map {if(it.scope==null)it.copy(scope=scope) else it}))}
+    @Synchronized fun acknowledgeCommand(id: String) {update(_state.value.copy(pendingCommands=_state.value.pendingCommands.filterNot {it.id==id}))}
 }
 
 private fun TripRecord.toJson() = JSONObject().apply {
@@ -371,7 +398,7 @@ private fun MaintenanceRecord.toJson() = JSONObject().apply {
 private fun tripFromJson(o: JSONObject): TripRecord = TripRecord(
     clientUid = o.optString("clientUid"), origin = o.optString("origin"), destination = o.optString("destination"),
     startedAtMs = o.optLong("startedAtMs"), endedAtMs = o.optNullableLong("endedAtMs"), startOdometerKm = o.optNullableDouble("startOdometerKm"),
-    endOdometerKm = o.optNullableDouble("endOdometerKm"), startFuelCounterL = o.optDouble("startFuelCounterL", 0.0),
+    endOdometerKm = o.optNullableDouble("endOdometerKm"), startFuelCounterL = o.optNullableDouble("startFuelCounterL"),
     endFuelCounterL = o.optNullableDouble("endFuelCounterL"), weightT = o.optNullableDouble("weightT"), ratePerT = o.optNullableDouble("ratePerT"),
     freightTotal = o.optNullableDouble("freightTotal"), distanceKm = o.optNullableDouble("distanceKm"), fuelLiters = o.optNullableDouble("fuelLiters"),
     averageKml = o.optNullableDouble("averageKml"), status = o.optString("status", "ACTIVE"),
@@ -403,7 +430,7 @@ private fun tripFromCloudJson(o: JSONObject): TripRecord = TripRecord(
     endedAtMs = o.optNullableIsoMs("ended_at"),
     startOdometerKm = o.optNullableDouble("start_odometer_km"),
     endOdometerKm = o.optNullableDouble("end_odometer_km"),
-    startFuelCounterL = o.optNullableDouble("start_core_fuel_liters") ?: 0.0,
+    startFuelCounterL = o.optNullableDouble("start_core_fuel_liters"),
     endFuelCounterL = o.optNullableDouble("end_core_fuel_liters"),
     weightT = o.optNullableDouble("weight_t"),
     ratePerT = o.optNullableDouble("rate_per_t"),
@@ -457,11 +484,11 @@ private fun maintenanceFromCloudJson(o: JSONObject): MaintenanceRecord = Mainten
 )
 
 private fun JSONObject.optIsoMs(key: String): Long =
-    optNullableIsoMs(key) ?: System.currentTimeMillis()
+    optNullableIsoMs(key) ?: throw IllegalArgumentException("Horário Cloud ausente ou inválido")
 
 private fun JSONObject.optNullableIsoMs(key: String): Long? {
     val value = optNullableString(key) ?: return null
-    return runCatching { java.time.Instant.parse(value).toEpochMilli() }.getOrNull()
+    return runCatching { cloudInstant(value).toEpochMilli() }.getOrNull()
 }
 
 private fun <T> mergeByUid(cloud: List<T>, local: List<T>, uid: (T) -> String): List<T> {

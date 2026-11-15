@@ -1,310 +1,146 @@
 package br.com.truckbox.app.gateway
 
 import android.Manifest
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
-import android.os.Build
-import android.os.IBinder
+import android.location.*
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.*
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import br.com.truckbox.app.cloud.TruckBoxCloudClient
+import br.com.truckbox.app.MainActivity
+import br.com.truckbox.app.cloud.DriverOperationsSync
+import br.com.truckbox.app.cloud.DriverCloudException
+import br.com.truckbox.app.gps.*
 import br.com.truckbox.app.operations.OperationsStore
 import br.com.truckbox.app.preferences.TruckBoxPreferences
 import kotlinx.coroutines.*
-import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.channels.Channel
 
-class TruckBoxGatewayService : Service(), LocationListener {
-    companion object {
-        const val CHANNEL_ID = "truckbox_driver_gateway"
-        const val NOTIFICATION_ID = 601
-        private const val FIX_MAX_AGE_MS = 30_000L
-        private const val GPS_CLOUD_INTERVAL_MS = 10_000L
-        private const val LIVE_POLL_MS = 2_000L
-        private const val OPS_SYNC_MS = 30_000L
-    }
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+/** Legacy component name retained for update compatibility. Cloud and phone GPS only. */
+class TruckBoxGatewayService: Service(),LocationListener {
+    companion object {const val CHANNEL_ID="truckbox_driver_cloud";const val NOTIFICATION_ID=601}
+    private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+    private val wake=Channel<Unit>(Channel.CONFLATED)
     private lateinit var prefs: TruckBoxPreferences
-    private lateinit var core: CoreGatewayClient
-    private lateinit var cloud: GatewayCloudClient
-    private lateinit var locationManager: LocationManager
-    private val lastFix = AtomicReference<Location?>(null)
-    @Volatile private var coreOnline = false
-    @Volatile private var lastGpsCloudTime = 0L
+    private lateinit var outbox: DriverGpsOutbox
+    private lateinit var locations: LocationManager
+    private val uploader=GatewayCloudClient()
+    private var callback: ConnectivityManager.NetworkCallback?=null
+    private var foregroundStarted=false
+    @Volatile private var lastFixNanos=0L
+    private var selectedNanos=0L
 
     override fun onCreate() {
         super.onCreate()
-        prefs = TruckBoxPreferences(this)
-        core = CoreGatewayClient(this, prefs)
-        cloud = GatewayCloudClient(this, prefs)
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        createChannel()
-        startForeground(NOTIFICATION_ID, notification("Iniciando gateway…"))
-        GatewayStatus.update { it.copy(running = true, lastError = null) }
+        prefs=TruckBoxPreferences(this);outbox=DriverGpsOutbox(this)
+        locations=getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID,"TruckBox GPS e Cloud",NotificationManager.IMPORTANCE_LOW))
+        if(!locationAllowed()) {GatewayStatus.update {it.copy(lastError="Permita localização para iniciar o GPS",running=false)};stopSelf();return}
+        try {startForeground(NOTIFICATION_ID,notification("Aguardando configuração e posição do celular"))}
+        catch(_: SecurityException) {GatewayStatus.update {it.copy(running=false,lastError="Abra o Motorista para revisar a permissão de localização")};stopSelf();return}
+        catch(_: IllegalStateException) {GatewayStatus.update {it.copy(running=false,lastError="Abra o Motorista e toque em Iniciar GPS")};stopSelf();return}
+        foregroundStarted=true
+        GatewayStatus.update {it.copy(running=true,lastError=null)}
         requestLocation()
-        scope.launch { gatewayLoop() }
-        scope.launch { liveLoop() }
-        scope.launch { gpsCloudLoop() }
-        scope.launch { operationalSyncLoop() }
+        val cm=getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        callback=object: ConnectivityManager.NetworkCallback(){
+            override fun onAvailable(network: Network){wake.trySend(Unit)}
+            override fun onLost(network: Network){GatewayStatus.update {it.copy(gpsCloudOnline=false,operationsCloudOnline=false)}}
+        }
+        runCatching {cm.registerDefaultNetworkCallback(callback!!)}
+        scope.launch {gpsLoop()}
+        scope.launch {while(isActive){DriverOperationsSync.sync(prefs,OperationsStore.get(this@TruckBoxGatewayService));delay(5000)}}
     }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
-    override fun onBind(intent: Intent?): IBinder? = null
-
+    override fun onStartCommand(intent: Intent?,flags: Int,startId: Int): Int {
+        if(!foregroundStarted)return START_NOT_STICKY
+        requestLocation();wake.trySend(Unit);return START_STICKY
+    }
+    override fun onBind(intent: Intent?): IBinder?=null
     override fun onDestroy() {
-        runCatching { locationManager.removeUpdates(this) }
-        scope.cancel()
-        GatewayStatus.update { it.copy(running = false, coreOnline = false) }
-        super.onDestroy()
+        foregroundStarted=false
+        if(::locations.isInitialized)runCatching {locations.removeUpdates(this)}
+        callback?.let {cb->runCatching {(getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(cb)}}
+        scope.cancel();if(::outbox.isInitialized)outbox.close()
+        GatewayStatus.update {it.copy(running=false,gpsFix=false)};super.onDestroy()
     }
-
-    override fun onLocationChanged(location: Location) {
-        val old = lastFix.get()
-        if (old == null || location.time >= old.time || (location.hasAccuracy() && old.hasAccuracy() && location.accuracy < old.accuracy)) {
-            lastFix.set(location)
-        }
-        val age = (System.currentTimeMillis() - location.time).coerceAtLeast(0L)
-        GatewayStatus.update { it.copy(gpsFix = age <= FIX_MAX_AGE_MS) }
-        scope.launch {
-            // GPS local: deixa /api/state do Core e futura multimídia com posição atual.
-            if (core.pushGps(location)) coreOnline = true
-        }
-    }
+    private fun locationAllowed()=ActivityCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED||
+        ActivityCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
 
     private fun requestLocation() {
-        val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) {
-            GatewayStatus.update { it.copy(lastError = "Permissão de localização não concedida") }
-            return
-        }
-        runCatching {
-            if (fine && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2_000L, 0f, this)
-            }
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5_000L, 0f, this)
-            }
-        }.onFailure { e -> GatewayStatus.update { it.copy(lastError = "GPS: ${e.message}") } }
+        runCatching {locations.removeUpdates(this)}
+        GatewayStatus.update {it.copy(gpsEnabled=prefs.gpsTrackingEnabled)}
+        if(!locationAllowed()||!prefs.gpsTrackingEnabled)return
+        val configured=runCatching {prefs.gpsCredentials().configured}.getOrDefault(false)
+        if(!configured) {GatewayStatus.update {it.copy(lastError="Configure o acesso à Cloud para enviar o GPS")};return}
+        try {
+            val fine=ActivityCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+            if(fine&&LocationManager.GPS_PROVIDER in locations.allProviders)locations.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000,0f,this,Looper.getMainLooper())
+            if(LocationManager.NETWORK_PROVIDER in locations.allProviders)locations.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,5000,0f,this,Looper.getMainLooper())
+        } catch(_: SecurityException) {GatewayStatus.update {it.copy(lastError="Permissão de localização indisponível")}}
     }
-
-    /**
-     * Caminho crítico novo:
-     * ESP/LittleFS -> GET batch -> Android HTTPS -> Cloud ACK -> POST ack -> ESP.
-     * Se qualquer passo falhar, o ESP NÃO libera o lote.
-     */
-    private suspend fun gatewayLoop() {
-        while (currentCoroutineContext().isActive) {
-            if (!prefs.gatewayEnabled) {
-                delay(2_000L)
-                continue
-            }
-
-            val batch = core.fetchBatch(8)
-            if (batch == null) {
-                coreOnline = false
-                GatewayStatus.update { it.copy(coreOnline = false, cloudOnline = false, lastError = "Core não encontrado na Starlink") }
-                updateNotification()
-                delay(2_000L)
-                continue
-            }
-
-            coreOnline = true
-            GatewayStatus.update {
-                it.copy(
-                    coreOnline = true,
-                    pendingBytes = batch.pendingBytes,
-                    lastAckSeq = batch.lastAckSeq,
-                    lastBatchCount = batch.count,
-                    lastError = null,
-                )
-            }
-
-            if (batch.count <= 0) {
-                updateNotification()
-                delay(1_000L)
-                continue
-            }
-
-            if (prefs.cloudDeviceToken.isBlank()) {
-                GatewayStatus.update { it.copy(cloudOnline = false, lastError = "Token Cloud do Core não configurado") }
-                updateNotification()
-                delay(5_000L)
-                continue
-            }
-
-            val result = cloud.upload(batch.samples, batch.deviceUid)
-            if (result == null || result.ackSeq <= 0L) {
-                val detail = cloud.lastError?.take(220)
-                GatewayStatus.update {
-                    it.copy(
-                        cloudOnline = false,
-                        lastError = detail?.let { msg -> "Cloud: $msg" } ?: "Falha ao enviar lote para a Cloud",
-                    )
+    override fun onLocationChanged(location: Location) {
+        if(!prefs.gpsTrackingEnabled)return
+        val elapsed=SystemClock.elapsedRealtimeNanos()
+        val sample=PhoneGpsSample.fromLocation(location,prefs.installId,System.currentTimeMillis(),elapsed) ?: return
+        lastFixNanos=location.elapsedRealtimeNanos
+        GatewayStatus.update {it.copy(gpsFix=true,lastGpsCaptureMs=sample.capturedAtMs,gpsAccuracyM=sample.accuracyM)}
+        if(selectedNanos>0&&location.elapsedRealtimeNanos-selectedNanos<10_000_000_000L)return
+        val credentials=runCatching {prefs.gpsCredentials()}.getOrNull() ?: return
+        if(!credentials.configured)return
+        selectedNanos=location.elapsedRealtimeNanos
+        scope.launch {
+            try {
+                val result=outbox.enqueue(credentials.scope,sample)
+                GatewayStatus.update {it.copy(pendingGps=outbox.countAll(),lastError=if(result==GpsEnqueue.FULL)"Fila GPS cheia; pontos anteriores preservados" else null)}
+                if(result==GpsEnqueue.INSERTED)wake.trySend(Unit)
+            } catch(_: Exception) {GatewayStatus.update {it.copy(lastError="Não foi possível guardar a posição no celular")}}
+        }
+    }
+    private suspend fun gpsLoop() {
+        var failures=0
+        while(currentCoroutineContext().isActive) {
+            var sent=0
+            try {
+                val credentials=prefs.gpsCredentials()
+                val enabled=prefs.gpsTrackingEnabled
+                val now=SystemClock.elapsedRealtimeNanos()
+                GatewayStatus.update {it.copy(gpsEnabled=enabled,gpsFix=enabled&&lastFixNanos>0&&now-lastFixNanos in 0..30_000_000_000L,pendingGps=outbox.countAll())}
+                if(enabled&&credentials.configured) {
+                    sent=DriverGpsSync(outbox,uploader).drain(credentials,
+                        keepSending={prefs.gpsTrackingEnabled&&credentials==prefs.gpsCredentials()}) {queued->
+                        GatewayStatus.update {it.copy(gpsCloudOnline=true,lastGpsUploadMs=System.currentTimeMillis(),
+                            lastGpsSentCaptureMs=maxOf(it.lastGpsSentCaptureMs ?: 0,queued.sample.capturedAtMs),pendingGps=outbox.countAll(),lastError=null)}
+                    }
                 }
-                updateNotification()
-                delay(2_000L)
-                continue
-            }
-
-            // Segurança: só libera o lote se a Cloud confirmou pelo menos o maior seq oferecido.
-            if (result.ackSeq < batch.maxSeq) {
-                GatewayStatus.update { it.copy(cloudOnline = true, lastError = "ACK Cloud incompleto: ${result.ackSeq}/${batch.maxSeq}") }
-                delay(2_000L)
-                continue
-            }
-
-            if (!core.ack(batch.maxSeq)) {
-                // Sem problema de integridade: no próximo ciclo o mesmo lote volta e o upsert da Cloud é idempotente.
-                GatewayStatus.update { it.copy(cloudOnline = true, lastError = "Cloud recebeu, mas ACK local falhou; lote será repetido") }
-                delay(1_000L)
-                continue
-            }
-
-            GatewayStatus.update {
-                it.copy(
-                    coreOnline = true,
-                    cloudOnline = true,
-                    lastAckSeq = batch.maxSeq,
-                    lastUploadMs = System.currentTimeMillis(),
-                    lastError = null,
-                )
+                if(sent>0)failures=0
+            } catch(e: CancellationException) {throw e} catch(e: Exception) {
+                failures=(failures+1).coerceAtMost(5)
+                GatewayStatus.update {it.copy(gpsCloudOnline=false,lastError=if(e is DriverCloudException&&e.status in listOf(401,403))"Acesso GPS recusado pela Cloud; confira a configuração" else "Envio GPS pendente; posições preservadas no celular")}
             }
             updateNotification()
-
-            // Backlog é drenado rápido, mas com pequena folga para não monopolizar CPU/rede.
-            delay(if (batch.pendingBytes > 12_000L) 250L else 800L)
+            val waitMs=if(failures>0)(2000L shl failures).coerceAtMost(60000) else if(sent>0)1000L else 5000L
+            withTimeoutOrNull(waitMs){wake.receive()}
         }
     }
-
-    private suspend fun liveLoop() {
-        while (currentCoroutineContext().isActive) {
-            val s = core.fetchLive()
-            if (s != null) {
-                coreOnline = true
-                GatewayStatus.update {
-                    it.copy(
-                        coreOnline = true,
-                        odometerKm = s.odometerKm,
-                        coreFuelLiters = s.coreFuelLiters,
-                        speedKmh = s.speedKmh,
-                        rpm = s.rpm,
-                        combinationWeightKg = s.combinationWeightKg,
-                    )
-                }
-            }
-            delay(LIVE_POLL_MS)
-        }
+    private fun notification(text: String): Notification {
+        val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return NotificationCompat.Builder(this,CHANNEL_ID).setSmallIcon(android.R.drawable.ic_menu_mylocation).setContentTitle("TruckBox Motorista")
+            .setContentText(text).setContentIntent(open).setOngoing(true).setCategory(NotificationCompat.CATEGORY_SERVICE).build()
     }
-
-    private suspend fun gpsCloudLoop() {
-        while (currentCoroutineContext().isActive) {
-            val fix = lastFix.get()
-            val age = fix?.let { System.currentTimeMillis() - it.time } ?: Long.MAX_VALUE
-            val valid = fix != null && age in 0..FIX_MAX_AGE_MS
-            GatewayStatus.update { it.copy(gpsFix = valid) }
-            if (coreOnline && valid && fix != null && fix.time != lastGpsCloudTime && prefs.gpsDeviceToken.isNotBlank()) {
-                if (cloud.uploadGps(fix, prefs.installId)) {
-                    lastGpsCloudTime = fix.time
-                    GatewayStatus.update { it.copy(lastGpsUploadMs = System.currentTimeMillis()) }
-                }
-            }
-            delay(GPS_CLOUD_INTERVAL_MS)
-        }
-    }
-
-    /**
-     * Reenvio idempotente dos cadastros locais.
-     *
-     * Regra importante: viagem COMPLETED antiga nunca pode disparar end_trip de novo quando
-     * já existe uma viagem ACTIVE. O end_trip altera o estado operacional para EMPTY_MODE;
-     * portanto, reexecutá-lo para histórico encerrado pisaria numa viagem nova.
-     *
-     * Para viagens concluídas já conhecidas pelo Cloud usamos upsert_trip (sem efeito colateral
-     * de modo). end_trip fica reservado somente para recuperar um encerramento que ainda não
-     * chegou ao Cloud e apenas quando não há viagem local ativa.
-     */
-    private suspend fun operationalSyncLoop() {
-        while (currentCoroutineContext().isActive) {
-            if (prefs.cloudDeviceToken.isNotBlank()) {
-                val op = OperationsStore(this).state.value
-                val client = TruckBoxCloudClient(prefs)
-                val localTrips = op.trips.take(100)
-                val localActive = op.activeTrip ?: localTrips.firstOrNull { it.status == "ACTIVE" }
-                val snapshot = client.snapshot()
-                val cloudTrips = snapshot?.optJSONArray("trips")
-                val cloudStatusByUid = buildMap<String, String> {
-                    if (cloudTrips != null) {
-                        for (i in 0 until cloudTrips.length()) {
-                            val item = cloudTrips.optJSONObject(i) ?: continue
-                            val uid = item.optString("client_uid")
-                            if (uid.isNotBlank()) put(uid, item.optString("status"))
-                        }
-                    }
-                }
-
-                localTrips.forEach { trip ->
-                    if (trip.status == "ACTIVE") {
-                        client.syncTrip(trip)
-                    } else {
-                        // Sincroniza dados históricos sem mexer no modo operacional.
-                        client.syncTrip(trip)
-                    }
-                }
-
-                if (localActive == null) {
-                    val pendingEnd = localTrips
-                        .asSequence()
-                        .filter { it.status == "COMPLETED" }
-                        .filter { cloudStatusByUid[it.clientUid] != "COMPLETED" }
-                        .maxByOrNull { it.endedAtMs ?: it.startedAtMs }
-                    pendingEnd?.let { trip ->
-                        // Se ainda não existia no Cloud, o upsert acima cria/atualiza antes do end_trip.
-                        client.endTrip(trip)
-                    }
-                }
-
-                op.fuelings.take(100).forEach { client.syncFueling(it) }
-                op.expenses.take(100).forEach { client.syncExpense(it) }
-                op.maintenance.take(100).forEach { client.syncMaintenance(it) }
-            }
-            delay(OPS_SYNC_MS)
-        }
-    }
-
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "TruckBox Gateway", NotificationManager.IMPORTANCE_LOW)
-            )
-        }
-    }
-
-    private fun notification(text: String): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.stat_sys_upload)
-        .setContentTitle("TruckBox Motorista")
-        .setContentText(text)
-        .setOngoing(true)
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        .build()
-
     private fun updateNotification() {
-        val s = GatewayStatus.state.value
-        val text = when {
-            !s.coreOnline -> "Core offline • aguardando Starlink"
-            prefs.cloudDeviceToken.isBlank() -> "Core online • configure a Cloud"
-            !s.cloudOnline && s.pendingBytes > 0 -> "Core online • ${s.pendingBytes / 1024} KB aguardando Cloud"
-            s.pendingBytes > 0 -> "Sincronizando • ${s.pendingBytes / 1024} KB pendentes"
-            else -> "Core + Cloud online • sincronizado"
+        val s=GatewayStatus.state.value
+        val text=when {
+            !s.gpsEnabled -> "GPS pausado"
+            s.lastError!=null -> s.lastError
+            s.pendingGps>0 -> "${s.pendingGps} posições aguardando envio"
+            !s.gpsFix -> "Aguardando posição do celular"
+            s.lastGpsUploadMs!=null -> "GPS enviado à Cloud"
+            else -> "Posição recebida; aguardando envio"
         }
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID,notification(text))
     }
 }

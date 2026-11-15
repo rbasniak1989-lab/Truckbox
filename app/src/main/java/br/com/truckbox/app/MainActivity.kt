@@ -21,8 +21,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.lifecycleScope
+import br.com.truckbox.app.cloud.DriverOperationsSync
+import br.com.truckbox.app.gps.DriverGpsOutbox
 import br.com.truckbox.app.cloud.RoutePlannerClient
-import br.com.truckbox.app.cloud.TruckBoxCloudClient
 import br.com.truckbox.app.gateway.GatewayStatus
 import br.com.truckbox.app.gateway.TruckBoxGatewayService
 import br.com.truckbox.app.operations.OperationsStore
@@ -47,13 +52,25 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sharedRouteText.value = extractSharedRoute(intent)
-        requestGatewayPermissions()
+        GatewayStatus.update { it.copy(gpsEnabled = TruckBoxPreferences(this).gpsTrackingEnabled) }
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { DriverGpsOutbox(this@MainActivity).use { it.countAll() } }
+                .onSuccess { count -> GatewayStatus.update { it.copy(pendingGps = count) } }
+                .onFailure { GatewayStatus.update { it.copy(lastError = "Não foi possível consultar a fila GPS do celular") } }
+        }
         setContent {
             DriverApp(
                 sharedRouteText = sharedRouteText.value,
                 onSharedRouteConsumed = { sharedRouteText.value = null },
+                onStartGps = ::requestGatewayPermissions,
+                onStopGps = { stopService(Intent(this, TruckBoxGatewayService::class.java)) },
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        startGatewayServiceIfPossible()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -79,11 +96,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startGatewayServiceIfPossible() {
+        val prefs = TruckBoxPreferences(this)
+        if (!prefs.gpsTrackingEnabled || !runCatching { prefs.gpsCredentials().configured }.getOrDefault(false)) return
         val fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) return
+        if (!fine && !coarse) {
+            GatewayStatus.update { it.copy(running = false, lastError = "Permita a localização para iniciar o GPS") }
+            return
+        }
         val i = Intent(this, TruckBoxGatewayService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+        try {
+            startForegroundService(i)
+        } catch (_: SecurityException) {
+            GatewayStatus.update { it.copy(running = false, lastError = "Permita a localização para iniciar o GPS") }
+        } catch (_: IllegalStateException) {
+            GatewayStatus.update { it.copy(running = false, lastError = "Abra o Motorista e toque em Iniciar GPS") }
+        }
     }
 }
 
@@ -94,11 +122,12 @@ private enum class DriverPage(val title: String) { STATUS("Status"), TRIP("Viage
 private fun DriverApp(
     sharedRouteText: String?,
     onSharedRouteConsumed: () -> Unit,
+    onStartGps: () -> Unit,
+    onStopGps: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { TruckBoxPreferences(context) }
-    val store = remember { OperationsStore(context) }
-    val cloud = remember { TruckBoxCloudClient(prefs) }
+    val store = remember { OperationsStore.get(context) }
     val routePlanner = remember { RoutePlannerClient(prefs) }
     val scope = rememberCoroutineScope()
     val gateway by GatewayStatus.state.collectAsState()
@@ -112,13 +141,13 @@ private fun DriverApp(
         if (!sharedRouteText.isNullOrBlank()) page = DriverPage.TRIP
     }
 
-    // Snapshot Cloud enquanto a tela estiver aberta. Os cadastros locais continuam válidos offline.
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            if (cloud.configured()) {
-                withContext(Dispatchers.IO) { cloud.snapshot() }?.let(store::applyCloudSnapshot)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                withContext(Dispatchers.IO) { DriverOperationsSync.sync(prefs, store) }
+                delay(5_000L)
             }
-            delay(20_000L)
         }
     }
 
@@ -129,11 +158,11 @@ private fun DriverApp(
                     title = {
                         Column {
                             Text("TruckBox Motorista", fontWeight = FontWeight.Bold)
-                            Text("Gateway Android • v0.6.4", fontSize = 11.sp)
+                            Text("Cloud e GPS do celular • v0.6.5", fontSize = 11.sp)
                         }
                     },
                     actions = {
-                        val ok = gateway.coreOnline && (gateway.cloudOnline || gateway.pendingBytes == 0L)
+                        val ok = gateway.cloudOnline
                         Icon(if (ok) Icons.Default.CloudDone else Icons.Default.CloudOff, null)
                         Spacer(Modifier.width(12.dp))
                     }
@@ -163,8 +192,6 @@ private fun DriverApp(
                     DriverPage.STATUS -> StatusPage(gateway)
                     DriverPage.TRIP -> TripPage(
                         operations = operations,
-                        odometerKm = gateway.odometerKm,
-                        coreFuelLiters = gateway.coreFuelLiters,
                         routePlan = routePlan,
                         routePlanning = routePlanning,
                         routePlanError = routePlanError,
@@ -185,48 +212,31 @@ private fun DriverApp(
                         onStartPlan = { plan ->
                             store.startTrip(
                                 plan.origin, plan.destination, plan.cargoWeightT, plan.ratePerT,
-                                gateway.odometerKm, gateway.coreFuelLiters ?: 0.0, plan
+                                null, null, plan
                             )
-                            val started = store.state.value.activeTrip
                             routePlan = null
                             routePlanError = null
-                            started?.let { trip ->
-                                scope.launch(Dispatchers.IO) {
-                                    cloud.syncTrip(trip)
-                                    routePlanner.attachToTrip(plan.simulationId, trip.clientUid)
-                                }
-                            }
                         },
                         onDiscardPlan = { routePlan = null; routePlanError = null },
                         onStart = { origin, destination, weight, rate ->
-                            store.startTrip(origin, destination, weight, rate, gateway.odometerKm, gateway.coreFuelLiters ?: 0.0)
-                            store.state.value.activeTrip?.let { scope.launch(Dispatchers.IO) { cloud.syncTrip(it) } }
+                            store.startTrip(origin, destination, weight, rate, null, null)
                         },
                         onEnd = {
-                            val uid = store.state.value.activeTrip?.clientUid
-                            store.endActiveTrip(gateway.odometerKm, gateway.coreFuelLiters ?: 0.0)
-                            uid?.let { id -> store.state.value.trips.firstOrNull { it.clientUid == id } }?.let { ended ->
-                                scope.launch(Dispatchers.IO) { cloud.endTrip(ended) }
-                            }
+                            store.endActiveTrip(null, null)
                         },
                     )
                     DriverPage.ENTRIES -> EntriesPage(
-                        odometerKm = gateway.odometerKm,
                         onFueling = { liters, price, station, location, full ->
-                            store.addFueling(liters, price, station, location, full, gateway.odometerKm)?.let { item ->
-                                scope.launch(Dispatchers.IO) { cloud.syncFueling(item) }
-                            }
+                            store.addFueling(liters, price, station, location, full, null)
                         },
                         onExpense = { category, description, amount ->
                             store.addExpense(category, description, amount)
-                            store.state.value.expenses.firstOrNull()?.let { item -> scope.launch(Dispatchers.IO) { cloud.syncExpense(item) } }
                         },
                         onMaintenance = { service, nextKm, cost, notes ->
-                            store.addMaintenance(service, gateway.odometerKm, nextKm, cost, notes)
-                            store.state.value.maintenance.firstOrNull()?.let { item -> scope.launch(Dispatchers.IO) { cloud.syncMaintenance(item) } }
+                            store.addMaintenance(service, null, nextKm, cost, notes)
                         },
                     )
-                    DriverPage.SETTINGS -> SettingsPage(prefs)
+                    DriverPage.SETTINGS -> SettingsPage(prefs, store, onStartGps, onStopGps)
                 }
             }
         }
@@ -234,32 +244,37 @@ private fun DriverApp(
 }
 
 @Composable
-private fun StatusPage(s: br.com.truckbox.app.gateway.GatewaySnapshot) {
+internal fun StatusPage(s: br.com.truckbox.app.gateway.GatewaySnapshot) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Gateway", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        StatusCard("ESP32 / Starlink", if (s.coreOnline) "ONLINE" else "OFFLINE", s.coreOnline)
-        StatusCard("Cloud", if (s.cloudOnline) "ONLINE" else if (s.pendingBytes > 0) "AGUARDANDO" else "SEM ENVIO", s.cloudOnline)
-        StatusCard("GPS", if (s.gpsFix) "FIX OK" else "AGUARDANDO FIX", s.gpsFix)
+        Text("Cloud e GPS", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        StatusCard("Viagens e lançamentos", if (s.operationsCloudOnline) "Resposta recebida da Cloud" else "Sem confirmação da Cloud", s.operationsCloudOnline)
+        StatusCard("GPS do celular", when {
+            !s.gpsEnabled -> "Pausado"
+            s.gpsFix -> "Posição recente recebida"
+            else -> "Aguardando posição"
+        }, s.gpsFix)
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text("Fila de telemetria", fontWeight = FontWeight.Bold)
-                Text("${(s.pendingBytes / 1024.0).format1()} KB pendentes")
-                Text("Último ACK: ${s.lastAckSeq}")
-                Text("Último lote: ${s.lastBatchCount} amostras")
-                if (s.lastError != null) Text(s.lastError, color = MaterialTheme.colorScheme.error)
+                Text("Envio de posições", fontWeight = FontWeight.Bold)
+                Text("Serviço GPS: ${if (s.running) "em execução" else "parado"}")
+                Text("Última captura: ${s.lastGpsCaptureMs.clockText()}")
+                Text("Precisão informada: ${s.gpsAccuracyM?.let { "${it.format1()} m" } ?: "Sem leitura"}")
+                Text("Última posição confirmada na Cloud: ${s.lastGpsSentCaptureMs.clockText()}")
+                Text("Último envio confirmado: ${s.lastGpsUploadMs.clockText()}")
+                Text("${s.pendingGps} posições aguardando envio")
+                Text("${s.pendingOperations} operações aguardando sincronização")
+                s.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                s.operationsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         }
-        ElevatedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text("Caminhão agora", fontWeight = FontWeight.Bold)
-                Text("Odômetro: ${s.odometerKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
-                Text("Velocidade: ${s.speedKmh?.let { String.format(Locale.US, "%.1f km/h", it) } ?: "—"}")
-                Text("RPM: ${s.rpm?.let { String.format(Locale.US, "%.0f", it) } ?: "—"}")
-                Text("Peso conjunto: ${s.combinationWeightKg?.let { String.format(Locale.US, "%.1f t", it / 1000.0) } ?: "—"}")
-            }
-        }
+        Text("O GPS vem deste celular. Mantenha o serviço ativo e a notificação visível durante a viagem. Sem internet, as posições ficam guardadas para reenvio.", fontSize = 12.sp)
     }
 }
+
+private fun Long?.clockText(): String = this?.let {
+    java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm:ss"))
+} ?: "Sem confirmação"
 
 private fun Double.format1(): String = String.format(Locale.US, "%.1f", this)
 
@@ -277,8 +292,6 @@ private fun StatusCard(title: String, value: String, ok: Boolean) {
 @Composable
 private fun TripPage(
     operations: OperationsSnapshot,
-    odometerKm: Double?,
-    coreFuelLiters: Double?,
     routePlan: RoutePlanSnapshot?,
     routePlanning: Boolean,
     routePlanError: String?,
@@ -306,9 +319,7 @@ private fun TripPage(
         Text("Viagem", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (active == null) {
             if (operations.mode == OperationMode.EMPTY_MODE) {
-                val localDistance = if (odometerKm != null && operations.emptyStartOdometerKm != null)
-                    (odometerKm - operations.emptyStartOdometerKm).coerceAtLeast(0.0) else null
-                val distance = operations.emptyDistanceKm ?: localDistance
+                val distance = operations.emptyDistanceKm
                 val diesel = operations.emptyFuelLiters
                 val average = if (distance != null && diesel != null && diesel > 0.02) distance / diesel else null
                 ElevatedCard(Modifier.fillMaxWidth()) {
@@ -398,17 +409,10 @@ private fun TripPage(
                     Text("${active.origin} → ${active.destination}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text("Peso: ${active.weightT?.let { "$it t" } ?: "—"}")
                     Text("Frete: ${active.freightTotal?.let { "R$ ${String.format(Locale.US, "%.2f", it)}" } ?: "—"}")
-                    val distanceKm = if (active.startOdometerKm != null && odometerKm != null) {
-                        (odometerKm - active.startOdometerKm).coerceAtLeast(0.0)
-                    } else active.distanceKm
-                    val tripFuelLiters = if (coreFuelLiters != null) {
-                        (coreFuelLiters - active.startFuelCounterL).coerceAtLeast(0.0)
-                    } else active.fuelLiters
-                    val averageKml = if (distanceKm != null && tripFuelLiters != null && tripFuelLiters > 0.02) {
-                        distanceKm / tripFuelLiters
-                    } else active.averageKml
-                    Text("KM inicial: ${active.startOdometerKm?.let { String.format(Locale.US, "%.1f", it) } ?: "—"}")
-                    Text("KM atual: ${odometerKm?.let { String.format(Locale.US, "%.1f", it) } ?: "—"}")
+                    val distanceKm = active.distanceKm
+                    val tripFuelLiters = active.fuelLiters
+                    val averageKml = active.averageKml
+                    Text("Métricas da viagem recebidas da Cloud", fontSize = 12.sp)
                     Text("Distância da viagem: ${distanceKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
                     Text("Consumido na viagem: ${tripFuelLiters?.let { String.format(Locale.US, "%.1f L", it) } ?: "—"}")
                     Text("Média geral: ${averageKml?.let { String.format(Locale.US, "%.2f km/L", it) } ?: "—"}")
@@ -497,7 +501,6 @@ private fun StartTripDialog(onDismiss: () -> Unit, onSave: (String, String, Doub
 
 @Composable
 private fun EntriesPage(
-    odometerKm: Double?,
     onFueling: (Double, Double, String, String, Boolean) -> Unit,
     onExpense: (String, String, Double) -> Unit,
     onMaintenance: (String, Double?, Double?, String) -> Unit,
@@ -505,7 +508,7 @@ private fun EntriesPage(
     var dialog by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Lançamentos", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Odômetro atual: ${odometerKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
+        Text("Os lançamentos ficam salvos no celular até a confirmação da Cloud.")
         Button(onClick = { dialog = "fuel" }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.LocalGasStation, null); Spacer(Modifier.width(8.dp)); Text("ABASTECIMENTO") }
         Button(onClick = { dialog = "expense" }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.ReceiptLong, null); Spacer(Modifier.width(8.dp)); Text("DESPESA") }
         OutlinedButton(onClick = { dialog = "maint" }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Build, null); Spacer(Modifier.width(8.dp)); Text("MANUTENÇÃO") }
@@ -539,36 +542,51 @@ private fun EntriesPage(
 }
 
 @Composable
-private fun SettingsPage(prefs: TruckBoxPreferences) {
-    var host by remember { mutableStateOf(prefs.coreHost) }
-    var uid by remember { mutableStateOf(prefs.cloudDeviceUid) }
-    var token by remember { mutableStateOf("") }
-    var gpsUid by remember { mutableStateOf(prefs.gpsDeviceUid) }
-    var gpsToken by remember { mutableStateOf("") }
-    var enabled by remember { mutableStateOf(prefs.gatewayEnabled) }
-    var saved by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+internal fun SettingsPage(prefs: TruckBoxPreferences, store: OperationsStore, onStartGps: () -> Unit, onStopGps: () -> Unit) {
+    var code by remember { mutableStateOf("") }
+    var enabled by remember { mutableStateOf(prefs.gpsTrackingEnabled) }
+    var configured by remember { mutableStateOf(runCatching { prefs.gpsCredentials().configured }.getOrDefault(false)) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    var saving by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Configuração", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        OutlinedTextField(host, { host = it }, label = { Text("Core na Starlink") }, supportingText = { Text("truckbox.local ou IP LAN do ESP32") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(uid, { uid = it }, label = { Text("Device UID Core") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(token, { token = it }, label = { Text(if (prefs.cloudDeviceToken.isBlank()) "Token Cloud Core" else "Novo token Core (deixe vazio para manter)") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        HorizontalDivider()
-        Text("GPS", fontWeight = FontWeight.Bold)
-        OutlinedTextField(gpsUid, { gpsUid = it }, label = { Text("Device UID GPS") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(gpsToken, { gpsToken = it }, label = { Text(if (prefs.gpsDeviceToken.isBlank()) "Token Cloud GPS" else "Novo token GPS (deixe vazio para manter)") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        Row(verticalAlignment = Alignment.CenterVertically) { Switch(enabled, { enabled = it }); Spacer(Modifier.width(8.dp)); Text("Gateway em segundo plano") }
+        Text("Acesso à Cloud", fontWeight = FontWeight.Bold)
+        Text(if (configured) "Acesso salvo neste celular. A validação acontece na Cloud." else "Cole o código privado do Motorista para configurar viagens e GPS.")
+        OutlinedTextField(code, { code = it }, label = { Text("Código privado do Motorista") },
+            visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
+            supportingText = { Text("Use o código do celular fornecido com esta versão.") })
         Button(onClick = {
-            prefs.coreHost = host
-            prefs.cloudDeviceUid = uid
-            if (token.isNotBlank()) prefs.cloudDeviceToken = token
-            prefs.gpsDeviceUid = gpsUid
-            if (gpsToken.isNotBlank()) prefs.gpsDeviceToken = gpsToken
-            prefs.gatewayEnabled = enabled
-            token = ""; gpsToken = ""; saved = true
-        }, modifier = Modifier.fillMaxWidth()) { Text("SALVAR") }
-        if (saved) Text("Configuração salva. O serviço lê as novas opções automaticamente.", color = MaterialTheme.colorScheme.primary)
-        Text("A multimídia não participa do Gateway. Ela será tratada como aplicativo separado.", fontSize = 12.sp)
+            saving = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        prefs.importCloudCode(code.trim())
+                        store.bindUnassignedCommands(prefs.cloudCredentials().scope)
+                    }
+                }
+                saving = false
+                if (result.isSuccess) {
+                    code = ""; configured = true
+                    message = "Acesso salvo. Confira a confirmação na tela Status."
+                    if (enabled) onStartGps()
+                } else message = "Não foi possível salvar o código. Confira o arquivo do Motorista e tente novamente."
+            }
+        }, enabled = code.isNotBlank() && !saving, modifier = Modifier.fillMaxWidth()) { Text(if (saving) "SALVANDO…" else "SALVAR ACESSO") }
+        message?.let { Text(it) }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(enabled, {
+                enabled = it; prefs.gpsTrackingEnabled = it
+                GatewayStatus.update { state -> state.copy(gpsEnabled = it, gpsFix = false) }
+                if (it) onStartGps() else onStopGps()
+            })
+            Spacer(Modifier.width(8.dp)); Text("Compartilhar GPS com a Cloud")
+        }
+        Text("Durante a viagem, a localização é enviada mesmo com a tela apagada enquanto o serviço e sua notificação estiverem ativos. Pausar interrompe a coleta e o reenvio; a fila anterior permanece no celular.", fontSize = 12.sp)
+        OutlinedButton(onClick = onStartGps, enabled = configured && enabled, modifier = Modifier.fillMaxWidth()) { Text("INICIAR GPS / REVISAR PERMISSÕES") }
+        Text("Permita a localização precisa. O celular usa sua conexão de internet disponível para enviar as posições. As viagens são consultadas diretamente na Cloud.", fontSize = 12.sp)
     }
 }
 
-private fun String.num(): Double? = trim().replace(',', '.').toDoubleOrNull()
+private fun String.num(): Double? = trim().replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }

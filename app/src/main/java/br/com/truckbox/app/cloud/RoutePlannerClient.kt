@@ -3,8 +3,6 @@ package br.com.truckbox.app.cloud
 import br.com.truckbox.app.operations.RoutePlanSnapshot
 import br.com.truckbox.app.preferences.TruckBoxPreferences
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.UUID
 
 data class RoutePlanResponse(
@@ -12,7 +10,7 @@ data class RoutePlanResponse(
     val error: String? = null,
 )
 
-class RoutePlannerClient(private val prefs: TruckBoxPreferences) {
+class RoutePlannerClient(private val prefs: TruckBoxPreferences,private val transport: DriverCloudTransport=DriverCloudTransport()) {
     companion object {
         private const val ENDPOINT = "https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-app"
     }
@@ -90,28 +88,14 @@ class RoutePlannerClient(private val prefs: TruckBoxPreferences) {
         prefs.cloudDeviceUid.isNotBlank() && prefs.cloudDeviceToken.isNotBlank()
 
     private fun post(action: String, payload: JSONObject): JSONObject? {
+        val credentials=prefs.cloudCredentials()
         val body = JSONObject().apply {
-            put("device_uid", prefs.cloudDeviceUid)
-            put("token", prefs.cloudDeviceToken)
+            put("device_uid", credentials.deviceUid)
+            put("token", credentials.token)
             put("action", action)
             put("payload", payload)
         }.toString()
-        return try {
-            val c = URL(ENDPOINT).openConnection() as HttpURLConnection
-            c.requestMethod = "POST"
-            c.connectTimeout = 8000
-            c.readTimeout = 45_000
-            c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
-            c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            val code = c.responseCode
-            val stream = if (code in 200..299) c.inputStream else c.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            c.disconnect()
-            if (text.isBlank()) null else runCatching { JSONObject(text) }.getOrNull()
-        } catch (_: Throwable) {
-            null
-        }
+        return runCatching {transport.post(DriverEndpoint.OPERATIONS,JSONObject(body),45000)}.getOrNull()
     }
 }
 
