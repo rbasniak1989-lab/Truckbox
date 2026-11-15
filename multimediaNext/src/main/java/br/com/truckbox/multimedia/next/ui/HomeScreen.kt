@@ -124,6 +124,8 @@ import java.time.Instant
             Caption("Captura: ${value?.first?.sampledAt ?: "Não informada"}")
             Caption("Recebimento: ${value?.first?.receivedAt ?: "Não informado"}")
             Caption("Qualidade: ${value?.first?.quality?.name ?: "MISSING"}")
+            if(sensor==Instrument.TORQUE && value?.first?.validation=="DERIVADO_REFERENCIA_HISTORICA_EM_VALIDACAO")
+                Caption("Torque % derivado do PID 93 usando 2.643 Nm históricos; referência em validação.")
             Caption("Últimos valores ficam identificados pela idade. Cálculos e ações continuam exigindo amostras atuais e válidas.")
         }
     },confirmButton={TextButton(onClick=onClose){Text("Fechar")}})
