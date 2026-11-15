@@ -3,6 +3,7 @@ package br.com.truckbox.multimedia.next.data
 import br.com.truckbox.multimedia.next.domain.*
 import com.google.gson.JsonParser
 import com.google.gson.JsonObject
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
@@ -25,12 +26,22 @@ class CoreLiveClient(
     private fun read(host:String,uid:String):Map<Instrument,InstrumentValue>? {
         var connection:HttpURLConnection?=null
         return try {
-            connection=connections.open(URL("http://$" + "{host}/api/live"))
+            connection=connections.open(URL("http://${host}/api/live"))
             connection.connectTimeout=1200;connection.readTimeout=1800
             connection.requestMethod="GET";connection.instanceFollowRedirects=false
             connection.useCaches=false
             if(connection.responseCode!=200)return null
-            val data=connection.inputStream.use {it.readNBytes(4097)}
+            val data=ByteArrayOutputStream().also {out->
+                connection.inputStream.use {input->
+                    val buffer=ByteArray(1024)
+                    while(true) {
+                        val n=input.read(buffer)
+                        if(n<0)break
+                        if(out.size()+n>4096)return null
+                        out.write(buffer,0,n)
+                    }
+                }
+            }.toByteArray()
             if(data.isEmpty() || data.size>4096)return null
             val json=JsonParser.parseString(data.toString(Charsets.UTF_8)).asJsonObject
             fun string(obj:JsonObject,key:String)=runCatching {obj.get(key)?.asString}.getOrNull()
@@ -50,7 +61,7 @@ class CoreLiveClient(
                 if(sensor==Instrument.GEAR && (value%1.0!=0.0 || value !in -99.0..99.0))return
                 val reading=Reading(value=value,unit=sensor.unit,source=Origin.CORE,
                     sampledAt=at.minusMillis(age),receivedAt=at,quality=Quality.PROVISIONAL,
-                    sourceId="J1587/MID:$" + "{mid}/PID:$" + "{pid}",bootId=boot,
+                    sourceId="J1587/MID:${mid}/PID:${pid}",bootId=boot,
                     validation=validQuality)
                 result[sensor]=InstrumentValue(reading)
             }
