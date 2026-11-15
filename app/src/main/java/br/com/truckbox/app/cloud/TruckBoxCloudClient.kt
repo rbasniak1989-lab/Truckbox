@@ -3,26 +3,25 @@ package br.com.truckbox.app.cloud
 import br.com.truckbox.app.operations.*
 import br.com.truckbox.app.preferences.TruckBoxPreferences
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import br.com.truckbox.app.preferences.DriverCredentials
 
 /**
  * Sincronização operacional best-effort da v0.4.1.
  * A persistência local acontece primeiro; falha de internet nunca impede o motorista
  * de cadastrar uma viagem/abastecimento/manutenção.
  */
-class TruckBoxCloudClient(private val prefs: TruckBoxPreferences) {
+class TruckBoxCloudClient(private val prefs: TruckBoxPreferences,private val transport: DriverCloudTransport=DriverCloudTransport(),private val fixedCredentials: DriverCredentials?=null) {
     companion object {
         private const val ENDPOINT = "https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-app"
     }
 
-    fun configured(): Boolean = prefs.cloudDeviceUid.isNotBlank() && prefs.cloudDeviceToken.isNotBlank()
+    fun configured(): Boolean = (fixedCredentials ?: prefs.cloudCredentials()).configured
 
     fun syncTrip(t: TripRecord) = post("upsert_trip", JSONObject().apply {
         put("client_uid", t.clientUid); put("status", t.status); put("origin", t.origin); put("destination", t.destination)
         put("started_at", iso(t.startedAtMs)); putNullable("ended_at", t.endedAtMs?.let(::iso))
         putNullable("start_odometer_km", t.startOdometerKm); putNullable("end_odometer_km", t.endOdometerKm)
-        put("start_core_fuel_liters", t.startFuelCounterL); putNullable("end_core_fuel_liters", t.endFuelCounterL)
+        putNullable("start_core_fuel_liters", t.startFuelCounterL); putNullable("end_core_fuel_liters", t.endFuelCounterL)
         putNullable("weight_t", t.weightT); putNullable("rate_per_t", t.ratePerT); putNullable("freight_total", t.freightTotal)
         putNullable("distance_km", t.distanceKm); putNullable("fuel_liters", t.fuelLiters); putNullable("average_kml", t.averageKml)
         putNullable("route_simulation_id", t.routeSimulationId); putNullable("planned_route_url", t.plannedRouteUrl)
@@ -60,25 +59,32 @@ class TruckBoxCloudClient(private val prefs: TruckBoxPreferences) {
 
     fun snapshot(): JSONObject? = post("snapshot", JSONObject())
 
+    fun execute(command: PendingCloudCommand): Boolean {
+        val credentials=fixedCredentials ?: prefs.cloudCredentials()
+        require(command.scope==credentials.scope)
+        if(fixedCredentials==null)return TruckBoxCloudClient(prefs,transport,credentials).execute(command)
+        val result=when(command.action) {
+            DriverAction.UPSERT_TRIP -> syncTrip(requireNotNull(command.trip))
+            DriverAction.END_TRIP -> endTrip(requireNotNull(command.trip))
+            DriverAction.UPSERT_FUELING -> syncFueling(requireNotNull(command.fueling))
+            DriverAction.UPSERT_EXPENSE -> syncExpense(requireNotNull(command.expense))
+            DriverAction.UPSERT_MAINTENANCE -> syncMaintenance(requireNotNull(command.maintenance))
+        }
+        val item=result?.optJSONObject("item") ?: return false
+        if(credentials.vehicleId!=null&&item.optString("truck_id")!=credentials.vehicleId)return false
+        return item.optString("client_uid")==command.entityUid
+    }
+
     private fun post(action: String, payload: JSONObject): JSONObject? {
-        if (!configured()) return null
+        val credentials=fixedCredentials ?: prefs.cloudCredentials()
+        if (!credentials.configured) return null
         val body = JSONObject().apply {
-            put("device_uid", prefs.cloudDeviceUid)
-            put("token", prefs.cloudDeviceToken)
+            put("device_uid", credentials.deviceUid)
+            put("token", credentials.token)
             put("action", action)
             put("payload", payload)
         }.toString()
-        return try {
-            val c = URL(ENDPOINT).openConnection() as HttpURLConnection
-            c.requestMethod = "POST"; c.connectTimeout = 3500; c.readTimeout = 5000; c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
-            c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            val code = c.responseCode
-            val stream = if (code in 200..299) c.inputStream else c.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            c.disconnect()
-            if (code in 200..299 && text.isNotBlank()) JSONObject(text) else null
-        } catch (_: Throwable) { null }
+        return transport.post(DriverEndpoint.OPERATIONS,JSONObject(body))
     }
 
     private fun iso(ms: Long): String = java.time.Instant.ofEpochMilli(ms).toString()

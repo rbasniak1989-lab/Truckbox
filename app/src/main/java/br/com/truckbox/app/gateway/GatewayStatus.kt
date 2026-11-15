@@ -5,24 +5,23 @@ import kotlinx.coroutines.flow.asStateFlow
 
 data class GatewaySnapshot(
     val running: Boolean = false,
-    val coreOnline: Boolean = false,
-    val cloudOnline: Boolean = false,
+    val gpsCloudOnline: Boolean = false,
+    val operationsCloudOnline: Boolean = false,
     val gpsFix: Boolean = false,
-    val pendingBytes: Long = 0L,
-    val lastAckSeq: Long = 0L,
-    val lastBatchCount: Int = 0,
+    val pendingGps: Int = 0,
+    val pendingOperations: Int = 0,
+    val gpsEnabled: Boolean = true,
+    val lastGpsCaptureMs: Long? = null,
+    val gpsAccuracyM: Double? = null,
+    val operationsError: String? = null,
     val lastUploadMs: Long? = null,
     val lastGpsUploadMs: Long? = null,
-    val odometerKm: Double? = null,
-    val coreFuelLiters: Double? = null,
-    val speedKmh: Double? = null,
-    val rpm: Double? = null,
-    val combinationWeightKg: Double? = null,
+    val lastGpsSentCaptureMs: Long? = null,
     val lastError: String? = null,
-)
+) {val cloudOnline: Boolean get()=gpsCloudOnline||operationsCloudOnline}
 
 object GatewayStatus {
     private val _state = MutableStateFlow(GatewaySnapshot())
     val state = _state.asStateFlow()
-    fun update(block: (GatewaySnapshot) -> GatewaySnapshot) { _state.value = block(_state.value) }
+    fun update(block: (GatewaySnapshot) -> GatewaySnapshot) {synchronized(this) {_state.value=block(_state.value)}}
 }
