@@ -1,0 +1,2 @@
+Drive300: virtual_seconds=12000 nominal_km=300 measured_trip_km=299.98172160 canonical_l=59.81502658 confirmed_paired_l=25.07835307 core_reboots=3 resets=POWERON/TASK_WDT/OTA polling_boots=4 records=1207 local_mid=188 PID117/118/250_sent=1188/1188/1188 zero_global_request_stops PASS
+Drive300 outbox: offline=7200s rows=1207 unique_mock_Cloud=1207 deliveries=1208 duplicates_in_Cloud=0 peak_pending=725 peak_bytes=343633 torn_write_reboots=2 valid_pending=0 evidence_preserved=98109 PASS

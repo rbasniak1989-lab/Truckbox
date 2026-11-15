@@ -39,8 +39,8 @@ void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j17
         a->last_enabled=false;return;
     }
     if(!a->last_enabled){a->phase=TBX_AUTO_WAIT_RX;a->reason="WAITING_STABLE_PASSIVE_NETWORK";a->paused_us=now;a->last_enabled=true;}
-    if(!e->persisted || !e->interface_ready || !e->local_mid || !e->topology_attested || e->local_conflict || c->rx_guard.clock_fault){
-        const char *reason=e->local_conflict?"LOCAL_MID_CONFLICT":!e->persisted?"NVS_POLICY_UNAVAILABLE":!e->local_mid || !e->topology_attested?"LOCAL_TX_PROFILE_REQUIRED":c->rx_guard.clock_fault?"MONOTONIC_CLOCK_INVALID":"UART_OR_EDGE_MONITOR_UNAVAILABLE";
+    if(!e->persisted || !e->interface_ready || !e->local_mid || !e->topology_attested || c->rx_guard.clock_fault){
+        const char *reason=!e->persisted?"NVS_POLICY_UNAVAILABLE":!e->local_mid || !e->topology_attested?"LOCAL_TX_PROFILE_REQUIRED":c->rx_guard.clock_fault?"MONOTONIC_CLOCK_INVALID":"UART_OR_EDGE_MONITOR_UNAVAILABLE";
         if(a->phase!=TBX_AUTO_BLOCKED || a->reason!=reason)pause(a,c,reason,TBX_AUTO_BLOCKED,now);
         return;
     }
@@ -54,6 +54,10 @@ void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j17
         a->last_stop_reason=a->reason;a->stopped_us=now;return;
     }
     if(a->phase==TBX_AUTO_RUNNING){
+        if(c->config.local_mid!=e->local_mid || memcmp(c->config.target_mid,e->targets,sizeof(e->targets))){
+            if(c->tx_active || c->scheduler->pending<TBX_J1708_REQUEST_CAPACITY)return;
+            pause(a,c,"PERSISTED_MID_OR_TARGET_CHANGED",TBX_AUTO_WAIT_RX,now);return;
+        }
         /* Supervise actual send progress, not periodic statistics. The grace
          * covers a complete healthy RX observation and a full queue rotation.
          * A busy bus is a deferral, never a reason to force transmission. */
@@ -78,7 +82,9 @@ void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j17
             return;
         }
         a->reason=e->bus_busy?"BUS_BUSY_DEFERRED":"PERSISTENT_POLICY_OPERATIONAL_INDIRECT";
-        if(launch!=a->launch){tbx_j1708_request_production(c->scheduler,e->periods,launch,(uint32_t)(now/1000),false);a->launch=launch;}
+        bool cadence_changed=launch!=a->launch;
+        for(unsigned i=0;i<17;i++)if(c->scheduler->pids[i].period_ms!=e->periods[i])cadence_changed=true;
+        if(cadence_changed){tbx_j1708_request_production(c->scheduler,e->periods,launch,(uint32_t)(now/1000),false);a->launch=launch;}
         /* Noise warnings slow TX without attributing corrupt RX to our TX. */
         tbx_j1708_request_set_spacing(c->scheduler,c->rx_guard.suspect_streak || (a->failures && now-a->started_us<UINT64_C(30000000))?1000:500);
         if(now-a->started_us>UINT64_C(300000000) && c->scheduler->answered_total)a->failures=0;
@@ -90,7 +96,7 @@ void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j17
     tbx_j1708_active_config_t cfg={.local_mid=e->local_mid,.priority=8,.inverted_de21_attested=e->topology_attested};
     memcpy(cfg.target_mid,e->targets,sizeof(e->targets));
     /* A healthy, recent passive observation permits a bounded new TX attempt;
-     * it is not external proof. All three-failure/echo/idle guards run again. */
+     * it is not external proof. Electrical abort and bus-idle guards run again. */
     c->scheduler->safety_stopped=false;c->scheduler->link_error_count=0;c->scheduler->consecutive_timeouts=0;
     if(!tbx_j1708_active_configure(c,&cfg)){a->reason="CONFIGURATION_REJECTED";return;}
     c->scheduler->timeout_ms=e->timeout_ms;

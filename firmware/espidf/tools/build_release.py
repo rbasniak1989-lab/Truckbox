@@ -14,7 +14,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.24"
+VERSION = "0.2.25"
+ROLLBACK_CORE_SHA256 = "5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d"
 EXPECTED_OFFSETS = {0, 0x8000, 0xF000, 0x20000}
 REQUIRED_SOURCE = (
     "firmware/espidf/CMakeLists.txt",
@@ -137,8 +138,8 @@ def provenance(project_root: Path, builds: dict) -> dict:
         "branch": git_value(project_root, "branch", "--show-current"),
         "commit": git_value(project_root, "rev-parse", "HEAD"),
         "dirty": bool(git_value(project_root, "status", "--porcelain")),
-        "integration_base_branch": "fix/revb1-v0222-simple-maintenance",
-        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "6707efb"),
+        "integration_base_branch": "PR27/firmware-0.2.24",
+        "integration_base_commit": git_value(project_root, "merge-base", "HEAD", "a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3aa"),
         "reference_material_commit": git_value(project_root, "rev-parse", "origin/feature/revb1-j1708-17-pids"),
     }
     result["builds"] = {}
@@ -197,7 +198,7 @@ def write_windows_tools(destination: Path, roles=("core", "link")) -> None:
     ).encode("ascii"))
 
 
-def package_release(project_root: Path, output_dir: Path, package_path: Path, roles=("core", "link")) -> dict:
+def package_release(project_root: Path, output_dir: Path, package_path: Path, roles=("core", "link"),rollback_core: Path|None=None) -> dict:
     project_root, output_dir, package_path = project_root.resolve(), output_dir.resolve(), package_path.resolve()
     if output_dir.exists() and any(output_dir.iterdir()):
         raise ValueError(f"Output directory is not empty: {output_dir}; choose a fresh directory")
@@ -205,6 +206,10 @@ def package_release(project_root: Path, output_dir: Path, package_path: Path, ro
         raise ValueError("Package ZIP must be outside its release directory")
     entries = source_entries(project_root)
     builds = {role: validate_build(project_root, role) for role in roles}
+    if rollback_core is not None:
+        rollback_core=rollback_core.resolve()
+        if "core" not in roles or descriptor(rollback_core)!=("0.2.24","truckbox_core") or digest(rollback_core)!=ROLLBACK_CORE_SHA256:
+            raise ValueError("Rollback Core identity/hash differs from audited PR27 artifact")
     origin = provenance(project_root, builds)
     manifest = {"hardware_revision": "B1", "version": VERSION, "state": "CANDIDATA_DIAGNOSTICO_AGUARDANDO_APROVACAO",
                 "validation": "PARTIAL", "physical_validation": "pending", "esp_idf": "v5.5.2",
@@ -259,6 +264,12 @@ def package_release(project_root: Path, output_dir: Path, package_path: Path, ro
         for name in ("flash_device.py", "monitor_device.py"):
             shutil.copy2(project_root / "tools" / name, staging / "tools" / name)
         write_windows_tools(staging, roles)
+        if rollback_core is not None:
+            rollback=staging / "rollback/truckbox_core_0.2.24_ota.bin"
+            rollback.parent.mkdir();shutil.copy2(rollback_core,rollback)
+            manifest["rollback"]={"core":{"version":"0.2.24","file":rollback.relative_to(staging).as_posix(),
+                "sha256":digest(rollback),"size":rollback.stat().st_size,
+                "source_commit":"a9cd6bddfa6c1d176a7f8f9a8b46855dcd7ab3aa","ci_artifact_id":14134170574}}
         write_json(staging / "SOURCE_PROVENANCE.json", origin)
         source_zip = staging / "truckbox_firmware_source.zip"
         with zipfile.ZipFile(source_zip, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -291,9 +302,10 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=ROOT / "release")
     parser.add_argument("--package", type=Path, default=ROOT / f"Truckbox_B1_firmware_{VERSION}_TESTES.zip")
     parser.add_argument("--core-only", action="store_true", help="Package only Core; keep installed Link firmware")
+    parser.add_argument("--rollback-core",type=Path,help="Include audited PR27 Core0.2.24 OTA, checked by identity and SHA256")
     args = parser.parse_args()
     print(json.dumps(package_release(ROOT, args.output_dir, args.package,
-        roles=("core",) if args.core_only else ("core", "link")), ensure_ascii=False, indent=2))
+        roles=("core",) if args.core_only else ("core", "link"),rollback_core=args.rollback_core), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

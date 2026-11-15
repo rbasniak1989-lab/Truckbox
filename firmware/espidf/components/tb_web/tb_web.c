@@ -60,11 +60,14 @@ static esp_err_t health_reply(httpd_req_t *request,bool low_memory)
 {
     /* No cJSON allocation: diagnostics remain possible after an allocation
      * failure, and report largest block as well as total/minimum free RAM. */
-    char body[512];
-    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"boot_id\":%u,\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u}",
+    char body[1024],extra[384]={0};
+#if !CONFIG_TB_ROLE_LINK
+    (void)tb_capture_health_fields(extra,sizeof(extra));
+#endif
+    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"boot_id\":%u,\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u%s}",
         low_memory?"false":"true",low_memory?"Sem memoria RAM para diagnostico completo":"",tb_role_name(),tb_device_uid(),tb_version(),
         (unsigned)tb_boot_id(),(uint64_t)esp_timer_get_time()/1000u,(unsigned)esp_get_free_heap_size(),(unsigned)esp_get_minimum_free_heap_size(),
-        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),extra);
     if(n<=0 || (size_t)n>=sizeof(body))return ESP_FAIL;
     if(low_memory)httpd_resp_set_status(request,"503 Service Unavailable");
     response_headers(request);httpd_resp_set_type(request,"application/json; charset=utf-8");
@@ -259,6 +262,9 @@ static esp_err_t state_handler(httpd_req_t *request)
     const size_t full_tree_allowance=64u*1024u,working_reserve=16u*1024u;
     const unsigned free_before=esp_get_free_heap_size(),minimum_before=esp_get_minimum_free_heap_size();
     const size_t largest_before=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    /* Measured compact state + networking must not borrow the acquisition/
+     * upload reserve. The partial response still reports real TX/RX counters. */
+    if(free_before<24u*1024u+working_reserve || largest_before<1024)return health_reply(request,false);
     bool small=!full || free_before<full_tree_allowance+working_reserve;
     cJSON *body = cJSON_CreateObject();
     if (!body) return health_reply(request,true);

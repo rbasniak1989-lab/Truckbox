@@ -98,6 +98,9 @@ bool tb_web_begin_maintenance(void);
 esp_err_t tb_application_start(void);
 void tb_application_add_json(cJSON *object);
 void tb_application_add_json_compact(cJSON *object);
+#if !CONFIG_TB_ROLE_LINK
+size_t tb_capture_health_fields(char *buffer,size_t capacity);
+#endif
 esp_err_t tb_application_register_routes(httpd_handle_t server);
 
 /* Core storage. Submit valid JSON objects, never fabricated sample values. */

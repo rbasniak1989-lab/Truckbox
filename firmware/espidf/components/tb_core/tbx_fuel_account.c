@@ -25,6 +25,16 @@ double tbx_fuel_unanchored(const tbx_fuel_account_t *a)
 {return a->direct_valid?fmax(0,a->direct_anchor_l-a->direct_l):0;}
 double tbx_fuel_operation_litres(const tbx_fuel_account_t *a)
 {return fmax(0,(a->operation_open?a->observed_l:a->operation_end_l+a->operation_end_adjustment_l)-a->operation_start_l-a->operation_adjustment_l);}
+bool tbx_fuel_average(const tbx_fuel_account_t *a,double *km,double *litres,double *km_l)
+{
+    const tbx_fuel_span_t *s=&a->span;
+    double d=s->end_odometer_km-s->start_odometer_km,f=s->end_confirmed_l-s->start_confirmed_l;
+    if(!s->valid || !isfinite(d) || !isfinite(f) || d<0 || f<=0)return false;
+    if(km)*km=d;
+    if(litres)*litres=f;
+    if(km_l)*km_l=d/f;
+    return true;
+}
 void tbx_fuel_account_init(tbx_fuel_account_t *a,double litres,bool valid)
 {
     memset(a,0,sizeof(*a));
@@ -106,6 +116,19 @@ bool tbx_fuel_account_counter_litres(tbx_fuel_account_t *a,uint8_t mid,double li
         a->last_delta_l=delta;a->last_integrated_l=a->integrated_l-a->integrated_at_direct;
         a->last_estimated_l=a->estimated_l-a->estimated_at_direct;
         a->last_correction_l=correction;a->last_distance_km=isfinite(odo) && odo>=a->anchor_odometer_km?odo-a->anchor_odometer_km:NAN;
+        bool within_operation=true;uint64_t offset=0;
+        if(a->operation_uid[0])within_operation=a->operation_open &&
+            ((a->anchor.boot==a->operation_stamp.boot && a->anchor.uptime_ms>=a->operation_stamp.uptime_ms) ||
+             elapsed(a->operation_stamp,a->anchor,&offset));
+        /* Endpoints must refer to the same ECU-counter interval. No estimate
+         * is added to this mean and no whole crossing interval goes to a trip. */
+        if(within_operation && isfinite(a->last_distance_km) && a->last_distance_km<=250.0*(double)dt/3600000.0+0.322){
+            tbx_fuel_span_t *s=&a->span;
+            if(!s->valid){s->start=a->anchor;s->start_odometer_km=a->anchor_odometer_km;s->start_confirmed_l=a->direct_l;s->partial=true;s->valid=true;}
+            if(odo>=s->end_odometer_km || !s->end.uptime_ms){
+                s->end=t;s->end_odometer_km=odo;s->end_confirmed_l=a->direct_l+delta;
+            }
+        }else if(within_operation && isfinite(odo) && isfinite(a->anchor_odometer_km))memset(&a->span,0,sizeof(a->span));
         a->boundary_correction_l=0;
         if(a->operation_interval_id==a->interval_id && a->operation_stamp.uptime_ms){
             /* A boundary within this interval is an allocation estimate. Never
@@ -131,6 +154,7 @@ bool tbx_fuel_account_counter_litres(tbx_fuel_account_t *a,uint8_t mid,double li
         a->result=TBX_FUEL_RECONCILED;
         ++a->interval_id;
     }else{
+        memset(&a->span,0,sizeof(a->span));
         cut(a,t);a->historical_unknown=a->historical_unknown || a->interval_unknown;
         a->interval_unknown=false;a->interval_id=1;a->result=TBX_FUEL_ANCHORED;
     }
@@ -158,6 +182,7 @@ bool tbx_fuel_account_boundary(tbx_fuel_account_t *a,bool start,const char *uid,
     if(start && !a->operation_open && a->operation_end_stamp.uptime_ms && !strcmp(uid,a->operation_uid))return false;
     cut(a,t);
     if(start){
+        memset(&a->span,0,sizeof(a->span));
         memcpy(a->operation_uid,uid,strlen(uid)+1);a->operation_start_l=a->observed_l;
         a->operation_adjustment_l=0;a->operation_start_pending_l=tbx_fuel_pending(a);
         a->operation_stamp=t;a->operation_interval_id=a->interval_id;a->operation_odometer_km=odo;

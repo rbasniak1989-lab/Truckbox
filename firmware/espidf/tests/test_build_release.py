@@ -8,6 +8,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
@@ -69,6 +70,26 @@ class ReleasePackageTests(unittest.TestCase):
         with zipfile.ZipFile(self.archive) as archive:
             self.assertIn("flash_core.cmd",archive.namelist())
             self.assertNotIn("flash_link.cmd",archive.namelist())
+
+    def rollback_fixture(self):
+        image=self.temp/"rollback.bin"
+        data=bytearray((self.project/"build-core/truckbox_core.bin").read_bytes());data[48:54]=b"0.2.24"
+        image.write_bytes(data);return image
+
+    def test_rollback_is_checked_before_publishing(self):
+        image=self.rollback_fixture()
+        with self.assertRaisesRegex(ValueError,"Rollback Core identity/hash"):
+            package.package_release(self.project,self.output,self.archive,roles=("core",),rollback_core=image)
+        self.assertFalse(self.output.exists());self.assertFalse(self.archive.exists())
+
+    def test_checked_rollback_is_separate_from_install_regions(self):
+        image=self.rollback_fixture();digest=hashlib.sha256(image.read_bytes()).hexdigest()
+        with patch.object(package,"ROLLBACK_CORE_SHA256",digest):
+            package.package_release(self.project,self.output,self.archive,roles=("core",),rollback_core=image)
+        with zipfile.ZipFile(self.archive) as z:
+            m=json.loads(z.read("manifest.json"));r=m["rollback"]["core"]
+            self.assertEqual(z.read(r["file"]),image.read_bytes());self.assertEqual(r["sha256"],digest)
+            self.assertFalse(any("rollback" in f["file"] for f in m["images"]["core"]["usb_files"]))
 
     def test_archive_contains_compilable_sibling_sources_and_integrity_manifest(self):
         result = self.make_package()

@@ -4,6 +4,11 @@
 #include <stdbool.h>
 typedef struct {uint64_t uptime_ms,unix_ms;uint32_t boot;}tbx_fuel_stamp_t;
 typedef struct {tbx_fuel_stamp_t at;double litres;uint32_t raw;uint8_t mid;bool valid;}tbx_fuel_reference_t;
+typedef struct {
+    tbx_fuel_stamp_t start,end;
+    double start_odometer_km,end_odometer_km,start_confirmed_l,end_confirmed_l;
+    bool valid,partial;
+}tbx_fuel_span_t;
 typedef enum {
     TBX_FUEL_NONE,TBX_FUEL_ANCHORED,TBX_FUEL_RECONCILED,TBX_FUEL_DUPLICATE,
     TBX_FUEL_WRONG_MID,TBX_FUEL_TIME_INVALID,TBX_FUEL_COUNTER_DECREASE,
@@ -41,7 +46,9 @@ typedef enum {
     uint32_t operation_end_interval_id
 
 typedef struct {TBX_FUEL_STATE_FIELDS;}tbx_fuel_persist_t;
-typedef struct {TBX_FUEL_STATE_FIELDS;const char *quality;}tbx_fuel_account_t;
+/* Keep the v4 scalar layout intact for migration/rollback. New metadata is
+ * exported only by the versioned v5 wrapper, never by copying a pointer. */
+typedef struct {TBX_FUEL_STATE_FIELDS;const char *quality;tbx_fuel_span_t span;}tbx_fuel_account_t;
 #undef TBX_FUEL_STATE_FIELDS
 void tbx_fuel_account_init(tbx_fuel_account_t *,double restored_l,bool valid);
 void tbx_fuel_account_rate(tbx_fuel_account_t *,uint8_t,double,double,uint64_t);
@@ -59,4 +66,5 @@ const char *tbx_fuel_result_name(tbx_fuel_result_t);
 double tbx_fuel_pending(const tbx_fuel_account_t *);
 double tbx_fuel_unanchored(const tbx_fuel_account_t *);
 double tbx_fuel_operation_litres(const tbx_fuel_account_t *);
+bool tbx_fuel_average(const tbx_fuel_account_t *,double *km,double *litres,double *km_l);
 #endif

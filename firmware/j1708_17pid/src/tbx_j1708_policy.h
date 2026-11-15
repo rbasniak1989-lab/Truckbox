@@ -24,7 +24,7 @@ static inline uint32_t tbx_j1708_production_period(uint16_t pid,bool launch)
     case 34:case 63:return launch?5000:15000;
     case 32:case 160:return launch?10000:30000;
     case 37:return launch?15000:30000;
-    case 250:return 300000;
+    case 117:case 118:case 250:return 10000;
     case 235:case 236:return 900000;
     default:return 60000;
     }

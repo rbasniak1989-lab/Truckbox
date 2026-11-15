@@ -160,7 +160,8 @@ void tbx_j1708_rx_tick(tbx_j1708_active_t *c,uint64_t now)
     d.reference_upper_ppm=(uint32_t)(ref_high*1000000+0.5);d.streak=g->suspect_streak;
     d.cause=(flags&TBX_GUARD_MAJORITY_INVALID)?TBX_GUARD_RX_UNUSABLE:(flags&TBX_GUARD_UART_FAULT)?TBX_GUARD_RX_UART:TBX_GUARD_RX_QUALITY;
     g->last_window=w;g->start_us=now;g->boundary=g->total;
-    if(enabled && (flags&TBX_GUARD_PERSISTENT)){trip(c,d);return;}
+    if(enabled && (flags&TBX_GUARD_PERSISTENT) &&
+       (!c->production_mode || d.cause!=TBX_GUARD_RX_QUALITY)){trip(c,d);return;}
     /* Transition records only, not one record per window or raw frame. */
     if(enabled && suspect && !g->warned){g->decision=d;emit(c);g->warned=true;}
     else if(enabled && !suspect && g->warned){d.cause=TBX_GUARD_NONE;g->decision=d;emit(c);g->warned=false;}

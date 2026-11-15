@@ -1,4 +1,6 @@
-Core **0.2.22 — candidata, manutenção com um clique**: [guia, testes e rollback](MAINTENANCE_v0.2.22.md). Botão Recriar armazenamento, sem frase/caixas/diálogo; sem trava de velocidade somente para manutenção. Proteções J1708 preservadas. Nenhuma ação executada na placa.
+Core **0.2.25 — candidata de polling nativo, não instalada**: [auditoria, correções e testes](RELATORIO_v0.2.25.md), [OTA/rollback](ATUALIZACAO_v0.2.25.md) e [changelog](CHANGELOG_v0.2.25.md). Base exata0.2.24 identificada pelo ELF do boot602. Suspeitas de MID/eco e falhas individuais não persistem um desligamento global; PID117/118/250 a10s; combustível reconciliado e média com extremos compatíveis; diagnóstico mínimo sem cJSON. Leituras continuam classificadas EM VALIDAÇÃO. Este guia prevalece sobre as políticas históricas abaixo.
+
+Core **0.2.22 — referência histórica, manutenção com um clique**: [guia, testes e rollback](MAINTENANCE_v0.2.22.md). Botão Recriar armazenamento, sem frase/caixas/diálogo; sem trava de velocidade somente para manutenção. Nenhuma ação executada na placa pelo agente.
 
 Core **0.2.21 — CANDIDATA de manutenção, não instalada pelo agente**: [procedimento pelo Wi-Fi, testes, perdas e rollback](MAINTENANCE_v0.2.21.md). Instalar a BIN não limpa arquivos. A recriação somente de `/tbflash` exige administrador, parada medida e confirmação explícita em duas etapas. [Changelog](CHANGELOG_v0.2.21.md).
 

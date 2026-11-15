@@ -107,5 +107,44 @@ static void gaps_and_operation_boundaries(void)
     assert(tbx_fuel_account_boundary(&a,true,"trip-B",stamp(1,311000,0),106));near(tbx_fuel_operation_litres(&a),0);
     puts("Offline integration, unknown vs bounded estimated gaps, trip/empty/trip boundaries and explicit estimated allocation PASS");
 }
-int main(void){distance();fuel_reconciliation_examples();wire_counter_validation();restart_and_crc();gaps_and_operation_boundaries();
+static void matched_average_and_v5(void)
+{
+    tbx_fuel_account_t a;tbx_fuel_account_init(&a,0,false);double km,l,avg;
+    assert(!tbx_fuel_average(&a,&km,&l,&avg));
+    tbx_fuel_account_counter_litres(&a,128,1000,stamp(1,1000,1794600001000),100);
+    constant_rate(&a,36,1000,10);
+    assert(tbx_fuel_account_counter_litres(&a,128,1000,stamp(1,11000,1794600011000),100.2));
+    near(a.observed_l,0);assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* Quantized unchanged counter is not an error. */
+    constant_rate(&a,36,11000,100);
+    assert(tbx_fuel_account_counter_litres(&a,128,1001,stamp(1,111000,1794600111000),102));
+    assert(tbx_fuel_average(&a,&km,&l,&avg));near(km,2);near(l,1);near(avg,2);
+    constant_rate(&a,36,111000,10);near(a.observed_l,1.1);
+    assert(tbx_fuel_average(&a,&km,&l,&avg));near(l,1); /* Provisional fuel never changes the confirmed mean. */
+    tbx_trip_t t;tbx_trip_init(&t,2,true);tb_trip_checkpoint_t old;tb_trip_checkpoint_make(&old,7,&t,&a);
+    tb_trip_checkpoint_v5_t v;tb_trip_checkpoint_v5_make(&v,&old,&a);assert(tb_trip_checkpoint_v5_valid(&v));
+    for(size_t i=0;i<offsetof(tb_trip_checkpoint_v5_t,crc)+sizeof(v.crc);i++){
+        tb_trip_checkpoint_v5_t bad=v;((uint8_t *)&bad)[i]^=1;assert(!tb_trip_checkpoint_v5_valid(&bad));
+    }
+    tb_trip_checkpoint_v4_t prior;tb_trip_checkpoint_v4_make(&prior,&old,&a);
+    assert(tbx_fuel_account_restore(&a,&prior.fuel));a.span=v.span;
+    assert(tbx_fuel_average(&a,&km,&l,&avg));near(avg,2);near(a.observed_l,1.1);
+    assert(tbx_fuel_account_counter_litres(&a,128,1002,stamp(2,1000,1794600211000),104));
+    assert(tbx_fuel_average(&a,&km,&l,&avg));near(km,4);near(l,2);near(a.observed_l,2);
+    assert(tbx_fuel_account_boundary(&a,true,"trip-new",stamp(2,2000,1794600212000),104));
+    assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* No complete prior interval assigned to a new trip. */
+    tbx_fuel_account_counter_litres(&a,128,1002.5,stamp(2,101000,1794600311000),105);
+    assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* Crossing interval stays explicitly allocated/estimated. */
+    tbx_fuel_account_counter_litres(&a,128,1003,stamp(2,201000,1794600411000),106);
+    assert(tbx_fuel_average(&a,&km,&l,&avg));near(km,1);near(l,.5);
+    tbx_fuel_account_t closed=a;
+    assert(tbx_fuel_account_boundary(&closed,false,"trip-new",stamp(2,211000,1794600421000),106));
+    assert(tbx_fuel_account_counter_litres(&closed,128,1004,stamp(2,301000,1794600511000),107));
+    assert(tbx_fuel_average(&closed,&km,&l,&avg));near(km,1);near(l,.5); /* Empty mode freezes the closed trip mean. */
+    assert(closed.direct_l>a.direct_l); /* Vehicle fuel keeps advancing independently. */
+    tbx_fuel_account_counter_litres(&a,128,1003.5,stamp(2,301000,1794600511000),10);
+    assert(!tbx_fuel_average(&a,&km,&l,&avg)); /* Odometer reset invalidates paired mean, not ECU fuel. */
+    near(a.direct_l,3.5);
+    puts("PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip/empty frozen mean and odometer reset PASS");
+}
+int main(void){distance();fuel_reconciliation_examples();wire_counter_validation();restart_and_crc();gaps_and_operation_boundaries();matched_average_and_v5();
     printf("Fuel state %zuB; v4 checkpoint %zuB; all accounting tests PASS\n",sizeof(tbx_fuel_account_t),sizeof(tb_trip_checkpoint_v4_t));return 0;}

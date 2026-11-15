@@ -11,7 +11,7 @@
 static char *persisted;
 static char *pending;
 static char *extension_saved,*extension_pending,*auto_saved,*auto_pending;
-static char *extra_saved,*extra_pending,*policy_saved,*policy_pending;
+static char *extra_saved,*extra_pending,*policy_saved,*policy_pending,*cadence_saved,*cadence_pending;
 static bool target_mac;
 static esp_err_t flash_error;
 static esp_err_t write_error;
@@ -68,6 +68,10 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v225")){
+        if(!cadence_saved)return ESP_ERR_NVS_NOT_FOUND;
+        size_t n=strlen(cadence_saved)+1;if(value){assert(*size>=n);memcpy(value,cadence_saved,n);}*size=n;return ESP_OK;
+    }
     if(!strcmp(key,"v223")){
         if(!policy_saved)return ESP_ERR_NVS_NOT_FOUND;
         size_t n=strlen(policy_saved)+1;if(value){assert(*size>=n);memcpy(value,policy_saved,n);}*size=n;return ESP_OK;
@@ -101,6 +105,7 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
     assert(handle == 1);
+    if(!strcmp(key,"v225")){if(write_error!=ESP_OK)return write_error;free(cadence_pending);cadence_pending=strdup(value);assert(cadence_pending);return ESP_OK;}
     if(!strcmp(key,"v223")){if(write_error!=ESP_OK)return write_error;free(policy_pending);policy_pending=strdup(value);assert(policy_pending);return ESP_OK;}
     if(!strcmp(key,"v217")){if(write_error!=ESP_OK)return write_error;free(extra_pending);extra_pending=strdup(value);assert(extra_pending);return ESP_OK;}
     if(!strcmp(key,"v216")){if(write_error!=ESP_OK)return write_error;free(auto_pending);auto_pending=strdup(value);assert(auto_pending);return ESP_OK;}
@@ -118,6 +123,7 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if(cadence_pending){free(cadence_saved);cadence_saved=cadence_pending;cadence_pending=NULL;}
     if(policy_pending){free(policy_saved);policy_saved=policy_pending;policy_pending=NULL;}
     if(extra_pending){free(extra_saved);extra_saved=extra_pending;extra_pending=NULL;}
     if(auto_pending){free(auto_saved);auto_saved=auto_pending;auto_pending=NULL;}
@@ -147,6 +153,7 @@ static void clear_storage(void)
     free(pending);free(extension_saved);free(extension_pending);extension_saved=extension_pending=NULL;
     free(extra_saved);free(extra_pending);extra_saved=extra_pending=NULL;
     free(policy_saved);free(policy_pending);policy_saved=policy_pending=NULL;
+    free(cadence_saved);free(cadence_pending);cadence_saved=cadence_pending=NULL;
     free(auto_saved);free(auto_pending);auto_saved=auto_pending=NULL;target_mac=false;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;
@@ -371,10 +378,26 @@ static void test_expansion_persistence(void)
     clear_storage();
 }
 
+static void test_v225_cadence_migration_preserves_owner_mid(void)
+{
+#if !CONFIG_TB_ROLE_LINK
+    clear_storage();target_mac=true;assert(tb_config_init()==ESP_OK);
+    assert(apply("{\"j1708_local_mid\":188,\"j1708_auto_intervals_ms\":{\"117\":60000,\"118\":60000,\"250\":300000,\"33\":7000}}") == ESP_OK);
+    char credentials[33];strcpy(credentials,tb_config()->admin_token);
+    free(cadence_saved);cadence_saved=NULL;unsigned count=writes;reboot();assert(tb_config_init()==ESP_OK);
+    assert(writes==count+1 && tb_config()->j1708_local_mid==188 && !strcmp(credentials,tb_config()->admin_token));
+    for(unsigned i=0;i<17;i++){uint16_t p=tbx_j1708_policy()[i].pid;
+        if(p==117 || p==118 || p==250)assert(tb_config()->j1708_auto_intervals_ms[i]==10000 && tb_config()->j1708_launch_intervals_ms[i]==10000);
+        if(p==33)assert(tb_config()->j1708_auto_intervals_ms[i]==7000);
+    }
+    count=writes;reboot();assert(tb_config_init()==ESP_OK && writes==count && tb_config()->j1708_local_mid==188);
+    clear_storage();
+#endif
+}
 int main(void)
 {
     test_expansion_persistence();
-    test_automatic_persistence();
+    test_v225_cadence_migration_preserves_owner_mid();test_automatic_persistence();
     test_v212_extension_rollback_compatibility();
     test_first_boot_and_public_data();
     test_save_reboot_and_partial_updates();

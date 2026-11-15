@@ -1,0 +1,15 @@
+{
+  "source_commit": "7e089d6739529ae6f96b4192cc5f5228c70a6952",
+  "source_clean": true,
+  "source_files_compared": 550,
+  "images": [
+    "core"
+  ],
+  "partition_table_preserved": true,
+  "zip_checksums_valid": true,
+  "application_bytes": 1591584,
+  "ota_sha256": "38b0dbded81d0656cb5de3427d18435f1054e112fe6bfba436f6656d92d8e77d",
+  "rollback_sha256": "5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d",
+  "package_bytes": 9608298,
+  "package_sha256": "c79cb6a88f577fafdf27421f4a1830ad2432134cce54335fcb250eb798df31d6"
+}

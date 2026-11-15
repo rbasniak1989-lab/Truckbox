@@ -582,6 +582,7 @@ static esp_err_t persist(const tb_config_t *config,bool save_auto)
         if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v216",auto_text);
         /* Separate marker: old firmware can still parse v216 on rollback. */
         if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v223","production-v1");
+        if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v225","critical-10s-v1");
         if(result==ESP_OK)result=nvs_set_str(handle,"v217",extra_text);
         if (result == ESP_OK) {
             result = nvs_commit(handle);
@@ -722,6 +723,20 @@ esp_err_t tb_config_init(void)
         else if(e!=ESP_OK || strcmp(marker,"production-v1")){
             s_config.j1708_auto_enabled=false;s_auto_persisted=false;auto_migrate=false;
             snprintf(extension_error,sizeof(extension_error),"v223 policy invalid: TX blocked; NVS preserved");
+        }
+    }
+    if(tb_role()==TB_ROLE_CORE && (auto_migrate || s_auto_persisted)){
+        nvs_handle_t h;char marker[32];size_t n=sizeof(marker);
+        esp_err_t e=nvs_open(CONFIG_NAMESPACE,NVS_READONLY,&h);
+        if(e==ESP_OK){e=nvs_get_str(h,"v225",marker,&n);nvs_close(h);}
+        if(e!=ESP_OK || strcmp(marker,"critical-10s-v1")){
+            /* Explicit new cadence decision; no MID, target, credentials or
+             * other individual period is replaced by defaults. */
+            for(unsigned i=0;i<17;i++){
+                uint16_t p=tbx_j1708_policy()[i].pid;
+                if(p==117 || p==118 || p==250)s_config.j1708_auto_intervals_ms[i]=s_config.j1708_launch_intervals_ms[i]=10000;
+            }
+            auto_migrate=true;
         }
     }
     if (first_boot || upgrade || auto_migrate || expansion_migrate) {

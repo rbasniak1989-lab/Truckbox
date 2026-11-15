@@ -54,6 +54,7 @@ typedef struct tbx_j1708_active {
     uint64_t now_us, last_rx_us, tx_started_us, lease_deadline_us;
     uint32_t idle_guard_us;
     uint32_t echo_ok, collisions, echo_timeouts, lease_expirations;
+    uint32_t late_echo_frames;
     uint32_t scan_sent_baseline;
     uint8_t scan_start_index, scan_budget, scan_completed;
     uint32_t trial_echo_base, trial_answer_base;
