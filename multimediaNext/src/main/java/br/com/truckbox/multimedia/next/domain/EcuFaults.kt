@@ -19,8 +19,8 @@ data class EcuFault(
     val rawHex: String,
     val quality: String,
 ) {
-    val key: String get() = "$" + "{mid}:$" + "{identifierType}:$" + "{identifier}:$" + "{fmi}:$" + "{page2}"
-    val technicalCode: String get() = "MID $" + "{mid} • $" + "{identifierType} $" + "{identifier} • FMI $" + "{fmi}" + (if(page2) " · pág. 2" else "")
+    val key: String get() = "${mid}:${identifierType}:${identifier}:${fmi}:${page2}"
+    val technicalCode: String get() = "MID ${mid} • ${identifierType} ${identifier} • FMI ${fmi}" + (if(page2) " · pág. 2" else "")
 }
 
 data class EcuFaultSnapshot(
