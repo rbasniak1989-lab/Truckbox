@@ -9,8 +9,8 @@ class EcuFaultsTest {
     private val base=Instant.parse("2026-11-15T14:07:00Z")
     private fun page(state:String, last:Long)=JsonParser.parseString(
         """{"faults":[{"mid":136,"identifier_type":"SID","identifier":2,"fmi":5,
-        "page2":false,"state":"$" + "{state}","occurrences":2,"parameter_hex":"55AA",
-        "first":[867,1000,1794750000000],"last":[867,90000,$" + "{last}"],
+        "page2":false,"state":"${state}","occurrences":2,"parameter_hex":"55AA",
+        "first":[867,1000,1794750000000],"last":[867,90000,${last}],
         "quality":"SAE_PARSED_OEM_UNCONFIRMED"}]}"""
     ).asJsonObject
 
