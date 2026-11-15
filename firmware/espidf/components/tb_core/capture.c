@@ -1422,37 +1422,50 @@ size_t tb_capture_health_fields(char *buffer,size_t capacity)
 static void capture_json_mode(cJSON *object,bool compact)
 {
     uint64_t now = esp_timer_get_time() / 1000;
-    if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return;
+    /* This snapshot is about 5.5 KiB. Keeping it on the task stack can
+     * overflow the 6 KiB USB console stack while building status JSON.
+     * Allocate before taking the bus mutex and release once encoded. */
+    __typeof__(s) *view = malloc(sizeof(*view));
+    if (!view) {
+        cJSON_AddBoolToObject(object, "capture_snapshot_available", false);
+        cJSON_AddStringToObject(object, "capture_snapshot_error", "NO_HEAP_FOR_DIAGNOSTIC");
+        return;
+    }
+    if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) {
+        free(view);
+        cJSON_AddBoolToObject(object, "capture_snapshot_available", false);
+        return;
+    }
     /* Fixed snapshot only; JSON allocation/serialization must not hold the RX/TX mutex. */
-    __typeof__(s) view=s;
-    view.active.scheduler=&view.requests;
+    memcpy(view, &s, sizeof(*view));
+    view->active.scheduler=&view->requests;
     xSemaphoreGive(s.lock);
-    add_signal_field(object, "rpm", view.rpm_at && now - view.rpm_at <= 5000, view.rpm);
-    add_signal_field(object, "speedKph", view.speed_at && now - view.speed_at <= 5000, view.speed);
-    add_signal_field(object, "distanceTotalKm", view.total_at && now - view.total_at <= 30000, view.distance_total);
-    add_signal_field(object, "distanceTestKm", view.distance_trip_valid, view.distance_trip);
-    add_signal_field(object, "fuelLitersTest", view.fuel_trip_valid, view.fuel_trip);
-    tb_accounting_json(object,&view.fuel_account);
+    add_signal_field(object, "rpm", view->rpm_at && now - view->rpm_at <= 5000, view->rpm);
+    add_signal_field(object, "speedKph", view->speed_at && now - view->speed_at <= 5000, view->speed);
+    add_signal_field(object, "distanceTotalKm", view->total_at && now - view->total_at <= 30000, view->distance_total);
+    add_signal_field(object, "distanceTestKm", view->distance_trip_valid, view->distance_trip);
+    add_signal_field(object, "fuelLitersTest", view->fuel_trip_valid, view->fuel_trip);
+    tb_accounting_json(object,&view->fuel_account);
     cJSON_AddBoolToObject(object,"odometer_validated",tb_config()->j1587_odometer_validated);
     cJSON_AddBoolToObject(object,"fuel250_validated",tb_config()->j1587_fuel250_validated);
-    cJSON_AddStringToObject(object, "trip_distance_quality", view.trip.quality);
-    cJSON_AddNumberToObject(object, "trip_distance_gaps", view.trip.gaps);
-    cJSON_AddNumberToObject(object, "trip_counter_resets", view.trip.resets);
-    cJSON_AddNumberToObject(object, "trip_counter_range_errors", view.trip.implausible);
+    cJSON_AddStringToObject(object, "trip_distance_quality", view->trip.quality);
+    cJSON_AddNumberToObject(object, "trip_distance_gaps", view->trip.gaps);
+    cJSON_AddNumberToObject(object, "trip_counter_resets", view->trip.resets);
+    cJSON_AddNumberToObject(object, "trip_counter_range_errors", view->trip.implausible);
     cJSON_AddNullToObject(object, "combinationWeightKg");
     cJSON *can = cJSON_AddObjectToObject(object, "can");
     cJSON_AddBoolToObject(can,"enabled",tb_config()->capture_enabled && tb_config()->can_enabled);
     cJSON_AddStringToObject(object,"capture_profile",tb_config()->can_enabled?"DUAL":"J1708_ONLY");
-    cJSON_AddBoolToObject(can, "ready", view.can_ready);
+    cJSON_AddBoolToObject(can, "ready", view->can_ready);
     cJSON_AddBoolToObject(can, "listen_only", true);
     cJSON_AddNumberToObject(can, "baud", tb_config()->can_baud);
-    cJSON_AddNumberToObject(can, "frames", view.can_frames);
-    cJSON_AddNumberToObject(can, "remote_frames", view.can_rtr);
-    cJSON_AddNumberToObject(can, "read_errors", view.can_errors);
-    cJSON_AddStringToObject(can, "error", view.can_error);
+    cJSON_AddNumberToObject(can, "frames", view->can_frames);
+    cJSON_AddNumberToObject(can, "remote_frames", view->can_rtr);
+    cJSON_AddNumberToObject(can, "read_errors", view->can_errors);
+    cJSON_AddStringToObject(can, "error", view->can_error);
 #ifndef CONFIG_TB_J1708_ONLY
     twai_status_info_t status;
-    if (view.can_ready && twai_get_status_info(&status) == ESP_OK) {
+    if (view->can_ready && twai_get_status_info(&status) == ESP_OK) {
         cJSON_AddNumberToObject(can, "rx_missed", status.rx_missed_count);
         cJSON_AddNumberToObject(can, "rx_overrun", status.rx_overrun_count);
         cJSON_AddNumberToObject(can, "bus_errors", status.bus_error_count);
@@ -1460,68 +1473,68 @@ static void capture_json_mode(cJSON *object,bool compact)
  #endif
     cJSON *j1708 = cJSON_AddObjectToObject(object, "j1708");
     cJSON_AddBoolToObject(j1708,"enabled",tb_config()->capture_enabled && tb_config()->j1708_enabled);
-    cJSON_AddBoolToObject(j1708, "ready", view.j1708_ready);
+    cJSON_AddBoolToObject(j1708, "ready", view->j1708_ready);
     cJSON_AddStringToObject(j1708, "framing", "uart_idle_10bits_checksum_validated");
-    cJSON_AddStringToObject(j1708, "error", view.j1708_error);
-    cJSON_AddNumberToObject(j1708, "frames", view.j1708_frames);
-    cJSON_AddNumberToObject(j1708, "checksum_errors", view.j1708_checksum_errors);
-    cJSON_AddNumberToObject(j1708, "oversize_or_coalesced", view.j1708_oversize);
-    cJSON_AddNumberToObject(j1708, "uart_overruns", view.uart_overruns);
+    cJSON_AddStringToObject(j1708, "error", view->j1708_error);
+    cJSON_AddNumberToObject(j1708, "frames", view->j1708_frames);
+    cJSON_AddNumberToObject(j1708, "checksum_errors", view->j1708_checksum_errors);
+    cJSON_AddNumberToObject(j1708, "oversize_or_coalesced", view->j1708_oversize);
+    cJSON_AddNumberToObject(j1708, "uart_overruns", view->uart_overruns);
     /* MIDs actually observed during this boot, to help the operator choose
      * a source address. Not observed != guaranteed free on the entire bus. */
     cJSON *observed = cJSON_AddArrayToObject(j1708, "observed_mids");
     if (observed) {
         for (unsigned mid = 128; mid <= 255; ++mid)
-            if (view.observed_mid[mid >> 3] & (1u << (mid & 7u)))
+            if (view->observed_mid[mid >> 3] & (1u << (mid & 7u)))
                 if(!tb_json_add_array(observed,cJSON_CreateNumber(mid)))break;
     }
-    if (view.j1708_at) {
-        cJSON_AddNumberToObject(j1708, "last_frame_age_ms", (double)(now - view.j1708_at));
-        if(!compact){cJSON *last=cJSON_Parse(view.j1708_last);if(last)tb_json_add_object(j1708,"last_frame",last);}
+    if (view->j1708_at) {
+        cJSON_AddNumberToObject(j1708, "last_frame_age_ms", (double)(now - view->j1708_at));
+        if(!compact){cJSON *last=cJSON_Parse(view->j1708_last);if(last)tb_json_add_object(j1708,"last_frame",last);}
     }
     cJSON *requests = cJSON_AddObjectToObject(j1708, "requests");
-    cJSON_AddBoolToObject(requests, "armed", view.requests.armed);
-    cJSON_AddBoolToObject(requests,"hardware_tx_available",view.j1708_ready && view.edge_ready);
+    cJSON_AddBoolToObject(requests, "armed", view->requests.armed);
+    cJSON_AddBoolToObject(requests,"hardware_tx_available",view->j1708_ready && view->edge_ready);
     cJSON_AddStringToObject(requests,"hardware_tx_validation","EM_VALIDACAO");
-    cJSON_AddBoolToObject(requests,"rx_edge_monitor_ready",view.edge_ready);
-    cJSON_AddNumberToObject(requests,"rx_edges",view.rx_edges);
-    cJSON_AddNumberToObject(requests,"bus_deferrals",view.requests.deferred_total);
-    cJSON_AddNumberToObject(requests,"event_dropped",view.request_event_dropped);
-    cJSON_AddNumberToObject(requests,"uart_start_faults",view.uart_start_faults);
-    cJSON_AddNumberToObject(requests,"consecutive_tx_errors",view.requests.link_error_count);
-    cJSON_AddNumberToObject(requests,"consecutive_request_failures",view.active.consecutive_failures);
-    if(view.requests.sent_total)cJSON_AddNumberToObject(requests,"last_requested_pid",view.active.last_sent_pid);
-    cJSON_AddBoolToObject(requests, "configured", view.active.configured);
-    cJSON_AddNumberToObject(j1708,"frames_per_minute",view.frames_last_minute);
+    cJSON_AddBoolToObject(requests,"rx_edge_monitor_ready",view->edge_ready);
+    cJSON_AddNumberToObject(requests,"rx_edges",view->rx_edges);
+    cJSON_AddNumberToObject(requests,"bus_deferrals",view->requests.deferred_total);
+    cJSON_AddNumberToObject(requests,"event_dropped",view->request_event_dropped);
+    cJSON_AddNumberToObject(requests,"uart_start_faults",view->uart_start_faults);
+    cJSON_AddNumberToObject(requests,"consecutive_tx_errors",view->requests.link_error_count);
+    cJSON_AddNumberToObject(requests,"consecutive_request_failures",view->active.consecutive_failures);
+    if(view->requests.sent_total)cJSON_AddNumberToObject(requests,"last_requested_pid",view->active.last_sent_pid);
+    cJSON_AddBoolToObject(requests, "configured", view->active.configured);
+    cJSON_AddNumberToObject(j1708,"frames_per_minute",view->frames_last_minute);
     cJSON *automatic=cJSON_AddObjectToObject(requests,"automatic");
     cJSON_AddBoolToObject(automatic,"enabled",tb_config_j1708_auto_enabled());
     cJSON_AddBoolToObject(automatic,"persisted",tb_config_j1708_auto_persisted());
-    cJSON_AddStringToObject(automatic,"state",view.request_task_unresponsive?"UNAVAILABLE":tbx_j1708_auto_phase_name(view.automatic.phase));
-    cJSON_AddStringToObject(automatic,"reason",view.automatic.reason?view.automatic.reason:"WAITING_PASSIVE_RX");
-    cJSON_AddNumberToObject(automatic,"starts",view.automatic.starts);
-    cJSON_AddNumberToObject(automatic,"pauses",view.automatic.pauses);
-    cJSON_AddNumberToObject(automatic,"supervisor_stalls",view.automatic.stalls);
-    cJSON_AddNumberToObject(automatic,"last_check_uptime_ms",(double)(view.automatic.checked_us/1000));
-    cJSON_AddStringToObject(automatic,"last_stop_reason",view.automatic.last_stop_reason?view.automatic.last_stop_reason:"NONE");
-    if(view.last_tx_uart_us)cJSON_AddNumberToObject(automatic,"last_uart_tx_uptime_ms",(double)(view.last_tx_uart_us/1000));else cJSON_AddNullToObject(automatic,"last_uart_tx_uptime_ms");
-    cJSON_AddBoolToObject(automatic,"technical_hold_persisted",view.guard_persisted);
-    cJSON_AddBoolToObject(automatic,"technical_hold_invalid",view.guard_invalid);
+    cJSON_AddStringToObject(automatic,"state",view->request_task_unresponsive?"UNAVAILABLE":tbx_j1708_auto_phase_name(view->automatic.phase));
+    cJSON_AddStringToObject(automatic,"reason",view->automatic.reason?view->automatic.reason:"WAITING_PASSIVE_RX");
+    cJSON_AddNumberToObject(automatic,"starts",view->automatic.starts);
+    cJSON_AddNumberToObject(automatic,"pauses",view->automatic.pauses);
+    cJSON_AddNumberToObject(automatic,"supervisor_stalls",view->automatic.stalls);
+    cJSON_AddNumberToObject(automatic,"last_check_uptime_ms",(double)(view->automatic.checked_us/1000));
+    cJSON_AddStringToObject(automatic,"last_stop_reason",view->automatic.last_stop_reason?view->automatic.last_stop_reason:"NONE");
+    if(view->last_tx_uart_us)cJSON_AddNumberToObject(automatic,"last_uart_tx_uptime_ms",(double)(view->last_tx_uart_us/1000));else cJSON_AddNullToObject(automatic,"last_uart_tx_uptime_ms");
+    cJSON_AddBoolToObject(automatic,"technical_hold_persisted",view->guard_persisted);
+    cJSON_AddBoolToObject(automatic,"technical_hold_invalid",view->guard_invalid);
     cJSON_AddBoolToObject(automatic,"legacy_guard_ignored",true);
-    if(view.polling_guard.mid){
-        cJSON_AddNumberToObject(automatic,"technical_hold_mid",view.polling_guard.mid);
-        cJSON_AddNumberToObject(automatic,"technical_hold_boot_id",view.polling_guard.boot);
-        cJSON_AddNumberToObject(automatic,"technical_hold_uptime_ms",(double)(view.polling_guard.uptime_us/1000));
+    if(view->polling_guard.mid){
+        cJSON_AddNumberToObject(automatic,"technical_hold_mid",view->polling_guard.mid);
+        cJSON_AddNumberToObject(automatic,"technical_hold_boot_id",view->polling_guard.boot);
+        cJSON_AddNumberToObject(automatic,"technical_hold_uptime_ms",(double)(view->polling_guard.uptime_us/1000));
     }
-    cJSON_AddNumberToObject(automatic,"retry_in_ms",view.automatic.resume_us>now*1000?(view.automatic.resume_us-now*1000)/1000:0);
+    cJSON_AddNumberToObject(automatic,"retry_in_ms",view->automatic.resume_us>now*1000?(view->automatic.resume_us-now*1000)/1000:0);
     cJSON_AddNumberToObject(automatic,"max_requests_per_second",2);
-    cJSON_AddBoolToObject(automatic,"TRANSMISSION_LAUNCH_MONITOR",view.transmission.launch);
-    cJSON_AddNumberToObject(automatic,"launches",view.transmission.launches);
-    cJSON_AddNumberToObject(automatic,"candidate_flags",view.transmission.candidate_flags);
+    cJSON_AddBoolToObject(automatic,"TRANSMISSION_LAUNCH_MONITOR",view->transmission.launch);
+    cJSON_AddNumberToObject(automatic,"launches",view->transmission.launches);
+    cJSON_AddNumberToObject(automatic,"candidate_flags",view->transmission.candidate_flags);
     cJSON_AddBoolToObject(automatic,"slip_confirmed",false);
-    cJSON_AddStringToObject(requests,"physical_validation",view.active.physical_validated?"EXTERNAL_CAPTURE_CONFIRMED_BY_OPERATOR":"PENDING_EXTERNAL_CAPTURE");
-    cJSON_AddBoolToObject(requests,"physical_validated",view.active.physical_validated);
+    cJSON_AddStringToObject(requests,"physical_validation",view->active.physical_validated?"EXTERNAL_CAPTURE_CONFIRMED_BY_OPERATOR":"PENDING_EXTERNAL_CAPTURE");
+    cJSON_AddBoolToObject(requests,"physical_validated",view->active.physical_validated);
     cJSON *guard=cJSON_AddObjectToObject(requests,"rx_guard");
-    const tbx_j1708_rx_guard_t *g=&view.active.rx_guard;
+    const tbx_j1708_rx_guard_t *g=&view->active.rx_guard;
     cJSON_AddBoolToObject(guard,"fault_latched",g->fault_latched);
     cJSON_AddNumberToObject(guard,"suspect_windows",g->suspect_streak);
     cJSON_AddNumberToObject(guard,"reference_windows",g->reference_count);
@@ -1531,8 +1544,8 @@ static void capture_json_mode(cJSON *object,bool compact)
     cJSON_AddNumberToObject(guard,"framing_total",g->total.framing);cJSON_AddNumberToObject(guard,"overrun_total",g->total.overruns);
     cJSON_AddNumberToObject(guard,"uart_frame_total",g->total.uart_frame);cJSON_AddNumberToObject(guard,"uart_read_total",g->total.read_errors);
 
-    cJSON_AddStringToObject(requests,"validation_method",view.active.production_mode?"PERSISTENT_OPERATIONAL_INDIRECT":view.active.physical_validated?"EXTERNAL_INDEPENDENT":view.active.field.confirmed?"SUPERVISED_FIELD_INDIRECT":"NONE");
-    const tbx_j1708_field_t *f=&view.active.field;
+    cJSON_AddStringToObject(requests,"validation_method",view->active.production_mode?"PERSISTENT_OPERATIONAL_INDIRECT":view->active.physical_validated?"EXTERNAL_INDEPENDENT":view->active.field.confirmed?"SUPERVISED_FIELD_INDIRECT":"NONE");
+    const tbx_j1708_field_t *f=&view->active.field;
     cJSON *field=cJSON_AddObjectToObject(requests,"field_validation");
     cJSON_AddStringToObject(field,"phase",tbx_j1708_field_phase_name(f->phase));
     cJSON_AddBoolToObject(field,"running",tbx_j1708_field_running(f));
@@ -1550,69 +1563,70 @@ static void capture_json_mode(cJSON *object,bool compact)
         cJSON_AddStringToObject(field,"latency_reference","SOFTWARE_REQUEST_TO_PARSED_REPLY");
         cJSON_AddBoolToObject(field,"audit_lost",__atomic_load_n(&f->audit_lost,__ATOMIC_RELAXED));
     }
-    cJSON_AddBoolToObject(requests,"single_shot",view.active.config.single_shot);
+    cJSON_AddBoolToObject(requests,"single_shot",view->active.config.single_shot);
     char txhex[13]={0},trial_id[64];
-    for(unsigned i=0;i<view.active.tx_length;i++)snprintf(txhex+2*i,3,"%02X",view.active.tx_frame[i]);
-    snprintf(trial_id,sizeof(trial_id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),view.active.tx_started_us);
+    for(unsigned i=0;i<view->active.tx_length;i++)snprintf(txhex+2*i,3,"%02X",view->active.tx_frame[i]);
+    snprintf(trial_id,sizeof(trial_id),"%" PRIu32 ":%" PRIu64,tb_boot_id(),view->active.tx_started_us);
     cJSON_AddStringToObject(requests,"expected_trial_tx",txhex);
     cJSON_AddStringToObject(requests,"trial_id",trial_id);
-    if(view.active.last_response_us){
-        cJSON_AddNumberToObject(requests,"last_response_pid",view.active.last_response_pid);
-        cJSON_AddNumberToObject(requests,"last_response_mid",view.active.last_response_mid);
-        cJSON_AddNumberToObject(requests,"last_response_age_ms",(double)((uint64_t)esp_timer_get_time()-view.active.last_response_us)/1000.0);
+    if(view->active.last_response_us){
+        cJSON_AddNumberToObject(requests,"last_response_pid",view->active.last_response_pid);
+        cJSON_AddNumberToObject(requests,"last_response_mid",view->active.last_response_mid);
+        cJSON_AddNumberToObject(requests,"last_response_age_ms",(double)((uint64_t)esp_timer_get_time()-view->active.last_response_us)/1000.0);
     }
-    cJSON_AddBoolToObject(requests, "work_mode", view.active.work_mode);
-    cJSON_AddBoolToObject(requests, "work_evidence_ready", tbx_j1708_active_work_ready(&view.active,(uint64_t)esp_timer_get_time()));
-    cJSON_AddBoolToObject(requests, "safety_stopped", view.requests.safety_stopped);
+    cJSON_AddBoolToObject(requests, "work_mode", view->active.work_mode);
+    cJSON_AddBoolToObject(requests, "work_evidence_ready", tbx_j1708_active_work_ready(&view->active,(uint64_t)esp_timer_get_time()));
+    cJSON_AddBoolToObject(requests, "safety_stopped", view->requests.safety_stopped);
     cJSON_AddStringToObject(requests, "validation", "EM_VALIDACAO");
-    cJSON_AddNumberToObject(requests, "echo_ok", view.active.echo_ok);
-    cJSON_AddNumberToObject(requests, "collisions", view.active.collisions);
-    cJSON_AddNumberToObject(requests, "echo_timeouts", view.active.echo_timeouts);
-    cJSON_AddNumberToObject(requests, "lease_expirations", view.active.lease_expirations);
+    cJSON_AddNumberToObject(requests, "echo_ok", view->active.echo_ok);
+    cJSON_AddNumberToObject(requests, "collisions", view->active.collisions);
+    cJSON_AddNumberToObject(requests, "echo_timeouts", view->active.echo_timeouts);
+    cJSON_AddNumberToObject(requests, "lease_expirations", view->active.lease_expirations);
     cJSON_AddNumberToObject(requests, "authorization_lease_ms",
-        view.active.production_mode?0:tbx_j1708_field_running(&view.active.field)?TBX_J1708_FIELD_LEASE_US/1000:view.active.work_mode ? TBX_J1708_WORK_LEASE_US / 1000 : TBX_J1708_ACTIVE_LEASE_US / 1000);
-    cJSON_AddNumberToObject(requests, "lease_remaining_ms", !view.active.production_mode && view.requests.armed &&
-        view.active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
-        (double)(view.active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
-    cJSON_AddStringToObject(requests, "block_reason", tb_config_j1708_auto_enabled()?(view.automatic.reason?view.automatic.reason:"WAITING_PASSIVE_RX"):!view.active.configured?"EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED":view.requests.safety_stopped?"THREE_TX_FAILURES_OR_MID_CONFLICT":!(view.active.physical_validated || view.active.field.confirmed)?"EXTERNAL_OR_SUPERVISED_FIELD_VALIDATION_REQUIRED":"NONE_OR_SAFETY_INTERLOCK");
-    cJSON_AddBoolToObject(requests,"sequential_scan",view.active.config.sequential_scan);
-    if(view.active.config.sequential_scan){
+        view->active.production_mode?0:tbx_j1708_field_running(&view->active.field)?TBX_J1708_FIELD_LEASE_US/1000:view->active.work_mode ? TBX_J1708_WORK_LEASE_US / 1000 : TBX_J1708_ACTIVE_LEASE_US / 1000);
+    cJSON_AddNumberToObject(requests, "lease_remaining_ms", !view->active.production_mode && view->requests.armed &&
+        view->active.lease_deadline_us > (uint64_t)esp_timer_get_time() ?
+        (double)(view->active.lease_deadline_us - (uint64_t)esp_timer_get_time()) / 1000.0 : 0);
+    cJSON_AddStringToObject(requests, "block_reason", tb_config_j1708_auto_enabled()?(view->automatic.reason?view->automatic.reason:"WAITING_PASSIVE_RX"):!view->active.configured?"EXPLICIT_MIDS_AND_TOPOLOGY_ATTESTATION_REQUIRED":view->requests.safety_stopped?"THREE_TX_FAILURES_OR_MID_CONFLICT":!(view->active.physical_validated || view->active.field.confirmed)?"EXTERNAL_OR_SUPERVISED_FIELD_VALIDATION_REQUIRED":"NONE_OR_SAFETY_INTERLOCK");
+    cJSON_AddBoolToObject(requests,"sequential_scan",view->active.config.sequential_scan);
+    if(view->active.config.sequential_scan){
         cJSON_AddNumberToObject(requests,"start_pid",
-            view.active.config.start_pid?view.active.config.start_pid:view.requests.pids[0].pid);
-        cJSON_AddNumberToObject(requests,"scan_total",view.active.scan_budget);
+            view->active.config.start_pid?view->active.config.start_pid:view->requests.pids[0].pid);
+        cJSON_AddNumberToObject(requests,"scan_total",view->active.scan_budget);
         cJSON_AddNumberToObject(requests,"scan_sent",
-            view.active.scan_completed+(view.requests.pending<TBX_J1708_REQUEST_CAPACITY?1:0));
+            view->active.scan_completed+(view->requests.pending<TBX_J1708_REQUEST_CAPACITY?1:0));
         cJSON_AddNumberToObject(requests,"scan_attempts",
-            view.requests.sent_total>=view.active.scan_sent_baseline?
-              view.requests.sent_total-view.active.scan_sent_baseline:0);
-        if(view.requests.pending<TBX_J1708_REQUEST_CAPACITY)
-            cJSON_AddNumberToObject(requests,"pending_pid",view.requests.pids[view.requests.pending].pid);
+            view->requests.sent_total>=view->active.scan_sent_baseline?
+              view->requests.sent_total-view->active.scan_sent_baseline:0);
+        if(view->requests.pending<TBX_J1708_REQUEST_CAPACITY)
+            cJSON_AddNumberToObject(requests,"pending_pid",view->requests.pids[view->requests.pending].pid);
     }
-    cJSON_AddNumberToObject(requests, "min_spacing_ms", view.requests.min_spacing_ms);
-    cJSON_AddNumberToObject(requests, "timeout_ms", view.requests.timeout_ms);
-    cJSON_AddNumberToObject(requests, "sent", view.requests.sent_total);
-    cJSON_AddNumberToObject(requests, "responses", view.requests.answered_total);
-    cJSON_AddNumberToObject(requests, "timeouts", view.requests.timeout_total);
-    cJSON_AddNumberToObject(requests, "tx_errors", view.requests.tx_failure_total);
+    cJSON_AddNumberToObject(requests, "min_spacing_ms", view->requests.min_spacing_ms);
+    cJSON_AddNumberToObject(requests, "timeout_ms", view->requests.timeout_ms);
+    cJSON_AddNumberToObject(requests, "sent", view->requests.sent_total);
+    cJSON_AddNumberToObject(requests, "responses", view->requests.answered_total);
+    cJSON_AddNumberToObject(requests, "timeouts", view->requests.timeout_total);
+    cJSON_AddNumberToObject(requests, "tx_errors", view->requests.tx_failure_total);
     if(!compact){
         cJSON *pids=cJSON_AddArrayToObject(requests,"pids");
         if(pids)for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)
-            if(!tb_json_add_array(pids,cJSON_CreateNumber(view.requests.pids[i].pid)))break;
+            if(!tb_json_add_array(pids,cJSON_CreateNumber(view->requests.pids[i].pid)))break;
     }
     if(!compact){
-        request_stats_snapshot(requests,0,TBX_J1708_REQUEST_CAPACITY,&view.requests,&view.active);
+        request_stats_snapshot(requests,0,TBX_J1708_REQUEST_CAPACITY,&view->requests,&view->active);
         if(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(requests,"stats"))!=TBX_J1708_REQUEST_CAPACITY)
             cJSON_AddBoolToObject(requests,"diagnostic_partial",true);
     }
     cJSON_AddNumberToObject(requests,"local_mid",tb_config()->j1708_local_mid);
-    cJSON_AddNumberToObject(requests,"local_mid_observations",view.local_mid_observations);
-    cJSON_AddNumberToObject(requests,"late_echo_frames",view.active.late_echo_frames);
-    cJSON_AddNumberToObject(requests, "idle_guard_us", view.active.idle_guard_us);
+    cJSON_AddNumberToObject(requests,"local_mid_observations",view->local_mid_observations);
+    cJSON_AddNumberToObject(requests,"late_echo_frames",view->active.late_echo_frames);
+    cJSON_AddNumberToObject(requests, "idle_guard_us", view->active.idle_guard_us);
     cJSON_AddStringToObject(object, "telemetry_profile",
         tb_profile_raw(tb_config()->full_decode_enabled) ? "COMPLETO" : "LEGACY");
     cJSON_AddNumberToObject(object, "operational_interval_s",
         tb_profile_raw(tb_config()->full_decode_enabled) ? 1 : TB_LEGACY_OPERATIONAL_SECONDS);
     tb_telemetry_add_json(object);
+    free(view);
 }
 
 void tb_capture_add_json(cJSON *object){capture_json_mode(object,false);}
