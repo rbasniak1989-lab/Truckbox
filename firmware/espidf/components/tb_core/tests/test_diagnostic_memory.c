@@ -43,7 +43,17 @@ static void tb_telemetry_add_json(cJSON *o)
     cJSON_AddBoolToObject(v,"decoding_enabled",true);
     cJSON_AddNumberToObject(v,"rx_queue_dropped",0);
 }
+/* Fail the capture snapshot allocation independently of cJSON, to prove
+ * low-RAM diagnostics return a partial response without locking the bus. */
+static bool fail_capture_snapshot_alloc;
+static void *capture_diagnostic_malloc(size_t bytes)
+{
+    if (fail_capture_snapshot_alloc) return NULL;
+    return malloc(bytes);
+}
+#define malloc capture_diagnostic_malloc
 #include "capture_diagnostic.h"
+#undef malloc
 #include "bridge_prepare.h"
 typedef struct{char bytes[24000];size_t used;}output_t;
 static bool output(const char *bytes,size_t n,void *context)
@@ -62,6 +72,17 @@ static void setup_capture(void)
     snprintf(s.j1708_last,sizeof(s.j1708_last),"{\"source\":\"j1708\",\"mid\":128,\"raw\":\"80BE401A68\",\"checksum_valid\":true,\"parameters\":[{\"pid\":190,\"data\":\"401A\"}]}");
 }
 static cJSON *field(cJSON *o,const char *key){cJSON *v=cJSON_GetObjectItemCaseSensitive(o,key);assert(v);return v;}
+static void capture_snapshot_oom(void)
+{
+    setup_capture();heap_reset();fail_capture_snapshot_alloc=true;
+    cJSON *o=cJSON_CreateObject();assert(o);
+    tb_capture_add_json_compact(o);
+    assert(cJSON_IsFalse(field(o,"capture_snapshot_available")));
+    assert(!strcmp(field(o,"capture_snapshot_error")->valuestring,"NO_HEAP_FOR_DIAGNOSTIC"));
+    cJSON_Delete(o);assert(!heap_used && !diagnostic_lock_held);
+    fail_capture_snapshot_alloc=false;
+}
+
 static size_t capture_allocation_calls(bool compact)
 {
     heap_reset();cJSON *o=cJSON_CreateObject();
@@ -193,5 +214,5 @@ int main(void)
 {
     setup_capture();compact_and_pagination();fault_every_allocation();
     s.active.field.started_us=1000000;s.active.field.phase=TBX_FIELD_SATISFACTORY;s.active.field.reason="SYNTHETIC_DIAGNOSTIC_FIXTURE";
-    compact_and_pagination();fault_every_allocation();bridge_memory();http_pressure_and_diagnostic_isolation();return 0;
+    compact_and_pagination();fault_every_allocation();capture_snapshot_oom();bridge_memory();http_pressure_and_diagnostic_isolation();return 0;
 }
