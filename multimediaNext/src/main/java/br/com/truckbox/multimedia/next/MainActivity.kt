@@ -51,7 +51,8 @@ class MainActivity : ComponentActivity() {
                 val hostChanged = local.value.coreHost != it.coreHost
                 local.value=it;preferencesStore.save(it)
                 if(hostChanged) {
-                    state.update {it.copy(readings=emptyMap(),speed=null,fuelRate=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED)}
+                    state.update {it.copy(readings=emptyMap(),speed=null,fuelRate=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED,
+                        coreFaults=emptyList(),faultUid=null,faultSnapshotAt=null,faultReadable=false,faultIncomplete=true,faultOverflow=0)}
                     coreRetry.value++
                 }
             }, onNight = { night ->
@@ -64,26 +65,68 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 if (BuildConfig.FLAVOR == "demo") return@repeatOnLifecycle
               launch {
-                val client = CoreSensorClient(WifiCoreConnectionFactory(this@MainActivity))
+                val localConnection=WifiCoreConnectionFactory(this@MainActivity)
+                val client = CoreSensorClient(localConnection)
+                val liveClient = CoreLiveClient(localConnection)
                 coreRetry.collectLatest {
                     var failures = 0
                     while (isActive) {
                         val host = local.value.coreHost
                         val expectedCore=state.value.expectedCoreUid
                         val fetch = withContext(Dispatchers.IO) { client.fetch(host,expectedCore) }
+                        val live = fetch.response?.physicalDeviceUid?.let {uid ->
+                            withContext(Dispatchers.IO) {liveClient.fetch(host,uid)}
+                        }.orEmpty()
                         ensureActive() // Não aplicar resposta de uma consulta cancelada por troca de host/reteste.
                         if(host != local.value.coreHost || expectedCore!=state.value.expectedCoreUid) continue
                         val result = fetch.response
                         if(result == null) {
                             failures++
-                            state.update {if(it.expectedCoreUid!=expectedCore)it else it.copy(core=ConnectionState.OFFLINE,coreDiagnostics=fetch.diagnostics,readings=staleCoreReadings(it.readings),speed=null,fuelRate=null)}
+                            state.update {if(it.expectedCoreUid!=expectedCore)it else it.copy(core=ConnectionState.OFFLINE,coreDiagnostics=fetch.diagnostics,readings=staleCoreReadings(it.readings),speed=null,fuelRate=null,
+                                faultReadable=false)}
                         } else {
                             failures=0
+                            val values=result.values.toMutableMap()
+                            for((sensor,entry) in live) {
+                                if(values[sensor]?.first?.observed(java.time.Instant.now())==null)values[sensor]=entry
+                            }
                             state.update {if(it.expectedCoreUid!=expectedCore)it else it.copy(core=if(fetch.diagnostics.sensorApi) ConnectionState.SENSORS_RECEIVED else ConnectionState.HTTP_RESPONDED,coreDiagnostics=fetch.diagnostics,
-                                readings=retainCoreReadings(it.readings.takeIf {_ -> result.physicalDeviceUid!=null && result.physicalDeviceUid==it.coreDeviceUid} ?: emptyMap(),result.values),
-                                coreDeviceUid=result.physicalDeviceUid,coreInternetSharing=result.internetSharing,speed=result.speed,fuelRate=result.flow,lastCoreResponse=result.receivedAt)}
+                                readings=retainCoreReadings(it.readings.takeIf {_ -> result.physicalDeviceUid!=null && result.physicalDeviceUid==it.coreDeviceUid} ?: emptyMap(),values),
+                                coreDeviceUid=result.physicalDeviceUid,coreInternetSharing=result.internetSharing,speed=result.speed,fuelRate=result.flow,lastCoreResponse=result.receivedAt,
+                                coreFaults=it.coreFaults.takeIf {_ -> result.physicalDeviceUid==it.faultUid}.orEmpty(),
+                                faultUid=it.faultUid.takeIf {_ -> result.physicalDeviceUid==it.faultUid},
+                                faultReadable=it.faultReadable && result.physicalDeviceUid==it.faultUid)}
                         }
                         delay(((if(fetch.diagnostics.sensorApi && result!=null) 1000L else 4000L) shl failures.coerceAtMost(3)).coerceAtMost(30000L))
+                    }
+                }
+              }
+              launch {
+                val faults=CoreFaultClient(WifiCoreConnectionFactory(this@MainActivity))
+                coreRetry.collectLatest {
+                    while(isActive) {
+                        val host=local.value.coreHost
+                        val uid=state.value.coreDeviceUid
+                        if(uid!=null) {
+                            val snapshot=withContext(Dispatchers.IO) {faults.fetch(host,uid)}
+                            ensureActive()
+                            if(host==local.value.coreHost && uid==state.value.coreDeviceUid) {
+                                state.update {previous->
+                                    if(snapshot==null)previous.copy(faultReadable=false)
+                                    else {
+                                        val known=previous.coreFaults.takeIf {previous.faultUid==uid}.orEmpty()
+                                            .associateBy {it.key}.toMutableMap()
+                                        // Reenvio atualiza a falha, ausência não a torna inativa.
+                                        for(fault in snapshot.faults)known[fault.key]=fault
+                                        previous.copy(coreFaults=known.values.toList().takeLast(32),
+                                            faultUid=uid,faultSnapshotAt=snapshot.checkedAt,
+                                            faultReadable=true,faultIncomplete=snapshot.incomplete,
+                                            faultOverflow=snapshot.overflow)
+                                    }
+                                }
+                            }
+                        }
+                        delay(15000)
                     }
                 }
               }
