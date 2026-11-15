@@ -1,0 +1,51 @@
+{
+  "comparison": "matched Cloud boot602 ELF vs candidate local build",
+  "sections": {
+    ".iram0.text": {
+      "v0.2.24": 127966,
+      "v0.2.25": 127966,
+      "delta_bytes": 0
+    },
+    ".iram0.data": {
+      "v0.2.24": 0,
+      "v0.2.25": 0,
+      "delta_bytes": 0
+    },
+    ".iram0.bss": {
+      "v0.2.24": 0,
+      "v0.2.25": 0,
+      "delta_bytes": 0
+    },
+    ".dram0.data": {
+      "v0.2.24": 14796,
+      "v0.2.25": 14796,
+      "delta_bytes": 0
+    },
+    ".dram0.bss": {
+      "v0.2.24": 68792,
+      "v0.2.25": 69112,
+      "delta_bytes": 320
+    },
+    ".noinit": {
+      "v0.2.24": 0,
+      "v0.2.25": 0,
+      "delta_bytes": 0
+    },
+    ".flash.text": {
+      "v0.2.24": 1147722,
+      "v0.2.25": 1147578,
+      "delta_bytes": -144
+    },
+    ".flash.rodata": {
+      "v0.2.24": 300348,
+      "v0.2.25": 300892,
+      "delta_bytes": 544
+    }
+  },
+  "static_RAM": {
+    "v0.2.24": 211554,
+    "v0.2.25": 211874,
+    "delta_bytes": 320
+  },
+  "runtime_heap_measured_on_vehicle": false
+}

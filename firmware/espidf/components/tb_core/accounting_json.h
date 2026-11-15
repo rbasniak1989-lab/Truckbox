@@ -18,6 +18,11 @@ static inline void tb_accounting_json_compact(cJSON *parent,const tbx_fuel_accou
     cJSON_AddNumberToObject(o,"v",2);
     cJSON_AddNumberToObject(o,"pending_l",round(tbx_fuel_pending(a)*1000)/1000);
     cJSON_AddNumberToObject(o,"interval_id",a->interval_id);
+    double km,litres,average;
+    if(tbx_fuel_average(a,&km,&litres,&average)){
+        cJSON_AddNumberToObject(o,"ecu_km_l",round(average*1000)/1000);
+        cJSON_AddBoolToObject(o,"average_partial",a->span.partial);
+    }
     if(tbx_fuel_unanchored(a)>1e-9)cJSON_AddNumberToObject(o,"unanchored_l",round(tbx_fuel_unanchored(a)*1000)/1000);
     if(a->operation_uid[0] && !a->operation_reference_delayed){
         cJSON *op=cJSON_CreateArray();
@@ -38,6 +43,14 @@ static inline void tb_accounting_json(cJSON *parent,const tbx_fuel_account_t *a)
     cJSON_AddNumberToObject(o,"last_correction_l",a->last_correction_l);
     cJSON_AddBoolToObject(o,"historical_unknown",a->historical_unknown);
     cJSON_AddStringToObject(o,"source_validation","EM_VALIDACAO");
+    double km,litres,average;
+    if(tbx_fuel_average(a,&km,&litres,&average)){
+        cJSON *m=cJSON_AddObjectToObject(o,"ecu_average");
+        cJSON_AddNumberToObject(m,"km_l",average);cJSON_AddNumberToObject(m,"distance_km",km);cJSON_AddNumberToObject(m,"fuel_l",litres);
+        cJSON_AddNumberToObject(m,"start_boot",a->span.start.boot);cJSON_AddNumberToObject(m,"end_boot",a->span.end.boot);
+        cJSON_AddNumberToObject(m,"start_uptime_ms",(double)a->span.start.uptime_ms);cJSON_AddNumberToObject(m,"end_uptime_ms",(double)a->span.end.uptime_ms);
+        cJSON_AddBoolToObject(m,"partial_operation_coverage",a->span.partial);
+    }
     cJSON *r=cJSON_AddObjectToObject(o,"pid250");
     if(a->direct_valid){
         cJSON_AddNumberToObject(r,"mid",a->direct_mid);cJSON_AddNumberToObject(r,"raw",a->direct_raw);

@@ -1,0 +1,8 @@
+Production diagnostics native cJSON: full tree 42913 bytes; old print peak 70266; compact tree 11649 (72.9% smaller); 27 stats fetched in pages <=8
+Production capture full: 1093 individual allocation failures leave no orphan nodes
+Production capture compact: 311 individual allocation failures leave no orphan nodes
+Production diagnostics native cJSON: full tree 56545 bytes; old print peak 86615; compact tree 12854 (77.3% smaller); 27 stats fetched in pages <=8
+Production capture full: 1464 individual allocation failures leave no orphan nodes
+Production capture compact: 342 individual allocation failures leave no orphan nodes
+Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
+Real HTTP pressure: field budget41596, unbounded full peak41550 (incomplete), compact peak13187 including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS

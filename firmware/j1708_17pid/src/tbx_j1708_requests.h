@@ -10,6 +10,7 @@ typedef struct {
     bool enabled, expedited;
     uint32_t sent, answered, timed_out, last_sent_ms, last_answered_ms;
     uint32_t period_ms, next_due_ms, last_latency_ms, min_latency_ms, max_latency_ms;
+    uint32_t echo_timeouts,tx_errors;
     uint8_t priority,retries;
 } tbx_j1708_request_stat_t;
 typedef bool (*tbx_j1708_send_request_fn)(uint16_t pid, void *context);

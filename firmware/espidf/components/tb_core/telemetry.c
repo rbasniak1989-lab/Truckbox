@@ -602,6 +602,7 @@ esp_err_t tb_telemetry_start(void)
     return ESP_OK;
 }
 
+static void critical_readings(cJSON *);
 void tb_telemetry_add_json(cJSON *object)
 {
     cJSON *telemetry = cJSON_AddObjectToObject(object, "telemetry_v2");
@@ -634,6 +635,7 @@ void tb_telemetry_add_json(cJSON *object)
     cJSON_AddNumberToObject(telemetry, "latest_evictions", (double)evictions);
     cJSON_AddStringToObject(telemetry, "latest_endpoint", "/api/sensors?offset=0&limit=8");
     cJSON_AddStringToObject(telemetry, "acquisition", "PASSIVE");
+    critical_readings(telemetry);
     cJSON *transport = cJSON_AddObjectToObject(telemetry, "j1939_tp_bam");
     static const char *const names[] = {
         "announcements", "completed", "timeouts", "invalid_length", "invalid_sequence",
@@ -656,10 +658,10 @@ void tb_telemetry_add_json(cJSON *object)
 static const uint16_t s_j1587_fast_pids[] = {
     190, 91, 92, 183, 184, 185, 110, 175, 105, 177,
     100, 102, 440, 46, 168, 84, 245, 122, 70, 85,
-    86, 43, 44, 49, 151, 162, 163
+    86, 43, 44, 49, 151, 162, 163, 117, 118, 250
 };
 enum { TB_J1587_FAST_COUNT = sizeof(s_j1587_fast_pids) / sizeof(s_j1587_fast_pids[0]) };
-_Static_assert(TB_J1587_FAST_COUNT == 27, "27 fast J1587 PIDs required");
+_Static_assert(TB_J1587_FAST_COUNT == 30, "30 fast J1587 PIDs required");
 
 /* Twelve slow PIDs, then five backwards-compatible display fallbacks,
  * then the seventeen already catalogued request targets (passive RX only).
@@ -674,14 +676,14 @@ enum { TB_J1587_SLOW_COUNT = 12, TB_J1587_COMPAT_COUNT = 5,
        TB_J1587_HEALTH_COUNT = sizeof(s_j1587_health_pids) / sizeof(s_j1587_health_pids[0]) };
 _Static_assert(TB_J1587_HEALTH_COUNT == 34, "J1587 health catalog mismatch");
 
-static bool j1587_cached(uint16_t pid, uint64_t now_us, uint64_t max_age_us, latest_t *out)
+static bool j1587_cached_mid(uint16_t pid,uint8_t mid,uint64_t now_us,uint64_t max_age_us,latest_t *out)
 {
     latest_t match = {0};
     portENTER_CRITICAL(&s_mux);
     for (size_t i = 0; i < s.latest_count; ++i) {
         const latest_t *candidate = &s.latest[i];
         if (!candidate->used || candidate->can || candidate->component_index != UINT8_MAX ||
-            candidate->signal != pid) continue;
+            candidate->signal != pid || (mid && candidate->address!=mid)) continue;
         if (!match.used || candidate->captured_us > match.captured_us)
             match = *candidate;
     }
@@ -695,6 +697,8 @@ static bool j1587_cached(uint16_t pid, uint64_t now_us, uint64_t max_age_us, lat
     *out = match;
     return true;
 }
+static bool j1587_cached(uint16_t pid,uint64_t now_us,uint64_t max_age_us,latest_t *out)
+{return j1587_cached_mid(pid,0,now_us,max_age_us,out);}
 
 static bool j1587_record_fits(cJSON *record)
 {
@@ -733,6 +737,18 @@ static bool j1587_add_observation(cJSON *record,uint16_t pid,const latest_t *lat
         return false;
     }
     return true;
+}
+
+static void critical_readings(cJSON *telemetry)
+{
+    cJSON *o=cJSON_AddObjectToObject(telemetry,"critical");if(!o)return;
+    const uint16_t pids[]={117,118,250};const unsigned slots[]={6,7,10};uint64_t now=(uint64_t)esp_timer_get_time();
+    for(unsigned i=0;i<3;i++){
+        uint8_t mid=tb_config()->j1708_targets[slots[i]];
+        latest_t latest={0};if(!mid || !j1587_cached_mid(pids[i],mid,now,UINT64_MAX,&latest))continue;
+        if(latest.has_value && now-latest.captured_us>UINT64_C(10000000))latest.quality="DESATUALIZADO";
+        (void)j1587_add_observation(o,pids[i],&latest,now,true);
+    }
 }
 
 /* Adds provisional scalar aliases only where absent, so J1939 remains primary.
@@ -798,8 +814,10 @@ size_t tb_telemetry_append_j1587_fast(cJSON *fast, size_t *cursor)
             ++*cursor;
             continue;
         }
+        bool critical=pid==117 || pid==118 || pid==250;
+        if(critical && latest.has_value && now_us-latest.captured_us>UINT64_C(10000000))latest.quality="DESATUALIZADO";
         if (!j1587_add_observation(fast, pid, &latest, now_us,
-                                   pid == 184 || pid == 185)) {
+                                   critical || pid == 184 || pid == 185)) {
             /* When a chunk is full retry this PID in the next chunk.
              * Skip a single impossible observation to guarantee progress. */
             if (count) break;

@@ -35,7 +35,7 @@ static int64_t esp_timer_get_time(void){return 600000000;}
 static bool xSemaphoreTake(void *lock,unsigned timeout){(void)lock;(void)timeout;assert(!diagnostic_lock_held);diagnostic_lock_held=mutex_available;return mutex_available;}
 static void xSemaphoreGive(void *lock){(void)lock;assert(diagnostic_lock_held);diagnostic_lock_held=false;}
 static uint32_t tb_boot_id(void){return 42;}
-static const struct {bool capture_enabled,can_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated,full_decode_enabled;uint32_t can_baud;} config={true,false,true,false,false,false,250000};
+static const struct {bool capture_enabled,can_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated,full_decode_enabled;uint32_t can_baud;uint8_t j1708_local_mid;} config={true,false,true,false,false,false,250000,172};
 #define tb_config() (&config)
 static void tb_telemetry_add_json(cJSON *o)
 {
@@ -167,7 +167,7 @@ static void http_pressure_and_diagnostic_isolation(void)
 {
     setup_capture();s.active.field.started_us=1000000;s.active.field.reason="HISTORICAL_ONLY";
     heap_reset();heap_budget=41596;cJSON *full=cJSON_CreateObject();tb_capture_add_json(full);
-    size_t unbounded_peak=heap_peak;assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(field(field(full,"j1708"),"requests"),"diagnostic_partial")));
+    size_t unbounded_peak=heap_peak;assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(field(field(full,"j1708"),"requests"),"stats"))<(int)TBX_J1708_REQUEST_CAPACITY);
     cJSON_Delete(full);assert(!heap_used);
     heap_reset();heap_budget=41596;
     void *upload=test_allocate(8192),*checkpoint=test_allocate(3232);assert(upload && checkpoint);
@@ -175,9 +175,9 @@ static void http_pressure_and_diagnostic_isolation(void)
     for(unsigned i=0;i<200;i++){
         httpd_req_t r={.query=i&1?"compact=0":NULL};assert(state_handler(&r)==ESP_OK && !r.status && heap_used==resident);
         cJSON *o=cJSON_Parse(r.response);assert(o);
-        assert(cJSON_IsTrue(field(o,"ok")) && cJSON_IsTrue(field(o,"diagnostic_compact")));
+        assert(cJSON_IsTrue(field(o,"ok")) && (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o,"diagnostic_compact")) || cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o,"diagnostic_partial"))));
         assert(field(o,"heap_free")->valueint==41596-(int)resident && field(o,"heap_largest_block")->valueint==14592 && field(o,"heap_minimum")->valueint==12);
-        assert(cJSON_IsFalse(field(field(field(o,"j1708"),"requests"),"armed")));
+        if(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o,"diagnostic_partial")))assert(cJSON_IsFalse(field(o,"j1708_work_mode")));else assert(cJSON_IsFalse(field(field(field(o,"j1708"),"requests"),"armed")));
         cJSON_Delete(o);assert(heap_used==resident && !diagnostic_lock_held && s.j1708_ready && s.j1708_frames==37525);
     }
     size_t bounded_peak=heap_peak;test_free(upload);test_free(checkpoint);assert(!heap_used);

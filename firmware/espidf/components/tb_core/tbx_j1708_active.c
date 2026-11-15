@@ -153,6 +153,7 @@ bool tbx_j1708_active_start_production(tbx_j1708_active_t *c,uint64_t now)
     if(!c || !c->configured || !c->scheduler || c->scheduler->armed || c->tx_active ||
        c->scheduler->safety_stopped || c->rx_guard.fault_latched || c->rx_guard.clock_fault)return false;
     c->work_mode=c->production_mode=true;c->now_us=now;
+    c->scheduler->priority_polling=true;
     c->config.sequential_scan=c->config.single_shot=false;
     tbx_j1708_request_permit_stationary_test(c->scheduler,true);
     if(!tbx_j1708_request_arm(c->scheduler)){c->work_mode=c->production_mode=false;return false;}
@@ -188,19 +189,24 @@ void tbx_j1708_active_note_link_error(tbx_j1708_active_t *c, const char *reason)
     if (!c || !c->scheduler || (!c->scheduler->armed && !c->tx_active)) return;
     bool was_field=tbx_j1708_field_running(&c->field);
     bool was_tx=c->tx_active;
+    bool native=c->production_mode;
+    bool timeout=reason && strstr(reason,"TX_ECHO_TIMEOUT")==reason;
+    for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)if(c->scheduler->pids[i].pid==c->tx_pid){
+        if(timeout)++c->scheduler->pids[i].echo_timeouts;else ++c->scheduler->pids[i].tx_errors;
+    }
     release_tx(c);
-    if (was_tx) c->scheduler->pending=TBX_J1708_NO_PENDING;
+    if (was_tx && !native) c->scheduler->pending=TBX_J1708_NO_PENDING;
     /* Retry the disputed PID only after a new idle guard AND existing spacing.
      * Do not wrap away from a failed request or transmit into the same burst. */
     for(unsigned i=0;i<TBX_J1708_REQUEST_CAPACITY;i++)
         if(c->scheduler->pids[i].pid==c->tx_pid){c->scheduler->cursor=(uint8_t)i;
-            if(c->scheduler->periodic)c->scheduler->pids[i].next_due_ms=(uint32_t)(c->now_us/1000u);}
+            if(c->scheduler->periodic && !native)c->scheduler->pids[i].next_due_ms=(uint32_t)(c->now_us/1000u);}
     c->retry_after_us=c->now_us+20000u+
         ((c->config.local_mid*37u+c->collisions*97u)%31u)*1000u;
     bool stopped=c->scheduler->safety_stopped;
     tbx_j1708_request_note_link_error(c->scheduler);
     if(c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
-    if(c->consecutive_failures>=3){c->scheduler->safety_stopped=true;tbx_j1708_request_stop(c->scheduler);}
+    if(!native && c->consecutive_failures>=3){c->scheduler->safety_stopped=true;tbx_j1708_request_stop(c->scheduler);}
     event(c,"LINK_ERROR",c->tx_pid,reason?reason:"UNSPECIFIED_LINK_ERROR");
     if (!stopped && c->scheduler->safety_stopped)
         event(c,"AUTO_DISARMED",c->tx_pid,"THREE_LINK_ERRORS");
@@ -245,6 +251,9 @@ static bool send_request(uint16_t pid, void *context)
         return false;
     }
     c->last_sent_pid=pid;c->last_sent_us=c->now_us;
+    /* One assembly token per full UART submission. Electrical release still
+     * uses20ms; buffered echo identification has a separate lifetime. */
+    c->echo_frame_pending=true;
     tbx_j1708_field_sent(c);
     event(c,"REQUEST",pid,"PID128_TARGETED_REQUEST_QUEUED");
     return true;
@@ -265,7 +274,8 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
     if (c->tx_active && now_us>=c->tx_started_us &&
         now_us-c->tx_started_us>=TBX_J1708_ACTIVE_ECHO_TIMEOUT_US) {
         ++c->echo_timeouts;c->rx_guard.last_failure=TBX_GUARD_ECHO_TIMEOUT;
-        tbx_j1708_active_note_link_error(c,"TX_ECHO_TIMEOUT");
+        char detail[96];snprintf(detail,sizeof(detail),"TX_ECHO_TIMEOUT echo=%u/%u age_us=%llu",c->echo_position,c->tx_length,(unsigned long long)(now_us-c->tx_started_us));
+        tbx_j1708_active_note_link_error(c,detail);
     }
     if (!c->scheduler->armed) return;
     uint32_t previous_timeouts=c->scheduler->timeout_total;
@@ -280,7 +290,7 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
         event(c,"TIMEOUT",pending_pid,"NO_MATCHING_MID_PID_WITHIN_CONFIGURED_TIMEOUT");
         if(tbx_j1708_field_running(&c->field)){tbx_j1708_field_fail(c,"FIELD_RESPONSE_TIMEOUT");return;}
         if(c->work_mode && c->consecutive_failures<UINT8_MAX)++c->consecutive_failures;
-        if(c->work_mode && c->consecutive_failures>=3){
+        if(c->work_mode && !c->production_mode && c->consecutive_failures>=3){
             c->scheduler->safety_stopped=true;event(c,"AUTO_DISARMED",pending_pid,"THREE_CONSECUTIVE_REQUEST_FAILURES");
             tbx_j1708_active_stop(c,"THREE_CONSECUTIVE_REQUEST_FAILURES");
         }
@@ -307,7 +317,7 @@ void tbx_j1708_active_tick(tbx_j1708_active_t *c, uint64_t now_us)
     if (!field_may_send || c->tx_active || now_us<c->retry_after_us || now_us<c->last_rx_us || now_us-c->last_rx_us<c->idle_guard_us) return;
     bool was_stopped=c->scheduler->safety_stopped;
     tbx_j1708_request_tick(c->scheduler,(uint32_t)(now_us/1000u),send_request,c);
-    if(c->consecutive_failures>=3){c->scheduler->safety_stopped=true;tbx_j1708_request_stop(c->scheduler);}
+    if(!c->production_mode && c->consecutive_failures>=3){c->scheduler->safety_stopped=true;tbx_j1708_request_stop(c->scheduler);}
     if (!was_stopped && c->scheduler->safety_stopped) {
         release_tx(c);
         event(c,"AUTO_DISARMED",c->tx_pid,"THREE_LINK_ERRORS");
@@ -366,13 +376,13 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
 
 bool tbx_j1708_active_is_tx_echo(const tbx_j1708_active_t *c, const uint8_t *frame, size_t length, uint64_t now_us)
 {
-    /* UART delivery may be delayed by scheduling/flash IO. Match only the ONE
-     * echo already observed byte-for-byte by note_rx, timed from its receipt,
-     * not an arbitrary30ms from TX. Consumption prevents masking a later
-     * independent frame even if it repeats exactly the same bytes. */
-    return c && frame && c->echo_frame_pending && c->tx_length>=5 &&
-        c->echo_position==c->tx_length && length==c->tx_length &&
-        now_us>=c->echo_received_us && now_us-c->echo_received_us<=
+    /* One exact RX copy of a successfully submitted UART frame, including
+     * assembly after electrical abort. This never manufactures echo_ok or a
+     * reply. Later independent copies are not excluded by the consumed token. */
+    if(!c)return false;
+    uint64_t reference=c->echo_position==c->tx_length?c->echo_received_us:c->tx_started_us;
+    return c->scheduler && frame && c->echo_frame_pending && c->tx_length>=5 &&
+        length==c->tx_length && now_us>=reference && now_us-reference<=
             (uint64_t)c->scheduler->timeout_ms*1000u &&
         memcmp(frame,c->tx_frame,c->tx_length)==0;
 }
@@ -380,5 +390,11 @@ bool tbx_j1708_active_is_tx_echo(const tbx_j1708_active_t *c, const uint8_t *fra
 bool tbx_j1708_active_consume_tx_echo(tbx_j1708_active_t *c,const uint8_t *frame,size_t n,uint64_t now)
 {
     if(!tbx_j1708_active_is_tx_echo(c,frame,n,now))return false;
+    if(c->echo_position<c->tx_length){
+        ++c->late_echo_frames;
+        char hex[13],detail[96];for(size_t i=0;i<n;i++)snprintf(hex+2*i,3,"%02X",frame[i]);
+        snprintf(detail,sizeof(detail),"rx=%s echo=%u/%u age_us=%llu CANDIDATE_ONLY",hex,c->echo_position,c->tx_length,(unsigned long long)(now-c->tx_started_us));
+        event(c,"LATE_TX_ECHO_FRAME",c->tx_pid,detail);
+    }
     c->echo_frame_pending=false;return true;
 }

@@ -651,6 +651,22 @@ static void sensor_pages_and_oom_are_bounded(void)
     heap_reset();cJSON_InitHooks(NULL);puts("Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS");
 }
 
+static void critical_latest_keeps_origin_raw_and_age(void)
+{
+    memset(s.latest,0,sizeof(s.latest));s.latest_count=4;host_now_us=20000000;
+    const unsigned pids[]={117,118,250,117},mids[]={140,140,128,128};
+    for(unsigned i=0;i<4;i++)s.latest[i]=(latest_t){.used=true,.can=false,.signal=pids[i],
+        .component_index=UINT8_MAX,.address=(uint8_t)mids[i],.captured_us=i==1?1000000:19000000+i,
+        .has_value=true,.value=80+i,.unit=i==2?"L":"kPa",.quality="EM_VALIDACAO",.raw={0x50},.raw_length=1};
+    cJSON *o=cJSON_CreateObject();critical_readings(o);
+    cJSON *critical=cJSON_GetObjectItemCaseSensitive(o,"critical");
+    cJSON *values=cJSON_GetObjectItemCaseSensitive(critical,"j1587_sensors");
+    const cJSON *v=cJSON_GetObjectItemCaseSensitive(values,"117");assert(cJSON_GetArrayItem(v,0)->valuedouble==80);
+    assert(cJSON_GetArrayItem(v,2)->valueint==140 && !strcmp(cJSON_GetArrayItem(v,3)->valuestring,"50"));
+    assert(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(values,"118"),1)->valueint==19);
+    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(critical,"j1587_quality"),"118")->valuestring,"DESATUALIZADO"));
+    cJSON_Delete(o);puts("Critical current API: configured MID, original raw, age and explicit stale quality retained PASS");
+}
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -664,6 +680,7 @@ int main(void)
     test_compact_sensor_allocation_failures_are_atomic();
     test_transmission_snapshot();
     sensor_pages_and_oom_are_bounded();
+    critical_latest_keeps_origin_raw_and_age();
     vQueueDelete(s.queue);
     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;

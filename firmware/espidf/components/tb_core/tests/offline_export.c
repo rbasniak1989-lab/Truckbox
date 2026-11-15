@@ -27,7 +27,10 @@ static struct {tbx_transmission_t transmission;tbx_j1708_auto_t automatic;uint64
 static bool tb_core_append_gps(cJSON *o){return tb_core_append_gps_at(o,host_now_us);}
 static unsigned esp_reset_reason(void){return 1;}
 static unsigned esp_get_minimum_free_heap_size(void){return 100000;}
-static const char *tb_version(void){return "0.2.23";}
+static unsigned esp_get_free_heap_size(void){return 60000;}
+#define MALLOC_CAP_8BIT 1
+static unsigned heap_caps_get_largest_free_block(unsigned caps){(void)caps;return 24000;}
+static const char *tb_version(void){return "0.2.25";}
 #define tb_config_j1708_auto_enabled() true
 
 static int simulated_gettimeofday(struct timeval *tv,void *zone)
@@ -182,11 +185,15 @@ int main(int argc,char **argv)
                 .last_delta_l=2.365882365,.last_integrated_l=2.25,.last_correction_l=.115882365};
             strcpy(capture_fixture.fuel_account.operation_uid,"offline-01234567890123456789012345678901234567890123456789012345");
             capture_fixture.fuel_account.operation_open=true;capture_fixture.fuel_account.operation_estimated=true;
+            capture_fixture.fuel_account.span=(tbx_fuel_span_t){.valid=true,.partial=true,
+                .start={.boot=1,.uptime_ms=1000},.end={.boot=1,.uptime_ms=sec*1000},
+                .start_odometer_km=100000,.end_odometer_km=capture_fixture.distance_total,
+                .start_confirmed_l=0,.end_confirmed_l=sec*.007};
             capture_fixture.fuel_checkpoint_id=capture_fixture.fuel_account.interval_id;
             offline_operational(host_now_us/1000);
             offline_transmission(host_now_us/1000);
             size_t cursor=0;
-            while(cursor<27){cJSON *fast=identity("J1708_FAST");
+            while(cursor<30){cJSON *fast=identity("J1708_FAST");
                 cJSON_AddStringToObject(fast,"source","j1708");cJSON_AddStringToObject(fast,"origin","PASSIVE_RX");
                 size_t seen=tb_telemetry_append_j1587_fast(fast,&cursor);
                 if(seen)queue_sample(fast);else{cJSON_Delete(fast);break;}}
@@ -204,7 +211,12 @@ int main(int argc,char **argv)
         }
         drain();
     }
+    if(capture_fixture.requests.pending<TBX_J1708_REQUEST_CAPACITY){
+        host_now_us=((uint64_t)capture_fixture.requests.pending_since_ms+210)*1000;
+        response();drain(); /* Finish the last on-wire transaction at the replay boundary. */
+    }
     assert(operational_rows==720 && fuel_rows==120);
+    fprintf(stderr,"Offline scheduler counts: sent=%u answered=%u timeouts=%u\n",capture_fixture.requests.sent_total,capture_fixture.requests.answered_total,capture_fixture.requests.timeout_total);
     assert(capture_fixture.requests.sent_total>4500 && capture_fixture.requests.sent_total==capture_fixture.requests.answered_total);
     for(unsigned i=0;i<17;i++){unsigned expected=7200000u/tbx_j1708_production_period(capture_fixture.requests.pids[i].pid,false);assert(capture_fixture.requests.pids[i].sent+1>=expected);}
     for(unsigned i=0;i<catalog_size;i++)assert(catalog[i].pid<512 && seen_pid[catalog[i].pid]);

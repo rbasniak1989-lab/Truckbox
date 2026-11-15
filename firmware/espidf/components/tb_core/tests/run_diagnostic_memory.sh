@@ -17,7 +17,7 @@ def function(source,name):
     return source[m.start():end]
 source=Path(sys.argv[1]).read_text();out=Path(sys.argv[3])
 start=source.index('static struct {');end=source.index('} s;',start)+len('} s;')
-names=['add_signal_field','request_stats_snapshot','capture_json_mode','tb_capture_add_json','tb_capture_add_json_compact','tb_capture_request_stats_json']
+names=['tb_capture_health_fields','add_signal_field','request_stats_snapshot','capture_json_mode','tb_capture_add_json','tb_capture_add_json_compact','tb_capture_request_stats_json']
 (out/'capture_diagnostic.h').write_text(source[start:end]+'\n'+'\n'.join(function(source,n) for n in names))
 source=Path(sys.argv[2]).read_text()
 m=re.search(r'typedef struct\s*\{\s*char \*payload;.*?\}\s*bridge_batch_t;',source,re.S);assert m

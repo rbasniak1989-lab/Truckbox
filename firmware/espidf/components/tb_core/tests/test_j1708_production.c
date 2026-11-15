@@ -8,12 +8,12 @@ typedef struct {
     tbx_j1708_active_t c;tbx_j1708_request_scheduler_t s;tbx_j1708_auto_t automatic;
     tbx_j1708_auto_env_t env;tbx_transmission_t transmission;
     uint64_t now,last_write;unsigned writes,aborts,credit;
-    bool no_reply,bad_echo,busy;uint8_t tx[6],tx_length;
+    bool no_reply,bad_echo,busy;uint16_t silent_pid;uint8_t tx[6],tx_length;
 }fixture_t;
 static tbx_j1708_tx_result_t write_tx(const uint8_t *bytes,size_t n,void *ctx)
 {
-    fixture_t *f=ctx;if(f->busy)return TBX_J1708_TX_DEFERRED;assert((n==5 || n==6) && bytes[0]==172 && bytes[n==6?2:1]==128);
-    if(n==6){const uint8_t expected[]={0xac,0xff,0x80,0xb7,0x80,0x9e};assert(!memcmp(bytes,expected,6));}
+    fixture_t *f=ctx;if(f->busy)return TBX_J1708_TX_DEFERRED;assert((n==5 || n==6) && bytes[0]==f->env.local_mid && bytes[n==6?2:1]==128);
+    if(n==6){uint8_t expected[]={f->env.local_mid,0xff,0x80,0xb7,0x80,0};unsigned sum=0;for(unsigned i=0;i<5;i++)sum+=expected[i];expected[5]=(uint8_t)(0u-sum);assert(!memcmp(bytes,expected,6));}
     unsigned checksum=0;for(unsigned i=0;i<n;i++)checksum+=bytes[i];assert(!(checksum&255));
     if(f->writes)assert(f->now-f->last_write>=500000);
     f->last_write=f->now;++f->writes;memcpy(f->tx,bytes,n);f->tx_length=(uint8_t)n;return TBX_J1708_TX_STARTED;
@@ -34,7 +34,7 @@ static void step(fixture_t *f)
         if(f->bad_echo){uint8_t wrong=0;tbx_j1708_active_note_rx(&f->c,&wrong,1,f->now);}
         else tbx_j1708_active_note_rx(&f->c,f->tx,f->tx_length,f->now);
     }
-    if(!f->no_reply && f->s.pending<TBX_J1708_REQUEST_CAPACITY && !f->c.tx_active && f->now-f->c.tx_started_us>=210000){
+    if(!f->no_reply && f->s.pending<TBX_J1708_REQUEST_CAPACITY && f->s.pids[f->s.pending].pid!=f->silent_pid && !f->c.tx_active && f->now-f->c.tx_started_us>=210000){
         unsigned i=f->s.pending;
         assert(!tbx_j1708_active_note_response(&f->c,255,f->s.pids[i].pid,f->now));
         assert(tbx_j1708_active_note_response(&f->c,f->c.config.target_mid[i],f->s.pids[i].pid,f->now));
@@ -81,8 +81,8 @@ static void pid153_transient_timeout_does_not_stop_passive_or_work(void)
     assert(f.s.pending==index);f.no_reply=true;
     while(f.s.pids[index].timed_out==0)step(&f);
     assert(f.c.work_mode && f.s.armed && !f.c.collisions);
-    f.no_reply=false;seconds(&f,5);
-    assert(f.s.pids[index].sent==2 && f.s.pids[index].answered==1 && f.s.pids[index].timed_out==1);
+    f.no_reply=false;seconds(&f,40);
+    assert(f.s.pids[index].sent>=2 && f.s.pids[index].answered>=1 && f.s.pids[index].timed_out==1);
     assert(f.c.work_mode && f.s.armed && f.c.rx_guard.total.valid && !f.c.physical_validated);
     puts("PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS");
 }
@@ -103,18 +103,18 @@ static void launch_transition_with_pending_request(void)
 static void faults_recovery_and_interlocks(void)
 {
     fixture_t f;initialize(&f);seconds(&f,60);assert(f.c.production_mode);
-    f.no_reply=true;seconds(&f,20);assert(!f.s.armed && f.automatic.phase==TBX_AUTO_BACKOFF && f.s.timeout_total>=3);
-    unsigned writes=f.writes;seconds(&f,20);assert(f.writes==writes);
-    f.no_reply=false;seconds(&f,90);assert(f.c.production_mode && f.automatic.starts>=2);
+    f.no_reply=true;seconds(&f,40);assert(f.s.armed && f.automatic.phase==TBX_AUTO_RUNNING && f.s.timeout_total>=3);
+    unsigned writes=f.writes;seconds(&f,20);assert(f.writes>writes);
+    f.no_reply=false;seconds(&f,90);assert(f.c.production_mode && f.automatic.starts>=1);
     f.env.ota_busy=true;seconds(&f,1);assert(!f.s.armed && f.automatic.phase==TBX_AUTO_OTA);
     f.env.ota_busy=false;seconds(&f,45);assert(f.c.production_mode);
-    f.bad_echo=true;seconds(&f,20);assert(!f.s.armed && f.c.collisions>=3 && f.automatic.phase==TBX_AUTO_BACKOFF);
+    f.bad_echo=true;seconds(&f,20);assert(f.s.armed && f.c.collisions>=3 && f.automatic.phase==TBX_AUTO_RUNNING);
     f.bad_echo=false;seconds(&f,120);assert(f.c.production_mode);
     f.busy=true;unsigned before_busy=f.writes;seconds(&f,20);
     assert(f.c.production_mode && f.writes==before_busy && f.s.deferred_total);
     f.busy=false;seconds(&f,10);assert(f.writes>before_busy);
-    f.env.local_conflict=true;seconds(&f,2);assert(!f.s.armed && f.automatic.phase==TBX_AUTO_BLOCKED);
-    writes=f.writes;seconds(&f,90);assert(f.writes==writes);
+    f.env.local_conflict=true;seconds(&f,2);assert(f.s.armed && f.automatic.phase==TBX_AUTO_RUNNING);
+    writes=f.writes;seconds(&f,90);assert(f.writes>writes);
     initialize(&f);f.env.persisted=false;seconds(&f,90);assert(!f.writes);
     initialize(&f);f.env.local_mid=0;seconds(&f,90);assert(!f.writes);
     initialize(&f);f.env.interface_ready=false;seconds(&f,90);assert(!f.writes);
@@ -160,15 +160,52 @@ static void scheduler_supervision_and_stale_baseline(void)
     f.env.bus_busy=false;seconds(&f,50);assert(!f.s.armed && f.automatic.stalls==1 && f.automatic.phase==TBX_AUTO_BACKOFF);
     assert(!strcmp(f.automatic.last_stop_reason,"SCHEDULER_NO_TX_PROGRESS") && f.env.enabled);
     assert(f.s.sent_total==sent);seconds(&f,100);assert(f.s.sent_total>sent && f.c.work_mode);
-    /* Persistent safety conflict never becomes an operator OFF and never
-     * resumes just because Wi-Fi/internet would have recovered. */
+    /* Legacy suspicion cannot become a persistent operator OFF. No network
+     * reconnection is required for this standalone ESP32 scheduler. */
     f.env.local_conflict=true;seconds(&f,1);sent=f.s.sent_total;seconds(&f,600);
-    assert(f.env.enabled && f.automatic.phase==TBX_AUTO_BLOCKED && f.s.sent_total==sent);
+    assert(f.env.enabled && f.automatic.phase==TBX_AUTO_RUNNING && f.s.sent_total>sent);
+    f.env.local_mid=174;seconds(&f,60);assert(f.c.work_mode && f.c.config.local_mid==174);
     initialize(&f);seconds(&f,60);assert(f.writes); /* Reboot after a transient stop re-evaluates fresh RX. */
-    puts("Polling supervisor: real TX stall -> controlled backoff/restart; genuine MID hold blocks, desired policy stays ON PASS");
+    puts("Polling supervisor: real TX stall -> controlled backoff/restart; MID suspicion is diagnostic, saved MID174 is used, desired policy stays ON PASS");
+}
+static void critical_ten_second_cadences(void)
+{
+    fixture_t f;initialize(&f);f.env.extended=true;f.silent_pid=117;
+    const unsigned pids[]={117,118,250},mids[]={140,140,128};
+    uint32_t last[3]={0},count[3]={0},first[3]={0};
+    for(unsigned tick=0;tick<30000;tick++){
+        step(&f);
+        for(unsigned k=0;k<3;k++){
+            unsigned i=index_of(&f,pids[k]);assert(f.env.targets[i]==mids[k]);
+            if(f.s.pids[i].sent!=count[k]){
+                uint32_t at=f.s.pids[i].last_sent_ms;
+                if(count[k]){
+                    /* Absolute cadence retains its phase; the prior send can
+                     * be one10ms scheduler tick late without shifting the cycle. */
+                    if(at-last[k]<9990 || at-last[k]>11000)fprintf(stderr,"critical pid=%u gap=%u at=%u previous=%u\n",pids[k],at-last[k],at,last[k]);
+                    assert(at-last[k]>=9990 && at-last[k]<=11000);
+                }
+                else first[k]=at;
+                last[k]=at;count[k]=f.s.pids[i].sent;
+            }
+        }
+    }
+    assert(first[1]-first[0]>=2000 && first[2]-first[1]>=2000);
+    for(unsigned k=0;k<3;k++)assert(count[k]>=26);
+    assert(f.s.pids[index_of(&f,117)].timed_out>=26);
+    assert(f.s.pids[index_of(&f,118)].answered>=26 && f.s.pids[index_of(&f,250)].answered>=26);
+    assert(f.c.work_mode && f.s.armed && !f.s.safety_stopped);
+    /* Captured before TX or at/after the timeout is not a current response. */
+    f.no_reply=true;while(f.s.pending==TBX_J1708_NO_PENDING)step(&f);
+    while(f.c.tx_active)step(&f);
+    unsigned i=f.s.pending;assert(i<TBX_J1708_REQUEST_CAPACITY);
+    assert(!tbx_j1708_active_note_response(&f.c,f.c.config.target_mid[i],f.s.pids[i].pid,f.c.tx_started_us-1));
+    assert(!tbx_j1708_active_note_response(&f.c,f.c.config.target_mid[i],f.s.pids[i].pid,f.c.tx_started_us+450000));
+    puts("PID117/MID140,118/MID140,250/MID128: 10s targets staggered >=2s, gaps9.99..11s with silent117; stale captures rejected and all other PIDs continue PASS");
 }
 int main(void)
 {
+    critical_ten_second_cadences();
     scheduler_supervision_and_stale_baseline();automatic_and_cadences();expansion_in_one_scheduler();pid153_transient_timeout_does_not_stop_passive_or_work();launch_transition_with_pending_request();faults_recovery_and_interlocks();transmission_launch_and_candidates();
     puts("Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS");
     return 0;

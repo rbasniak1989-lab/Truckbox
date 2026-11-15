@@ -29,9 +29,10 @@ void tbx_j1708_request_production(tbx_j1708_request_scheduler_t *s,const uint32_
         p->period_ms=periods[i]<500?500:periods[i];
         bool primary=p->pid==31 || p->pid==33;
         bool transmission=primary || p->pid==34 || p->pid==37 || p->pid==63 || p->pid==32 || p->pid==160;
-        p->priority=launch && primary?0:transmission?1:2;
+        bool critical=p->pid==117 || p->pid==118 || p->pid==250;
+        p->priority=critical || (launch && primary)?0:transmission?1:2;
         if(initial){
-            uint32_t offset=p->pid==31?0:p->pid==33?500:p->pid==34?1000:p->pid==63?1500:p->pid==37?2000:p->pid==32?2500:p->pid==160?3000:4000+i*500;
+            uint32_t offset=p->pid==117?1000:p->pid==118?4000:p->pid==250?7000:p->pid==31?0:p->pid==33?500:p->pid==34?1000:p->pid==63?1500:p->pid==37?2000:p->pid==32?2500:p->pid==160?3000:4000+i*500;
             p->next_due_ms=now+offset;p->retries=0;
         }else if(p->period_ms!=before){
             p->next_due_ms=p->sent?p->last_sent_ms+p->period_ms:now;
@@ -88,7 +89,7 @@ void tbx_j1708_request_set_spacing(tbx_j1708_request_scheduler_t *s, uint32_t ms
 void tbx_j1708_request_note_link_error(tbx_j1708_request_scheduler_t *s) {
     if (!s) return;
     if (s->link_error_count < UINT8_MAX) ++s->link_error_count;
-    if (s->link_error_count >= 3) {
+    if (s->link_error_count >= 3 && !s->priority_polling) {
         s->safety_stopped = true;
         tbx_j1708_request_stop(s);
     }
@@ -100,8 +101,9 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
         if (!time_due(now, s->pending_since_ms + s->timeout_ms)) return;
         tbx_j1708_request_stat_t *expired=&s->pids[s->pending];
         ++expired->timed_out;
-        if(s->priority_polling && expired->retries==0){expired->next_due_ms=now+s->min_spacing_ms;expired->retries=1;}
-        else if(s->priority_polling)expired->retries=0;
+        /* Native polling retries at the next individual cadence, not a hot
+         * loop that monopolizes other PIDs or accepts a late prior response. */
+        if(s->priority_polling)expired->retries=0;
         ++s->timeout_total;
         s->pending = TBX_J1708_NO_PENDING;
         if (s->consecutive_timeouts < UINT8_MAX) ++s->consecutive_timeouts;
@@ -138,7 +140,12 @@ void tbx_j1708_request_tick(tbx_j1708_request_scheduler_t *s, uint32_t now,
                 return; /* No UART bytes accepted, no cursor/deadline change. */
             }
             ++s->tx_failure_total;
+            ++s->pids[i].tx_errors;
             tbx_j1708_request_note_link_error(s);
+            if(s->priority_polling){
+                s->pids[i].next_due_ms=now+s->pids[i].period_ms;
+                s->cursor=(uint8_t)((i+1)%capacity);
+            }
             s->next_tx_ms = now + s->min_spacing_ms;
             s->next_tx_valid = true;
             return;

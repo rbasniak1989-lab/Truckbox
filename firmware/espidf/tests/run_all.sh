@@ -63,4 +63,5 @@ cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror \
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 node cloud/test_fuel_v2.mjs
 sh components/tb_core/tests/run_offline_2h.sh
+sh components/tb_core/tests/run_drive300.sh
 printf '%s\n' 'Host tests passed; ESP32 physical tests remain pending.'

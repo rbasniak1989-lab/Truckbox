@@ -35,6 +35,7 @@ static esp_err_t httpd_query_key_value(const char *q,const char *key,char *buffe
 {if(strcmp(key,"compact") || (strcmp(q,"compact=1") && strcmp(q,"compact=0")) || n<2)return ESP_FAIL;strcpy(buffer,q+8);return ESP_OK;}
 static void tb_base_add_json(cJSON *o){cJSON_AddStringToObject(o,"role","core");}
 static void tb_network_add_json(cJSON *o){cJSON_AddObjectToObject(o,"network");}
+static size_t tb_capture_health_fields(char *out,size_t size){const char *s=",\"j1708_automatic\":true,\"j1708_work_mode\":true,\"j1708_request_sent\":42";assert(strlen(s)<size);strcpy(out,s);return strlen(s);}
 static void tb_application_add_json(cJSON *o){cJSON_AddStringToObject(o,"mode","full");}
 static void tb_application_add_json_compact(cJSON *o){cJSON_AddStringToObject(o,"mode","compact");}
 static bool tb_web_ota_busy(void){return false;}

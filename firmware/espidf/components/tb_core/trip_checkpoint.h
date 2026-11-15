@@ -79,3 +79,19 @@ static inline bool tb_trip_checkpoint_v4_valid(const tb_trip_checkpoint_v4_t *v)
     return v->version==4 && v->crc==tb_store_crc32(v,offsetof(tb_trip_checkpoint_v4_t,crc)) &&
         tb_trip_checkpoint_valid(&v->legacy) && tbx_fuel_account_restore(&check,&v->fuel);
 }
+/* Small additive metadata slot: v4 remains the sole stored fuel account.
+ * Binding to its legacy CRC prevents a stale average after rollback/reset. */
+typedef struct {uint32_t version,legacy_crc;tbx_fuel_span_t span;uint32_t crc;}tb_trip_checkpoint_v5_t;
+static inline void tb_trip_checkpoint_v5_make(tb_trip_checkpoint_v5_t *v,const tb_trip_checkpoint_t *legacy,const tbx_fuel_account_t *a)
+{
+    memset(v,0,sizeof(*v));v->version=5;v->legacy_crc=legacy->crc;v->span=a->span;
+    v->crc=tb_store_crc32(v,offsetof(tb_trip_checkpoint_v5_t,crc));
+}
+static inline bool tb_trip_checkpoint_v5_valid(const tb_trip_checkpoint_v5_t *v)
+{
+    const tbx_fuel_span_t *s=&v->span;
+    return v->version==5 && v->crc==tb_store_crc32(v,offsetof(tb_trip_checkpoint_v5_t,crc)) &&
+        (!s->valid ||
+        (isfinite(s->start_odometer_km) && isfinite(s->end_odometer_km) && s->end_odometer_km>=s->start_odometer_km &&
+         isfinite(s->start_confirmed_l) && isfinite(s->end_confirmed_l) && s->end_confirmed_l>=s->start_confirmed_l));
+}

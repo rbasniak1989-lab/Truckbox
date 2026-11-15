@@ -30,6 +30,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_core_dump.h"
 #include "esp_timer.h"
 #include "esp_rom_gpio.h"
@@ -63,6 +64,9 @@ static struct {
     uint8_t observed_mid[32];
     uint8_t trial_reply[21],trial_reply_size;
     uint32_t frames_last_minute;
+    uint32_t local_mid_observations;
+    uint64_t mid_notice_at_us;
+    uint64_t echo_notice_at_us,late_echo_notice_at_us;
     bool ignition_known,ignition_on;uint64_t ignition_at;
     volatile bool emergency_stop;
     tbx_trip_t trip;
@@ -173,6 +177,12 @@ static bool request_event_should_persist(const char *name, bool work_mode)
 static void request_event(const char *event, uint16_t pid, const char *detail, void *unused)
 {
     (void)unused;
+    if(s.active.production_mode && ((!strcmp(event,"LINK_ERROR") && detail && strstr(detail,"TX_ECHO_TIMEOUT")==detail) || !strcmp(event,"LATE_TX_ECHO_FRAME"))){
+        uint64_t now=(uint64_t)esp_timer_get_time();
+        uint64_t *last=!strcmp(event,"LATE_TX_ECHO_FRAME")?&s.late_echo_notice_at_us:&s.echo_notice_at_us;
+        if(*last && now>=*last && now-*last<UINT64_C(60000000))return;
+        *last=now; /* Exact per-PID totals remain in statistics, no raw flood. */
+    }
     if(s.active.production_mode && (!strcmp(event,"REQUEST") || !strcmp(event,"TX_ECHO") || !strcmp(event,"RESPONSE_CANDIDATE")))return;
     if (!request_event_should_persist(event,s.active.work_mode)) return;
     /* RX/TX callbacks only queue fixed-size evidence. JSON, storage and logging
@@ -180,6 +190,7 @@ static void request_event(const char *event, uint16_t pid, const char *detail, v
     if(s.active.work_mode && (!strcmp(event,"TX_ECHO") || !strcmp(event,"RESPONSE_CANDIDATE")))return;
     request_event_t item={.work=s.active.work_mode,.uptime_us=(uint64_t)esp_timer_get_time(),
         .tx_start_us=s.last_tx_uart_us,.edges=s.rx_edges,.pid=pid,
+        .local_mid=tb_config()->j1708_local_mid,
         .field=s.active.field.started_us!=0 && !s.active.physical_validated,.field_started_us=s.active.field.started_us,
         .field_result=!strcmp(event,"FIELD_PID_RESULT"),.guard=!strcmp(event,"GUARD_DECISION")};
     snprintf(item.event,sizeof(item.event),"%s",event);
@@ -256,7 +267,7 @@ static void request_store_event(const request_event_t *item)
     cJSON_AddNumberToObject(row, "schema_version", 2);
     cJSON_AddNumberToObject(row, "boot_id", tb_boot_id());
     cJSON_AddNumberToObject(row, "uptime_ms", item->uptime_us / 1000);
-    bool tx_record=!strcmp(item->event,"TIMEOUT") || !strcmp(item->event,"MID_CONFLICT_FRAME") || !strcmp(item->event,"REQUEST") || !strcmp(item->event,"TX_ECHO") || !strcmp(item->event,"RESPONSE_CANDIDATE") || item->response_size;
+    bool tx_record=!strcmp(item->event,"LINK_ERROR") || !strcmp(item->event,"LATE_TX_ECHO_FRAME") || !strcmp(item->event,"TIMEOUT") || !strcmp(item->event,"MID_CONFLICT_FRAME") || !strcmp(item->event,"REQUEST") || !strcmp(item->event,"TX_ECHO") || !strcmp(item->event,"RESPONSE_CANDIDATE") || item->response_size;
     if(tx_record)cJSON_AddNumberToObject(row,"tx_start_us",(double)item->tx_start_us);
     if(!item->work && !item->field)cJSON_AddNumberToObject(row,"rx_edges",item->edges);
     cJSON_AddBoolToObject(row, "time_valid", false);
@@ -359,8 +370,9 @@ static void request_task(void *unused)
             .interface_ready=s.j1708_ready && s.edge_ready && s.edge_enabled,.local_mid=cfg->j1708_local_mid,
             .extended=cfg->j1708_expansion_enabled,.topology_attested=cfg->j1708_topology_attested,.ota_busy=ota_busy,.operator_hold=s.operator_hold,.timeout_ms=cfg->j1708_timeout_ms};
         env.bus_busy=!request_bus_idle((uint32_t)now);
-        env.local_conflict=env.local_mid && (s.observed_mid[env.local_mid>>3]&(1u<<(env.local_mid&7u)));
-        env.local_conflict=env.local_conflict || s.guard_invalid || s.polling_guard.mid==env.local_mid;
+        /* v223/v224 jguard is retained as historical evidence, never as a
+         * production authorization latch. Current MID comes only from NVS. */
+        env.local_conflict=false;
         memcpy(env.targets,cfg->j1708_targets,sizeof(env.targets));
         memcpy(env.periods,s.transmission.launch?cfg->j1708_launch_intervals_ms:cfg->j1708_auto_intervals_ms,sizeof(env.periods));
         tbx_auto_phase_t before=s.automatic.phase;
@@ -413,15 +425,18 @@ static esp_err_t persist_trip(void)
         .counter_valid=s.distance_counter_valid,.counter_sa=s.distance_counter_sa,.counter_raw=s.distance_counter_raw };
     checkpoint.legacy_before_crc=before_crc;checkpoint.legacy_after_crc=tb_store_crc32(&blob,sizeof(blob));
     checkpoint.crc=tb_store_crc32(&checkpoint,offsetof(tb_trip_checkpoint_t,crc));
-    tb_trip_checkpoint_v4_t v4;tb_trip_checkpoint_v4_make(&v4,&checkpoint,&s.fuel_account);
+    tb_trip_checkpoint_v5_t v5;tb_trip_checkpoint_v5_make(&v5,&checkpoint,&s.fuel_account);
+    tb_trip_checkpoint_v4_t account;tb_trip_checkpoint_v4_make(&account,&checkpoint,&s.fuel_account);
+    const tb_trip_checkpoint_v4_t *v4=&account;
     xSemaphoreGive(s.lock);
-    esp_err_t err=nvs_set_blob(s.nvs,(checkpoint.generation&1)?"trip4a":"trip4b",&v4,sizeof(v4));
+    esp_err_t err=nvs_set_blob(s.nvs,(checkpoint.generation&1)?"trip5a":"trip5b",&v5,sizeof(v5));
+    if(err==ESP_OK)err=nvs_set_blob(s.nvs,(checkpoint.generation&1)?"trip4a":"trip4b",v4,sizeof(*v4));
     if(err==ESP_OK)err=nvs_set_blob(s.nvs,(checkpoint.generation&1)?"trip3a":"trip3b",&checkpoint,sizeof(checkpoint));
     if(err==ESP_OK)err=nvs_commit(s.nvs);
     if(err==ESP_OK)err=nvs_set_blob(s.nvs,"trip",&blob,sizeof(blob));
     if(err==ESP_OK)err=nvs_commit(s.nvs);
     if(err!=ESP_OK)ESP_LOGW(TAG,"Trip checkpoint: %s",esp_err_to_name(err));
-    if(err==ESP_OK){xSemaphoreTake(s.lock,portMAX_DELAY);s.fuel_checkpoint_id=v4.fuel.interval_id;xSemaphoreGive(s.lock);}
+    if(err==ESP_OK){xSemaphoreTake(s.lock,portMAX_DELAY);s.fuel_checkpoint_id=v4->fuel.interval_id;xSemaphoreGive(s.lock);}
     xSemaphoreGive(s.trip_persist_lock);
     return err;
 }
@@ -604,11 +619,12 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
         s.fuel_trip=s.fuel_account.observed_l;s.fuel_trip_valid=s.fuel_account.valid;
         s.fuel_rate=value->value;s.fuel_at=now;s.fuel_j1587=true;s.fuel_address=value->mid;s.fuel_derived=false;
     } else if (value->pid == 245 && (!s.total_can_at || now - s.total_can_at > 30000) &&
-        (!tb_config()->j1587_odometer_validated || value->mid==tb_config()->j1587_odometer_mid)) {
+        value->mid==tb_config()->j1587_odometer_mid) {
         s.distance_total=value->value;s.total_at=now;s.total_j1587=true;
-        if(tb_config()->j1587_odometer_validated && value->raw_len==4){
+        if(value->raw_len==4){
             uint32_t raw=(uint32_t)value->raw[0]|(uint32_t)value->raw[1]<<8|(uint32_t)value->raw[2]<<16|(uint32_t)value->raw[3]<<24;
             tbx_trip_result_t result=tbx_trip_odometer(&s.trip,value->mid,raw,now);mirror_trip_locked();
+            if(!tb_config()->j1587_odometer_validated && (result==TBX_TRIP_COUNTER_ADDED || result==TBX_TRIP_BASELINE))s.trip.quality="ODOMETRO_J1587_EM_VALIDACAO";
             if(result==TBX_TRIP_COUNTER_ADDED || result==TBX_TRIP_BASELINE)
                 tbx_fuel_account_distance(&s.fuel_account,s.distance_trip);
         }
@@ -621,7 +637,7 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
         if(fabs(value->value-raw*0.473176473)<=1e-6)
             (void)tbx_fuel_account_counter_at(&s.fuel_account,value->mid,raw,
                 (tbx_fuel_stamp_t){.boot=tb_boot_id(),.uptime_ms=now,.unix_ms=unix_ms},
-                tb_config()->j1587_odometer_validated && s.total_at && now>=s.total_at && now-s.total_at<=30000?s.distance_total:NAN);
+                s.total_at && now>=s.total_at && now-s.total_at<=30000?s.distance_total:NAN);
         if(s.checkpoint_task && (s.fuel_account.result==TBX_FUEL_ANCHORED || s.fuel_account.result==TBX_FUEL_RECONCILED))
             xTaskNotifyGive(s.checkpoint_task); /* Save anchor off the RX task. */
         s.fuel_trip=s.fuel_account.observed_l;s.fuel_trip_valid=s.fuel_account.valid;
@@ -642,7 +658,7 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
     }
     if (!echo && !oversize && size <= 21 && tb_protocol_j1708_checksum_valid(frame, size) && frame[0] >= 128) {
         s.observed_mid[frame[0] >> 3] |= (uint8_t)(1u << (frame[0] & 7u));
-        if(frame[0]==tb_config()->j1708_local_mid && s.polling_guard.mid!=frame[0]){
+        if(!s.active.production_mode && !tb_config_j1708_auto_enabled() && frame[0]==tb_config()->j1708_local_mid && s.polling_guard.mid!=frame[0]){
             memset(&s.polling_guard,0,sizeof(s.polling_guard));
             s.polling_guard.version=1;s.polling_guard.boot=tb_boot_id();s.polling_guard.uptime_us=captured_us;
             s.polling_guard.mid=frame[0];s.polling_guard.size=(uint8_t)size;
@@ -650,8 +666,12 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
             s.polling_guard.crc=tb_store_crc32(&s.polling_guard,offsetof(tb_polling_guard_t,crc));s.guard_dirty=true;s.guard_persisted=false;
         }
         if (s.active.configured && frame[0] == s.active.config.local_mid) {
+            ++s.local_mid_observations;
             s.active.physical_validated=false;
-            if(!s.requests.safety_stopped || s.requests.armed || s.active.tx_active){
+            bool native=s.active.production_mode;
+            bool notice=!native || !s.mid_notice_at_us || captured_us-s.mid_notice_at_us>=UINT64_C(60000000);
+            if(notice && (!s.requests.safety_stopped || s.requests.armed || s.active.tx_active)){
+                s.mid_notice_at_us=captured_us;
                 s.active.rx_guard.last_failure=TBX_GUARD_MID_CONFLICT;
                 if(s.active.ops.event){
                     char raw[43],detail[112];
@@ -661,8 +681,11 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
                         (unsigned long long)(captured_us>=s.active.tx_started_us?captured_us-s.active.tx_started_us:0));
                     s.active.ops.event("MID_CONFLICT_FRAME",s.active.tx_pid,detail,s.active.context);
                 }
-                s.requests.safety_stopped=true;tbx_j1708_active_stop(&s.active,"LOCAL_MID_CONFLICT");
+                if(!native){s.requests.safety_stopped=true;tbx_j1708_active_stop(&s.active,"LOCAL_MID_CONFLICT");}
             }
+            /* A conflicting byte while driving still releases TX immediately;
+             * an RX MID observation alone is not proof of another transmitter. */
+            if(native && s.active.tx_active)tbx_j1708_active_note_link_error(&s.active,"LOCAL_MID_OBSERVED_DURING_TX");
         }
     }
     xSemaphoreGive(s.lock);
@@ -802,6 +825,7 @@ static void request_metric_snapshot(void)
             tb_json_add_array(a,cJSON_CreateNumber(p->period_ms)) &&
             tb_json_add_array(a,p->sent?cJSON_CreateNumber(p->last_sent_ms):cJSON_CreateNull()) &&
             tb_json_add_array(a,p->answered?cJSON_CreateNumber(p->last_answered_ms):cJSON_CreateNull());
+        complete=complete && tb_json_add_array(a,cJSON_CreateNumber(p->echo_timeouts)) && tb_json_add_array(a,cJSON_CreateNumber(p->tx_errors));
         if(complete)complete=tb_json_add_array(stats,a);else cJSON_Delete(a);
     }
     complete=complete && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"sample_kind")) && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(row,"event")) &&
@@ -918,7 +942,7 @@ static void snapshot_task(void *unused)
          * records only when necessary; NO per-frame RAW logging is enabled. */
         if ((seconds + 1U) % 10U == 0U) {
             size_t next_pid = 0;
-            for (unsigned part = 0; next_pid < 27U && part < 8U; ++part) {
+            for (unsigned part = 0; next_pid < 30U && part < 8U; ++part) {
                 cJSON *fast = cJSON_CreateObject();
                 if (!fast) break;
                 add_sample_identity(fast, "J1708_FAST");
@@ -977,6 +1001,8 @@ static void snapshot_task(void *unused)
         cJSON_AddBoolToObject(context,"j1708_automatic",tb_config_j1708_auto_enabled());
         cJSON_AddNumberToObject(context,"reset_reason",(double)esp_reset_reason());
         cJSON_AddNumberToObject(metrics,"heap_minimum",esp_get_minimum_free_heap_size());
+        cJSON_AddNumberToObject(metrics,"heap_free",esp_get_free_heap_size());
+        cJSON_AddNumberToObject(metrics,"heap_largest_block",heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         cJSON_AddNumberToObject(metrics,"request_event_dropped",s.request_event_dropped);
         cJSON_AddNumberToObject(metrics, "j1708_request_sent", s.requests.sent_total - old_request_sent);
         cJSON_AddNumberToObject(metrics, "j1708_request_answered", s.requests.answered_total - old_request_answered);
@@ -1178,11 +1204,16 @@ esp_err_t tb_capture_start(void)
                 tb_trip_checkpoint_restore(&candidates[pick],&s.trip,&s.fuel_account);mirror_trip_locked();
                 /* New scalar checkpoint is additive. A legacy rollback that
                  * advanced trip3 invalidates stale v4 even if fuel is unchanged. */
-                tb_trip_checkpoint_v4_t v4;
+                tb_trip_checkpoint_v4_t v4;bool v4_restored=false;
                 for(unsigned j=0;j<2;j++){size_t n=sizeof(v4);
                     if(nvs_get_blob(s.nvs,j?"trip4b":"trip4a",&v4,&n)==ESP_OK && n==sizeof(v4) &&
                        tb_trip_checkpoint_v4_valid(&v4) && v4.legacy.crc==candidates[pick].crc)
-                        (void)tbx_fuel_account_restore(&s.fuel_account,&v4.fuel);
+                        v4_restored=tbx_fuel_account_restore(&s.fuel_account,&v4.fuel);
+                }
+                tb_trip_checkpoint_v5_t v5;
+                for(unsigned j=0;j<2;j++){size_t n=sizeof(v5);
+                    if(nvs_get_blob(s.nvs,j?"trip5b":"trip5a",&v5,&n)==ESP_OK && n==sizeof(v5) &&
+                       v4_restored && tb_trip_checkpoint_v5_valid(&v5) && v5.legacy_crc==candidates[pick].crc)s.fuel_account.span=v5.span;
                 }
                 s.fuel_trip=s.fuel_account.observed_l;s.fuel_trip_valid=s.fuel_account.valid;
             }else{
@@ -1299,7 +1330,7 @@ bool tb_capture_fuel_boundary(bool start,const char *uid,uint64_t requested_unix
     xSemaphoreTake(s.lock,portMAX_DELAY);
     bool new_start=start && uid && (!s.fuel_account.operation_open || strcmp(uid,s.fuel_account.operation_uid));
     bool ok=tbx_fuel_account_boundary(&s.fuel_account,start,uid,(tbx_fuel_stamp_t){.boot=tb_boot_id(),.uptime_ms=now,.unix_ms=unix_ms},
-        tb_config()->j1587_odometer_validated && s.total_at && now>=s.total_at && now-s.total_at<=30000?s.distance_total:NAN);
+        s.total_j1587 && s.total_at && now>=s.total_at && now-s.total_at<=30000?s.distance_total:NAN);
     if(ok && new_start){
         /* Use the same 30s boundary freshness envelope as ecu_counters.c.
          * Late app delivery does not manufacture a historical measurement. */
@@ -1351,12 +1382,14 @@ static void request_stats_snapshot(cJSON *requests,unsigned offset,unsigned limi
         cJSON_AddNumberToObject(row, "sent", stat->sent);
         cJSON_AddNumberToObject(row, "response_candidates", stat->answered);
         cJSON_AddNumberToObject(row, "timeouts", stat->timed_out);
+        cJSON_AddNumberToObject(row,"echo_timeouts",stat->echo_timeouts);
+        cJSON_AddNumberToObject(row,"tx_errors",stat->tx_errors);
         cJSON_AddNumberToObject(row,"interval_ms",stat->period_ms);
         uint32_t now_ms=(uint32_t)((uint64_t)esp_timer_get_time()/1000u);
         if(stat->sent)cJSON_AddNumberToObject(row,"last_sent_age_ms",(uint32_t)(now_ms-stat->last_sent_ms));else cJSON_AddNullToObject(row,"last_sent_age_ms");
         if(stat->answered)cJSON_AddNumberToObject(row,"last_response_age_ms",(uint32_t)(now_ms-stat->last_answered_ms));else cJSON_AddNullToObject(row,"last_response_age_ms");
         cJSON_AddNumberToObject(row,"next_due_uptime_ms",stat->next_due_ms);
-        if(cJSON_GetArraySize(row)!=10){cJSON_Delete(row);break;}
+        if(cJSON_GetArraySize(row)!=12){cJSON_Delete(row);break;}
         if(stat->sent)cJSON_AddNumberToObject(row,"response_rate_pct",100.0*stat->answered/stat->sent);else cJSON_AddNullToObject(row,"response_rate_pct");
         if(stat->answered){cJSON_AddNumberToObject(row,"latency_ms",stat->last_latency_ms);}
         if(active->field.started_us && i<TBX_J1708_REQUEST_COUNT){
@@ -1370,6 +1403,20 @@ static void request_stats_snapshot(cJSON *requests,unsigned offset,unsigned limi
         }
         if(!tb_json_add_array(stats,row))break;
     }
+}
+
+size_t tb_capture_health_fields(char *buffer,size_t capacity)
+{
+    if(!buffer || !capacity)return 0;
+    if(!s.lock || xSemaphoreTake(s.lock,0)!=pdTRUE){
+        int n=snprintf(buffer,capacity,",\"capture_snapshot_available\":false");return n>0 && (size_t)n<capacity?(size_t)n:0;
+    }
+    bool ready=s.j1708_ready,running=s.active.production_mode && s.requests.armed;
+    uint32_t frames=s.j1708_frames,sent=s.requests.sent_total,replies=s.requests.answered_total,timeouts=s.requests.timeout_total;
+    xSemaphoreGive(s.lock);
+    int n=snprintf(buffer,capacity,",\"capture_snapshot_available\":true,\"j1708_passive\":%s,\"j1708_automatic\":%s,\"j1708_work_mode\":%s,\"j1708_frames\":%" PRIu32 ",\"j1708_request_sent\":%" PRIu32 ",\"j1708_request_answered\":%" PRIu32 ",\"j1708_request_timeouts\":%" PRIu32 ",\"j1708_local_mid\":%u",
+        ready?"true":"false",tb_config_j1708_auto_enabled()?"true":"false",running?"true":"false",frames,sent,replies,timeouts,tb_config()->j1708_local_mid);
+    return n>0 && (size_t)n<capacity?(size_t)n:0;
 }
 
 static void capture_json_mode(cJSON *object,bool compact)
@@ -1459,6 +1506,7 @@ static void capture_json_mode(cJSON *object,bool compact)
     if(view.last_tx_uart_us)cJSON_AddNumberToObject(automatic,"last_uart_tx_uptime_ms",(double)(view.last_tx_uart_us/1000));else cJSON_AddNullToObject(automatic,"last_uart_tx_uptime_ms");
     cJSON_AddBoolToObject(automatic,"technical_hold_persisted",view.guard_persisted);
     cJSON_AddBoolToObject(automatic,"technical_hold_invalid",view.guard_invalid);
+    cJSON_AddBoolToObject(automatic,"legacy_guard_ignored",true);
     if(view.polling_guard.mid){
         cJSON_AddNumberToObject(automatic,"technical_hold_mid",view.polling_guard.mid);
         cJSON_AddNumberToObject(automatic,"technical_hold_boot_id",view.polling_guard.boot);
@@ -1556,7 +1604,9 @@ static void capture_json_mode(cJSON *object,bool compact)
         if(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(requests,"stats"))!=TBX_J1708_REQUEST_CAPACITY)
             cJSON_AddBoolToObject(requests,"diagnostic_partial",true);
     }
-    if (view.active.configured) cJSON_AddNumberToObject(requests, "local_mid", view.active.config.local_mid);
+    cJSON_AddNumberToObject(requests,"local_mid",tb_config()->j1708_local_mid);
+    cJSON_AddNumberToObject(requests,"local_mid_observations",view.local_mid_observations);
+    cJSON_AddNumberToObject(requests,"late_echo_frames",view.active.late_echo_frames);
     cJSON_AddNumberToObject(requests, "idle_guard_us", view.active.idle_guard_us);
     cJSON_AddStringToObject(object, "telemetry_profile",
         tb_profile_raw(tb_config()->full_decode_enabled) ? "COMPLETO" : "LEGACY");

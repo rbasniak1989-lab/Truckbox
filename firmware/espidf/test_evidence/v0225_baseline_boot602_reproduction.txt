@@ -1,0 +1,1 @@
+BASELINE0.2.24 boot602: age_us=21589 echo=4/5 echo_timeouts=1 local_observed=1 persistent_guard=172 safety_stopped=1 armed=0
