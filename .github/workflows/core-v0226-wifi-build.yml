@@ -1,7 +1,7 @@
 name: Core 0.2.26 sharing and live data candidate
 on:
   push:
-    branches: [fix/revb1-v0226-wifi-build-contract]
+    branches: [fix/revb1-v0226-wifi-build-contract, fix/revb1-v0226-stack-ota-repair]
     paths: ['firmware/**', '.github/workflows/core-v0226-wifi-build.yml']
   pull_request:
     branches: [fix/revb1-v0225-native-polling]
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: TruckBox-Core-0.2.26-CANDIDATA-NAO-INSTALADA
+          name: TruckBox-Core-0.2.26-STACKFIX-NAO-INSTALADA
           path: |
             firmware/espidf/build-core/truckbox_core.bin
             firmware/espidf/build-core/truckbox_core.elf
