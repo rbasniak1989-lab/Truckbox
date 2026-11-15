@@ -190,7 +190,7 @@ void tbx_j1708_request_expansion(tbx_j1708_request_scheduler_t *s,bool enabled,u
 {
     for(unsigned i=17;i<TBX_J1708_REQUEST_CAPACITY;i++){
         tbx_j1708_request_stat_t *p=&s->pids[i];p->enabled=enabled;
-        p->priority=(p->pid==94 || p->pid==153 || p->pid==161)?1:2;
+        p->priority=p->pid==94?0:(p->pid==153 || p->pid==161)?1:2;
         if(initial){p->next_due_ms=now+15000+(i-17)*1500;p->retries=0;}
     }
 }

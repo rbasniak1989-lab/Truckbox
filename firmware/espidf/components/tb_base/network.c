@@ -1,4 +1,5 @@
 #include "tb.h"
+#include "tb_network_contract.h"
 #include <stdio.h>
 #include <string.h>
 #include "esp_event.h"
@@ -433,6 +434,21 @@ void tb_network_status(tb_network_status_t *status)
     }
 }
 
+size_t tb_network_health_fields(char *buffer,size_t capacity)
+{
+    char station_ip[16],ap_ip[16],dns[16];bool connected,ap_ready,active,conflict;const char *reason;
+    portENTER_CRITICAL(&s_status_lock);
+    connected=s_status.station_connected;ap_ready=s_status.access_point_running;
+    active=s_napt_active;conflict=s_subnet_conflict;reason=s_router_state;
+    memcpy(station_ip,s_status.station_ip,sizeof(station_ip));memcpy(ap_ip,s_status.ap_ip,sizeof(ap_ip));memcpy(dns,s_router_dns,sizeof(dns));
+    portEXIT_CRITICAL(&s_status_lock);
+    if(!buffer || !capacity)return 0;
+    int n=snprintf(buffer,capacity,",\"network\":{\"station_connected\":%s,\"station_ip\":\"%.15s\",\"access_point_running\":%s,\"ap_ip\":\"%.15s\",\"subnet_conflict\":%s,\"internet_sharing\":{\"build_contract\":\"%s\",\"napt_active\":%s,\"internet_verified\":false,\"status\":\"%s\",\"dns_server\":\"%.15s\",\"max_connections\":64}}",
+        connected?"true":"false",station_ip,ap_ready?"true":"false",ap_ip,conflict?"true":"false",TB_CORE_NETWORK_BUILD_CONTRACT,
+        active?"true":"false",reason?reason:"WAITING_UPLINK",dns);
+    if(n<=0 || (size_t)n>=capacity){buffer[0]=0;return 0;}return (size_t)n;
+}
+
 void tb_network_add_json(cJSON *object)
 {
     tb_network_status_t status;
@@ -460,6 +476,7 @@ void tb_network_add_json(cJSON *object)
         portEXIT_CRITICAL(&s_status_lock);
         cJSON *sharing = cJSON_AddObjectToObject(network, "internet_sharing");
         if (sharing) {
+            cJSON_AddStringToObject(sharing,"build_contract",TB_CORE_NETWORK_BUILD_CONTRACT);
             cJSON_AddBoolToObject(sharing, "napt_active", active);
             cJSON_AddBoolToObject(sharing, "internet_verified", false);
             cJSON_AddStringToObject(sharing, "status", reason);

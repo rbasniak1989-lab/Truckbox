@@ -159,6 +159,9 @@ static esp_err_t httpd_req_get_url_query_str(httpd_req_t *r,char *b,size_t n){if
 static esp_err_t httpd_query_key_value(const char *q,const char *k,char *b,size_t n){if(strcmp(k,"compact") || strncmp(q,"compact=",8) || n<2)return ESP_FAIL;snprintf(b,n,"%s",q+8);return ESP_OK;}
 static void tb_base_add_json(cJSON *o){cJSON_AddStringToObject(o,"role","core");cJSON_AddNumberToObject(o,"boot_id",42);}
 static void tb_network_add_json(cJSON *o){cJSON_AddObjectToObject(o,"network");}
+static size_t tb_network_health_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"network\":{\"internet_sharing\":{\"napt_active\":true}}");}
+static size_t tb_telemetry_live_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"live_contract\":\"TBX_CORE_LIVE_V1\",\"gear\":12");}
+static size_t tb_telemetry_live_extra_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"coolant_temp_c\":75");}
 static void tb_application_add_json(cJSON *o){tb_capture_add_json(o);}
 static void tb_application_add_json_compact(cJSON *o){tb_capture_add_json_compact(o);}
 static bool tb_web_ota_busy(void){return false;}

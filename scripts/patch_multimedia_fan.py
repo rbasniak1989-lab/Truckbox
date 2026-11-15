@@ -12,7 +12,7 @@ def replace_once(old: str, new: str, label: str):
 
 replace_once(
     'Text("Multimídia • v0.2", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)',
-    'Text("Multimídia • v0.3", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)',
+    'Text("Multimídia • ${br.com.truckbox.multimedia.BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)',
     'version',
 )
 

@@ -36,6 +36,9 @@ static esp_err_t httpd_query_key_value(const char *q,const char *key,char *buffe
 static void tb_base_add_json(cJSON *o){cJSON_AddStringToObject(o,"role","core");}
 static void tb_network_add_json(cJSON *o){cJSON_AddObjectToObject(o,"network");}
 static size_t tb_capture_health_fields(char *out,size_t size){const char *s=",\"j1708_automatic\":true,\"j1708_work_mode\":true,\"j1708_request_sent\":42";assert(strlen(s)<size);strcpy(out,s);return strlen(s);}
+static size_t tb_network_health_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"network\":{\"internet_sharing\":{\"napt_active\":true}}");}
+static size_t tb_telemetry_live_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"live_contract\":\"TBX_CORE_LIVE_V1\",\"gear\":12,\"actualTorquePct\":32.8112,\"fuel_pressure_bar\":4.4505");}
+static size_t tb_telemetry_live_extra_fields(char *out,size_t n){return (size_t)snprintf(out,n,",\"coolant_temp_c\":75");}
 static void tb_application_add_json(cJSON *o){cJSON_AddStringToObject(o,"mode","full");}
 static void tb_application_add_json_compact(cJSON *o){cJSON_AddStringToObject(o,"mode","compact");}
 static bool tb_web_ota_busy(void){return false;}

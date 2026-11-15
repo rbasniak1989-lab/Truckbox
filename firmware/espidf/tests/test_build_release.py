@@ -45,10 +45,11 @@ class ReleasePackageTests(unittest.TestCase):
             name = f"truckbox_{role}".encode()
             app[80:80 + len(name)] = name
             app[144:150] = b"v5.5.2"
+            if role=="core":app[288:288+len(package.CORE_NETWORK_BUILD_CONTRACT)]=package.CORE_NETWORK_BUILD_CONTRACT
             (build / f"truckbox_{role}.bin").write_bytes(app)
             for filename in ("bootloader.bin", "partition-table.bin", "ota_data_initial.bin"):
                 (build / filename).write_bytes(b"UNIT-TEST FIXTURE ONLY")
-            (build / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32c6"\n')
+            (build / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32c6"\n'+('CONFIG_LWIP_IP_FORWARD=y\nCONFIG_LWIP_IPV4_NAPT=y\n' if role=="core" else ''))
             (build / "project_description.json").write_text(json.dumps({
                 "project_name": f"truckbox_{role}", "target": "esp32c6", "project_version": package.VERSION,
                 "git_revision": "v5.5.2", "idf_path": str(self.temp / "no-idf-checkout"),
@@ -62,6 +63,18 @@ class ReleasePackageTests(unittest.TestCase):
 
     def make_package(self):
         return package.package_release(self.project, self.output, self.archive)
+
+    def test_cached_sdkconfig_cannot_disable_sharing(self):
+        (self.project/"build-core/sdkconfig").write_text('# CONFIG_LWIP_IP_FORWARD is not set\n')
+        with self.assertRaisesRegex(ValueError,"Effective Core sdkconfig"):
+            self.make_package()
+        self.assertFalse(self.archive.exists())
+
+    def test_binary_contract_required_even_if_sdkconfig_claims_enabled(self):
+        p=self.project/"build-core/truckbox_core.bin";data=p.read_bytes().replace(package.CORE_NETWORK_BUILD_CONTRACT,b'X'*len(package.CORE_NETWORK_BUILD_CONTRACT));p.write_bytes(data)
+        with self.assertRaisesRegex(ValueError,"Core binary lacks compiled"):
+            self.make_package()
+        self.assertFalse(self.archive.exists())
 
     def test_core_only_keeps_link_untouched(self):
         shutil.rmtree(self.project / "build-link")

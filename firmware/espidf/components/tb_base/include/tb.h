@@ -81,6 +81,7 @@ void tb_schedule_restart(uint32_t delay_ms);
 esp_err_t tb_network_start(void);
 void tb_network_status(tb_network_status_t *status);
 void tb_network_add_json(cJSON *object);
+size_t tb_network_health_fields(char *buffer,size_t capacity);
 bool tb_network_wifi_uplink(void);
 void tb_network_start_time_sync(void);
 void tb_network_note_link_address(const char *address);
@@ -100,6 +101,8 @@ void tb_application_add_json(cJSON *object);
 void tb_application_add_json_compact(cJSON *object);
 #if !CONFIG_TB_ROLE_LINK
 size_t tb_capture_health_fields(char *buffer,size_t capacity);
+size_t tb_telemetry_live_fields(char *buffer,size_t capacity);
+size_t tb_telemetry_live_extra_fields(char *buffer,size_t capacity);
 #endif
 esp_err_t tb_application_register_routes(httpd_handle_t server);
 

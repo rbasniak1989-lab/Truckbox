@@ -667,6 +667,40 @@ static void critical_latest_keeps_origin_raw_and_age(void)
     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(critical,"j1587_quality"),"118")->valuestring,"DESATUALIZADO"));
     cJSON_Delete(o);puts("Critical current API: configured MID, original raw, age and explicit stale quality retained PASS");
 }
+static void live_packet(uint8_t mid,uint8_t pid,uint8_t a,uint8_t b)
+{
+    packet_t p={.captured_us=host_now_us-1000000,.capture_id=++s.next_capture};
+    p.bytes[0]=mid;p.bytes[1]=pid;p.bytes[2]=a;p.length=4;
+    if(pid>=128){p.bytes[3]=b;p.length=5;}
+    checksum(&p);process_packet(&p);
+}
+static cJSON *live_document(void)
+{
+    char text[1540];text[0]='{';size_t n=tb_telemetry_live_fields(text+1,sizeof(text)-3);assert(n);
+    text[1]=' ';text[n+1]='}';text[n+2]=0;return cJSON_Parse(text);
+}
+static void live_cloud_vectors_and_no_heap(void)
+{
+    memset(s.latest,0,sizeof(s.latest));s.latest_count=0;host_now_us=20000000;
+    live_packet(130,163,0x31,0x32);live_packet(130,162,0x20,0x41);
+    live_packet(128,93,0x20,0);live_packet(128,94,0x81,0);live_packet(128,92,200,0);
+    heap_reset();heap_budget=0;char bytes[1536];assert(tb_telemetry_live_fields(bytes,sizeof(bytes)) && !heap_calls);
+    heap_budget=SIZE_MAX;cJSON *o=live_document();assert(o);
+    assert(cJSON_GetObjectItemCaseSensitive(o,"gear")->valueint==12);
+    assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"selected_gear")));
+    assert(fabs(cJSON_GetObjectItemCaseSensitive(o,"torqueNm")->valuedouble-867.2)<1e-6);
+    assert(fabs(cJSON_GetObjectItemCaseSensitive(o,"actualTorquePct")->valuedouble-867.2/2643.0*100)<1e-6);
+    assert(fabs(cJSON_GetObjectItemCaseSensitive(o,"fuel_pressure_bar")->valuedouble-4.4505)<1e-6);
+    cJSON *g=cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(o,"live_readings"),"gear");
+    assert(!strcmp(cJSON_GetObjectItemCaseSensitive(g,"raw")->valuestring,"3132") && cJSON_GetObjectItemCaseSensitive(g,"age_ms")->valueint==1000);
+    assert(cJSON_GetObjectItemCaseSensitive(o,"diagnostics_pid")->valueint==194);cJSON_Delete(o);
+    host_live_device_uid="another-Core";o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"actualTorquePct")));cJSON_Delete(o);host_live_device_uid="tb-c6-d40592b9190c";
+    host_now_us+=6000000;o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"gear")));cJSON_Delete(o);
+    host_now_us+=10000000;o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"fuel_pressure_bar")));cJSON_Delete(o);
+    live_packet(128,93,0xff,0);o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"torqueNm")));cJSON_Delete(o);
+    char short_buffer[16];assert(!tb_telemetry_live_fields(short_buffer,sizeof(short_buffer)) && short_buffer[0]==0);
+    assert(!heap_used);puts("Core live: real boot610 gear3132=12, torque20=867.2Nm/2643 derived%, fuel81=4.4505bar; load92 never torque, profile isolation, stale/NA/raw/age, zero JSON heap PASS");
+}
 int main(void)
 {
     assert(tb_telemetry_start() == ESP_OK);
@@ -681,6 +715,7 @@ int main(void)
     test_transmission_snapshot();
     sensor_pages_and_oom_are_bounded();
     critical_latest_keeps_origin_raw_and_age();
+    live_cloud_vectors_and_no_heap();
     vQueueDelete(s.queue);
     puts("OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes");
     return 0;

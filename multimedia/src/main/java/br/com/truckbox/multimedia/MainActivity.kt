@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -94,7 +93,7 @@ private enum class Page(val title: String) {
     SETTINGS("Config")
 }
 
-private data class LiveState(
+internal data class LiveState(
     val online: Boolean = false,
     val source: String = "OFFLINE",
     val updatedAtMs: Long = 0L,
@@ -152,6 +151,10 @@ private data class LiveState(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val error: String? = null,
+    val ecuFaults: List<EcuFault> = emptyList(),
+    val diagnosticsAvailable: Boolean = false,
+    val tripCloudAvailable: Boolean = false,
+    val operationMode: String? = null,
 )
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -166,7 +169,7 @@ private fun TruckBoxMultimediaApp() {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(coreHost) {
-        val repository = LiveRepository(coreHost)
+        val repository = LiveRepository(coreHost, ::parseLiveState)
         while (isActive) {
             val fresh = withContext(Dispatchers.IO) { repository.fetch() }
             live = if (fresh != null) fresh else live.copy(online = false, source = "OFFLINE", error = "Sem resposta do Core/Cloud")
@@ -413,10 +416,12 @@ private fun SensorsPage(s: LiveState) {
         Text("Sensores", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Text("Todos os sinais mapeados pelo Core V0.6.2. Quando a ECU publica FF/indisponível, mostramos —.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+        Text("Torque J1708 percentual: derivado do PID 93 e referência histórica de 2.643 Nm; EM VALIDAÇÃO.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
         val sensors = listOf(
             Triple("Rotação", s.rpm, "rpm"),
             Triple("Pedal acelerador", s.acceleratorPct, "%"),
-            Triple("Torque", s.torquePct, "%"),
+            Triple("Torque derivado", s.torquePct, "%"),
             Triple("Torque motor", s.torqueNm, "Nm"),
             Triple("Potência", s.powerKw, "kW"),
             Triple("Torque fricção", s.nominalFrictionTorquePct, "%"),
@@ -491,6 +496,18 @@ private fun DiagnosticsPage(s: LiveState) {
         }
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF151A20))) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Falhas da ECU — J1587 PID 194", fontWeight = FontWeight.Bold)
+                if (!s.diagnosticsAvailable) Text("Diagnóstico sem atualização; códigos já observados são mantidos.")
+                if (s.ecuFaults.isEmpty()) Text("Nenhum código armazenado pelo Core. Isso não comprova ausência de falhas na ECU.")
+                s.ecuFaults.forEach { fault ->
+                    Text("${fault.technicalCode()} • último estado: ${fault.stateText()}", fontWeight = FontWeight.Bold)
+                    Text("Ocorrências: ${fault.occurrences?.toString() ?: "não informadas"} • RAW ${fault.raw}")
+                    if(fault.lastUnixMs!=null) Text("Última observação: ${java.time.Instant.ofEpochMilli(fault.lastUnixMs).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm:ss"))}",fontSize=12.sp)
+                    else Text("Última observação: boot ${fault.lastBoot ?: "?"}, uptime ${fault.lastUptimeMs ?: "?"} ms; sem horário civil.",fontSize=12.sp)
+                    fault.candidateDescription()?.let { Text(it, fontSize = 12.sp) }
+                    if (fault.candidateDescription() == null) Text("Descrição específica desconhecida; sem gravidade atribuída automaticamente.", fontSize = 12.sp)
+                }
+                HorizontalDivider()
                 Text("Alertas instantâneos", fontWeight = FontWeight.Bold)
                 if (alerts.isEmpty()) Text("Nenhum alerta pelos limites operacionais atuais.", color = MaterialTheme.colorScheme.primary)
                 else alerts.forEach { Text("• $it", color = MaterialTheme.colorScheme.error) }
@@ -619,61 +636,13 @@ private fun instantConsumption(s: LiveState): Double? {
     return if (speed > 1.0 && rate > 0.01) speed / rate else null
 }
 
-private class LiveRepository(private val configuredHost: String) {
-    private val cloudUrl = "https://wbzrrjufhqfgoctxtlyi.supabase.co/functions/v1/truckbox-dashboard-data?key=tbx-public-ro-20260828-7f2c91"
-
-    fun fetch(): LiveState? {
-        fetchCore()?.let { return it }
-        return fetchCloud()
-    }
-
-    private fun fetchCore(): LiveState? {
-        val bases = linkedSetOf<String>()
-        fun add(raw: String) {
-            if (raw.isBlank()) return
-            bases += if (raw.startsWith("http://") || raw.startsWith("https://")) raw.trimEnd('/') else "http://${raw.trimEnd('/')}"
-        }
-        add(configuredHost)
-        add("192.168.4.1")
-        add("truckbox.local")
-        for (base in bases) {
-            try {
-                val json = getJson("$base/api/state?nocache=${System.currentTimeMillis()}", 1200, 1800) ?: continue
-                return parse(json, "CORE")
-            } catch (_: Throwable) { }
-        }
-        return null
-    }
-
-    private fun fetchCloud(): LiveState? = try {
-        getJson(cloudUrl, 2500, 3500)?.let { parse(it, "CLOUD") }
-    } catch (_: Throwable) { null }
-
-    private fun getJson(url: String, connectTimeout: Int, readTimeout: Int): JSONObject? {
-        val c = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            this.connectTimeout = connectTimeout
-            this.readTimeout = readTimeout
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Connection", "close")
-        }
-        return try {
-            if (c.responseCode !in 200..299) return null
-            val text = c.inputStream.bufferedReader().use { it.readText() }
-            if (text.isBlank()) null else JSONObject(text)
-        } finally {
-            c.disconnect()
-        }
-    }
-
-    private fun parse(j: JSONObject, source: String): LiveState {
+internal fun parseLiveState(j: JSONObject, source: String): LiveState {
         val tripDistance = j.number("tripDistanceKm", "trip_distance_km", "distanceKm", "distance_km", "live_distance_km", "sessionDistanceKm")
-        val tripFuel = j.number("tripFuelLiters", "trip_fuel_liters", "fuelLiters", "fuel_liters", "live_fuel_liters", "sessionLiters")
+        val tripFuel = j.number("tripFuelLiters", "trip_fuel_l", "trip_fuel_liters", "fuelLiters", "fuel_liters", "live_fuel_liters", "sessionLiters")
         val avg = j.number("tripAverageKml", "trip_average_kml", "averageKml", "average_kml", "avgKml", "sessionAverageKml")
             ?: if (tripDistance != null && tripFuel != null && tripFuel > 0.01) tripDistance / tripFuel else null
         return LiveState(
-            online = true,
+            online = j.optBoolean("online",true),
             source = source,
             updatedAtMs = System.currentTimeMillis(),
             speedKmh = j.number("speedKph", "speedKmh", "speed_kmh", "vehicleSpeedKph"),
@@ -731,11 +700,10 @@ private class LiveRepository(private val configuredHost: String) {
             longitude = j.number("lon", "longitude", "gps_lon"),
         )
     }
-}
 
-private fun JSONObject.findValue(keys: Set<String>, depth: Int = 0): Any? {
+private fun JSONObject.findValue(wantedKeys: Set<String>, depth: Int = 0): Any? {
     if (depth > 7) return null
-    val names = keys.map { it.lowercase(Locale.US) }.toSet()
+    val names = wantedKeys.map { it.lowercase(Locale.US) }.toSet()
     val iter = keys()
     while (iter.hasNext()) {
         val key = iter.next()
@@ -745,11 +713,11 @@ private fun JSONObject.findValue(keys: Set<String>, depth: Int = 0): Any? {
     while (nested.hasNext()) {
         val key = nested.next()
         when (val v = opt(key)) {
-            is JSONObject -> v.findValue(keys, depth + 1)?.let { return it }
+            is JSONObject -> v.findValue(wantedKeys, depth + 1)?.let { return it }
             is JSONArray -> {
                 for (i in 0 until minOf(v.length(), 20)) {
                     val item = v.opt(i)
-                    if (item is JSONObject) item.findValue(keys, depth + 1)?.let { return it }
+                    if (item is JSONObject) item.findValue(wantedKeys, depth + 1)?.let { return it }
                 }
             }
         }

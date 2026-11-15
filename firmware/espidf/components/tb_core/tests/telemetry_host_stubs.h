@@ -33,6 +33,8 @@ static unsigned host_record_count;
 typedef struct { bool full_decode_enabled;uint8_t j1708_targets[17]; } tb_config_t;
 static tb_config_t host_telemetry_config = { .full_decode_enabled = true,.j1708_targets={[6]=140,[7]=140,[10]=128} };
 static const tb_config_t *tb_config(void) { return &host_telemetry_config; }
+static const char *host_live_device_uid="tb-c6-d40592b9190c";
+const char *tb_device_uid(void){return host_live_device_uid;}
 static uint32_t tb_boot_id(void) { return 42; }
 static void vTaskDelay(unsigned ticks) { (void)ticks; }
 static int64_t esp_timer_get_time(void) { return (int64_t)host_now_us; }

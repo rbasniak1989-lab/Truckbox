@@ -60,18 +60,23 @@ static esp_err_t health_reply(httpd_req_t *request,bool low_memory)
 {
     /* No cJSON allocation: diagnostics remain possible after an allocation
      * failure, and report largest block as well as total/minimum free RAM. */
-    char body[1024],extra[384]={0};
-#if !CONFIG_TB_ROLE_LINK
-    (void)tb_capture_health_fields(extra,sizeof(extra));
-#endif
-    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"boot_id\":%u,\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u%s}",
+    char body[1536];
+    int n=snprintf(body,sizeof(body),"{\"ok\":%s,\"diagnostic_partial\":true,\"error\":\"%s\",\"memory_kind\":\"RAM\",\"role\":\"%s\",\"device_uid\":\"%s\",\"version\":\"%s\",\"boot_id\":%u,\"uptime_ms\":%" PRIu64 ",\"heap_free\":%u,\"heap_minimum\":%u,\"heap_largest_block\":%u",
         low_memory?"false":"true",low_memory?"Sem memoria RAM para diagnostico completo":"",tb_role_name(),tb_device_uid(),tb_version(),
         (unsigned)tb_boot_id(),(uint64_t)esp_timer_get_time()/1000u,(unsigned)esp_get_free_heap_size(),(unsigned)esp_get_minimum_free_heap_size(),
-        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),extra);
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     if(n<=0 || (size_t)n>=sizeof(body))return ESP_FAIL;
     if(low_memory)httpd_resp_set_status(request,"503 Service Unavailable");
     response_headers(request);httpd_resp_set_type(request,"application/json; charset=utf-8");
-    return httpd_resp_send(request,body,n);
+    esp_err_t err=httpd_resp_send_chunk(request,body,(size_t)n);if(err!=ESP_OK)return err;
+#if !CONFIG_TB_ROLE_LINK
+    size_t (*const sources[])(char *,size_t)={tb_capture_health_fields,tb_network_health_fields,tb_telemetry_live_fields,tb_telemetry_live_extra_fields};
+    for(unsigned i=0;i<sizeof(sources)/sizeof(*sources);i++){
+        size_t length=sources[i](body,sizeof(body));
+        if(length && (err=httpd_resp_send_chunk(request,body,length))!=ESP_OK)return err;
+    }
+#endif
+    err=httpd_resp_send_chunk(request,"}",1);return err==ESP_OK?httpd_resp_send_chunk(request,NULL,0):err;
 }
 static esp_err_t health_handler(httpd_req_t *request){return health_reply(request,false);}
 
@@ -672,6 +677,7 @@ esp_err_t tb_web_start(void)
     const httpd_uri_t routes[] = {
         { .uri = "/", .method = HTTP_GET, .handler = home_handler },
         { .uri = "/api/health", .method = HTTP_GET, .handler = health_handler },
+        { .uri = "/api/live", .method = HTTP_GET, .handler = health_handler },
         { .uri = "/api/crash", .method = HTTP_GET, .handler = tb_crash_info_handler },
         { .uri = "/api/crash.bin", .method = HTTP_GET, .handler = tb_crash_download_handler },
         { .uri = "/api/state", .method = HTTP_GET, .handler = state_handler },
