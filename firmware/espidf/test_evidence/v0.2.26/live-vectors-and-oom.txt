@@ -1,0 +1,7 @@
+J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
+Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
+Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS
+Critical current API: configured MID, original raw, age and explicit stale quality retained PASS
+Actual telemetry state/live JSON: native peak=5826 bytes, 172 allocation fault points, no leaks; streaming live remains allocation-free PASS
+Core live: real boot610 gear3132=12, torque20=867.2Nm/2643 derived%, fuel81=4.4505bar; load92 never torque, profile isolation, stale/NA/raw/age, zero JSON heap PASS
+OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes

@@ -694,6 +694,15 @@ static void live_cloud_vectors_and_no_heap(void)
     cJSON *g=cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(o,"live_readings"),"gear");
     assert(!strcmp(cJSON_GetObjectItemCaseSensitive(g,"raw")->valuestring,"3132") && cJSON_GetObjectItemCaseSensitive(g,"age_ms")->valueint==1000);
     assert(cJSON_GetObjectItemCaseSensitive(o,"diagnostics_pid")->valueint==194);cJSON_Delete(o);
+    heap_reset();o=cJSON_CreateObject();tb_telemetry_add_json(o);
+    assert(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(o,"live"),"gear")->valueint==12);
+    size_t calls=heap_calls,peak=heap_peak;assert(peak<24u*1024u);cJSON_Delete(o);assert(!heap_used);
+    for(size_t fail=2;fail<=calls;fail++){
+        heap_reset();o=cJSON_CreateObject();heap_fail_call=fail;tb_telemetry_add_json(o);
+        cJSON_Delete(o);assert(!heap_used);
+    }
+    printf("Actual telemetry state/live JSON: native peak=%zu bytes, %zu allocation fault points, no leaks; streaming live remains allocation-free PASS\n",peak,calls-1);
+    heap_reset();
     host_live_device_uid="another-Core";o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"actualTorquePct")));cJSON_Delete(o);host_live_device_uid="tb-c6-d40592b9190c";
     host_now_us+=6000000;o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"gear")));cJSON_Delete(o);
     host_now_us+=10000000;o=live_document();assert(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(o,"fuel_pressure_bar")));cJSON_Delete(o);

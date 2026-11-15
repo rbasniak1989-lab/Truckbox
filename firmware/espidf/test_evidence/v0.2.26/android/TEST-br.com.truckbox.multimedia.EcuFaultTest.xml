@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="br.com.truckbox.multimedia.EcuFaultTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-15T11:40:49.980Z" hostname="runnervmccnms" time="0.106">
+  <properties/>
+  <testcase name="inactiveZeroAndMissingCounterStayDistinct" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.064"/>
+  <testcase name="engineWaterCircuitIsNotWaterDetection" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.005"/>
+  <testcase name="modulesAndUnknownExtendedCodesArePreserved" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.008"/>
+  <testcase name="absenceDoesNotResolveAndTransitionsDoNotDuplicate" classname="br.com.truckbox.multimedia.EcuFaultTest" time="0.018"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

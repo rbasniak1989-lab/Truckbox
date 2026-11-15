@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="br.com.truckbox.multimedia.LiveRepositoryTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-15T11:40:50.091Z" hostname="runnervmccnms" time="0.046">
+  <properties/>
+  <testcase name="noInternetDoesNotBlockLocalReadingsOrEraseFaultHistory" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.029"/>
+  <testcase name="coreLiveAndTripCloudAreMergedWithoutReplacingSensors" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.009"/>
+  <testcase name="oldDiagnosticOnlyStateIsNotAcceptedAsAnInstrumentPayload" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.004"/>
+  <testcase name="tripParserNeverUsesLifetimeCountersOrOldHistory" classname="br.com.truckbox.multimedia.LiveRepositoryTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
