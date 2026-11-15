@@ -3,6 +3,7 @@ package br.com.truckbox.multimedia.next.data
 import br.com.truckbox.multimedia.next.domain.EcuFault
 import br.com.truckbox.multimedia.next.domain.EcuFaultSnapshot
 import br.com.truckbox.multimedia.next.domain.parseFaultEntries
+import br.com.truckbox.multimedia.next.domain.validCoreHost
 import com.google.gson.JsonParser
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
