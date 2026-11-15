@@ -71,3 +71,14 @@ jobs:
           path: multimedia/build/outputs/apk/debug/multimedia-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-Android-unit-test-results
+          path: |
+            app/build/test-results/testDebugUnitTest/*.xml
+            multimedia/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: warn
+          retention-days: 30

@@ -57,6 +57,16 @@ jobs:
           assert 'CONFIG_TB_RAW_TCP=y' not in config
           print('Candidate compiled:',len(data),'bytes; sha256:',hashlib.sha256(data).hexdigest())
           PY
+      - name: Audit shipped OTA and ZIP bytes separately from the clean CI build
+        run: |
+          RELEASE=firmware/releases/v0.2.26-sharing-live-candidate
+          if test -d "$RELEASE"; then
+            python3 firmware/espidf/tools/verify_shipped_core.py \
+              "$RELEASE/Truckbox_Core_B1_0.2.26_SHARING_LIVE_CANDIDATA.zip" \
+              "$RELEASE/truckbox_core_0.2.26_ota.bin"
+          else
+            echo 'Source review stage: shipped archive will be audited when added.'
+          fi
       - uses: actions/upload-artifact@v4
         if: success()
         with:
