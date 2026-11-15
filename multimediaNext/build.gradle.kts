@@ -21,8 +21,8 @@ android {
         applicationId = "br.com.truckbox.multimedia.next"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.0-homologacao"
+        versionCode = 4
+        versionName = "0.2.1-core026-falhas"
         buildConfigField("String","CLOUD_URL","\"$cloudUrl\"")
         buildConfigField("String","CLOUD_PUBLISHABLE_KEY","\"$cloudPublishableKey\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

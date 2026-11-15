@@ -76,7 +76,7 @@ import java.time.format.DateTimeFormatter
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if(page==Page.HOME) {
-                        HomeScreen(state,now,Modifier.fillMaxSize().padding(start=40.dp,end=14.dp,top=8.dp,bottom=12.dp))
+                        HomeScreen(state,now,Modifier.fillMaxSize().padding(start=40.dp,end=14.dp,top=8.dp,bottom=12.dp),onFaultsClick={pageName=Page.TRUCK.name})
                     } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start=56.dp,end=20.dp,top=10.dp,bottom=20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                         when(page) {
                             Page.HOME -> Unit

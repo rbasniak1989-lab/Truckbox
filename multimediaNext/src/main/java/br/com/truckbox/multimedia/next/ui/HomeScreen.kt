@@ -23,12 +23,12 @@ import br.com.truckbox.multimedia.next.data.canBeLastInstrumentValue
 import kotlinx.coroutines.delay
 import java.time.Instant
 
-@Composable fun HomeScreen(state: AppState,now: Instant,modifier: Modifier=Modifier) {
+@Composable fun HomeScreen(state: AppState,now: Instant,modifier: Modifier=Modifier,onFaultsClick: ()->Unit = {}) {
     var detail by remember { mutableStateOf<Instrument?>(null) }
     Column(modifier,verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Row(Modifier.weight(1f).fillMaxWidth().testTag("home-body"),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
             HomeInstruments(state,now,{detail=it},Modifier.weight(2f).fillMaxHeight().testTag("home-instruments"))
-            HomeIntelligence(state,Modifier.weight(1f).fillMaxHeight().testTag("home-intelligence"))
+            HomeIntelligence(state,now,onFaultsClick,Modifier.weight(1f).fillMaxHeight().testTag("home-intelligence"))
         }
         Surface(Modifier.fillMaxWidth().testTag("home-footer"),shape=androidx.compose.foundation.shape.RoundedCornerShape(13.dp),
             color=Panel,border=androidx.compose.foundation.BorderStroke(1.dp,Orange.copy(alpha=.55f))) {
@@ -61,16 +61,27 @@ import java.time.Instant
         }
     }
 }
-@Composable private fun HomeIntelligence(state: AppState,modifier: Modifier) {
+@Composable private fun HomeIntelligence(state: AppState,now: Instant,onFaultsClick:()->Unit,modifier: Modifier) {
   BoxWithConstraints(modifier) {
     val compact=maxHeight<540.dp
     val tight=maxHeight<370.dp
     PanelCard(Modifier.fillMaxSize(),accent=true,contentPadding=if(compact) 10.dp else 16.dp,spacing=if(compact) 7.dp else 10.dp) {
         Text("TruckBox Intelligence",fontFamily=Inter,fontWeight=FontWeight.ExtraBold,fontSize=(if(tight) 15 else 19).sp,maxLines=1)
-        PanelCard(Modifier.fillMaxWidth().weight(1f),contentPadding=if(compact) 8.dp else 14.dp,spacing=if(compact) 4.dp else 8.dp) {
-            Text("Monitoramento e alertas",fontWeight=FontWeight.Bold,fontSize=(if(compact) 12 else 16).sp)
-            Text(if(tight) "Não verificado · DTC indisponível" else "Não verificado",color=Muted,fontWeight=FontWeight.Bold,fontSize=(if(compact) 12 else 15).sp)
-            if(!tight) Text("Sem captura DTC confirmada. Ausência de leitura não comprova operação normal.",color=Muted,fontSize=(if(compact) 11 else 13).sp)
+        val active=state.coreFaults.filter {it.pendingActive()}
+        val confirmed=active.filter {it.confirmedActive(now,state.faultSnapshotAt,state.faultReadable)}
+        val latest=active.maxByOrNull {it.lastSeen ?: Instant.MIN}
+        val alertText=when {
+            confirmed.isNotEmpty() -> "${confirmed.size} falha(s) ativa(s) reportada(s)"
+            active.isNotEmpty() -> "${active.size} último(s) registro(s) ativo(s) · estado atual não confirmado"
+            state.faultSnapshotAt==null -> "Aguardando diagnóstico da ECU"
+            !state.faultReadable -> "Diagnóstico sem comunicação · estado desconhecido"
+            else -> "Nenhuma falha ativa reportada · cobertura parcial"
+        }
+        PanelCard(Modifier.fillMaxWidth().weight(1f).clickable(onClick=onFaultsClick).testTag("home-fault-alert"),contentPadding=if(compact) 8.dp else 14.dp,spacing=if(compact) 4.dp else 8.dp) {
+            Text("Monitoramento e alertas",fontWeight=FontWeight.Bold,fontSize=(if(compact) 12 else 16).sp,maxLines=1)
+            Text(alertText,color=if(active.isNotEmpty()) Orange else Muted,fontWeight=FontWeight.Bold,fontSize=(if(compact) 11 else 15).sp,maxLines=if(tight) 2 else 2)
+            if(latest!=null) Text(latest.technicalCode,color=Ink,fontSize=(if(compact) 10 else 12).sp,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if(!tight) Caption(if(latest!=null) "Toque para conferir código, estado e horários na Geral" else "Toque para abrir a Central de Falhas")
         }
         PanelCard(Modifier.fillMaxWidth().weight(1f),contentPadding=if(compact) 8.dp else 14.dp,spacing=if(compact) 4.dp else 8.dp) {
             Text("Inteligência preventiva",fontWeight=FontWeight.Bold,fontSize=(if(compact) 12 else 16).sp)
@@ -113,6 +124,8 @@ import java.time.Instant
             Caption("Captura: ${value?.first?.sampledAt ?: "Não informada"}")
             Caption("Recebimento: ${value?.first?.receivedAt ?: "Não informado"}")
             Caption("Qualidade: ${value?.first?.quality?.name ?: "MISSING"}")
+            if(sensor==Instrument.TORQUE && value?.first?.validation=="DERIVADO_REFERENCIA_HISTORICA_EM_VALIDACAO")
+                Caption("Torque % derivado do PID 93 usando 2.643 Nm históricos; referência em validação.")
             Caption("Últimos valores ficam identificados pela idade. Cálculos e ações continuam exigindo amostras atuais e válidas.")
         }
     },confirmButton={TextButton(onClick=onClose){Text("Fechar")}})

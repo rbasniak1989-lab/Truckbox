@@ -120,9 +120,21 @@ fun instrumentAge(reading: Reading?,now: Instant): String {
 }
 
 @Composable fun InstrumentCard(sensor: Instrument, value: InstrumentValue?, now: Instant, demo: Boolean, size: Int, modifier: Modifier = Modifier, onClick: ()->Unit) {
-    val first = instrumentDisplayValue(value?.first,now,demo)
-    val second = instrumentDisplayValue(value?.second,now,demo)
-    val old=!demo && ((first!=null && value?.first?.observed(now)==null) || (second!=null && value?.second?.observed(now)==null))
+    // Respeitar cadência efetiva do sinal: torque PID93 a 60 s, freios PID117/118 a 10 s.
+    val ttl=when(sensor) {
+        Instrument.TORQUE -> 65L
+        Instrument.FUEL_PRESSURE,Instrument.AIR -> 15L
+        Instrument.GEAR -> 5L
+        else -> 40L
+    }
+    fun display(reading: Reading?):Double? =
+        if(demo && reading?.source==Origin.DEMO) reading.value
+        else reading?.observed(now,ttl) ?:
+            reading?.takeIf {it.canBeLastInstrumentValue() && it.sampledAt?.isAfter(now)==false}?.value
+    val first = display(value?.first)
+    val second = display(value?.second)
+    val old=!demo && ((first!=null && value?.first?.observed(now,ttl)==null) ||
+        (second!=null && value?.second?.observed(now,ttl)==null))
     val oldest=listOfNotNull(value?.first,value?.second).filter {it.canBeLastInstrumentValue()}.minByOrNull {it.sampledAt!!}
     val text = if(sensor==Instrument.AIR) "${format(first) ?: "—"} / ${format(second) ?: "—"}" else format(first,if(sensor in listOf(Instrument.GEAR,Instrument.PEDAL,Instrument.TORQUE)) 0 else 1) ?: "—"
     Surface(modifier.clickable(onClick=onClick),shape=RoundedCornerShape(13.dp),border=BorderStroke(1.dp,Stroke),color=Panel) {
