@@ -55,10 +55,12 @@ static void console_task(void *arg)
                 if (status) {
                     tb_base_add_json(status);
                     tb_network_add_json(status);
-                    tb_application_add_json(status);
-                    char *json = cJSON_PrintUnformatted(status);
-                    if (json) { puts(json); free(json); }
-                    cJSON_Delete(status);
+                    /* Compact diagnostic avoids a large JSON tree in the 6 KiB
+                     * USB command task. The bounded serializer consumes status. */
+                    tb_application_add_json_compact(status);
+                    char *json = tb_json_print_owned(status, 16384);
+                    if (json) { puts(json); cJSON_free(json); }
+                    else puts("{\"ok\":false,\"error\":\"USB_STATUS_RAM_LIMIT\"}");
                 }
             } else if (!strcmp(line, "restart")) {
                 tb_schedule_restart(1000);
