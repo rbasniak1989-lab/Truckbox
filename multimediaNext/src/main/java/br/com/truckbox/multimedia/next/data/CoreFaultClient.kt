@@ -35,7 +35,7 @@ class CoreFaultClient(
         val faults=linkedMapOf<String,EcuFault>()
         do {
             if(pages++>=5)return null
-            val url=URL("http://$" + "{host}/api/diagnostics?offset=$" + "{offset}&limit=8")
+            val url=URL("http://${host}/api/diagnostics?offset=${offset}&limit=8")
             var c:HttpURLConnection?=null
             val page=try {
                 c=connections.open(url)
