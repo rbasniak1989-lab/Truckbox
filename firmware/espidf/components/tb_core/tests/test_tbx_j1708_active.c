@@ -468,8 +468,32 @@ static void test_single_trial_then_travel_timeout_cutoff(void)
     tbx_j1708_active_tick(&f.active,10000000);assert(f.sends==1 && !f.scheduler.armed);
 }
 
+/* A fully matched UART echo may reach the frame parser later under storage
+ * pressure, but may be consumed only once. Never mask arbitrary MID traffic. */
+static void test_bounded_delayed_echo_parser(void)
+{
+    fixture_t f;initialize(&f);configure_and_arm(&f,1000000);
+    tbx_j1708_active_tick(&f.active,1005000);
+    assert(f.sends==1 && f.active.tx_active);
+    echo(&f,1005000);
+    assert(f.active.echo_frame_pending);
+    const uint64_t received=f.active.echo_received_us;
+    uint8_t unrelated[5];memcpy(unrelated,f.sent_frame,sizeof(unrelated));
+    unrelated[2]^=1u;
+    assert(!tbx_j1708_active_is_tx_echo(&f.active,unrelated,5,received+1000000));
+    assert(tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,5,received+1500000));
+    assert(tbx_j1708_active_consume_tx_echo(&f.active,f.sent_frame,5,received+1500000));
+    assert(!tbx_j1708_active_consume_tx_echo(&f.active,f.sent_frame,5,received+1500000));
+
+    initialize(&f);configure_and_arm(&f,1000000);
+    tbx_j1708_active_tick(&f.active,1005000);echo(&f,1005000);
+    const uint64_t received_late=f.active.echo_received_us;
+    assert(!tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,5,received_late+2000001));
+}
+
 int main(void)
 {
+    test_bounded_delayed_echo_parser();
     test_single_trial_then_travel_timeout_cutoff();
     test_busy_is_not_tx_failure();
     test_all_17_timeouts_finish_scan_and_cannot_enable_work();
