@@ -1,0 +1,62 @@
+name: TruckBox Core Rev B1 v0.2.24.1 stale MID hold recovery (test only)
+on:
+  push:
+    branches:
+      - fix/revb1-v0224-mid172-echo-recovery
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Expose Node inside ESP-IDF container
+        run: |
+          mkdir -p .ci-tools/node/bin
+          cp "$(command -v node)" .ci-tools/node/bin/node
+      - name: Build Core-only OTA and run regression suite
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32c6
+          path: firmware/espidf
+          command: |
+            set -eu
+            export PATH="$PWD/../../.ci-tools/node/bin:$PATH"
+            bash tools/build_v020.sh core
+            sh tests/run_all.sh
+      - name: Verify OTA identity and prepare checksummed artifact
+        run: |
+          set -euo pipefail
+          mkdir -p release/mid-hold-recovery
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct
+          p=Path('firmware/espidf/build-core/truckbox_core.bin')
+          data=p.read_bytes()
+          field=lambda a,b:data[a:b].split(b'\0',1)[0].decode('ascii')
+          assert 512<len(data)<0x300000
+          assert data[0]==0xE9 and (data[3]>>4)==3
+          assert struct.unpack_from('<H',data,12)[0]==13
+          assert struct.unpack_from('<I',data,32)[0]==0xABCD5432
+          assert field(48,80)=='0.2.24.1'
+          assert field(80,112)=='truckbox_core'
+          assert field(144,176)=='v5.5.2'
+          dest=Path('release/mid-hold-recovery/truckbox_core_0.2.24.1_ota_TEST_ONLY.bin')
+          dest.write_bytes(data)
+          Path('release/mid-hold-recovery/SHA256SUMS.txt').write_text(
+              hashlib.sha256(data).hexdigest()+'  '+dest.name+'\n')
+          print('OTA verified:',dest.name,'size',len(data))
+          PY
+          cp firmware/releases/v0.2.24.1-mid-echo-recovery/README.md release/mid-hold-recovery/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TruckBox-CORE-v0.2.24.1-MID172-RECOVERY-TEST-ONLY
+          path: release/mid-hold-recovery/
+          if-no-files-found: error
+          retention-days: 30
