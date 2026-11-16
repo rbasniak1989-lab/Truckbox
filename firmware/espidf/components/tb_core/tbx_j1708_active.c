@@ -366,14 +366,14 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
 
 bool tbx_j1708_active_is_tx_echo(const tbx_j1708_active_t *c, const uint8_t *frame, size_t length, uint64_t now_us)
 {
-    /* UART delivery may be delayed by scheduling/flash IO. Match only the ONE
-     * echo already observed byte-for-byte by note_rx, timed from its receipt,
-     * not an arbitrary30ms from TX. Consumption prevents masking a later
-     * independent frame even if it repeats exactly the same bytes. */
+    /* The byte-level UART echo was already matched one-to-one by note_rx.
+     * Allow up to 2s for delayed frame assembly/flash task scheduling, without
+     * accepting arbitrary MID 172 frames. The pending echo is consumed ONCE;
+     * identical frames after consumption are independent/conflict candidates. */
     return c && frame && c->echo_frame_pending && c->tx_length>=5 &&
         c->echo_position==c->tx_length && length==c->tx_length &&
         now_us>=c->echo_received_us && now_us-c->echo_received_us<=
-            (uint64_t)c->scheduler->timeout_ms*1000u &&
+            UINT64_C(2000000) &&
         memcmp(frame,c->tx_frame,c->tx_length)==0;
 }
 
