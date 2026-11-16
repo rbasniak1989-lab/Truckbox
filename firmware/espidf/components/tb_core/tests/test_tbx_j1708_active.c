@@ -115,7 +115,7 @@ static void test_all_17_framing_echo_matching_spacing(void)
         assert(tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,5,sent+5500));
         assert(!tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,4,sent+5500));
         assert(tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,5,sent+38362));
-        assert(!tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,5,f.active.echo_received_us+f.scheduler.timeout_ms*1000u+1));
+        assert(!tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,5,f.active.echo_received_us+UINT64_C(2000001)));
         assert(tbx_j1708_active_consume_tx_echo(&f.active,f.sent_frame,5,sent+38362));
         assert(!tbx_j1708_active_is_tx_echo(&f.active,f.sent_frame,5,sent+38363));
         assert(!tbx_j1708_active_note_response(&f.active,249,expected_pids[i],sent+100000));
