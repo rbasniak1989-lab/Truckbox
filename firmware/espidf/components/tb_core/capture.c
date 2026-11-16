@@ -1700,9 +1700,8 @@ bool tb_capture_recover_stale_mid_hold(bool authorized,bool stationary)
 {
     if(!authorized || !stationary || !s.lock || !s.nvs_open || tb_web_ota_busy())return false;
     if(xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
-    bool eligible=tb_mid_hold_can_recover(&(tb_mid_hold_recovery_t){0});
     tb_mid_hold_recovery_t snapshot=recovery_snapshot(authorized,stationary);
-    eligible=tb_mid_hold_can_recover(&snapshot);
+    bool eligible=tb_mid_hold_can_recover(&snapshot);
     if(eligible)s.operator_hold=true; /* Suspend TX before NVS operations. */
     xSemaphoreGive(s.lock);
     if(!eligible)return false;
