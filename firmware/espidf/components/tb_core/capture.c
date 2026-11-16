@@ -1709,22 +1709,28 @@ bool tb_capture_recover_stale_mid_hold(bool authorized,bool stationary)
     /* This separate persisted operator decision survives a reboot even if a
      * later audit or NVS operation fails. Never auto-rearm after recovery. */
     if(tb_config_set_j1708_auto(false)!=ESP_OK)return false;
-    if(xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+    /* Same lock order as persist_trip(): NVS checkpoint lock BEFORE s.lock.
+     * Holding s.lock while waiting for trip_persist_lock would deadlock. */
+    if(xSemaphoreTake(s.trip_persist_lock,pdMS_TO_TICKS(500))!=pdTRUE)return false;
+    if(xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE){
+        xSemaphoreGive(s.trip_persist_lock);return false;
+    }
     snapshot=recovery_snapshot(authorized,stationary);
     eligible=tb_mid_hold_can_recover(&snapshot) && s.operator_hold;
     tb_polling_guard_t previous=s.polling_guard;
-    if(!eligible){xSemaphoreGive(s.lock);return false;}
-    xSemaphoreTake(s.trip_persist_lock,portMAX_DELAY);
+    if(!eligible){
+        xSemaphoreGive(s.lock);xSemaphoreGive(s.trip_persist_lock);return false;
+    }
     esp_err_t err=nvs_set_blob(s.nvs,"jghist",&previous,sizeof(previous));
     if(err==ESP_OK)err=nvs_erase_key(s.nvs,"jguard");
     if(err==ESP_OK)err=nvs_commit(s.nvs);
-    xSemaphoreGive(s.trip_persist_lock);
     if(err==ESP_OK){
         memset(&s.polling_guard,0,sizeof(s.polling_guard));
         s.guard_dirty=s.guard_persisted=s.guard_invalid=false;
         s.automatic.last_enabled=false;
     }
     xSemaphoreGive(s.lock);
+    xSemaphoreGive(s.trip_persist_lock);
     if(err!=ESP_OK)return false;
 
     char audit[360];
