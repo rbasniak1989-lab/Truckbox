@@ -658,18 +658,28 @@ static esp_err_t requests_handler(httpd_req_t *request)
         if(!ok)httpd_resp_set_status(request,"409 Conflict");
         return tb_http_send_json(request,reply);
     }
+    bool recover_mid = cJSON_IsString(action) && !strcmp(action->valuestring, "recover_stale_mid_hold");
     bool stop = cJSON_IsString(action) && !strcmp(action->valuestring, "stop");
     bool arm = cJSON_IsString(action) && !strcmp(action->valuestring, "arm");
     bool enable_work = cJSON_IsString(action) && !strcmp(action->valuestring, "enable_work");
     bool start_field=cJSON_IsString(action) && !strcmp(action->valuestring,"start_field");
     bool confirm_field=cJSON_IsString(action) && !strcmp(action->valuestring,"confirm_field");
     bool confirm_physical=cJSON_IsString(action) && !strcmp(action->valuestring,"confirm_physical");
-    if (!stop && !arm && !enable_work && !confirm_physical && !start_field && !confirm_field) {
+    if (!recover_mid && !stop && !arm && !enable_work && !confirm_physical && !start_field && !confirm_field) {
         cJSON_Delete(body);
         return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid J1708 action");
     }
     bool authorized = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "authorized"));
     bool stationary = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(body, "stationary"));
+    if(recover_mid){
+        bool ok=tb_capture_recover_stale_mid_hold(authorized,stationary);
+        cJSON_Delete(body);
+        cJSON *reply=cJSON_CreateObject();
+        cJSON_AddBoolToObject(reply,"ok",ok);
+        cJSON_AddStringToObject(reply,"reason",ok?"stale_mid_hold_archived_polling_disabled_manual_enable_required":"recovery_interlock_or_nvs_failed_check_stopped_rx_and_local_mid");
+        if(!ok)httpd_resp_set_status(request,"409 Conflict");
+        return tb_http_send_json(request,reply);
+    }
     if(start_field && (!authorized || !stationary)){
         cJSON_Delete(body);httpd_resp_set_status(request,"409 Conflict");
         cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",false);
