@@ -688,7 +688,7 @@
     const midSeen=Array.isArray(mids) && mids.includes(heldMid);
     $('j1708-recover-hold').disabled=role!=='core' || !token || uploadBusy || j1708Busy ||
       !stopped || !!status.armed || !!lastState.ota_busy ||
-      automatic.reason!=='LOCAL_MID_CONFLICT' || !automatic.technical_hold_persisted ||
+      !automatic.technical_hold_persisted ||
       !!automatic.technical_hold_invalid || heldMid<128 || midSeen ||
       !$('j1708-recover-ack').checked;
     const online = role === 'core' && !!token && !!lastState &&
