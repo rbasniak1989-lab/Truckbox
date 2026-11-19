@@ -1,4 +1,8 @@
 #include "core_internal.h"
+#include "tb_board.h"
+#if CONFIG_TB_BOARD_REVC
+#include "tb_link_revc.h"
+#endif
 #include "telemetry.h"
 #include "diagnostics.h"
 #include "ecu_counters.h"
@@ -30,7 +34,9 @@
  * potentially 45-second HTTP wait. Decoder and durable queue sizes are unchanged. */
 #define BRIDGE_BATCH_LIMIT 8U
 #define BRIDGE_BATCH_BYTES 8192U
+#if CONFIG_TB_RAW_TCP
 static const char *TAG = "tb_core";
+#endif
 typedef struct { char line[128]; size_t length; } live_line_t;
 typedef struct {
     bool valid, have_speed, have_bearing, have_altitude, have_accuracy, have_time;
@@ -73,6 +79,21 @@ bool tb_core_append_gps_at(cJSON *sample, uint64_t captured_us)
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     gps_fix_t fix = s.gps;
     xSemaphoreGive(s.lock);
+#if CONFIG_TB_BOARD_REVC
+    tb_gnss_fix_t integrated;
+    uint64_t received_us;
+    if (tb_link_revc_fix(&integrated, &received_us) && captured_us >= received_us &&
+        captured_us - received_us <= UINT64_C(15000000)) {
+        fix = (gps_fix_t){
+            .valid = true, .lat = integrated.latitude, .lon = integrated.longitude,
+            .have_speed = integrated.has_speed, .speed = integrated.speed_kmh,
+            .have_bearing = integrated.has_heading, .bearing = integrated.heading_deg,
+            .have_altitude = integrated.has_altitude, .altitude = integrated.altitude_m,
+            .have_time = integrated.utc_valid, .time_ms = integrated.unix_ms,
+            .received_us = received_us, .accepted_us = received_us, .source = "sim7670g",
+        };
+    }
+#endif
     if (!fix.valid || captured_us < fix.accepted_us || captured_us < fix.received_us ||
         captured_us - fix.received_us > UINT64_C(15000000)) return false;
     cJSON_AddStringToObject(sample, "gps_status", "FIX");
@@ -149,6 +170,7 @@ static void live_task(void *unused)
 }
 #endif
 
+#if !CONFIG_TB_BOARD_REVC
 typedef struct { char bytes[2048]; size_t length; bool overflow; } response_t;
 static esp_err_t response_event(esp_http_client_event_t *event)
 {
@@ -163,6 +185,7 @@ static esp_err_t response_event(esp_http_client_event_t *event)
     }
     return ESP_OK;
 }
+#endif
 
 static bool numeric_sequence(const cJSON *number, uint64_t *sequence)
 {
@@ -216,16 +239,41 @@ static bool batch_contains(const bridge_batch_t *batch, uint64_t sequence)
     return false;
 }
 
+static bool acknowledge_bridge_batch(const bridge_batch_t *batch, const char *response)
+{
+    if (!response) return false;
+    cJSON *result = cJSON_Parse(response);
+    uint64_t ack;
+    bool acknowledged = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result, "ok")) &&
+        numeric_sequence(cJSON_GetObjectItemCaseSensitive(result, "ack_seq"), &ack) &&
+        batch_contains(batch, ack) && tb_store_ack(ack) == ESP_OK;
+    cJSON_Delete(result);
+    return acknowledged;
+}
+
 static void bridge_task(void *unused)
 {
     uint32_t delay_ms = 5000;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(delay_ms));
-        if (tb_web_ota_busy() || !tb_config()->pair_key[0]) continue;
+        if (tb_web_ota_busy()) continue;
+#if CONFIG_TB_BOARD_REVC
+        if (!tb_config()->uplink_token[0] || !tb_config()->uplink_url[0]) continue;
+#else
+        if (!tb_config()->pair_key[0]) continue;
+#endif
         cJSON *batch = tb_store_batch(BRIDGE_BATCH_LIMIT, BRIDGE_BATCH_BYTES);
         if (!batch) continue;
         bridge_batch_t prepared;
         if (!prepare_bridge_batch(batch, &prepared)) continue;
+#if CONFIG_TB_BOARD_REVC
+        char *reply = NULL;
+        ++s.uplink_attempts;
+        esp_err_t err = tb_link_uplink(prepared.payload, strlen(prepared.payload), &reply);
+        cJSON_free(prepared.payload);
+        bool acknowledged = err == ESP_OK && acknowledge_bridge_batch(&prepared, reply);
+        cJSON_free(reply);
+#else
         response_t response = {0};
         char link_host[16], uplink_url[64];
         tb_network_link_host(link_host, sizeof(link_host));
@@ -250,21 +298,20 @@ static void bridge_task(void *unused)
         /* HTTP is complete. The ACK guard needs sequence IDs, not payload text. */
         cJSON_free(prepared.payload);
         prepared.payload = NULL;
-        bool acknowledged = false;
-        if (err == ESP_OK && status >= 200 && status < 300 && !response.overflow) {
-            cJSON *result = cJSON_Parse(response.bytes);
-            uint64_t ack;
-            if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result, "ok")) &&
-                numeric_sequence(cJSON_GetObjectItemCaseSensitive(result, "ack_seq"), &ack) &&
-                batch_contains(&prepared, ack) && tb_store_ack(ack) == ESP_OK) acknowledged = true;
-            cJSON_Delete(result);
-        }
+        bool acknowledged = err == ESP_OK && status >= 200 && status < 300 &&
+            !response.overflow && acknowledge_bridge_batch(&prepared, response.bytes);
+#endif
         xSemaphoreTake(s.lock, portMAX_DELAY);
         s.uplink_at = esp_timer_get_time();
         if (acknowledged) { ++s.uplink_success; s.uplink_error[0] = 0;s.cloud_ack_at=esp_timer_get_time();delay_ms = 100; }
         else {
+#if CONFIG_TB_BOARD_REVC
+            snprintf(s.uplink_error, sizeof(s.uplink_error), "direct_uplink: %s%s",
+                     esp_err_to_name(err), err == ESP_OK ? " no_valid_ack" : "");
+#else
             snprintf(s.uplink_error, sizeof(s.uplink_error), "link_http:%d %s%s", status, esp_err_to_name(err),
                 response.overflow ? " response_too_large" : " no_valid_ack");
+#endif
             delay_ms = delay_ms < 30000 ? delay_ms * 2 : 60000;
             if (delay_ms < 5000) delay_ms = 5000;
             if (delay_ms > 60000) delay_ms = 60000;
@@ -657,6 +704,15 @@ static esp_err_t requests_handler(httpd_req_t *request)
         cJSON_Delete(body); return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "invalid request");
     }
     const cJSON *action = cJSON_GetObjectItemCaseSensitive(body, "action");
+    if (!TB_J1708_TX_ALLOWED &&
+        !(cJSON_IsString(action) && !strcmp(action->valuestring, "stop"))) {
+        cJSON_Delete(body);
+        httpd_resp_set_status(request, "409 Conflict");
+        cJSON *reply = cJSON_CreateObject();
+        cJSON_AddBoolToObject(reply, "ok", false);
+        cJSON_AddStringToObject(reply, "reason", "revc_passive_build");
+        return tb_http_send_json(request, reply);
+    }
     if(cJSON_IsString(action) && !strcmp(action->valuestring,"automatic_enable")){
         bool ok=tb_capture_automatic_enable();cJSON_Delete(body);
         cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",ok);
@@ -751,6 +807,10 @@ esp_err_t tb_application_start(void)
     if (err != ESP_OK) return err;
     err = tb_capture_start();
     if (err != ESP_OK) return err;
+#if CONFIG_TB_BOARD_REVC
+    err = tb_link_revc_start();
+    if (err != ESP_OK) return err;
+#endif
 #if CONFIG_TB_RAW_TCP
     if (xTaskCreate(live_task, "tb_tcp", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
 #endif
@@ -778,8 +838,17 @@ static void application_json_mode(cJSON *object,bool compact)
     cJSON_AddNumberToObject(bridge, "successful_acks", s.uplink_success);
     cJSON_AddStringToObject(bridge, "error", s.uplink_error);
     if (s.link_at) cJSON_AddNumberToObject(bridge, "last_telemetry_age_ms", (esp_timer_get_time() - s.link_at) / 1000);
+#if !CONFIG_TB_BOARD_REVC
     if(s.link_status)tb_json_add_object(object,"link",cJSON_Duplicate(s.link_status,true));
+#endif
     xSemaphoreGive(s.lock);
+#if CONFIG_TB_BOARD_REVC
+    cJSON *link = cJSON_AddObjectToObject(object, "link");
+    if (link) {
+        cJSON_AddBoolToObject(link, "integrated", true);
+        tb_link_revc_add_json(link);
+    }
+#endif
     cJSON *gps = cJSON_AddObjectToObject(object, "gps");
     bool valid = tb_core_append_gps(gps);
     cJSON_AddBoolToObject(gps, "valid", valid);

@@ -43,7 +43,7 @@ Path(sys.argv[2]).write_text('static const char *TAG = "capture_host";\n' + '\n\
 PY
 cc -std=c11 -Wall -Wextra -Werror -Wpedantic \
     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
-    -I"$IDF_PATH/components/json/cJSON" -I"$work_dir" -I"$test_dir" -I"$test_dir/.." \
+    -I"$IDF_PATH/components/json/cJSON" -I"$work_dir" -I"$test_dir" -I"$test_dir/.." -I"$test_dir/../../tb_base/tests/stubs" \
     -I"$test_dir/../../../../j1708_17pid/src" \
     "$IDF_PATH/components/json/cJSON/cJSON.c" "$test_dir/../protocols.c" "$test_dir/../tbx_j1587_bridge.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_decoder.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_passive.c" "$test_dir/../../../../j1708_17pid/src/tbx_j1587_passive_full.c" "${CAPTURE_TEST_FILE:-$test_dir/test_capture_integration.c}" "$test_dir/../tbx_transmission.c" "$test_dir/../tbx_trip.c" "$test_dir/../tbx_fuel_account.c" "$test_dir/../tbx_fuel.c" "$test_dir/../tbx_j1708_auto.c" "$test_dir/../tbx_j1708_active.c" "$test_dir/../tbx_j1708_field.c" "$test_dir/../tbx_j1708_rx_guard.c" \
     "$test_dir/../../../../j1708_17pid/src/tbx_j1708_requests.c" \

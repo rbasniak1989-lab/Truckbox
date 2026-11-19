@@ -47,7 +47,7 @@ static esp_netif_t wifi_netif=1,ppp_netif=2;
 static esp_netif_t *s_ppp_netif=&ppp_netif;
 static struct {unsigned uplink_ok,uplink_failed;char uplink_error[48];int last_http_status;} s_state;
 static tb_config_t cfg;
-static bool wifi_configured,station_connected,ppp_connected;
+static bool wifi_configured,station_connected,ppp_connected,wifi_transport_failure;
 static int http_status=200,http_calls,host_interface;
 static const char *http_response;
 static esp_http_client_config_t active_http;
@@ -69,6 +69,9 @@ static void tb_network_status(tb_network_status_t *n){n->station_connected=stati
 static esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key)
 {assert(!strcmp(key,"WIFI_STA_DEF"));return &wifi_netif;}
 static int xEventGroupGetBits(int group){assert(group);return ppp_connected?TB_PPP_CONNECTED:0;}
+#if CONFIG_TB_BOARD_REVC
+static bool tb_web_ota_busy(void){return false;}
+#endif
 static bool xSemaphoreTake(int lock,unsigned ticks){(void)ticks;return lock!=0;}
 static void xSemaphoreGive(int lock){assert(lock);}
 static int64_t esp_timer_get_time(void){return 1000000;}
@@ -91,11 +94,13 @@ static esp_err_t esp_http_client_perform(void *client)
  const cJSON *rows=cJSON_GetObjectItemCaseSensitive(post,"samples");assert(cJSON_GetArraySize(rows)==2);
  assert(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(rows,0),"seq")->valuedouble==10);
  cJSON_Delete(post);
+ if (wifi_transport_failure && host_interface == 1) return ESP_FAIL;
  esp_http_client_event_t event={.event_id=HTTP_EVENT_ON_DATA,.data=(void *)http_response,
    .data_len=(int)strlen(http_response),.user_data=active_http.user_data};
  return active_http.event_handler(&event);
 }
-static int esp_http_client_get_status_code(void *client){assert(client);return http_status;}
+static int esp_http_client_get_status_code(void *client)
+{assert(client);return wifi_transport_failure && host_interface == 1 ? 0 : http_status;}
 static void esp_http_client_cleanup(void *client){assert(client);}
 
 #define free host_free
@@ -136,6 +141,16 @@ int main(void)
  ppp_connected=true;invoke(true,NULL);assert(host_interface==2);
  ppp_connected=false;station_connected=false;invoke(false,"wifi_or_cellular_not_connected");
  assert(http_calls==8);
+#if CONFIG_TB_BOARD_REVC
+ wifi_configured=true;station_connected=true;ppp_connected=true;
+ invoke(true,NULL);assert(host_interface==1 && http_calls==9);
+ wifi_transport_failure=true;
+ invoke(true,NULL);assert(host_interface==2 && http_calls==11);
+ wifi_transport_failure=false;
+ http_status=503;
+ invoke(false,"backend_rejected_batch");assert(host_interface==1 && http_calls==12);
+ puts("Rev.C uplink: Wi-Fi priority, transport-only PPP fallback and HTTP ACK guard passed");
+#endif
  puts("Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed");
  return 0;
 }

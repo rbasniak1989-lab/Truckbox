@@ -1,4 +1,5 @@
 #include "tb.h"
+#include "tb_board.h"
 #include "tb_image_policy.h"
 #include "tb_crash.h"
 
@@ -512,7 +513,7 @@ static esp_err_t ota_link_handler(httpd_req_t *request)
     if (!tb_http_require_admin(request)) {
         return ESP_FAIL;
     }
-    if (tb_role() != TB_ROLE_CORE) {
+    if (TB_BOARD_IS_REVC || tb_role() != TB_ROLE_CORE) {
         return close_with_error(request, "404 Not Found", "Atualização encaminhada está disponível apenas no Core.");
     }
     if (!upload_size_check(request, TB_MAX_OTA_BYTES)) {

@@ -190,3 +190,68 @@ tb_nmea_result_t tb_nmea_parse(const char *line, tb_gnss_fix_t *fix)
     *fix = next;
     return TB_NMEA_VALID;
 }
+
+static bool modem_coordinate(const char *field, const char *hemisphere,
+                             bool latitude, double *value)
+{
+    size_t digits = strcspn(field, ".");
+    /* SIMCom documents decimal degrees but its example uses ddmm.mmmm.
+     * The extra two integer positions distinguish the degree/minute form. */
+    if (digits == (latitude ? 4u : 5u)) return coordinate(field, hemisphere, latitude, value);
+    if (digits > (latitude ? 2u : 3u) || !number(field, 0, latitude ? 90 : 180, value))
+        return false;
+    if (!strcmp(hemisphere, latitude ? "S" : "W")) *value = -*value;
+    else if (strcmp(hemisphere, latitude ? "N" : "E")) return false;
+    return true;
+}
+
+tb_nmea_result_t tb_cgnssinfo_parse(const char *response, tb_gnss_fix_t *fix)
+{
+    if (!response || !fix) return TB_NMEA_INVALID;
+    const char prefix[] = "+CGNSSINFO:";
+    const char *payload = strstr(response, prefix);
+    if (!payload || (payload != response && payload[-1] != '\n')) return TB_NMEA_INVALID;
+    payload += sizeof(prefix) - 1;
+    while (*payload == ' ' || *payload == '\r' || *payload == '\n') ++payload;
+    char line[192];
+    size_t length = strcspn(payload, "\r\n");
+    if (!length || length >= sizeof(line)) return TB_NMEA_INVALID;
+    memcpy(line, payload, length);
+    line[length] = '\0';
+    char *fields[18] = {line};
+    size_t count = 1;
+    for (char *cursor = line; *cursor; ++cursor) {
+        if (*cursor != ',') continue;
+        if (count == sizeof(fields) / sizeof(fields[0])) return TB_NMEA_INVALID;
+        *cursor = '\0';
+        fields[count++] = cursor + 1;
+    }
+    if (count != 18) return TB_NMEA_INVALID;
+    if (!*fields[0]) {
+        for (size_t i = 1; i < count; ++i)
+            if (*fields[i]) return TB_NMEA_INVALID;
+        *fix = (tb_gnss_fix_t){0};
+        return TB_NMEA_NO_FIX;
+    }
+    tb_gnss_fix_t next = {0};
+    if ((strcmp(fields[0], "2") && strcmp(fields[0], "3")) ||
+        !modem_coordinate(fields[5], fields[6], true, &next.latitude) ||
+        !modem_coordinate(fields[7], fields[8], false, &next.longitude)) return TB_NMEA_INVALID;
+    next.valid = true;
+    next.quality = (unsigned)(fields[0][0] - '0');
+    int64_t midnight;
+    uint32_t tod;
+    next.utc_valid = date_epoch(fields[9], &midnight) && time_of_day(fields[10], &tod);
+    if (next.utc_valid) next.unix_ms = midnight + tod;
+    next.has_altitude = number(fields[11], -1000, 20000, &next.altitude_m);
+    double knots, satellites;
+    next.has_speed = number(fields[12], 0, 216, &knots);
+    if (next.has_speed) next.speed_kmh = knots * 1.852;
+    next.has_heading = number(fields[13], 0, 360, &next.heading_deg);
+    if (next.has_heading && next.heading_deg == 360) next.heading_deg = 0;
+    next.has_hdop = number(fields[15], 0, 999, &next.hdop);
+    if (number(fields[17], 0, 99, &satellites) && floor(satellites) == satellites)
+        next.satellites = (unsigned)satellites;
+    *fix = next;
+    return TB_NMEA_VALID;
+}

@@ -1,5 +1,5 @@
 set(link_sources "")
-if(CONFIG_TB_ROLE_LINK)
+if(CONFIG_TB_ROLE_LINK OR CONFIG_TB_BOARD_REVC)
     set(link_sources "tb_link.c" "tb_nmea.c" "tb_gps_outbox.c")
 endif()
 

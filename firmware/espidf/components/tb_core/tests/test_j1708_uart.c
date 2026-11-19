@@ -4,12 +4,12 @@
 #include <stdio.h>
 #include <string.h>
 #include "tbx_j1708_active.h"
+#include "tb_board.h"
 #define IRAM_ATTR
-#define GPIO_NUM_21 21
-#define GPIO_NUM_20 20
 #define GPIO_MODE_OUTPUT 1
 #define SIG_GPIO_OUT_IDX 0
 #define UART_NUM_1 1
+#define UART_NUM_2 2
 #define UART_SIGNAL_TXD_INV 1
 #define UART_PIN_NO_CHANGE -1
 #define ESP_OK 0
@@ -25,34 +25,46 @@ static struct {
 } s;
 static uint64_t now;
 static unsigned fifo,ring,events,writes,releases,threshold;
-static bool rx_low,route_edge,driver_fail,tx_busy;
+static bool rx_low,route_edge,driver_fail,tx_busy,ota_busy;
+static bool tb_web_ota_busy(void){return ota_busy;}
 static int64_t esp_timer_get_time(void){return (int64_t)now;}
-static int gpio_get_level(int pin){assert(pin==20);return !rx_low;}
-static void gpio_set_level(int pin,int level){assert(pin==21 && level==0);++releases;}
-static void gpio_set_direction(int pin,int mode){assert(pin==21 && mode==1);}
-static void esp_rom_gpio_connect_out_signal(int pin,int sig,bool a,bool b){assert(pin==21 && sig==0 && !a && !b);}
-static uint32_t uart_ll_get_rxfifo_len(int hw){assert(hw==1);return fifo;}
+static int gpio_get_level(int pin){assert(pin==TB_J1708_RX);return !rx_low;}
+static void gpio_set_level(int pin,int level){assert(pin==TB_J1708_DE && level==0);++releases;}
+static void gpio_set_direction(int pin,int mode){assert(pin==TB_J1708_DE && mode==1);}
+static void esp_rom_gpio_connect_out_signal(int pin,int sig,bool a,bool b){assert(pin==TB_J1708_DE && sig==0 && !a && !b);}
+static uint32_t uart_ll_get_rxfifo_len(int hw){assert(hw==TB_J1708_UART);return fifo;}
 static unsigned uxQueueMessagesWaiting(int q){(void)q;return events;}
-static int uart_get_buffered_data_len(int port,size_t *n){assert(port==1);*n=ring;return ESP_OK;}
-static int uart_wait_tx_done(int port,unsigned ticks){assert(port==1 && ticks==0);return tx_busy?-1:ESP_OK;}
-static int uart_set_rx_full_threshold(int port,unsigned n){assert(port==1);threshold=n;return driver_fail?-1:ESP_OK;}
-static int uart_set_line_inverse(int port,unsigned mask){assert(port==1 && mask==UART_SIGNAL_TXD_INV);return ESP_OK;}
+static int uart_get_buffered_data_len(int port,size_t *n){assert(port==TB_J1708_UART);*n=ring;return ESP_OK;}
+static int uart_wait_tx_done(int port,unsigned ticks){assert(port==TB_J1708_UART && ticks==0);return tx_busy?-1:ESP_OK;}
+static int uart_set_rx_full_threshold(int port,unsigned n){assert(port==TB_J1708_UART);threshold=n;return driver_fail?-1:ESP_OK;}
+static int uart_set_line_inverse(int port,unsigned mask){assert(port==TB_J1708_UART && mask==UART_SIGNAL_TXD_INV);return ESP_OK;}
 static int uart_set_pin(int port,int tx,int rx,int rts,int cts){
-    assert(port==1 && tx==21 && rx==20 && rts==-1 && cts==-1);
+    assert(port==TB_J1708_UART && tx==TB_J1708_DE && rx==TB_J1708_RX && rts==-1 && cts==-1);
     if(route_edge){++s.rx_edges;s.rx_edge_us=(uint32_t)now;}
     return ESP_OK;
 }
 static int uart_tx_chars(int port,const char *bytes,unsigned n){
-    assert(port==1 && bytes && (n==5 || n==6));++writes;return (int)n;
+    assert(port==TB_J1708_UART && bytes && (n==5 || n==6));++writes;return (int)n;
 }
 #include "capture_uart_under_test.h"
 static void reset(void){
     memset(&s,0,sizeof(s));now=10000;s.rx_edge_us=1000;s.edge_ready=s.j1708_ready=true;
     s.active.idle_guard_us=5000;fifo=ring=events=writes=releases=0;threshold=64;
-    rx_low=route_edge=driver_fail=tx_busy=false;
+    rx_low=route_edge=driver_fail=tx_busy=ota_busy=false;
 }
 int main(void){
     const uint8_t frame[5]={0xAC,0x80,0x75,0x8C,0xD3};
+    if (TB_BOARD_IS_REVC) {
+        assert(TB_J1708_UART == UART_NUM_2 && TB_J1708_RX == 6 && TB_J1708_DE == 7);
+        reset();ota_busy=true;
+        assert(request_begin_tx(frame,5,NULL)==TBX_J1708_TX_FAULT && !writes);
+    }
+    if (!TB_J1708_TX_ALLOWED) {
+        reset();
+        assert(request_begin_tx(frame,5,NULL)==TBX_J1708_TX_FAULT && !writes && !releases);
+        puts("Rev.C passive build refused all UART transmission");
+        return 0;
+    }
     reset();fifo=1;
     assert(request_begin_tx(frame,5,NULL)==TBX_J1708_TX_DEFERRED && writes==0);
     reset();ring=1;assert(request_begin_tx(frame,5,NULL)==TBX_J1708_TX_DEFERRED && !writes);
@@ -77,6 +89,6 @@ int main(void){
     assert(request_begin_tx(extended,sizeof(extended),NULL)==TBX_J1708_TX_STARTED && writes==1);
     request_abort_tx(NULL);assert(releases && threshold==64);
     uint8_t invalid[6]={0xac,0xff,0xc3,0,0,0};reset();assert(request_begin_tx(invalid,6,NULL)==TBX_J1708_TX_FAULT && !writes);
-    puts("Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed");
+    puts("Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, TX inversion, no RX discard and immediate DE release passed");
     return 0;
 }

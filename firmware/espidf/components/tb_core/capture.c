@@ -1,4 +1,5 @@
 #include "core_internal.h"
+#include "tb_board.h"
 #include "protocols.h"
 #include "telemetry.h"
 #include "diagnostics.h"
@@ -97,10 +98,10 @@ static void request_abort_tx(void *unused)
     (void)unused;
     /* Program the GPIO latch first, then detach the UART matrix. With DI
      * fixed LOW this releases the dominant driver even during a byte. */
-    gpio_set_level(GPIO_NUM_21, 0);
-    esp_rom_gpio_connect_out_signal(GPIO_NUM_21, SIG_GPIO_OUT_IDX, false, false);
-    gpio_set_direction(GPIO_NUM_21, GPIO_MODE_OUTPUT);
-    if (s.j1708_ready) (void)uart_set_rx_full_threshold(UART_NUM_1, 64);
+    gpio_set_level(TB_J1708_DE, 0);
+    esp_rom_gpio_connect_out_signal(TB_J1708_DE, SIG_GPIO_OUT_IDX, false, false);
+    gpio_set_direction(TB_J1708_DE, GPIO_MODE_OUTPUT);
+    if (s.j1708_ready) (void)uart_set_rx_full_threshold(TB_J1708_UART, 64);
 }
 
 /* IRAM, no allocation and no UART access: observe actual falling edges even
@@ -118,23 +119,24 @@ static bool request_bus_idle(uint32_t now_us)
     size_t rx_buffered=0;
     return s.edge_ready && !s.rx_partial && !s.rx_task_busy &&
         (uint32_t)(now_us-s.rx_edge_us)>=s.active.idle_guard_us &&
-        gpio_get_level(GPIO_NUM_20)!=0 &&
-        uart_ll_get_rxfifo_len(UART_LL_GET_HW(UART_NUM_1))==0 &&
+        gpio_get_level(TB_J1708_RX)!=0 &&
+        uart_ll_get_rxfifo_len(UART_LL_GET_HW(TB_J1708_UART))==0 &&
         uxQueueMessagesWaiting(s.uart_events)==0 &&
-        uart_get_buffered_data_len(UART_NUM_1,&rx_buffered)==ESP_OK && rx_buffered==0;
+        uart_get_buffered_data_len(TB_J1708_UART,&rx_buffered)==ESP_OK && rx_buffered==0;
 }
 
 static tbx_j1708_tx_result_t request_begin_tx(const uint8_t *bytes, size_t length, void *unused)
 {
     (void)unused;
-    if(s.emergency_stop || !s.j1708_ready || !bytes || (length!=5 && (length!=6 || bytes[1]!=255 || bytes[2]!=128)))
+    if(!TB_J1708_TX_ALLOWED || s.emergency_stop || (TB_BOARD_IS_REVC && tb_web_ota_busy()) ||
+       !s.j1708_ready || !bytes || (length!=5 && (length!=6 || bytes[1]!=255 || bytes[2]!=128)))
         return TBX_J1708_TX_FAULT;
     if(!request_bus_idle((uint32_t)esp_timer_get_time()) ||
-       uart_wait_tx_done(UART_NUM_1,0)!=ESP_OK) return TBX_J1708_TX_DEFERRED;
+       uart_wait_tx_done(TB_J1708_UART,0)!=ESP_OK) return TBX_J1708_TX_DEFERRED;
     const uint32_t edges=s.rx_edges;
-    esp_err_t err=uart_set_rx_full_threshold(UART_NUM_1,1);
-    if(err==ESP_OK)err=uart_set_line_inverse(UART_NUM_1,UART_SIGNAL_TXD_INV);
-    if(err==ESP_OK)err=uart_set_pin(UART_NUM_1,21,20,UART_PIN_NO_CHANGE,UART_PIN_NO_CHANGE);
+    esp_err_t err=uart_set_rx_full_threshold(TB_J1708_UART,1);
+    if(err==ESP_OK)err=uart_set_line_inverse(TB_J1708_UART,UART_SIGNAL_TXD_INV);
+    if(err==ESP_OK)err=uart_set_pin(TB_J1708_UART,TB_J1708_DE,TB_J1708_RX,UART_PIN_NO_CHANGE,UART_PIN_NO_CHANGE);
     if(err!=ESP_OK){++s.uart_start_faults;request_abort_tx(NULL);return TBX_J1708_TX_FAULT;}
     /* Routing/configuration can take time. Recheck BOTH hardware and software
      * RX after preparation; never discard RX to make room for a request. */
@@ -144,7 +146,7 @@ static tbx_j1708_tx_result_t request_begin_tx(const uint8_t *bytes, size_t lengt
         return s.emergency_stop?TBX_J1708_TX_FAULT:TBX_J1708_TX_DEFERRED;
     }
     uint64_t submitted_us=(uint64_t)esp_timer_get_time();
-    if(uart_tx_chars(UART_NUM_1,(const char *)bytes,length)==(int)length){
+    if(uart_tx_chars(TB_J1708_UART,(const char *)bytes,length)==(int)length){
         s.last_tx_uart_us=submitted_us;return TBX_J1708_TX_STARTED;
     }
     ++s.uart_start_faults;
@@ -365,7 +367,7 @@ static void request_task(void *unused)
             tbx_transmission_tick(&s.transmission,now);
         }
         bool enabled=tb_config_j1708_auto_enabled() && cfg->capture_enabled && cfg->j1708_enabled;
-        if(enabled && s.edge_ready && !s.edge_enabled){s.rx_edge_us=(uint32_t)now;s.edge_enabled=gpio_intr_enable(GPIO_NUM_20)==ESP_OK;}
+        if(enabled && s.edge_ready && !s.edge_enabled){s.rx_edge_us=(uint32_t)now;s.edge_enabled=gpio_intr_enable(TB_J1708_RX)==ESP_OK;}
         tbx_j1708_auto_env_t env={.enabled=enabled,.persisted=tb_config_j1708_auto_persisted(),
             .interface_ready=s.j1708_ready && s.edge_ready && s.edge_enabled,.local_mid=cfg->j1708_local_mid,
             .extended=cfg->j1708_expansion_enabled,.topology_attested=cfg->j1708_topology_attested,.ota_busy=ota_busy,.operator_hold=s.operator_hold,.timeout_ms=cfg->j1708_timeout_ms};
@@ -393,7 +395,7 @@ static void request_task(void *unused)
             (s.rpm_at && now/1000>=s.rpm_at && now/1000-s.rpm_at<=3000 && s.rpm>200);
         tb_ecu_counters_tick(&s.requests,fresh_speed,s.speed,ecu_awake && ignition,now/1000,cfg->j1708_stop_dwell_s,cfg->j1708_parked_capture_s);
         tbx_j1708_active_tick(&s.active, now);
-        if(!s.requests.armed && !enabled && s.edge_enabled){gpio_intr_disable(GPIO_NUM_20);s.edge_enabled=false;}
+        if(!s.requests.armed && !enabled && s.edge_enabled){gpio_intr_disable(TB_J1708_RX);s.edge_enabled=false;}
         xSemaphoreGive(s.lock);
         persist_polling_guard();
         request_event_t item;
@@ -789,6 +791,10 @@ static void record_boot_diagnostic(void)
     cJSON_AddNumberToObject(sample,"reset_reason",(double)esp_reset_reason());
     cJSON_AddNumberToObject(sample,"heap_free",esp_get_free_heap_size());
     cJSON_AddNumberToObject(sample,"heap_minimum",esp_get_minimum_free_heap_size());
+#if CONFIG_TB_BOARD_REVC
+    cJSON_AddNumberToObject(sample, "heap_internal_free",
+                           heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+#endif
     if(esp_reset_reason()==ESP_RST_PANIC){
         char reason[96]={0};
         bool valid=esp_core_dump_image_check()==ESP_OK;
@@ -1000,9 +1006,16 @@ static void snapshot_task(void *unused)
         cJSON_AddBoolToObject(context, "j1708_work_mode", s.active.work_mode);
         cJSON_AddBoolToObject(context,"j1708_automatic",tb_config_j1708_auto_enabled());
         cJSON_AddNumberToObject(context,"reset_reason",(double)esp_reset_reason());
+#if CONFIG_TB_BOARD_REVC
+        const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+        cJSON_AddNumberToObject(metrics, "heap_minimum", heap_caps_get_minimum_free_size(caps));
+        cJSON_AddNumberToObject(metrics, "heap_free", heap_caps_get_free_size(caps));
+        cJSON_AddNumberToObject(metrics, "heap_largest_block", heap_caps_get_largest_free_block(caps));
+#else
         cJSON_AddNumberToObject(metrics,"heap_minimum",esp_get_minimum_free_heap_size());
         cJSON_AddNumberToObject(metrics,"heap_free",esp_get_free_heap_size());
         cJSON_AddNumberToObject(metrics,"heap_largest_block",heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
         cJSON_AddNumberToObject(metrics,"request_event_dropped",s.request_event_dropped);
         cJSON_AddNumberToObject(metrics, "j1708_request_sent", s.requests.sent_total - old_request_sent);
         cJSON_AddNumberToObject(metrics, "j1708_request_answered", s.requests.answered_total - old_request_answered);
@@ -1076,9 +1089,9 @@ static void j1708_task(void *unused)
                 xSemaphoreTake(s.lock,portMAX_DELAY);
                 bool quiet=!s.active.tx_active &&
                     (uint32_t)((uint32_t)esp_timer_get_time()-s.rx_edge_us)>=5000u &&
-                    gpio_get_level(GPIO_NUM_20)!=0 &&
-                    uart_ll_get_rxfifo_len(UART_LL_GET_HW(UART_NUM_1))==0 &&
-                    uart_get_buffered_data_len(UART_NUM_1,&buffered)==ESP_OK && !buffered;
+                    gpio_get_level(TB_J1708_RX)!=0 &&
+                    uart_ll_get_rxfifo_len(UART_LL_GET_HW(TB_J1708_UART))==0 &&
+                    uart_get_buffered_data_len(TB_J1708_UART,&buffered)==ESP_OK && !buffered;
                 xSemaphoreGive(s.lock);
                 if(quiet){
                     finish_j1708(frame,length,oversize);length=0;oversize=false;
@@ -1094,7 +1107,7 @@ static void j1708_task(void *unused)
             s.rx_partial=false;
             tbx_j1708_rx_uart_fault(&s.active,TBX_RX_OVERRUN,(uint64_t)esp_timer_get_time());
             xSemaphoreGive(s.lock);
-            uart_flush_input(UART_NUM_1); xQueueReset(s.uart_events); s.rx_task_busy=false;continue;
+            uart_flush_input(TB_J1708_UART); xQueueReset(s.uart_events); s.rx_task_busy=false;continue;
         }
         if (event.type == UART_FRAME_ERR || event.type == UART_PARITY_ERR) {
             ++s.uart_overruns; length = 0; oversize = false;
@@ -1109,7 +1122,7 @@ static void j1708_task(void *unused)
         size_t remaining = event.size;
         while (remaining) {
             size_t requested = remaining < sizeof(chunk) ? remaining : sizeof(chunk);
-            int got = uart_read_bytes(UART_NUM_1, chunk, requested, pdMS_TO_TICKS(20));
+            int got = uart_read_bytes(TB_J1708_UART, chunk, requested, pdMS_TO_TICKS(20));
             if (got <= 0) {
                 ++s.uart_overruns;oversize=true;
                 xSemaphoreTake(s.lock,portMAX_DELAY);
@@ -1236,11 +1249,13 @@ esp_err_t tb_capture_start(void)
      * Active J1708 requests stay explicitly authorized and parked-only. */
     esp_err_t telemetry_err = tb_telemetry_start();
     if (telemetry_err != ESP_OK) return telemetry_err;
+#if !CONFIG_TB_BOARD_REVC
     /* GPIO1 is deliberately never an output on the uncorrected B1 watchdog. */
     gpio_set_direction(GPIO_NUM_1, GPIO_MODE_INPUT);
     if (tb_config()->repaired_power_gates) {
         gpio_set_level(GPIO_NUM_16, 0); gpio_set_direction(GPIO_NUM_16, GPIO_MODE_OUTPUT);
     }
+#endif
     if (!tb_config()->capture_enabled) {
         if (xTaskCreate(snapshot_task, "tb_snapshot", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
         return ESP_OK;
@@ -1266,26 +1281,26 @@ esp_err_t tb_capture_start(void)
     }
 #endif
     if(tb_config()->j1708_enabled){
-    gpio_set_level(GPIO_NUM_21, 0); gpio_set_direction(GPIO_NUM_21, GPIO_MODE_OUTPUT);
+    gpio_set_level(TB_J1708_DE, 0); gpio_set_direction(TB_J1708_DE, GPIO_MODE_OUTPUT);
     uart_config_t uart = { .baud_rate = 9600, .data_bits = UART_DATA_8_BITS, .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1, .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, .source_clk = UART_SCLK_DEFAULT };
-    err = uart_driver_install(UART_NUM_1, 2048, 0, 24, &s.uart_events, 0);
-    if (err == ESP_OK) err = uart_param_config(UART_NUM_1, &uart);
-    if (err == ESP_OK) err = uart_set_pin(UART_NUM_1, 5, 20, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    if (err == ESP_OK) err = uart_set_rx_timeout(UART_NUM_1, 1);
-    if (err == ESP_OK) err = uart_set_rx_full_threshold(UART_NUM_1, 64);
+    err = uart_driver_install(TB_J1708_UART, 2048, 0, 24, &s.uart_events, 0);
+    if (err == ESP_OK) err = uart_param_config(TB_J1708_UART, &uart);
+    if (err == ESP_OK) err = uart_set_pin(TB_J1708_UART, TB_J1708_UNUSED_TX, TB_J1708_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (err == ESP_OK) err = uart_set_rx_timeout(TB_J1708_UART, 1);
+    if (err == ESP_OK) err = uart_set_rx_full_threshold(TB_J1708_UART, 64);
     if (err == ESP_ERR_NO_MEM) return err;
     if (err == ESP_OK) {
         if (xTaskCreate(j1708_task, "tb_j1708", 5120, NULL, 8, NULL) != pdPASS) return ESP_ERR_NO_MEM;
         s.j1708_ready = true;
-        esp_err_t edge_err=gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+        esp_err_t edge_err=TB_J1708_TX_ALLOWED ? gpio_install_isr_service(ESP_INTR_FLAG_IRAM) : ESP_ERR_NOT_SUPPORTED;
         if(edge_err==ESP_OK){
-            edge_err=gpio_set_intr_type(GPIO_NUM_20,GPIO_INTR_NEGEDGE);
-            if(edge_err==ESP_OK)edge_err=gpio_isr_handler_add(GPIO_NUM_20,request_rx_edge,NULL);
-            gpio_intr_disable(GPIO_NUM_20);
+            edge_err=gpio_set_intr_type(TB_J1708_RX,GPIO_INTR_NEGEDGE);
+            if(edge_err==ESP_OK)edge_err=gpio_isr_handler_add(TB_J1708_RX,request_rx_edge,NULL);
+            gpio_intr_disable(TB_J1708_RX);
         }
         s.edge_ready=edge_err==ESP_OK;
-        if(!s.edge_ready)ESP_LOGW(TAG,"J1708 TX blocked: RX edge monitor %s",esp_err_to_name(edge_err));
+        if(TB_J1708_TX_ALLOWED && !s.edge_ready)ESP_LOGW(TAG,"J1708 TX blocked: RX edge monitor %s",esp_err_to_name(edge_err));
         if (xTaskCreate(request_task, "tb_j1708_tx", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     } else snprintf(s.j1708_error, sizeof(s.j1708_error), "%s", esp_err_to_name(err));
     }
@@ -1650,7 +1665,7 @@ cJSON *tb_capture_request_stats_json(unsigned offset,unsigned limit)
     return o;
 }
 
-bool tb_capture_tx_ready(void) { return s.j1708_ready && s.edge_ready; }
+bool tb_capture_tx_ready(void) { return TB_J1708_TX_ALLOWED && s.j1708_ready && s.edge_ready; }
 
 /* Read-only maintenance interlock. Never changes acquisition or TX policy. */
 bool tb_capture_storage_stationary(void)
@@ -1671,6 +1686,7 @@ void tb_capture_pause_maintenance(void)
 
 bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
 {
+    if (arm && !TB_J1708_TX_ALLOWED) return false;
     bool saved=true;
     if (!arm) {
         s.emergency_stop=true;s.operator_hold=true;request_abort_tx(NULL);
@@ -1687,7 +1703,7 @@ bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
         const bool parked_verified=speed_fresh && s.speed<=0.1;
         if(s.edge_ready && !s.edge_enabled){
             s.rx_edge_us=(uint32_t)esp_timer_get_time();
-            s.edge_enabled=gpio_intr_enable(GPIO_NUM_20)==ESP_OK;
+            s.edge_enabled=gpio_intr_enable(TB_J1708_RX)==ESP_OK;
         }
         accepted = s.j1708_ready && s.edge_enabled && !tb_web_ota_busy() &&
             (!movement || s.active.work_mode) &&
@@ -1709,6 +1725,7 @@ bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
 
 bool tb_capture_request_enable_work(bool authorized, bool stationary)
 {
+    if (!TB_J1708_TX_ALLOWED) return false;
     if(tb_config_j1708_auto_enabled())return false;
     if (!s.lock || !authorized || !stationary || !s.edge_ready || tb_web_ota_busy() ||
         xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
@@ -1721,7 +1738,7 @@ bool tb_capture_request_enable_work(bool authorized, bool stationary)
         now_ms - s.speed_at <= 5000u && s.speed <= 0.1;
     if(parked && !s.edge_enabled){
         s.rx_edge_us=(uint32_t)esp_timer_get_time();
-        s.edge_enabled=gpio_intr_enable(GPIO_NUM_20)==ESP_OK;
+        s.edge_enabled=gpio_intr_enable(TB_J1708_RX)==ESP_OK;
     }
     const uint8_t local=s.active.config.local_mid;
     const bool local_free=!(s.observed_mid[local>>3] & (1u<<(local&7u)));
@@ -1895,7 +1912,7 @@ bool tb_capture_field_start(bool authorized,bool stationary)
     if(!authorized || !stationary || !s.lock || tb_web_ota_busy() || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
     uint64_t now=(uint64_t)esp_timer_get_time();uint8_t mid=s.active.config.local_mid;
     bool parked=s.speed_at && now/1000>=s.speed_at && now/1000-s.speed_at<=5000 && s.speed<=0.1;
-    if(parked && s.edge_ready && !s.edge_enabled){s.rx_edge_us=(uint32_t)now;s.edge_enabled=gpio_intr_enable(GPIO_NUM_20)==ESP_OK;}
+    if(parked && s.edge_ready && !s.edge_enabled){s.rx_edge_us=(uint32_t)now;s.edge_enabled=gpio_intr_enable(TB_J1708_RX)==ESP_OK;}
     bool accepted=s.j1708_ready && s.edge_enabled && parked && !(s.observed_mid[mid>>3]&(1u<<(mid&7u))) &&
         tbx_j1708_field_start(&s.active,authorized,stationary,now);
     if(accepted){s.emergency_stop=false;s.operator_hold=false;}

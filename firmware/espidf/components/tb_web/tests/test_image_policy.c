@@ -6,22 +6,27 @@
 
 static uint8_t prefix[TB_IMAGE_PREFIX_SIZE];
 
-static void fixture(bool link)
+static void image_fixture(esp_chip_id_t chip, unsigned flash_size, const char *project)
 {
     esp_image_header_t header = {
         .magic = ESP_IMAGE_HEADER_MAGIC,
         .segment_count = 4,
-        .spi_size = ESP_IMAGE_FLASH_SIZE_8MB,
-        .chip_id = ESP_CHIP_ID_ESP32C6,
+        .spi_size = flash_size,
+        .chip_id = chip,
         .hash_appended = 1,
     };
     esp_image_segment_header_t segment = { .data_len = sizeof(esp_app_desc_t) + 64 };
     esp_app_desc_t app = { .magic_word = ESP_APP_DESC_MAGIC_WORD };
-    strcpy(app.project_name, link ? "truckbox_link" : "truckbox_core");
+    strcpy(app.project_name, project);
     strcpy(app.version, "0.1.0-test");
     memcpy(prefix, &header, sizeof(header));
     memcpy(prefix + sizeof(header), &segment, sizeof(segment));
     memcpy(prefix + sizeof(header) + sizeof(segment), &app, sizeof(app));
+}
+
+static void fixture(bool link)
+{
+    image_fixture(ESP_CHIP_ID_ESP32C6, ESP_IMAGE_FLASH_SIZE_8MB, link ? "truckbox_link" : "truckbox_core");
 }
 
 static bool accepts(bool link)
@@ -38,6 +43,19 @@ int main(void)
     assert(sizeof(esp_image_segment_header_t) == 8);
     assert(sizeof(esp_app_desc_t) == 256);
     assert(TB_IMAGE_PREFIX_SIZE == 288);
+#if CONFIG_TB_BOARD_REVC
+    image_fixture(ESP_CHIP_ID_ESP32S3, ESP_IMAGE_FLASH_SIZE_16MB, "truckbox_revc_lilygo_s3");
+    assert(accepts(false) && !accepts(true));
+    prefix[23] = 0;
+    assert(!accepts(false));
+    image_fixture(ESP_CHIP_ID_ESP32S3, ESP_IMAGE_FLASH_SIZE_8MB, "truckbox_revc_lilygo_s3");
+    assert(!accepts(false));
+    image_fixture(ESP_CHIP_ID_ESP32S3, ESP_IMAGE_FLASH_SIZE_16MB, "truckbox_core");
+    assert(!accepts(false));
+    fixture(false); assert(!accepts(false));
+    fixture(true); assert(!accepts(false));
+    puts("Rev.C OTA policy: S3/16 MB project accepted, C6, wrong project and missing hash rejected");
+#else
     fixture(false);
     assert(accepts(false));
     assert(!accepts(true));
@@ -84,5 +102,6 @@ int main(void)
     assert(!tb_image_prefix_valid(prefix, sizeof(prefix), true, NULL, tiny, sizeof(tiny)));
     assert(tiny[1] == '\0');
     puts("image policy: valid roles, malformed/truncated images, chip, hash and string boundaries passed");
+#endif
     return 0;
 }

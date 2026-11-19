@@ -1,4 +1,4 @@
-menu "Truckbox B1"
+menu "Truckbox"
 choice TB_ROLE
     prompt "Device role"
     default TB_ROLE_CORE
@@ -7,6 +7,17 @@ config TB_ROLE_CORE
 config TB_ROLE_LINK
     bool "Link"
 endchoice
+config TB_BOARD_REVC
+    bool "Rev.C LILYGO H707"
+    depends on IDF_TARGET_ESP32S3 && TB_ROLE_CORE
+    select TB_J1708_ONLY
+config TB_REVC_J1708_TX
+    bool "Rev.C J1708 TX (bench qualification)"
+    depends on TB_BOARD_REVC
+    default n
+    help
+        Enable for isolated bench testing. Vehicle use requires successful
+        qualification, runtime configuration and operator authorization.
 config TB_CORE_WIFI_SHARING_REQUIRED
     bool
     default y if TB_ROLE_CORE
@@ -16,7 +27,7 @@ config TB_CORE_WIFI_SHARING_REQUIRED
         Core AP internet sharing is part of the production contract. Select
         effective lwIP features even when an older sdkconfig disabled them.
 config TB_J1708_ONLY
-    bool "Rev.B.1 J1708_ONLY (no CAN acquisition resources)"
+    bool "J1708 only (no CAN acquisition resources)"
     depends on TB_ROLE_CORE
     default y
 config TB_RAW_TCP

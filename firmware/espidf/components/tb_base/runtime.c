@@ -1,9 +1,11 @@
 #include "tb.h"
+#include "tb_board.h"
 #include <inttypes.h>
 #include <stdlib.h>
 #include <time.h>
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -87,7 +89,25 @@ void tb_base_add_json(cJSON *object)
         cJSON_AddNumberToObject(ota, "state", state);
         cJSON_AddBoolToObject(ota, "rollback_enabled", true);
     }
+#if CONFIG_TB_BOARD_REVC
+    const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    cJSON_AddStringToObject(object, "board", "TRUCKBOX_REVC_LILYGO_S3");
+    cJSON_AddBoolToObject(object, "j1708_tx_build_enabled", TB_J1708_TX_ALLOWED);
+    cJSON_AddNumberToObject(object, "heap_internal_free", heap_caps_get_free_size(internal));
+    cJSON_AddNumberToObject(object, "heap_internal_minimum", heap_caps_get_minimum_free_size(internal));
+    cJSON_AddNumberToObject(object, "heap_internal_largest", heap_caps_get_largest_free_block(internal));
+    cJSON_AddNumberToObject(object, "psram_free", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    cJSON_AddNumberToObject(object, "psram_total", heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
+    cJSON *power = cJSON_AddObjectToObject(object, "power");
+    if (power) {
+        cJSON_AddNumberToObject(power, "boot_count", s_boot_id);
+        cJSON_AddNullToObject(power, "primary_present");
+        cJSON_AddNullToObject(power, "battery_mv");
+        cJSON_AddNullToObject(power, "primary_transitions");
+    }
+#else
     cJSON_AddStringToObject(object, "hardware_notice",
         "Rev B1: validar EN/U8, chaves de alimentacao Q1-Q4 e GND do SIM. "
         "O firmware nao corrige pinagens espelhadas.");
+#endif
 }

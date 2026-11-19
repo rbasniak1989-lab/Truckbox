@@ -1,0 +1,28 @@
+# Ensaios de recepção e transmissão J1708/J1587
+
+Estado inicial **pendente em hardware**. Use dois nós J1708 compatíveis em chicote isolado, rede de polarização equivalente a um chicote conhecido, osciloscópio com sonda diferencial ou canais referidos ao mesmo GND de sinal, analisador lógico em RO/DE e fonte de bancada. Registre a carga e o comprimento do par. Em bancada de veículos, a referência de terra de instrumentos ligados à rede deve ser definida antes de prender a sonda. Não ligue a garra de terra a uma das vias A/B.
+
+## Recepção e cargas
+
+1. Com a placa desligada e fora do chicote, verifique J2.1→R53, J2.2→R54, D4 para as duas vias e GND. Meça 10 kΩ de DE a GND com JP1 aberto e verifique que /RE e DI chegam ao GND. Meça as duas resistências série individualmente. Na dúvida sobre influência do CI/TVS, teste o valor fora do circuito.
+2. Ligue a H707 a 5 V em bancada. Verifique VCC3V3 de 3,15–3,45 V no U1 sob carga. Com JP1 aberto, monitore DE durante energização, RST, BOOT, reinício por software e entrada/saída de USB. Aceite DE ≤0,8 V sem pulsos que alcancem 2 V e sem dominante produzido pela Rev.C.
+3. Com o transmissor de bancada desligado, observe RO alto e tensão recessiva no par. Ligue o nó de teste a 9.600 8N1 e envie quadros conhecidos com lacunas representativas. Verifique polaridade A/B e níveis em U1 e J2. O sinal dominante esperado no J2 é Vdiff negativo. A meta inicial de bancada é Vdiff ≤−0,4 V no dominante, sem cruzamentos falsos. Verifique RO alto para repouso/bit 1.
+4. Envie ao menos 1.000 quadros válidos, com payload e checksum conhecidos, incluindo comprimentos de 2 a 21 bytes permitidos pelo decoder para o caso. Registre a contagem do gerador, recepção válida, bytes, integridade e erros. Depois injete quadro com checksum errado, quadro grande, ruído e pausa entre caracteres. Aceite descarte/contagem dos inválidos e retomada no próximo quadro válido. Verifique lacunas de mensagens com o analisador. Se o timeout juntar ou cortar quadros válidos, ajuste e repita.
+5. Compare o par com a Rev.C desligada, energizada com JP1 aberto e removida. Registre a tensão diferencial, níveis comuns, subida/descida e erros do outro nó. Faça isso com carga curta e carga representativa do veículo. Confira especialmente se o nó desligado perturba a rede por retorno via polarização.
+
+## Transmissão supervisionada
+
+1. Use o build de bancada com `CONFIG_TB_REVC_J1708_TX=y`. Dessa vez o chicote deve continuar isolado do caminhão. Comece com JP1 aberto para conferir TX invertido no GPIO7 e ausência de drive no par. Desligue, coloque o shunt e repita o teste de reset. Alimente o nó de teste com quadros de velocidade zero válidos para o teste manual e escolha MIDs de laboratório livres. Prioridade 8 é a configuração inicial do ensaio.
+2. Pelo painel ou `POST /api/j1708/requests` autenticado, configure `local_mid`, MID-alvo e PID do simulador e confirme topologia/estacionamento. Primeiramente envie só uma requisição. Exemplo de bytes em bancada para PID 250 com MID local 172 e MID-alvo 128, se livres no simulador. `AC 80 FA 80 5A`. Exemplo de resposta sintética do MID 128. `80 FA 04 64 00 00 00 1E`. Use o valor físico decodificado só depois de validar escala e origem no veículo.
+3. Capture GPIO7, DE, RO, Vdiff e timestamps. Confirme start bit dominante, ~104,17 µs por bit, bits 1 e stop com o driver solto, nenhum atraso que encurte os bits, polaridade e amplitude em J2. Conte os intervalos entre a última atividade de RX e a partida de TX. A guarda de firmware é conservadora (mínimo inicial de 5 ms para o ensaio manual). Compare o acesso ao barramento e as tolerâncias com a edição SAE aplicável. Não use o espaçamento de software como certificação.
+4. Compare o eco byte por byte e o quadro completo. Verifique que o eco próprio não vira valor de sensor. Com resposta do simulador, confira MID, PID, checksum, janela e contadores. Retire a resposta e confirme timeout. Compare a resposta candidata com tráfego passivo do mesmo MID/PID para avaliar causalidade.
+5. Faça o segundo gerador impor um bit 0 durante um bit 1 do TruckBox, ou inicie um quadro antes da guarda vencer. No primeiro caso deve haver divergência de eco e soltura de DE assim que detectada. No segundo, a requisição deve ser adiada. Injete erro de enquadramento e overflow e registre reação, duração até DE baixo e estado da agenda. Colisões com bits idênticos podem escapar ao eco.
+6. Teste parada manual, perda de velocidade válida no ensaio supervisionado, OTA, watchdog e interrupção de alimentação durante tentativa ativa. Verifique retorno ao modo `DE=0` quando a autorização cessa ou o setup volta ao padrão passivo. Segure R4 e JP1 como verificação física durante todo o ensaio.
+
+Registre MID, PID, quantidade de quadros, carga, cor e numeração do chicote, tensão nas duas vias, mínimo/máximo de Vdiff, erro, tempo de soltura de DE e arquivo de osciloscópio. Todos os quadros válidos do teste sem ruído devem ser íntegros e os ensaios de falha devem produzir contadores coerentes sem TX indevido. Antes de qualquer TX no veículo, compare a forma de onda com a carga real, confirme as cavidades 4/6/5 e acompanhe em captura passiva. A primeira tentativa no veículo deve ser estacionária, com autorização, escopo definido e meios de parar imediatamente. Valide ECU, MID e PID antes de liberar o agendador.
+
+| Data | Placa/versão | Ensaio e carga | Enviados / recebidos | DE, Vdiff, duração | Erros e evidência | Aceite |
+|---|---|---|---|---|---|---|
+| — | — | Pendente | — | — | — | — |
+
+Referências de ensaio. [SAE J1708](https://doi.org/10.4271/J1708_201609) · [SAE J1587](https://www.sae.org/standards/content/j1587_201301/) · [SN65HVD1781-Q1](https://www.ti.com/lit/ds/symlink/sn65hvd1781-q1.pdf)

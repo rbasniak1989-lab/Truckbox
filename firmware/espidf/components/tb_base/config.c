@@ -1,5 +1,6 @@
 #include "../../../j1708_17pid/src/tbx_j1708_policy.h"
 #include "tb.h"
+#include "tb_board.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -153,15 +154,22 @@ static void defaults(tb_config_t *config)
     config->j1708_timeout_ms=450;
     config->j1708_expansion_enabled=tb_role()==TB_ROLE_CORE;
     config->j1708_stop_dwell_s=15;config->j1708_parked_capture_s=300;
+#if CONFIG_TB_BOARD_REVC
+    config->sd_enabled = true;
+    config->modem_enabled = true;
+#else
     config->j1708_auto_enabled=tb_role()==TB_ROLE_CORE;
     /* Previously observed operational-indirect profile, scoped to this Core.
      * Never import this as external electrical validation for any device. */
     if(tb_role()==TB_ROLE_CORE && !strcmp(s_device_uid,"tb-c6-d40592b9190c")){
         config->j1708_local_mid=172;config->j1708_topology_attested=true;
     }
+#endif
     for(unsigned i=0;i<17;i++){
         uint16_t pid=tbx_j1708_policy()[i].pid;
+#if !CONFIG_TB_BOARD_REVC
         config->j1708_targets[i]=tbx_j1708_policy()[i].mid;
+#endif
         config->j1708_auto_intervals_ms[i]=tbx_j1708_production_period(pid,false);
         config->j1708_launch_intervals_ms[i]=tbx_j1708_production_period(pid,true);
     }
@@ -254,9 +262,19 @@ static esp_err_t validate_config(const tb_config_t *config, char *error, size_t 
         config->gnss_baud != 115200) {
         return invalid(error, capacity, "gnss_baud: use 9600, 19200, 38400, 57600 ou 115200");
     }
+#if CONFIG_TB_BOARD_REVC
+    if (!config->sd_enabled || config->fram_enabled || config->repaired_power_gates) {
+        return invalid(error, capacity, "Rev.C requer o microSD integrado e dispensa os controles da Rev.B.1");
+    }
+    if (config->j1708_auto_enabled && (!TB_J1708_TX_ALLOWED || !config->j1708_topology_attested ||
+                                     config->j1708_local_mid < 128)) {
+        return invalid(error, capacity, "Rev.C: TX requer firmware habilitado, topologia verificada e MID local");
+    }
+#else
     if (config->sd_enabled && !config->repaired_power_gates) {
         return invalid(error, capacity, "sd_enabled: confirme primeiro o reparo dos controles de alimentacao");
     }
+#endif
     if (!config->core_host[0]) return invalid(error, capacity, "core_host: informe o hostname ou IPv4 do Core");
     for (const unsigned char *p = (const unsigned char *)config->core_host; *p; ++p) {
         if (!isalnum(*p) && *p != '.' && *p != '-')
@@ -638,7 +656,12 @@ esp_err_t tb_config_init(void)
     if (result != ESP_OK) {
         return result;
     }
-    snprintf(s_device_uid, sizeof(s_device_uid), "tb-c6-%02x%02x%02x%02x%02x%02x",
+    snprintf(s_device_uid, sizeof(s_device_uid),
+#if CONFIG_TB_BOARD_REVC
+             "tb-s3-%02x%02x%02x%02x%02x%02x",
+#else
+             "tb-c6-%02x%02x%02x%02x%02x%02x",
+#endif
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     defaults(&s_config);
 
@@ -712,7 +735,7 @@ esp_err_t tb_config_init(void)
     load_extension();
     bool auto_migrate=load_auto_extension();
     bool expansion_migrate=load_expansion();
-    if(tb_role()==TB_ROLE_CORE && (auto_migrate || s_auto_persisted)){
+    if(!TB_BOARD_IS_REVC && tb_role()==TB_ROLE_CORE && (auto_migrate || s_auto_persisted)){
         /* <=0.2.22 incorrectly persisted technical MID stops as operator OFF.
          * The product migration authorizes ON once; later operator OFF remains
          * OFF. Startup still requires fresh passive RX and a free local MID. */
@@ -789,7 +812,7 @@ esp_err_t tb_config_apply_json(const cJSON *json, char *error, size_t error_size
     return result;
 }
 
-bool tb_config_j1708_auto_enabled(void){return s_ready && __atomic_load_n(&s_auto_enabled,__ATOMIC_ACQUIRE);}
+bool tb_config_j1708_auto_enabled(void){return TB_J1708_TX_ALLOWED && s_ready && __atomic_load_n(&s_auto_enabled,__ATOMIC_ACQUIRE);}
 bool tb_config_j1708_auto_persisted(void){return s_ready && s_auto_persisted;}
 esp_err_t tb_config_set_j1708_auto(bool enabled)
 {

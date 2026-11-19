@@ -27,6 +27,6 @@ direct_dependencies:
 - espressif/esp_modem
 - espressif/mdns
 - idf
-manifest_hash: 56b3406904058fb882a956589471b3a179ca2dc54e14fb8b514df1863e079534
+manifest_hash: 7432791b8e1fca29cf054831fbe240af5b7fc2c90e5ba9da4b9b7643ffa85444
 target: esp32c6
 version: 2.0.0
