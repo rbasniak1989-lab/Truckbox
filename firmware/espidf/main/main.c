@@ -1,4 +1,5 @@
 #include "tb.h"
+#include "tb_board.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +77,11 @@ static void console_task(void *arg)
 
 void app_main(void)
 {
+#if CONFIG_TB_BOARD_REVC
+    /* The external pulldown keeps DE low before firmware takes control. */
+    gpio_set_level(TB_J1708_DE, 0);
+    gpio_set_direction(TB_J1708_DE, GPIO_MODE_OUTPUT);
+#else
     /* Detach ROM UART0 outputs before its pins can be reused by this board. */
     gpio_reset_pin(GPIO_NUM_16);
     gpio_set_direction(GPIO_NUM_16, GPIO_MODE_INPUT);
@@ -85,6 +91,7 @@ void app_main(void)
         gpio_reset_pin(GPIO_NUM_1);
         gpio_set_direction(GPIO_NUM_1, GPIO_MODE_INPUT);
     }
+#endif
     usb_serial_jtag_driver_config_t usb = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     if (usb_serial_jtag_driver_install(&usb) == ESP_OK) {
         usb_serial_jtag_vfs_use_driver();
@@ -105,10 +112,18 @@ void app_main(void)
     ESP_LOGI(TAG, "Services ready. Type setup on USB to retrieve local access credentials.");
     /* Do not require router connectivity, a SIM, GPS fix or vehicle traffic. */
     vTaskDelay(pdMS_TO_TICKS(15000));
+#if CONFIG_TB_BOARD_REVC
+    const uint32_t heap_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    size_t startup_free = heap_caps_get_free_size(heap_caps);
+    size_t startup_min = heap_caps_get_minimum_free_size(heap_caps);
+#else
+    const uint32_t heap_caps = MALLOC_CAP_8BIT;
     size_t startup_free = esp_get_free_heap_size();
+    size_t startup_min = esp_get_minimum_free_heap_size();
+#endif
     ESP_LOGI(TAG, "Startup heap: free=%u minimum=%u largest=%u bytes (required=20000)",
-             (unsigned)startup_free, (unsigned)esp_get_minimum_free_heap_size(),
-             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+             (unsigned)startup_free, (unsigned)startup_min,
+             (unsigned)heap_caps_get_largest_free_block(heap_caps));
     if (startup_free < 20000) fail_startup(ESP_ERR_NO_MEM, "startup heap");
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;

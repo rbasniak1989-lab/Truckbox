@@ -16,7 +16,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><span class="mark" aria-hidden="true">TB</span><div><h1>Truckbox</h1><div class="eyebrow">Rev B1 · painel local</div></div></div>
+  <div class="brand"><span class="mark" aria-hidden="true">TB</span><div><h1>Truckbox</h1><div class="eyebrow" id="board-label">Rev B1 · painel local</div></div></div>
   <div class="tools"><button id="refresh" type="button">Atualizar estado</button><button id="theme" type="button" aria-label="Alternar tema">Tema</button></div>
 </header>
 <main>
@@ -71,19 +71,19 @@
         <div class="config-group section" id="core-config" hidden>
           <h3>Coleta e armazenamento</h3>
           <div class="grid">
-            <label>Velocidade CAN<select name="can_baud"><option value="250000">250 kbit/s</option><option value="500000">500 kbit/s</option></select><small>A coleta CAN desta placa é somente recepção.</small></label>
+            <label data-b1>Velocidade CAN<select name="can_baud"><option value="250000">250 kbit/s</option><option value="500000">500 kbit/s</option></select><small>A coleta CAN desta placa é somente recepção.</small></label>
             <div class="config-group">
               <label class="check"><input name="capture_enabled" type="checkbox"><span>Ativar coleta (controle geral)</span></label>
                <label class="check"><input name="j1708_enabled" type="checkbox"><span>Recepção J1708</span></label>
-               <label class="check"><input name="can_enabled" type="checkbox"><span>Recepção J1939 (indisponível em J1708_ONLY)</span></label>
+               <label class="check" data-b1><input name="can_enabled" type="checkbox"><span>Recepção J1939 (indisponível em J1708_ONLY)</span></label>
                <label class="check"><input name="j1587_odometer_validated" type="checkbox"><span>PID 245 conferido fisicamente com o odômetro<small>Habilita deltas do contador para retomar a distância após reinício. Valide valor, escala e MID antes de marcar.</small></span></label>
                <label class="check"><input name="j1587_fuel250_validated" type="checkbox"><span>PID 250 validado com a ECU<small>Habilita reconciliação de combustível por contador acumulado. Não zera o contador do caminhão.</small></span></label>
                <label>MID validado do odômetro (PID 245)<input name="j1587_odometer_mid" type="number" min="128" max="255" step="1"></label>
                <label>MID validado do combustível (PID 250)<input name="j1587_fuel250_mid" type="number" min="128" max="255" step="1"></label>
                <label>Timeout J1708 (ms)<input name="j1708_timeout_ms" type="number" min="100" max="5000" step="1"></label>
                <label class="check"><input name="full_decode_enabled" type="checkbox"><span>Gravar RAW e DECODED continuamente (modo COMPLETO)<small>Em J1708_ONLY, o armazenamento bruto contínuo permanece desativado. Leitura operacional e sensores essenciais a cada 10 s; saúde a cada 60 s.</small></span></label>
-              <label class="check"><input name="fram_enabled" type="checkbox"><span>Usar FRAM</span></label>
-              <label class="check"><input name="sd_enabled" type="checkbox"><span>Usar cartão microSD</span></label>
+              <label class="check" data-b1><input name="fram_enabled" type="checkbox"><span>Usar FRAM</span></label>
+              <label class="check" data-b1><input name="sd_enabled" type="checkbox"><span>Usar cartão microSD</span></label>
             </div>
           </div>
           <details><summary>Sequências de um cadastro existente</summary><div class="grid spacer"><label class="wide">Primeira sequência livre (migração)<input name="sequence_floor" type="number" min="0" max="9007199254740991" step="1" inputmode="numeric" placeholder="0"><small>Ao reutilizar uma identificação já cadastrada na nuvem, informe a maior sequência já usada mais 1. Para um cadastro novo, mantenha 0. Esse ajuste não reduz o contador já salvo na placa.</small></label></div></details>
@@ -92,7 +92,7 @@
         <div class="config-group section" id="modem-config" hidden>
           <h3>GPS e comunicação celular</h3>
           <div class="grid">
-            <label>Velocidade do GPS<select name="gnss_baud"><option value="9600">9.600 bit/s</option><option value="115200">115.200 bit/s</option></select></label>
+            <label data-b1>Velocidade do GPS<select name="gnss_baud"><option value="9600">9.600 bit/s</option><option value="115200">115.200 bit/s</option></select></label>
             <div class="config-group">
               <label class="check"><input name="gnss_enabled" type="checkbox"><span>Ativar leitura do GPS</span></label>
               <label class="check"><input name="modem_enabled" type="checkbox"><span>Ativar modem celular</span></label>
@@ -113,7 +113,7 @@
           <label>Identificador do dispositivo na ingestão<input name="cloud_device_uid" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Identificação cadastrada no servidor"><small>Use a identificação cadastrada no servidor de ingestão. Ela pode ser diferente da identificação de hardware mostrada no estado da placa.</small></label>
         </div>
 
-        <div class="config-group section">
+        <div class="config-group section" data-b1>
           <h3>Verificação da Rev B1</h3>
           <label class="check"><input name="repaired_power_gates" type="checkbox"><span>Acionamento de alimentação corrigido<small>Marque somente após o retrabalho e a verificação dos circuitos de alimentação da Rev B1. O firmware não corrige a pinagem da placa.</small></span></label>
         </div>
@@ -183,7 +183,7 @@
     </label>
     <label class="check spacer">
       <input type="checkbox" id="j1708-topology">
-      <span>Conferi a pinagem e a ligação DE21/transceiver conforme a Rev B1 e verifiquei que o MID informado está livre.
+      <span>Conferi a pinagem e a ligação de DE conforme a revisão da placa e verifiquei que o MID informado está livre.
         <small>A recepção não comprova a transmissão. Esta conferência da instalação não substitui comprovação elétrica externa e não autoriza contornar limitações do circuito.</small>
       </span>
     </label>
@@ -321,19 +321,22 @@
     if (value === 1) value = 'link';
     const normalized = typeof value === 'string' ? value.toLowerCase() : '';
     role = normalized.includes('core') ? 'core' : normalized.includes('link') ? 'link' : '';
-    text('stat-role', role === 'core' ? 'Core' : role === 'link' ? 'Link' : value);
+    const revc = lastState && lastState.board === 'TRUCKBOX_REVC_LILYGO_S3';
+    text('board-label', revc ? 'Rev.C · painel local' : 'Rev B1 · painel local');
+    text('stat-role', revc ? 'Core e Link' : role === 'core' ? 'Core' : role === 'link' ? 'Link' : value);
+    document.querySelectorAll('[data-b1]').forEach(element => { element.hidden = !!revc; });
     $('core-config').hidden = role !== 'core';
     $('j1708-panel').hidden = role !== 'core';
     $('storage-maintenance').hidden = role !== 'core';
     $('discard-storage').disabled = true;
     updateFlashMaintenance();
     $('link-config').hidden = role !== 'link';
-    $('modem-config').hidden = role !== 'link';
-    $('forward-target').hidden = role !== 'core';
-    $('show-pair').disabled = !token || role !== 'core';
-    text('local-target-label', role === 'core' ? 'Core, neste dispositivo' : role === 'link' ? 'Link, neste dispositivo' : 'Este módulo');
+    $('modem-config').hidden = role !== 'link' && !revc;
+    $('forward-target').hidden = role !== 'core' || !!revc;
+    $('show-pair').disabled = !token || role !== 'core' || !!revc;
+    text('local-target-label', revc ? 'Truckbox Rev.C' : role === 'core' ? 'Core, neste dispositivo' : role === 'link' ? 'Link, neste dispositivo' : 'Este módulo');
     $('pair-hint').textContent = role === 'link' ? 'Cadastre a rede e a chave exibidas no painel do Core, na seção “Ligação interna com o Core”.' : 'Consulte a rede interna e a chave de vínculo para cadastrar este Core no Link.';
-    if (role !== 'core') $('target-local').checked = true;
+    if (role !== 'core' || revc) $('target-local').checked = true;
   }
 
   async function refreshState() {

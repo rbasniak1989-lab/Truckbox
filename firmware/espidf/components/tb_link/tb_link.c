@@ -1,4 +1,8 @@
 #include "tb.h"
+#include "tb_board.h"
+#if CONFIG_TB_BOARD_REVC
+#include "tb_link_revc.h"
+#endif
 #include "tb_nmea.h"
 #include "tb_gps_outbox.h"
 #include <errno.h>
@@ -36,12 +40,16 @@
 #define TB_LTE_UART UART_NUM_1
 #define TB_LTE_RX 10
 #define TB_LTE_TX 11
-#define TB_LTE_PWRKEY 0
 #define TB_PPP_CONNECTED BIT0
 #define TB_PPP_DISCONNECTED BIT1
 #define TB_GNSS_FRESH_US INT64_C(15000000)
 #define TB_UPLINK_MAX (32 * 1024)
 #define TB_JSON_SAFE_INTEGER 9007199254740991.0
+#if CONFIG_TB_BOARD_REVC
+#define TB_MODEM_PWRKEY_MS 100
+#else
+#define TB_MODEM_PWRKEY_MS 1000
+#endif
 
 static const char *TAG = "tb_link";
 static portMUX_TYPE s_state_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -118,7 +126,11 @@ static void add_number(cJSON *object, const char *name, double value)
     if (isfinite(value)) cJSON_AddNumberToObject(object, name, value);
 }
 
+#if CONFIG_TB_BOARD_REVC
+void tb_link_revc_add_json(cJSON *object)
+#else
 void tb_application_add_json(cJSON *object)
+#endif
 {
     const tb_config_t *config = tb_config();
     link_state_t state = state_snapshot();
@@ -181,6 +193,61 @@ void tb_application_add_json(cJSON *object)
     cJSON_AddNumberToObject(object, "link_telemetry_failed", (double)state.telemetry_failed);
 }
 
+#if CONFIG_TB_BOARD_REVC
+bool tb_link_revc_fix(tb_gnss_fix_t *fix, uint64_t *received_us)
+{
+    link_state_t state = state_snapshot();
+    if (!state.fix.valid || state.last_fix_us <= 0) return false;
+    *fix = state.fix;
+    *received_us = (uint64_t)state.last_fix_us;
+    return true;
+}
+
+static esp_err_t configure_sim7670_gnss(void)
+{
+    /* GPIO4 on the modem enables the LILYGO active GNSS antenna supply. */
+    esp_err_t err = esp_modem_at(s_modem, "AT+CGDRT=4,1", NULL, 1000);
+    if (err == ESP_OK) err = esp_modem_at(s_modem, "AT+CGSETV=4,1", NULL, 1000);
+    if (err == ESP_OK) err = esp_modem_at(s_modem, "AT+CGNSSPWR=1", NULL, 10000);
+    return err;
+}
+
+static bool poll_sim7670_gnss(void)
+{
+    char response[CONFIG_ESP_MODEM_C_API_STR_MAX] = {0};
+    tb_gnss_fix_t fix = {0};
+    esp_err_t error = esp_modem_at(s_modem, "AT+CGNSSINFO", response, 10000);
+    response[sizeof(response) - 1] = '\0';
+    tb_nmea_result_t result = error == ESP_OK ? tb_cgnssinfo_parse(response, &fix) : TB_NMEA_INVALID;
+    portENTER_CRITICAL(&s_state_lock);
+    ++s_state.nmea_lines;
+    if (result == TB_NMEA_INVALID) ++s_state.nmea_invalid;
+    if (result == TB_NMEA_NO_FIX) s_state.fix = fix;
+    if (result == TB_NMEA_VALID) {
+        if (!s_state.fix.valid || !fix.utc_valid || fix.unix_ms != s_state.fix.unix_ms)
+            s_state.last_fix_us = esp_timer_get_time();
+        s_state.fix = fix;
+    }
+    portEXIT_CRITICAL(&s_state_lock);
+    if (result == TB_NMEA_VALID && fix.utc_valid && time(NULL) < 1704067200) {
+        struct timeval utc = {.tv_sec = fix.unix_ms / 1000, .tv_usec = (fix.unix_ms % 1000) * 1000};
+        settimeofday(&utc, NULL);
+    }
+    return result != TB_NMEA_INVALID;
+}
+
+static void modem_wait_gnss(bool enabled, unsigned seconds)
+{
+    if (!enabled) {
+        vTaskDelay(pdMS_TO_TICKS(seconds * 1000));
+        return;
+    }
+    for (unsigned elapsed = 0; elapsed < seconds; elapsed += 5) {
+        (void)poll_sim7670_gnss();
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+#else
 static void gnss_task(void *arg)
 {
     (void)arg;
@@ -254,6 +321,7 @@ static void gnss_task(void *arg)
         }
     }
 }
+#endif
 
 static void on_ppp_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -265,7 +333,9 @@ static void on_ppp_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
         s_state.ppp_error = 0;
         snprintf(s_state.ppp_ip, sizeof(s_state.ppp_ip), IPSTR, IP2STR(&event->ip_info.ip));
         portEXIT_CRITICAL(&s_state_lock);
+#if !CONFIG_TB_BOARD_REVC
         esp_netif_set_default_netif(event->esp_netif);
+#endif
         xEventGroupClearBits(s_ppp_events, TB_PPP_DISCONNECTED);
         xEventGroupSetBits(s_ppp_events, TB_PPP_CONNECTED);
         modem_phase("online", ESP_OK);
@@ -286,7 +356,14 @@ static void on_ppp_status(void *arg, esp_event_base_t base, int32_t id, void *da
     if ((id > 0 && id < NETIF_PP_PHASE_OFFSET) || id == NETIF_PPP_CONNECT_FAILED) {
         portENTER_CRITICAL(&s_state_lock);
         s_state.ppp_error = id;
+#if CONFIG_TB_BOARD_REVC
+        s_state.ppp_connected = false;
+        s_state.ppp_ip[0] = 0;
+#endif
         portEXIT_CRITICAL(&s_state_lock);
+#if CONFIG_TB_BOARD_REVC
+        xEventGroupClearBits(s_ppp_events, TB_PPP_CONNECTED);
+#endif
         xEventGroupSetBits(s_ppp_events, TB_PPP_DISCONNECTED);
     }
 }
@@ -304,13 +381,33 @@ static void modem_task(void *arg)
 {
     (void)arg;
     const tb_config_t *config = tb_config();
+#if CONFIG_TB_BOARD_REVC
+    const bool use_ppp = config->modem_enabled && config->apn[0];
+    if (!use_ppp && !config->gnss_enabled) {
+        modem_phase("configure_apn", ESP_ERR_INVALID_STATE);
+        vTaskDelete(NULL);
+        return;
+    }
+    gpio_set_level(TB_MODEM_PWRKEY, 0);
+    gpio_set_direction(TB_MODEM_PWRKEY, GPIO_MODE_OUTPUT);
+    gpio_set_level(TB_MODEM_DTR, 0);
+    gpio_set_direction(TB_MODEM_DTR, GPIO_MODE_OUTPUT);
+    gpio_set_level(TB_MODEM_RESET, 1);
+    gpio_set_direction(TB_MODEM_RESET, GPIO_MODE_OUTPUT);
+#else
     if (!config->apn[0]) {
         modem_phase("configure_apn", ESP_ERR_INVALID_STATE);
         vTaskDelete(NULL);
         return;
     }
+#endif
     esp_netif_inherent_config_t inherent = ESP_NETIF_INHERENT_DEFAULT_PPP();
+#if CONFIG_TB_BOARD_REVC
+    /* Wi-Fi STA default priority is 100. PPP is ahead of the AP (10). */
+    inherent.route_prio = 20;
+#else
     inherent.route_prio = 1000;
+#endif
     esp_netif_config_t netif = {.base = &inherent, .stack = ESP_NETIF_NETSTACK_DEFAULT_PPP};
     s_ppp_netif = esp_netif_new(&netif);
     if (!s_ppp_netif) {
@@ -362,19 +459,37 @@ static void modem_task(void *arg)
     for (;;) {
         modem_phase("checking_modem", ESP_OK);
         /* Detect an existing PPP session after an ESP-only reset before considering PWRKEY. */
-        if (esp_modem_set_mode(s_modem, ESP_MODEM_MODE_DETECT) == ESP_OK &&
-            esp_modem_get_mode(s_modem) == ESP_MODEM_MODE_DATA) {
-            esp_modem_set_mode(s_modem, ESP_MODEM_MODE_COMMAND);
+        if (esp_modem_set_mode(s_modem, ESP_MODEM_MODE_DETECT) == ESP_OK) {
+            esp_modem_dce_mode_t previous_mode = esp_modem_get_mode(s_modem);
+            if (previous_mode == ESP_MODEM_MODE_DATA) {
+                (void)esp_modem_set_mode(s_modem, ESP_MODEM_MODE_COMMAND);
+            }
+#if CONFIG_TB_BOARD_REVC
+            if (previous_mode == ESP_MODEM_MODE_CMUX_MANUAL) {
+                (void)esp_modem_set_mode(s_modem, ESP_MODEM_MODE_CMUX_MANUAL_COMMAND);
+                (void)esp_modem_set_mode(s_modem, ESP_MODEM_MODE_CMUX_MANUAL_EXIT);
+            }
+#endif
         }
         error = sync_modem();
-        if (error != ESP_OK && !power_key_used) {
+#if CONFIG_TB_BOARD_REVC
+        if (error != ESP_OK && power_key_used) {
+            modem_phase("resetting_unresponsive_modem", error);
+            gpio_set_level(TB_MODEM_RESET, 0);
+            vTaskDelay(pdMS_TO_TICKS(2600));
+            gpio_set_level(TB_MODEM_RESET, 1);
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            error = sync_modem();
+        }
+#endif
+        if (error != ESP_OK && (TB_BOARD_IS_REVC || !power_key_used)) {
             power_key_used = true;
-            modem_phase("powerkey_once", error);
-            gpio_set_level(TB_LTE_PWRKEY, 0);
-            gpio_set_direction(TB_LTE_PWRKEY, GPIO_MODE_OUTPUT);
-            gpio_set_level(TB_LTE_PWRKEY, 1);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            gpio_set_level(TB_LTE_PWRKEY, 0);
+            modem_phase(TB_BOARD_IS_REVC ? "powerkey_pulse" : "powerkey_once", error);
+            gpio_set_level(TB_MODEM_PWRKEY, 0);
+            gpio_set_direction(TB_MODEM_PWRKEY, GPIO_MODE_OUTPUT);
+            gpio_set_level(TB_MODEM_PWRKEY, 1);
+            vTaskDelay(pdMS_TO_TICKS(TB_MODEM_PWRKEY_MS));
+            gpio_set_level(TB_MODEM_PWRKEY, 0);
             vTaskDelay(pdMS_TO_TICKS(15000));
             error = sync_modem();
         }
@@ -391,6 +506,21 @@ static void modem_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(30000));
             continue;
         }
+#if CONFIG_TB_BOARD_REVC
+        if (config->gnss_enabled) {
+            error = configure_sim7670_gnss();
+            if (error != ESP_OK)
+                ESP_LOGW(TAG, "SIM7670G GNSS setup: %s", esp_err_to_name(error));
+            /* A modem already running GNSS can reject a second power-on. */
+            (void)poll_sim7670_gnss();
+        }
+        if (!use_ppp) {
+            modem_phase(config->modem_enabled ? "gnss_only_apn_required" : "gnss_only", ESP_OK);
+            while (poll_sim7670_gnss()) vTaskDelay(pdMS_TO_TICKS(5000));
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+#endif
         bool ready = false;
         error = esp_modem_read_pin(s_modem, &ready);
         portENTER_CRITICAL(&s_state_lock);
@@ -398,7 +528,11 @@ static void modem_task(void *arg)
         portEXIT_CRITICAL(&s_state_lock);
         if (error != ESP_OK || !ready) {
             modem_phase("sim_not_ready_or_pin_required", error == ESP_OK ? ESP_ERR_INVALID_STATE : error);
+#if CONFIG_TB_BOARD_REVC
+            modem_wait_gnss(config->gnss_enabled, 30);
+#else
             vTaskDelay(pdMS_TO_TICKS(30000));
+#endif
             continue;
         }
         int rssi = 99, ber = 99;
@@ -415,20 +549,46 @@ static void modem_task(void *arg)
         if (error == ESP_OK) error = esp_modem_set_apn(s_modem, config->apn);
         if (error != ESP_OK) {
             modem_phase("modem_configuration_failed", error);
+#if CONFIG_TB_BOARD_REVC
+            modem_wait_gnss(config->gnss_enabled, 30);
+#else
             vTaskDelay(pdMS_TO_TICKS(30000));
+#endif
             continue;
         }
         modem_phase("connecting_ppp", ESP_OK);
         xEventGroupClearBits(s_ppp_events, TB_PPP_CONNECTED | TB_PPP_DISCONNECTED);
+#if CONFIG_TB_BOARD_REVC
+        bool command_channel = false;
+        if (config->gnss_enabled) {
+            error = esp_modem_set_mode(s_modem, ESP_MODEM_MODE_CMUX);
+            command_channel = error == ESP_OK;
+            if (!command_channel) {
+                ESP_LOGW(TAG, "SIM7670G CMUX failed: %s", esp_err_to_name(error));
+                (void)esp_modem_set_mode(s_modem, ESP_MODEM_MODE_COMMAND);
+            }
+        }
+        if (!command_channel) error = esp_modem_set_mode(s_modem, ESP_MODEM_MODE_DATA);
+#else
         error = esp_modem_set_mode(s_modem, ESP_MODEM_MODE_DATA);
+#endif
         if (error == ESP_OK) {
             EventBits_t bits = xEventGroupWaitBits(s_ppp_events, TB_PPP_CONNECTED | TB_PPP_DISCONNECTED,
                                                   pdFALSE, pdFALSE, pdMS_TO_TICKS(60000));
             if (!(bits & TB_PPP_CONNECTED)) error = ESP_ERR_TIMEOUT;
         }
         if (error == ESP_OK) {
+#if CONFIG_TB_BOARD_REVC
+            modem_phase(command_channel || !config->gnss_enabled ? "online" : "online_ppp_without_gnss", ESP_OK);
+            while (!(xEventGroupWaitBits(s_ppp_events, TB_PPP_DISCONNECTED, pdFALSE, pdFALSE,
+                                         command_channel ? pdMS_TO_TICKS(5000) : portMAX_DELAY)
+                     & TB_PPP_DISCONNECTED)) {
+                if (command_channel) (void)poll_sim7670_gnss();
+            }
+#else
             modem_phase("online", ESP_OK);
             xEventGroupWaitBits(s_ppp_events, TB_PPP_DISCONNECTED, pdFALSE, pdFALSE, portMAX_DELAY);
+#endif
         }
         modem_phase("ppp_reconnecting", error);
         esp_modem_set_mode(s_modem, ESP_MODEM_MODE_COMMAND);
@@ -507,13 +667,9 @@ static esp_netif_t *uplink_netif(void)
     return NULL;
 }
 
-static esp_err_t https_post_json(const char *url, const char *payload, size_t length,
-                                 http_capture_t *capture, int *status)
+static esp_err_t https_post_on_interface(const char *url, const char *payload, size_t length,
+                                         http_capture_t *capture, int *status, esp_netif_t *netif)
 {
-    if (strncmp(url, "https://", 8) != 0 || !url[8]) return ESP_ERR_INVALID_ARG;
-    esp_netif_t *netif = uplink_netif();
-    if (!netif) return ESP_ERR_INVALID_STATE;
-    if (time(NULL) < 1704067200) return ESP_ERR_INVALID_STATE;
     struct ifreq interface = {0};
     if (esp_netif_get_netif_impl_name(netif, interface.ifr_name) != ESP_OK) return ESP_ERR_INVALID_STATE;
     capture->started_us = esp_timer_get_time();
@@ -547,6 +703,25 @@ static esp_err_t https_post_json(const char *url, const char *payload, size_t le
     } while (error == ESP_ERR_HTTP_EAGAIN);
     *status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
+    return error;
+}
+
+static esp_err_t https_post_json(const char *url, const char *payload, size_t length,
+                                 http_capture_t *capture, int *status)
+{
+    if (strncmp(url, "https://", 8) != 0 || !url[8]) return ESP_ERR_INVALID_ARG;
+    esp_netif_t *netif = uplink_netif();
+    if (!netif || time(NULL) < 1704067200) return ESP_ERR_INVALID_STATE;
+    esp_err_t error = https_post_on_interface(url, payload, length, capture, status, netif);
+#if CONFIG_TB_BOARD_REVC
+    /* Only retry a transport failure. HTTP responses and malformed ACKs
+     * retain the existing backoff. Both endpoints have stable record IDs. */
+    if (error != ESP_OK && !*status && !capture->overflow && s_ppp_netif && netif != s_ppp_netif &&
+        (xEventGroupGetBits(s_ppp_events) & TB_PPP_CONNECTED) && !tb_web_ota_busy()) {
+        memset(capture, 0, sizeof(*capture));
+        error = https_post_on_interface(url, payload, length, capture, status, s_ppp_netif);
+    }
+#endif
     return error;
 }
 
@@ -669,8 +844,9 @@ static void publish_outbox_state(const char *phase, int error)
 
 static esp_err_t mount_gps_storage(void)
 {
+    const char *label = TB_BOARD_IS_REVC ? "gps_spool" : "storage";
     const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
-                                                               ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
+                                                               ESP_PARTITION_SUBTYPE_DATA_FAT, label);
     if (!partition) return ESP_ERR_NOT_FOUND;
     bool completely_erased = true;
     uint8_t bytes[512];
@@ -690,7 +866,7 @@ static esp_err_t mount_gps_storage(void)
         .max_files = 6,
         .allocation_unit_size = 4096,
     };
-    return esp_vfs_fat_spiflash_mount_rw_wl("/gps", "storage", &mount, &s_gps_wl);
+    return esp_vfs_fat_spiflash_mount_rw_wl("/gps", label, &mount, &s_gps_wl);
 }
 
 static char *gps_record(const tb_gnss_fix_t *fix)
@@ -710,7 +886,7 @@ static char *gps_record(const tb_gnss_fix_t *fix)
     cJSON_AddStringToObject(record, "client_uid", client_uid);
     cJSON_AddStringToObject(record, "ts", timestamp);
     cJSON_AddStringToObject(record, "source", "TRUCKBOX_GNSS");
-    cJSON_AddStringToObject(record, "provider", "ATGM336H");
+    cJSON_AddStringToObject(record, "provider", TB_BOARD_IS_REVC ? "SIM7670G" : "ATGM336H");
     cJSON_AddNumberToObject(record, "lat", fix->latitude);
     cJSON_AddNumberToObject(record, "lon", fix->longitude);
     if (fix->has_speed) cJSON_AddNumberToObject(record, "speed_kmh", fix->speed_kmh);
@@ -860,6 +1036,7 @@ static void gps_uploader_task(void *arg)
     }
 }
 
+#if !CONFIG_TB_BOARD_REVC
 static esp_err_t uplink_handler(httpd_req_t *request)
 {
     if (!tb_http_require_pair(request)) return ESP_OK;
@@ -959,23 +1136,35 @@ static void telemetry_task(void *arg)
 }
 
 esp_err_t tb_application_start(void)
+#else
+esp_err_t tb_link_revc_start(void)
+#endif
 {
     s_uplink_lock = xSemaphoreCreateMutex();
     s_gps_outbox_lock = xSemaphoreCreateMutex();
     s_ppp_events = xEventGroupCreate();
     if (!s_uplink_lock || !s_gps_outbox_lock || !s_ppp_events) return ESP_ERR_NO_MEM;
     modem_phase(tb_config()->modem_enabled ? "starting" : "disabled", ESP_OK);
+#if !CONFIG_TB_BOARD_REVC
     if (tb_config()->gnss_enabled && xTaskCreate(gnss_task, "tb_gnss", 4096, NULL, 5, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
-    if (tb_config()->gnss_enabled && xTaskCreate(gps_spool_task, "tb_gps_spool", 6144, NULL, 3, NULL) != pdPASS)
+#endif
+    const tb_config_t *config = tb_config();
+    const bool spool_gps = config->gnss_enabled && (!TB_BOARD_IS_REVC || (config->gps_device_uid[0] && config->gps_token[0]));
+    if (spool_gps && xTaskCreate(gps_spool_task, "tb_gps_spool", 6144, NULL, 3, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
-    if (tb_config()->gnss_enabled && xTaskCreate(gps_uploader_task, "tb_gps_upload", 8192, NULL, 3, NULL) != pdPASS)
+    if (spool_gps && xTaskCreate(gps_uploader_task, "tb_gps_upload", 8192, NULL, 3, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
-    if (tb_config()->modem_enabled && xTaskCreate(modem_task, "tb_modem", 6144, NULL, 4, NULL) != pdPASS)
+    if ((config->modem_enabled || (TB_BOARD_IS_REVC && config->gnss_enabled)) &&
+        xTaskCreate(modem_task, "tb_modem", 6144, NULL, 4, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
+#if !CONFIG_TB_BOARD_REVC
     if (xTaskCreate(telemetry_task, "tb_link_report", 6144, NULL, 3, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
+#endif
     return ESP_OK;
 }
 
+#if !CONFIG_TB_BOARD_REVC
 void tb_application_add_json_compact(cJSON *object){tb_application_add_json(object);}
+#endif

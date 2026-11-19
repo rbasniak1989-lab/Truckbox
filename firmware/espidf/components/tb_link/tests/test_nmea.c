@@ -41,6 +41,16 @@ int main(void)
     assert(!fix.valid);
     assert(sentence("GNRMC,250000,A,4807.038,N,01131.000,E,0,0,051126,,,A", &fix) == TB_NMEA_INVALID);
     assert(sentence("GNGLL,4807.038,N,01131.000,E,120000,A", &fix) == TB_NMEA_IGNORED);
+    assert(tb_cgnssinfo_parse("\r\n+CGNSSINFO:\r\n3,08,00,00,00,2333.0000,S,04638.0000,W,051126,120000.250,760.2,10.0,181.5,1.1,0.9,0.7,08\r\nOK\r\n", &fix) == TB_NMEA_VALID);
+    assert(fabs(fix.latitude + 23.55) < 0.000001 && fabs(fix.longitude + 46.6333333333) < 0.000001);
+    assert(fix.utc_valid && fix.unix_ms == INT64_C(1793880000250));
+    assert(fix.satellites == 8 && fix.has_hdop && fix.has_altitude && fix.has_heading);
+    assert(fix.has_speed && fabs(fix.speed_kmh - 18.52) < 0.000001);
+    assert(tb_cgnssinfo_parse("+CGNSSINFO: 2,,,,,23.55,S,46.63,W,,,,,,,,,", &fix) == TB_NMEA_VALID);
+    assert(fix.valid && !fix.utc_valid && !fix.has_speed && !fix.has_altitude);
+    assert(tb_cgnssinfo_parse("+CGNSSINFO: 2,,,,,2360.00,S,04638.00,W,,,,,,,,,", &fix) == TB_NMEA_INVALID);
+    assert(tb_cgnssinfo_parse("+CGNSSINFO: 3,08,00,00", &fix) == TB_NMEA_INVALID && fix.valid);
+    assert(tb_cgnssinfo_parse("+CGNSSINFO:,,,,,,,,,,,,,,,,,\r\nOK", &fix) == TB_NMEA_NO_FIX && !fix.valid);
     puts("NMEA parser tests passed");
     return 0;
 }

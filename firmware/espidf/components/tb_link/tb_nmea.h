@@ -31,3 +31,4 @@ typedef enum {
 
 /* Invalid/unsupported lines never replace a previous fix. NO_FIX clears validity. */
 tb_nmea_result_t tb_nmea_parse(const char *line, tb_gnss_fix_t *fix);
+tb_nmea_result_t tb_cgnssinfo_parse(const char *response, tb_gnss_fix_t *fix);

@@ -1,5 +1,6 @@
 #ifndef TB_STORE_HOST_TEST
 #include "core_internal.h"
+#include "tb_board.h"
 #endif
 #include "store_internal.h"
 #include "store_codec.h"
@@ -23,11 +24,13 @@
 
 #ifdef TB_STORE_HOST_TEST
 #include "tests/store_host_stubs.h"
+#define TB_BOARD_IS_REVC 0
 #else
 #include "driver/gpio.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_random.h"
@@ -68,6 +71,10 @@ typedef struct {
     uint64_t uptime_us;
     char json[TB_RECORD_MAX];
 } queued_record_t;
+
+#if CONFIG_TB_BOARD_REVC
+static StaticQueue_t s_store_queue_control;
+#endif
 
 typedef struct {
     const char *stage;
@@ -258,7 +265,11 @@ static void failed_record_io(const char *stage, int error, int close_error,
     /* A read-only scan cannot clear FatFs' in-memory window or sharing locks
      * left by an unsuccessful close. Rebind this FLASH volume before scanning;
      * do not reset the ESP32, change media or format an existing filesystem. */
+#if CONFIG_TB_BOARD_REVC
+    state.volume_rebind_required = state.sd_card != NULL || state.medium_initialized;
+#else
     if(state.medium && !strcmp(state.medium,"flash"))state.volume_rebind_required=true;
+#endif
     ++state.write_errors;
     state.write_confirmed=false;
     if(++state.consecutive_io_errors>=STORE_IO_ATTEMPT_LIMIT)state.io_paused=true;
@@ -460,14 +471,16 @@ static esp_err_t initialize_spi(void)
     if (state.spi_ready) {
         return ESP_OK;
     }
-    gpio_set_level(GPIO_NUM_3, 1);
-    gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
+    gpio_set_level(TB_SD_CS, 1);
+    gpio_set_direction(TB_SD_CS, GPIO_MODE_OUTPUT);
+#if !CONFIG_TB_BOARD_REVC
     gpio_set_level(GPIO_NUM_10, 1);
     gpio_set_direction(GPIO_NUM_10, GPIO_MODE_OUTPUT);
+#endif
     spi_bus_config_t bus = {
-        .mosi_io_num = 7,
-        .miso_io_num = 8,
-        .sclk_io_num = 6,
+        .mosi_io_num = TB_SD_MOSI,
+        .miso_io_num = TB_SD_MISO,
+        .sclk_io_num = TB_SD_SCK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = 4096,
@@ -511,8 +524,80 @@ static bool sd_device_directory(void)
            ensure_directory(first) && ensure_directory(state.sd_directory);
 }
 
+static esp_err_t mount_sd_card(char *card_id, size_t capacity)
+{
+    esp_err_t error = initialize_spi();
+    if (error != ESP_OK) return error;
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = SPI2_HOST;
+    host.max_freq_khz = 10000;
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.host_id = SPI2_HOST;
+    slot.gpio_cs = TB_SD_CS;
+    esp_vfs_fat_mount_config_t mount = {
+        .format_if_mount_failed = false,
+        .max_files = 5,
+        .allocation_unit_size = 4096,
+    };
+    error = esp_vfs_fat_sdspi_mount("/tbsd", &host, &slot, &mount, &state.sd_card);
+    if (error == ESP_OK) {
+        snprintf(card_id, capacity, "%02x-%04x-%08" PRIx32,
+                 (unsigned)state.sd_card->cid.mfg_id, (unsigned)state.sd_card->cid.oem_id,
+                 (uint32_t)state.sd_card->cid.serial);
+    }
+    return error;
+}
+
+#if CONFIG_TB_BOARD_REVC
+/* The writer owns the VFS under state.mutex. Release an unrelated card
+ * before retrying and check the CID before creating or touching any files. */
+static esp_err_t unmount_sd_card(void)
+{
+    if (!state.sd_card) return ESP_OK;
+    sdmmc_card_t *card = state.sd_card;
+    state.sd_card = NULL;
+    return esp_vfs_fat_sdcard_unmount("/tbsd", card);
+}
+
+static esp_err_t mount_revc_card(const char *required_id)
+{
+    esp_err_t error = unmount_sd_card();
+    if (error != ESP_OK) return error;
+    char card_id[sizeof(state.card_id)];
+    error = mount_sd_card(card_id, sizeof(card_id));
+    if (error != ESP_OK) return error;
+    if (required_id && strcmp(required_id, card_id) != 0) {
+        (void)unmount_sd_card();
+        return ESP_ERR_INVALID_STATE;
+    }
+    strlcpy(state.card_id, card_id, sizeof(state.card_id));
+    return ESP_OK;
+}
+#endif
+
 static bool mount_storage(void)
 {
+#if CONFIG_TB_BOARD_REVC
+    if (!state.medium_clean && strcmp(state.previous_medium, "flash") == 0) {
+        fail_store("Rev.C requires microSD; former flash backlog preserved");
+        return false;
+    }
+    const char *required_id = state.medium_clean ? NULL : state.previous_card_id;
+    esp_err_t error = mount_revc_card(required_id);
+    if (error == ESP_OK && !sd_device_directory()) error = ESP_FAIL;
+    if (error != ESP_OK) {
+        (void)unmount_sd_card();
+        snprintf(state.sd_error, sizeof(state.sd_error), "%s", esp_err_to_name(error));
+        fail_store("microSD unavailable or original card required; no formatting");
+        return false;
+    }
+    state.sd_error[0] = 0;
+    state.base_path = state.sd_directory;
+    state.medium = "sd";
+    state.maximum_segments = STORE_SEGMENTS;
+    state.segment_bytes = STORE_SD_SEGMENT_BYTES;
+    return true;
+#else
     const tb_config_t *config = tb_config();
     bool require_sd = !state.medium_clean &&
                       strcmp(state.previous_medium, "sd") == 0;
@@ -529,27 +614,8 @@ static bool mount_storage(void)
         gpio_set_direction(GPIO_NUM_17, GPIO_MODE_OUTPUT);
         gpio_set_level(GPIO_NUM_17, 0);
         vTaskDelay(pdMS_TO_TICKS(100));
-        esp_err_t error = initialize_spi();
+        esp_err_t error = mount_sd_card(state.card_id, sizeof(state.card_id));
         if (error == ESP_OK) {
-            sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-            host.slot = SPI2_HOST;
-            host.max_freq_khz = 10000;
-            sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
-            slot.host_id = SPI2_HOST;
-            slot.gpio_cs = 3;
-            esp_vfs_fat_mount_config_t mount = {
-                .format_if_mount_failed = false,
-                .max_files = 5,
-                .allocation_unit_size = 4096,
-            };
-            error = esp_vfs_fat_sdspi_mount("/tbsd", &host, &slot, &mount,
-                                            &state.sd_card);
-        }
-        if (error == ESP_OK) {
-            snprintf(state.card_id, sizeof(state.card_id), "%02x-%04x-%08" PRIx32,
-                     (unsigned)state.sd_card->cid.mfg_id,
-                     (unsigned)state.sd_card->cid.oem_id,
-                     (uint32_t)state.sd_card->cid.serial);
             if (require_sd &&
                 (!state.previous_card_id[0] ||
                  strcmp(state.card_id, state.previous_card_id) != 0)) {
@@ -612,6 +678,7 @@ static bool mount_storage(void)
     state.maximum_segments = flash_max;
     state.segment_bytes = STORE_FLASH_SEGMENT_BYTES;
     return true;
+#endif
 }
 
 /* All storage FILEs/DIRs have been closed and state.mutex is held. Keep the
@@ -619,7 +686,7 @@ static bool mount_storage(void)
  * volume/locks and mount the SAME filesystem again. f_mount never formats.
  * Confirmed rows already crossed fflush/fsync/close; the only ambiguous row
  * stays in the worker's retained buffer until a fresh CRC scan finds it. */
-static int rebind_flash_volume(wl_handle_t handle)
+static int __attribute__((unused)) rebind_flash_volume(wl_handle_t handle)
 {
     unsigned char drive=ff_diskio_get_pdrv_wl(handle);
     if(drive==0xff)return FR_INVALID_DRIVE;
@@ -762,11 +829,22 @@ static bool __attribute__((unused)) recover_after_failure(void)
     uint64_t next_before=state.next_sequence;
     if(state.volume_rebind_required){
         state.recovery_complete=false;
+#if CONFIG_TB_BOARD_REVC
+        state.volume_result = mount_revc_card(state.card_id);
+        if (state.volume_result != ESP_OK) {
+            snprintf(state.sd_error, sizeof(state.sd_error), "%s", esp_err_to_name(state.volume_result));
+            fail_store("microSD remount failed; reinsert original card");
+            ++state.recovery_failures;
+            return false;
+        }
+        state.sd_error[0] = 0;
+#else
         state.volume_result=rebind_flash_volume(state.flash_handle);
         if(state.volume_result!=0){
             fail_store("flash volume rebind failed; data preserved");
             return recovery_failed();
         }
+#endif
         ++state.volume_rebinds;
         state.volume_rebind_required=false;
     }
@@ -885,7 +963,8 @@ static void append_record(const queued_record_t *item)
         if(occupied+length+1>state.maximum_segments*state.segment_bytes){state.capacity_blocked=true;snprintf(state.error,sizeof(state.error),"outbox full; pending and isolated files preserved");increment(&state.dropped_full);return;}
     }
 #ifndef TB_STORE_HOST_TEST
-    if(state.base_path && esp_vfs_fat_info(state.base_path,&state.total_bytes,&state.available_bytes)==ESP_OK && state.available_bytes<length+4096u){
+    const char *vfs_path = TB_BOARD_IS_REVC ? "/tbsd" : state.base_path;
+    if(vfs_path && esp_vfs_fat_info(vfs_path,&state.total_bytes,&state.available_bytes)==ESP_OK && state.available_bytes<length+4096u){
         state.capacity_blocked=true;increment(&state.dropped_full);snprintf(state.error,sizeof(state.error),"filesystem full; pending and isolated files preserved");return;
     }
 #endif
@@ -987,6 +1066,7 @@ static void append_record(const queued_record_t *item)
 static bool initialize_fram(void)
 {
     state.fram_gate_status = "disabled";
+#if !CONFIG_TB_BOARD_REVC
     if (!tb_config()->fram_enabled) {
         return true;
     }
@@ -1021,6 +1101,7 @@ static bool initialize_fram(void)
         }
         state.reserved_end = reserved;
     }
+#endif
     return true;
 }
 
@@ -1101,7 +1182,14 @@ static void storage_task(void *argument)
             xSemaphoreTake(state.mutex,portMAX_DELAY);
             state.initializing=true;
             if(!state.base_path || !state.medium_initialized){
-                if(!initialize_medium() && ++state.recovery_failures>=STORE_IO_ATTEMPT_LIMIT)state.io_paused=true;
+                if (!initialize_medium()) {
+#if CONFIG_TB_BOARD_REVC
+                    /* Keep checking for the original card if booted without it. */
+                    ++state.recovery_failures;
+#else
+                    if (++state.recovery_failures >= STORE_IO_ATTEMPT_LIMIT) state.io_paused = true;
+#endif
+                } else state.recovery_failures = 0;
             }
             else if(recover_after_failure()){
                 state.ready=true;prune_segments();
@@ -1148,7 +1236,14 @@ esp_err_t tb_store_init(void)
     state.medium = "unavailable";
     state.flash_handle = WL_INVALID_HANDLE;
     state.mutex = xSemaphoreCreateMutex();
+#if CONFIG_TB_BOARD_REVC
+    uint8_t *records = heap_caps_malloc(STORE_QUEUE * sizeof(queued_record_t),
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (records) state.queue = xQueueCreateStatic(STORE_QUEUE, sizeof(queued_record_t),
+                                                  records, &s_store_queue_control);
+#else
     state.queue = xQueueCreate(STORE_QUEUE, sizeof(queued_record_t));
+#endif
     if (!state.mutex || !state.queue) {
         fail_store("storage allocation failed");
         return ESP_ERR_NO_MEM;
@@ -1228,7 +1323,8 @@ esp_err_t tb_store_submit(const char *record_json)
 {
     /* Capture starts while media recovery is asynchronous. Buffer that window
      * in the same bounded queue; ESP_OK still means enqueued, not durable. */
-    if (!record_json || !state.queue || (!state.ready && !state.initializing && !state.base_path)) {
+    if (!record_json || !state.queue ||
+        (!TB_BOARD_IS_REVC && !state.ready && !state.initializing && !state.base_path)) {
         increment(&state.dropped_unavailable);
         return ESP_ERR_INVALID_STATE;
     }
@@ -1277,7 +1373,13 @@ esp_err_t tb_store_retry(void)
     if(!state.base_path && !state.nvs_open){xSemaphoreGive(state.mutex);return ESP_ERR_INVALID_STATE;}
     state.io_paused=false;state.consecutive_io_errors=0;state.recovery_failures=0;
     state.ready=false;state.write_confirmed=false;
-    state.volume_rebind_required=state.medium && !strcmp(state.medium,"flash");
+    state.volume_rebind_required=state.medium && !strcmp(state.medium,
+#if CONFIG_TB_BOARD_REVC
+            "sd"
+#else
+            "flash"
+#endif
+    );
     xSemaphoreGive(state.mutex);return ESP_OK;
 }
 
@@ -1614,7 +1716,8 @@ void tb_store_add_json(cJSON *object)
         appendable+=state.segment_bytes-state.segments[state.segment_count-1].bytes;
     if(available>appendable)available=appendable;
 #ifndef TB_STORE_HOST_TEST
-    if(state.base_path && esp_vfs_fat_info(state.base_path,&state.total_bytes,&state.available_bytes)==ESP_OK && available>state.available_bytes)
+    const char *vfs_path = TB_BOARD_IS_REVC ? "/tbsd" : state.base_path;
+    if(vfs_path && esp_vfs_fat_info(vfs_path,&state.total_bytes,&state.available_bytes)==ESP_OK && available>state.available_bytes)
         available=state.available_bytes;
 #endif
     cJSON_AddNumberToObject(storage,"space_total_bytes",(double)(state.total_bytes?state.total_bytes:budget));

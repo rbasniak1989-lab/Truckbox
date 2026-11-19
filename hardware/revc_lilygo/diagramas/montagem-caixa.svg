@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 820" role="img">
+<title>Montagem sobreposta | base comum e caixa</title>
+<style>text{font-family:DejaVu Sans,sans-serif;fill:#192b39} .mono{font-family:DejaVu Sans Mono,monospace} .muted{fill:#4c6473}</style>
+<rect x="0" y="0" width="1050" height="820" rx="0" fill="#f6f8fa" stroke="none" stroke-width="1"/>
+<text x="26" y="41" font-size="26" text-anchor="start" class="" font-weight="700">Montagem sobreposta | base comum e caixa</text>
+<text x="26" y="66" font-size="13" text-anchor="start" class="muted" font-weight="400">Vista de cima e corte transversal · cotas em mm · ajustar folgas à unidade física</text>
+<text x="39" y="105" font-size="17" text-anchor="start" class="" font-weight="700">A. Vista superior da caixa aberta</text>
+<rect x="65" y="141.6" width="702" height="301.6" rx="16" fill="#f0f3f6" stroke="#99aab7" stroke-width="2"/>
+<rect x="85.8" y="162.4" width="660.4" height="260" rx="6" fill="#ffffff" stroke="#b2bec8" stroke-width="1"/>
+<rect x="117" y="204" width="574.808" height="171.028" rx="7" fill="#d8ebec" stroke="#48767a" stroke-width="2"/>
+<rect x="117" y="214.4" width="78" height="150.8" rx="4" fill="#f1e0af" stroke="#9c7941" stroke-width="1"/>
+<text x="158.6" y="276.8" font-size="11" text-anchor="middle" class="" font-weight="700">Wi-Fi</text>
+<text x="158.6" y="297.6" font-size="10" text-anchor="middle" class="" font-weight="400">livre</text>
+<circle cx="129.896" cy="217.468" r="5" fill="white" stroke="#38606a" stroke-width="1.5"/>
+<circle cx="129.896" cy="361.56" r="5" fill="white" stroke="#38606a" stroke-width="1.5"/>
+<circle cx="678.964" cy="217.468" r="5" fill="white" stroke="#38606a" stroke-width="1.5"/>
+<circle cx="678.964" cy="361.56" r="5" fill="white" stroke="#38606a" stroke-width="1.5"/>
+<rect x="293.8" y="211.54" width="258.544" height="156" rx="6" fill="#f5e7c6" stroke="#9b7137" stroke-width="2"/>
+<rect x="308.568" y="167.6" width="17.68" height="244.4" rx="4" fill="none" stroke="#607083" stroke-width="1"/>
+<circle cx="317.408" cy="178" r="8" fill="#a9bdd0" stroke="#425569" stroke-width="1.3"/>
+<circle cx="317.408" cy="401.6" r="8" fill="#a9bdd0" stroke="#425569" stroke-width="1.3"/>
+<circle cx="317.408" cy="236.708" r="5" fill="#ffffff" stroke="#556779" stroke-width="1.6"/>
+<circle cx="317.408" cy="342.372" r="5" fill="#ffffff" stroke="#556779" stroke-width="1.6"/>
+<rect x="519.896" y="167.6" width="17.68" height="244.4" rx="4" fill="none" stroke="#607083" stroke-width="1"/>
+<circle cx="528.736" cy="178" r="8" fill="#a9bdd0" stroke="#425569" stroke-width="1.3"/>
+<circle cx="528.736" cy="401.6" r="8" fill="#a9bdd0" stroke="#425569" stroke-width="1.3"/>
+<circle cx="528.736" cy="236.708" r="5" fill="#ffffff" stroke="#556779" stroke-width="1.6"/>
+<circle cx="528.736" cy="342.372" r="5" fill="#ffffff" stroke="#556779" stroke-width="1.6"/>
+<text x="422.76" y="276.8" font-size="14" text-anchor="middle" class="" font-weight="700">FR4 + U1</text>
+<text x="422.76" y="302.8" font-size="11" text-anchor="middle" class="" font-weight="400">sobre duas travessas</text>
+<text x="611" y="282" font-size="15" text-anchor="middle" class="" font-weight="700">H707</text>
+<text x="611" y="302.8" font-size="11" text-anchor="middle" class="" font-weight="400">extremidade LTE</text>
+<path d="M283.4,365.2 L283.4,432.8 L179.4,432.8" fill="none" stroke="#087972" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="169" y="448.4" font-size="11" text-anchor="start" class="" font-weight="700">janela de serviço / USB-C</text>
+<path d="M533,282 L720.2,282 L777.4,282" fill="none" stroke="#aa4231" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="772.2" y="297.6" font-size="11" text-anchor="start" class="" font-weight="700">J2</text>
+<path d="M663,245.6 L725.4,245.6 L725.4,167.6" fill="none" stroke="#225c9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="579.8" y="157.2" font-size="11" text-anchor="start" class="" font-weight="700">coaxiais pela lateral</text>
+<path d="M117,166 L692,166" fill="none" stroke="#353d47" stroke-width="1" stroke-linecap="round" stroke-dasharray=""/>
+<path d="M117,161 L117,171" fill="none" stroke="#353d47" stroke-width="1" stroke-linecap="round" stroke-dasharray=""/>
+<path d="M692,161 L692,171" fill="none" stroke="#353d47" stroke-width="1" stroke-linecap="round" stroke-dasharray=""/>
+<text x="404" y="162" font-size="12" text-anchor="middle" class="" font-weight="700">H707 · 110,54 × 32,89</text>
+<text x="827" y="168" font-size="16" text-anchor="start" class="" font-weight="700">Fixação</text>
+<text x="827" y="193" font-size="11" text-anchor="start" class="" font-weight="400">• 4 pontos H707 no suporte inferior.</text>
+<text x="827" y="216" font-size="11" text-anchor="start" class="" font-weight="400">• 4 colunas fora da H707.</text>
+<text x="827" y="239" font-size="11" text-anchor="start" class="" font-weight="400">• 2 travessas isolantes de 2–3 mm.</text>
+<text x="827" y="262" font-size="11" text-anchor="start" class="" font-weight="400">• 4 parafusos M2,5 na perfurada.</text>
+<text x="827" y="285" font-size="11" text-anchor="start" class="" font-weight="400">• Botões e slots acessíveis pela lateral.</text>
+<text x="827" y="308" font-size="11" text-anchor="start" class="" font-weight="400">• Base e caixa prendem os cabos.</text>
+<text x="39" y="493" font-size="17" text-anchor="start" class="" font-weight="700">B. Corte transversal por uma travessa</text>
+<rect x="92" y="525" width="665" height="241" rx="14" fill="none" stroke="#9faeb8" stroke-width="2"/>
+<rect x="110" y="743" width="629" height="11" rx="4" fill="#d6dde4" stroke="#8497a4" stroke-width="1"/>
+<rect x="285" y="691" width="292" height="12" rx="3" fill="#d8ebec" stroke="#48767a" stroke-width="2"/>
+<rect x="303" y="673" width="170" height="18" rx="3" fill="#bed5d6" stroke="#518187" stroke-width="1"/>
+<rect x="351" y="706" width="178" height="30" rx="11" fill="#eadcca" stroke="#927456" stroke-width="1.5"/>
+<text x="439" y="725" font-size="11" text-anchor="middle" class="" font-weight="700">18650 no suporte</text>
+<rect x="218" y="626" width="418" height="13" rx="3" fill="#cee0ec" stroke="#59758b" stroke-width="1.5"/>
+<rect x="301" y="609" width="260" height="10" rx="3" fill="#f3dda7" stroke="#957443" stroke-width="1.5"/>
+<rect x="398" y="584" width="91" height="23" rx="3" fill="#344352" stroke="#172936" stroke-width="1"/>
+<style>.on-dark{fill:white}</style>
+<text x="443" y="600" font-size="11" text-anchor="middle" class="on-dark" font-weight="700">U1</text>
+<rect x="305" y="620" width="252" height="5" rx="2" fill="#e0964e" stroke="#cc803f" stroke-width="1"/>
+<rect x="228" y="639" width="20" height="104" rx="4" fill="#d6e5ef" stroke="#607c91" stroke-width="1.5"/>
+<rect x="606" y="639" width="20" height="104" rx="4" fill="#d6e5ef" stroke="#607c91" stroke-width="1.5"/>
+<rect x="284" y="703" width="14" height="39" rx="3" fill="#d6e5ef" stroke="#607c91" stroke-width="1"/>
+<rect x="564" y="703" width="14" height="39" rx="3" fill="#d6e5ef" stroke="#607c91" stroke-width="1"/>
+<path d="M330,606 L330,638" fill="none" stroke="#374f61" stroke-width="3" stroke-linecap="round" stroke-dasharray=""/>
+<path d="M533,606 L533,638" fill="none" stroke="#374f61" stroke-width="3" stroke-linecap="round" stroke-dasharray=""/>
+<path d="M653,640 L653,674" fill="none" stroke="#353d47" stroke-width="1.5" stroke-linecap="round" stroke-dasharray=""/>
+<path d="M647,640 L659,640" fill="none" stroke="#353d47" stroke-width="1.5" stroke-linecap="round" stroke-dasharray=""/>
+<path d="M647,674 L659,674" fill="none" stroke="#353d47" stroke-width="1.5" stroke-linecap="round" stroke-dasharray=""/>
+<text x="665" y="657" font-size="12" text-anchor="start" class="" font-weight="700">≥ 3 mm</text>
+<text x="665" y="672" font-size="11" text-anchor="start" class="" font-weight="400">livres</text>
+<text x="795" y="560" font-size="15" text-anchor="start" class="" font-weight="700">Caixa interna inicial</text>
+<text x="795" y="586" font-size="12" text-anchor="start" class="" font-weight="400">135 × 58 × 48 (C × L × A)</text>
+<text x="795" y="607" font-size="12" text-anchor="start" class="" font-weight="400">Ajustar com a célula instalada.</text>
+<text x="795" y="628" font-size="12" text-anchor="start" class="" font-weight="400">Isolante preso sob a perfurada.</text>
+<text x="795" y="649" font-size="12" text-anchor="start" class="" font-weight="400">Deixar folga também sob a H707.</text>
+<text x="795" y="670" font-size="12" text-anchor="start" class="" font-weight="400">UPS externo exige berço próprio.</text>
+<text x="795" y="691" font-size="12" text-anchor="start" class="" font-weight="400">145 × 95 × 50 é ponto de partida</text>
+<text x="795" y="712" font-size="12" text-anchor="start" class="" font-weight="400">para a versão com módulo.</text>
+<text x="110" y="791" font-size="13" text-anchor="start" class="muted" font-weight="400">Travessas e colunas suportam a perfurada. A H707 fica presa à base pelos seus próprios furos.</text>
+</svg>

@@ -1,4 +1,8 @@
 set(core_sources)
+set(core_board_requires)
+if(IDF_TARGET STREQUAL "esp32s3")
+    list(APPEND core_board_requires tb_link)
+endif()
 if(NOT CONFIG_TB_ROLE_LINK)
     list(APPEND core_sources "core.c" "capture.c" "store.c" "store_codec.c" "protocols.c" "fram.c" "telemetry.c" "diagnostics.c" "ecu_counters.c" "tbx_ecu_counters.c" "tbx_volvo_operating.c" "tbx_j1939.c" "tbx_j1939_tp.c" "tbx_trip.c" "tbx_fuel_account.c" "tbx_fuel.c" "tbx_j1708_active.c" "tbx_j1708_field.c" "tbx_j1708_rx_guard.c" "tbx_j1708_auto.c" "tbx_transmission.c" "tbx_j1587_bridge.c"
         "../../../j1708_17pid/src/tbx_j1587_decoder.c"
@@ -9,7 +13,8 @@ if(NOT CONFIG_TB_ROLE_LINK)
 endif()
 idf_component_register(SRCS ${core_sources}
     INCLUDE_DIRS "." "../../../j1708_17pid/src"
-    REQUIRES tb_base driver fatfs sdmmc esp_partition esp_timer esp_http_client nvs_flash json wear_levelling lwip espcoredump)
+    REQUIRES tb_base driver fatfs sdmmc esp_partition esp_timer esp_http_client nvs_flash json wear_levelling lwip espcoredump
+    PRIV_REQUIRES ${core_board_requires})
 
 if(NOT CONFIG_TB_ROLE_LINK)
     target_compile_options(${COMPONENT_LIB} PRIVATE -fstack-usage)

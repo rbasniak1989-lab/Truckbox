@@ -17,8 +17,14 @@ for name in ['request_abort_tx','request_rx_edge','request_bus_idle','request_be
     chunks.append(s[m.start():end])
 Path(sys.argv[2]).write_text('\n\n'.join(chunks))
 PY
-cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined \
-  -fno-omit-frame-pointer -g -I"$work" -I"$test_dir/.." \
-  -I"$test_dir/../../../../j1708_17pid/src" \
-  "$test_dir/test_j1708_uart.c" -o "$work/test"
-ASAN_OPTIONS=detect_leaks=0 "$work/test"
+run_profile() {
+  cc -std=c11 -Wall -Wextra -Werror -Wpedantic -fsanitize=address,undefined \
+    -fno-omit-frame-pointer -g -I"$work" -I"$test_dir/.." \
+    -I"$test_dir/../../tb_base/tests/stubs" -I"$test_dir/../../tb_base/include" \
+    -I"$test_dir/../../../../j1708_17pid/src" \
+    "$@" "$test_dir/test_j1708_uart.c" -o "$work/test"
+  ASAN_OPTIONS=detect_leaks=0 "$work/test"
+}
+run_profile
+run_profile -DCONFIG_TB_BOARD_REVC=1
+run_profile -DCONFIG_TB_BOARD_REVC=1 -DCONFIG_TB_REVC_J1708_TX=1
