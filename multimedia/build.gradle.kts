@@ -8,7 +8,9 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "br.com.truckbox.multimedia"
+        // The workshop build uses its own ID so a CI debug signature never
+        // requires uninstalling the installed Multimedia application.
+        applicationId = "br.com.truckbox.multimedia.revb1lite"
         minSdk = 26
         targetSdk = 36
         versionCode = 5
