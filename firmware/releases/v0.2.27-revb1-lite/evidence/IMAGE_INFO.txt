@@ -1,0 +1,182 @@
+esptool.py v4.13.0
+File size: 1435088 (bytes)
+
+ESP32C6 image header
+====================
+Image version: 1
+Entry point: 0x408002e6
+Segments: 5
+Flash size: 8MB
+Flash freq: 80m
+Flash mode: DIO
+
+ESP32C6 extended image header
+=============================
+WP pin: 0xee (disabled)
+Flash pins drive settings: clk_drv: 0x0, q_drv: 0x0, d_drv: 0x0, cs0_drv: 0x0, hd_drv: 0x0, wp_drv: 0x0
+Chip ID: 13 (ESP32-C6)
+Minimal chip revision: v0.0, (legacy min_rev = 0)
+Maximal chip revision: v0.99
+
+Segments information
+====================
+Segment   Length   Load addr   File offs  Memory types
+-------  -------  ----------  ----------  ------------
+      0  0x43474  0x42100020  0x00000018  DROM, IROM
+      1  0x0cb7c  0x40800000  0x00043494  DRAM, BYTE_ACCESSIBLE, IRAM
+      2  0xfa850  0x42000020  0x00050018  DROM, IROM
+      3  0x1048c  0x4080cb7c  0x0014a870  DRAM, BYTE_ACCESSIBLE, IRAM
+      4  0x038a0  0x4081d010  0x0015ad04  DRAM, BYTE_ACCESSIBLE, IRAM
+
+ESP32C6 image footer
+====================
+Checksum: 0x60 (valid)
+Validation hash: a6cbb2ed3ce289cb80e2e1002ad1d99f144783c5757078b9c2dff183f576b9e1 (valid)
+
+Application information
+=======================
+Project name: truckbox_core
+App version: 0.2.27-lite
+Compile time: Nov 21 2026 19:29:45
+ELF file SHA256: dbf63cae88b86f981b0519f2458817ca0e3471c9ba05f670a89c98b498c952ce
+ESP-IDF: v5.5.2
+Minimal eFuse block revision: 0.0
+Maximal eFuse block revision: 0.99
+MMU page size: 64 KB
+Secure version: 0
+esptool.py v4.13.0
+File size: 1495008 (bytes)
+
+ESP32C6 image header
+====================
+Image version: 1
+Entry point: 0x408002e6
+Segments: 4
+Flash size: 8MB
+Flash freq: 80m
+Flash mode: DIO
+
+ESP32C6 extended image header
+=============================
+WP pin: 0xee (disabled)
+Flash pins drive settings: clk_drv: 0x0, q_drv: 0x0, d_drv: 0x0, cs0_drv: 0x0, hd_drv: 0x0, wp_drv: 0x0
+Chip ID: 13 (ESP32-C6)
+Minimal chip revision: v0.0, (legacy min_rev = 0)
+Maximal chip revision: v0.99
+
+Segments information
+====================
+Segment   Length   Load addr   File offs  Memory types
+-------  -------  ----------  ----------  ------------
+      0  0x509f0  0x42100020  0x00000018  DROM, IROM
+      1  0x0f600  0x40800000  0x00050a10  DRAM, BYTE_ACCESSIBLE, IRAM
+      2  0xfbee4  0x42000020  0x00060018  DROM, IROM
+      3  0x110b0  0x4080f600  0x0015bf04  DRAM, BYTE_ACCESSIBLE, IRAM
+
+ESP32C6 image footer
+====================
+Checksum: 0x69 (valid)
+Validation hash: 8eb9f535369d11bd26083fc56a723b2b6a14c600633d12536edcbbf510182c60 (valid)
+
+Application information
+=======================
+Project name: truckbox_link
+App version: 0.2.27-lite
+Compile time: Nov 21 2026 19:36:52
+ELF file SHA256: 5120d89c23283eacf2f74eaf047f71923bcba7181d0f06db9226458906d838a5
+ESP-IDF: v5.5.2
+Minimal eFuse block revision: 0.0
+Maximal eFuse block revision: 0.99
+MMU page size: 64 KB
+Secure version: 0
+esptool.py v4.13.0
+File size: 1591184 (bytes)
+
+ESP32C6 image header
+====================
+Image version: 1
+Entry point: 0x408002e6
+Segments: 4
+Flash size: 8MB
+Flash freq: 80m
+Flash mode: DIO
+
+ESP32C6 extended image header
+=============================
+WP pin: 0xee (disabled)
+Flash pins drive settings: clk_drv: 0x0, q_drv: 0x0, d_drv: 0x0, cs0_drv: 0x0, hd_drv: 0x0, wp_drv: 0x0
+Chip ID: 13 (ESP32-C6)
+Minimal chip revision: v0.0, (legacy min_rev = 0)
+Maximal chip revision: v0.99
+
+Segments information
+====================
+Segment   Length   Load addr   File offs  Memory types
+-------  -------  ----------  ----------  ------------
+      0  0x4963c  0x42120020  0x00000018  DROM, IROM
+      1  0x069b4  0x40800000  0x0004965c  DRAM, BYTE_ACCESSIBLE, IRAM
+      2  0x11834c  0x42000020  0x00050018  DROM, IROM
+      3  0x1c3f8  0x408069b4  0x0016836c  DRAM, BYTE_ACCESSIBLE, IRAM
+
+ESP32C6 image footer
+====================
+Checksum: 0xdf (valid)
+Validation hash: e91c557f60131f52525774ef18c0d8454ef7b1b7054c04cb1233f32678e12f37 (valid)
+
+Application information
+=======================
+Project name: truckbox_core
+App version: 0.2.24
+Compile time: Nov 14 2026 21:53:29
+ELF file SHA256: db58841eac1f12a73d1f30db39f4ed73f14ca3ecc50f639eb4b507a13acf1916
+ESP-IDF: v5.5.2
+Minimal eFuse block revision: 0.0
+Maximal eFuse block revision: 0.99
+MMU page size: 64 KB
+Secure version: 0
+esptool.py v4.13.0
+File size: 1475088 (bytes)
+
+ESP32C6 image header
+====================
+Image version: 1
+Entry point: 0x408002e6
+Segments: 5
+Flash size: 8MB
+Flash freq: 80m
+Flash mode: DIO
+
+ESP32C6 extended image header
+=============================
+WP pin: 0xee (disabled)
+Flash pins drive settings: clk_drv: 0x0, q_drv: 0x0, d_drv: 0x0, cs0_drv: 0x0, hd_drv: 0x0, wp_drv: 0x0
+Chip ID: 13 (ESP32-C6)
+Minimal chip revision: v0.0, (legacy min_rev = 0)
+Maximal chip revision: v0.99
+
+Segments information
+====================
+Segment   Length   Load addr   File offs  Memory types
+-------  -------  ----------  ----------  ------------
+      0  0x4f130  0x42100020  0x00000018  DROM, IROM
+      1  0x00ec0  0x40800000  0x0004f150  DRAM, BYTE_ACCESSIBLE, IRAM
+      2  0xf8a9c  0x42000020  0x00050018  DROM, IROM
+      3  0x1be68  0x40800ec0  0x00148abc  DRAM, BYTE_ACCESSIBLE, IRAM
+      4  0x038b0  0x4081cd30  0x0016492c  DRAM, BYTE_ACCESSIBLE, IRAM
+
+ESP32C6 image footer
+====================
+Checksum: 0x53 (valid)
+Validation hash: a85f9750f90e5e63fe39cb26bc2977047b03163b333165a91d13b75c69a09fce (valid)
+
+Application information
+=======================
+Project name: truckbox_link
+App version: 0.2.24
+Compile time: Nov 21 2026 19:50:28
+ELF file SHA256: 58690e935efce44eca8859b3a9536bbb73b4b31bb295d6bae56bc7dcfa421283
+ESP-IDF: v5.5.2
+Minimal eFuse block revision: 0.0
+Maximal eFuse block revision: 0.99
+MMU page size: 64 KB
+Secure version: 0

@@ -1,0 +1,13 @@
+42011c5c t j1708_task
+4200fd18 t lite_supervisor
+4200deda t snapshot_handler
+42011172 t collector_task
+4201156e T tb_link_collector_start
+4200feb2 T tb_telemetry_outbox_init
+42010ecc t uploader_task
+Core Lite: no legacy store task/boot or bridge symbols in the application ELF.
+Partition tables (same binary hash in the four local builds):
+e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044  /tmp/truckbox-lite-baseline-build/partition_table/partition-table.bin
+e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044  /tmp/truckbox-lite-core-build/partition_table/partition-table.bin
+e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044  /tmp/truckbox-lite-link-build/partition_table/partition-table.bin
+e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044  /tmp/truckbox-lite-rollback-link-build/partition_table/partition-table.bin

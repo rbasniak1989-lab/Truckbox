@@ -36,10 +36,11 @@ body = startup[startup.index('{') + 1:]
 cut = re.search(r'^.*tb_telemetry_start\(', body, re.M)
 assert cut, 'restore extraction must stop before telemetry/driver initialization'
 restore = body[:cut.start()]
-restore = re.sub(r'    const tbx_j1708_active_ops_t active_ops = .*?    s.request_events=xQueueCreate\(16,sizeof\(request_event_t\)\);', '    tbx_j1708_request_init(&s.requests);', restore, flags=re.S)
-restore = restore.replace(' || !s.request_events', '')
+restore, count = re.subn(r'    const tbx_j1708_active_ops_t active_ops = .*?    if \(!CORE_LITE\) s.request_events=xQueueCreate\(16,sizeof\(request_event_t\)\);', '    tbx_j1708_request_init(&s.requests);', restore, flags=re.S)
+assert count == 1
+restore = restore.replace(' || (!CORE_LITE && !s.request_events)', '')
 chunks += ['static esp_err_t host_start_restore(void) {\n' + restore + '\nreturn ESP_OK;\n}']
-Path(sys.argv[2]).write_text('static const char *TAG = "capture_host";\n' + '\n\n'.join(chunks) + '\n')
+Path(sys.argv[2]).write_text('#define CORE_LITE 0\nstatic const char *TAG = "capture_host";\n' + '\n\n'.join(chunks) + '\n')
 PY
 cc -std=c11 -Wall -Wextra -Werror -Wpedantic \
     -fsanitize=address,undefined -fno-omit-frame-pointer -g \

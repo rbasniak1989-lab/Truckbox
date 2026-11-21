@@ -25,6 +25,7 @@ static bool host_auto_enabled;
 #define ESP_FAIL -1
 #define ESP_ERR_INVALID_STATE 0x103
 #define ESP_ERR_NO_MEM 0x101
+#define ESP_ERR_NOT_SUPPORTED 0x106
 #define ESP_ERR_NVS_NOT_FOUND 0x1102
 #define ESP_ERR_NVS_INVALID_LENGTH 0x110c
 #define NVS_READWRITE 1
@@ -55,7 +56,7 @@ static esp_err_t nvs_commit(nvs_handle_t);
 static esp_err_t tb_store_submit(const char *);
 
 static void tb_ecu_counters_observe(const tbx_j1587_observation_t *o,bool matched){(void)o;(void)matched;}
-static struct { bool full_decode_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated;uint8_t j1587_odometer_mid,j1587_fuel250_mid,j1708_local_mid; } host_capture_config;
+static struct { bool full_decode_enabled,j1708_enabled,j1587_odometer_validated,j1587_fuel250_validated,j1708_lite_tx_verified;uint8_t j1587_odometer_mid,j1587_fuel250_mid,j1708_local_mid; } host_capture_config;
 #define tb_config() (&host_capture_config)
 
 #define pdTRUE 1

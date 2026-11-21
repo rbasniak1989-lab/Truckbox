@@ -25,7 +25,7 @@ Link ESP32-C6 → diário e sequência reservada → HTTPS truckbox-ingest v26
 
 A inspeção foi somente leitura, em 21/11/2026. A Edge Function `truckbox-ingest` ativa estava na versão 26. Ela resolve `device_uid` na tabela `devices`, confere o token individual, usa `unix_ms` quando `time_valid=true` e faz upsert idempotente em `telemetry_samples` e `health_minute_samples` por `(device_id,seq)`. `telemetry_samples.seq` é `bigint`, limitado a inteiros seguros pela função. O ACK é o maior número oferecido após a escrita. A rota `events` usa INSERT, por isso os eventos de transporte Lite usam a tabela de saúde.
 
-Para `tb-c6-d40592b9190c` o maior `seq` operacional foi **557255**, saúde **557243**, `telemetry_latest.seq` **557254** e o último timestamp operacional **2026-11-17 13:16:21.847 UTC**. Havia uma viagem ativa. O maior número local informado era **557568**. **1.000.000** é uma faixa inicial proposta para esse corte e deve ser revalidada contra os máximos de ambos os lados antes de ativar. O firmware exige `sequence_floor` informado e não contém um número nem o UID vinculados a um único caminhão. O Link usa o mesmo cadastro e token individual já existentes para a operação oficial, com o UID de hardware esperado do Core em campo separado. [Edge Functions](https://supabase.com/docs/guides/functions)
+Para `tb-c6-d40592b9190c` o maior `seq` operacional foi **557255**, saúde **557243**, `telemetry_latest.seq` **557254** e o último timestamp operacional **2026-11-17 13:16:21.847 UTC**. Havia uma viagem ativa. O maior número local informado era **557568**. **1.000.000** é uma faixa inicial proposta para esse corte e deve ser revalidada contra os máximos de ambos os lados antes de ativar. A publicação usa `sequence_floor`, cadastro e token informados na configuração. O Link usa o mesmo cadastro e token individual já existentes para a operação oficial, com o UID de hardware esperado do Core em campo separado. [Edge Functions](https://supabase.com/docs/guides/functions)
 
 ```sql
 select d.device_uid,
@@ -71,3 +71,5 @@ sh tests/run_all.sh
 ```
 
 Para aceite físico, execute ao menos 2 h com coleta, carga local e perda/restauração de Wi‑Fi. Registre heap livre, mínimo e maior bloco dos dois ESPs, o motivo de reset, as cadências por captura, latência de chegada ≤30 s em conexão saudável e número de linhas/seq antes e depois do corte. Faça ciclos de desligamento durante fila pendente, ACK inválido em homologação, fila próxima da cota, partida do Volvo e nova requisição ativa só após prova elétrica. A ausência de resets, a margem de RAM em execução, o TPS real de TLS e a latência de ponta a ponta dependem desse ensaio. O firmware mantém as limitações físicas de J4, alimentação do Link, modem e watchdog da Rev.B.1.
+
+O GPIO1 continua como entrada no Core. Se uma unidade já recebeu o retrofit de U8 com RSTn ligado e precisa de DONE, valide a compatibilidade desse retrabalho antes de trocar a imagem em campo.

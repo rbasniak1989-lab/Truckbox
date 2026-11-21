@@ -1,0 +1,74 @@
+{
+  "version": "0.2.27-lite",
+  "status": "bench_candidate",
+  "repository": "rbasniak1989-lab/Truckbox",
+  "branch": "feat/revb1-core-lite-link-telemetry",
+  "esp_idf": {
+    "version": "v5.5.2",
+    "commit": "30aaf64524299d3bde422ca9a2848090d1bc5d0f"
+  },
+  "ota": {
+    "chip": "esp32c6",
+    "flash_bytes": 8388608,
+    "app_slot_bytes": 3145728,
+    "partition_table_sha256": "e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044"
+  },
+  "cloud_contract": {
+    "observed": "2026-11-21",
+    "truckbox_ingest_version": 26,
+    "access": "read-only",
+    "official_upload_default": false
+  },
+  "android_ci": {
+    "run_id": 44943369702,
+    "source": "0cc71d16600d605c188838d08641502488c9fe84",
+    "artifact_id": 14722557902,
+    "artifact_zip_sha256": "7dd85367b6b4be82f6bd461e199039a87461f50d8040d7c3f05bd0da71c06ac6",
+    "application_id": "br.com.truckbox.multimedia.revb1lite",
+    "version": "0.3.2-revb1-lite",
+    "unit_tests": 12,
+    "failures": 0
+  },
+  "files": [
+    {
+      "path": "Truckbox_Multimedia_0.3.2_RevB1_Lite.apk",
+      "size": 18546546,
+      "sha256": "96e4ef1d4761e3321b95f18bedbba8557ef8081f56f2f4d8b83a2a5a45b53af3",
+      "source": "0cc71d16600d605c188838d08641502488c9fe84"
+    },
+    {
+      "path": "rollback/truckbox_core_0.2.24_ota.bin",
+      "size": 1591184,
+      "sha256": "5d3d3bc914d1383d90af386044d53a645c03f6c4f020f5ec57def6e197b2374d",
+      "role": "core",
+      "version": "0.2.24",
+      "source": "2ef6b46a9aa0e663c330f1674c5ad4c8b7662075",
+      "artifact_origin_commit": "eccd32c4ddfec2191eaa940c8c408fc2344df606"
+    },
+    {
+      "path": "rollback/truckbox_link_0.2.24-rebuild_ota.bin",
+      "size": 1475088,
+      "sha256": "3bf90d971f045e0659432b0f2c710f83141a8ef5daa82c118bc12c194dd777cd",
+      "role": "link",
+      "version": "0.2.24",
+      "source": "2ef6b46a9aa0e663c330f1674c5ad4c8b7662075",
+      "note": "Legacy rebuild, not identified as the installed Link image."
+    },
+    {
+      "path": "truckbox_core_0.2.27-lite_ota.bin",
+      "size": 1435088,
+      "sha256": "3d979de139bcdabb7100e6b98ca4b7d8872463dbe03148e17989da9b91fd07a9",
+      "role": "core",
+      "version": "0.2.27-lite",
+      "source": "0f652041f75390eb3f34b60edc5bcc31fd6a9e9f"
+    },
+    {
+      "path": "truckbox_link_0.2.27-lite_ota.bin",
+      "size": 1495008,
+      "sha256": "2ccabbb3f82a8cf213e30f776a674c0944a3b8c5afcaf980ddc47e7b27de5c4f",
+      "role": "link",
+      "version": "0.2.27-lite",
+      "source": "0f652041f75390eb3f34b60edc5bcc31fd6a9e9f"
+    }
+  ]
+}

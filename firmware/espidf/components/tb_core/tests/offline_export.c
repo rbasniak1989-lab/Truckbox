@@ -40,6 +40,7 @@ static int simulated_gettimeofday(struct timeval *tv,void *zone)
     tv->tv_sec=(time_t)(1794301200+host_now_us/1000000u);tv->tv_usec=(suseconds_t)(host_now_us%1000000u);return 0;
 }
 #define gettimeofday(tv,tz) simulated_gettimeofday(tv,tz)
+#define CORE_LITE 0
 #include "offline_capture_under_test.h"
 #undef gettimeofday
 /* Hardware/NVS boundaries only. Production diagnostic/counter modules link
