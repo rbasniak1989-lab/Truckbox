@@ -376,15 +376,16 @@ bool tbx_j1708_active_note_response(tbx_j1708_active_t *c, uint8_t mid, uint16_t
 
 bool tbx_j1708_active_is_tx_echo(const tbx_j1708_active_t *c, const uint8_t *frame, size_t length, uint64_t now_us)
 {
-    /* One exact RX copy of a successfully submitted UART frame, including
-     * assembly after electrical abort. This never manufactures echo_ok or a
-     * reply. Later independent copies are not excluded by the consumed token. */
-    if(!c)return false;
-    uint64_t reference=c->echo_position==c->tx_length?c->echo_received_us:c->tx_started_us;
-    return c->scheduler && frame && c->echo_frame_pending && c->tx_length>=5 &&
-        length==c->tx_length && now_us>=reference && now_us-reference<=
-            (uint64_t)c->scheduler->timeout_ms*1000u &&
-        memcmp(frame,c->tx_frame,c->tx_length)==0;
+    /* Only an exact byte-verified echo gets the delayed parser grace period.
+     * The short abort window retains the existing RX evidence classification.
+     * The pending token is consumed once and never manufactures a reply. */
+    if (!c || !c->scheduler || !frame || !c->echo_frame_pending ||
+        c->tx_length < 5 || length != c->tx_length) return false;
+    bool verified = c->echo_position == c->tx_length;
+    uint64_t reference = verified ? c->echo_received_us : c->tx_started_us;
+    uint64_t grace = verified ? UINT64_C(2000000) : (uint64_t)c->scheduler->timeout_ms * 1000u;
+    return now_us >= reference && now_us - reference <= grace &&
+           memcmp(frame, c->tx_frame, c->tx_length) == 0;
 }
 
 bool tbx_j1708_active_consume_tx_echo(tbx_j1708_active_t *c,const uint8_t *frame,size_t n,uint64_t now)

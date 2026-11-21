@@ -140,6 +140,9 @@
     </div>
       <p id="j1708-automatic-status" role="status">Consultando requisições automáticas do Core.</p>
       <button id="j1708-automatic-enable" type="button" disabled>Reabilitar polling automático persistente</button>
+      <label class="check spacer"><input id="j1708-recover-ack" type="checkbox"><span>Estou estacionado, confirmei o diagnóstico e autorizo arquivar apenas o bloqueio técnico antigo do MID local. Isso NÃO comprova ausência de conflito físico.</span></label>
+      <button id="j1708-recover-hold" type="button" disabled>Recuperar bloqueio MID antigo (sem transmitir)</button>
+      <small>A recuperação mantém o quadro de evidência na NVS, desabilita as requisições até uma reativação manual e é recusada se um MID correspondente apareceu neste boot.</small>
       <p>O Core executa o polling sem aplicativo. Os ensaios abaixo são avançados e não controlam a operação normal. Parar desabilita o automático também após reinício.</p>
     <div class="actions spacer">
       <button id="j1708-stop" type="button" disabled>Parar requisições</button>
@@ -681,6 +684,13 @@
     const presetConflict = [128,130,140,144].includes(n);
     const speed = lastState && lastState.speedKph;
     const stopped = typeof speed === 'number' && Number.isFinite(speed) && speed <= 0.1;
+    const heldMid=Number(automatic.technical_hold_mid || 0);
+    const midSeen=Array.isArray(mids) && mids.includes(heldMid);
+    $('j1708-recover-hold').disabled=role!=='core' || !token || uploadBusy || j1708Busy ||
+      !stopped || !!status.armed || !!lastState.ota_busy ||
+      !automatic.technical_hold_persisted ||
+      !!automatic.technical_hold_invalid || heldMid<128 || midSeen ||
+      !$('j1708-recover-ack').checked;
     const online = role === 'core' && !!token && !!lastState &&
       j1708.ready === true && !lastState.ota_busy && !uploadBusy && !guard.fault_latched && automatic.enabled!==true;
     $('j1708-test').disabled = !online || j1708Busy || !!status.armed || !!field.running ||
@@ -730,6 +740,11 @@
     } else if (action === 'confirm_physical') {
       if ($('j1708-confirm').disabled) return;
       Object.assign(payload,{stationary:true, external_capture_verified:true,local_mid_free_verified:true,trial_id:lastState.j1708.requests.trial_id,tx_observed_hex:$('j1708-tx-proof').value,response_observed_hex:$('j1708-rx-proof').value});
+    } else if (action === 'recover_stale_mid_hold') {
+      if ($('j1708-recover-hold').disabled) return;
+      if (!confirm('Arquivar APENAS o bloqueio técnico antigo após verificar o MID livre com o caminhão estacionado? A transmissão continuará desabilitada até autorização separada.')) return;
+      payload.authorized = true;
+      payload.stationary = true;
     } else if (action === 'enable_work') {
       if ($('j1708-work').disabled) return;
       if (!confirm('Habilitar requisições J1708 enquanto o caminhão se movimenta? Confirmar somente após validar TX e resposta em captura externa, ainda parado.')) return;
@@ -744,7 +759,7 @@
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       }, 8000);
-      message('j1708-message', action==='automatic_enable'?'Polling automático salvo; o Core iniciará quando a rede estiver saudável.':action==='start_field'?'Validação supervisionada iniciada. Mantenha o caminhão estacionado até o resultado.':action==='confirm_field'?'Resultado operacional indireto confirmado; sem comprovação elétrica externa. Autorize o modo de viagem ainda parado.':action === 'arm' ?
+      message('j1708-message', action==='recover_stale_mid_hold'?'Bloqueio técnico antigo arquivado. As requisições permanecem DESABILITADAS; revise a rede antes de habilitá-las novamente.':action==='automatic_enable'?'Polling automático salvo; o Core iniciará quando a rede estiver saudável.':action==='start_field'?'Validação supervisionada iniciada. Mantenha o caminhão estacionado até o resultado.':action==='confirm_field'?'Resultado operacional indireto confirmado; sem comprovação elétrica externa. Autorize o modo de viagem ainda parado.':action === 'arm' ?
         'Uma requisição autorizada. Confira TX e resposta na captura externa e registre a validação.' :
         action === 'confirm_physical' ? 'Validação externa deste teste registrada. O modo de viagem pode ser autorizado ainda parado.' :
         action === 'enable_work' ?
@@ -760,8 +775,9 @@
     }
   }
   ['j1708-tx-proof','j1708-rx-proof','j1708-external-proof'].forEach(id=>$(id).addEventListener('input',updateJ1708Panel));
-  ['j1708-field-authorize','j1708-field-ack'].forEach(id=>$(id).addEventListener('change',updateJ1708Panel));
+  ['j1708-field-authorize','j1708-field-ack','j1708-recover-ack'].forEach(id=>$(id).addEventListener('change',updateJ1708Panel));
   $('j1708-automatic-enable').addEventListener('click',()=>j1708Command('automatic_enable'));
+  $('j1708-recover-hold').addEventListener('click',()=>j1708Command('recover_stale_mid_hold'));
   $('j1708-field-start').addEventListener('click',()=>j1708Command('start_field'));
   $('j1708-field-confirm').addEventListener('click',()=>j1708Command('confirm_field'));
   $('j1708-confirm').addEventListener('click',()=>j1708Command('confirm_physical'));

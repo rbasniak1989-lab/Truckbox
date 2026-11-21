@@ -14,6 +14,7 @@
 #include "tbx_fuel_account.h"
 #include "trip_checkpoint.h"
 #include "polling_guard.h"
+#include "mid_hold_recovery.h"
 #include "accounting_json.h"
 #include <inttypes.h>
 #include <math.h>
@@ -1729,6 +1730,82 @@ bool tb_capture_request_enable_work(bool authorized, bool stationary)
         tbx_j1708_active_enable_work(&s.active, now);
     xSemaphoreGive(s.lock);
     return accepted;
+}
+
+/* Recovery never transmits. It clears ONLY a prior-boot technical jguard
+ * after a clean passive observation, preserving the original proof in jghist.
+ * Polling is persistently disabled until a second explicit operator action. */
+static tb_mid_hold_recovery_t recovery_snapshot(bool authorized,bool stationary)
+{
+    const uint64_t now=(uint64_t)esp_timer_get_time();
+    const uint64_t ms=now/1000u;
+    const uint8_t mid=tb_config()->j1708_local_mid;
+    const tbx_j1708_rx_guard_t *rx=&s.active.rx_guard;
+    return (tb_mid_hold_recovery_t){
+        .authorized=authorized,.stationary_confirmed=stationary,
+        .vehicle_parked=s.speed_at && ms>=s.speed_at && ms-s.speed_at<=5000u &&
+            isfinite(s.speed) && s.speed>=0.0 && s.speed<=0.1,
+        .ota_busy=tb_web_ota_busy(),
+        .hold_valid=tb_polling_guard_valid(&s.polling_guard),
+        .hold_persisted=s.guard_persisted,.hold_invalid=s.guard_invalid,.hold_dirty=s.guard_dirty,
+        .tx_active=s.active.tx_active,.polling_armed=s.requests.armed,
+        .tx_seen_this_boot=s.last_tx_uart_us!=0,
+        .mid_observed_this_boot=mid>=128 && (s.observed_mid[mid>>3]&(1u<<(mid&7u))),
+        .rx_fresh=rx->seen_valid && now>=rx->last_valid_us && now-rx->last_valid_us<=UINT64_C(2000000),
+        .rx_healthy=rx->reference_count==3 && rx->suspect_streak==0 && !rx->clock_fault &&
+            rx->last_window.count.valid!=0,
+        .configured_mid=mid,.held_mid=s.polling_guard.mid,
+        .held_boot=s.polling_guard.boot,.current_boot=tb_boot_id(),
+        .valid_frames=rx->total.valid,.uptime_us=now
+    };
+}
+
+bool tb_capture_recover_stale_mid_hold(bool authorized,bool stationary)
+{
+    if(!authorized || !stationary || !s.lock || !s.nvs_open || tb_web_ota_busy())return false;
+    if(xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+    tb_mid_hold_recovery_t snapshot=recovery_snapshot(authorized,stationary);
+    bool eligible=tb_mid_hold_can_recover(&snapshot);
+    if(eligible)s.operator_hold=true; /* Suspend TX before NVS operations. */
+    xSemaphoreGive(s.lock);
+    if(!eligible)return false;
+
+    /* This separate persisted operator decision survives a reboot even if a
+     * later audit or NVS operation fails. Never auto-rearm after recovery. */
+    if(tb_config_set_j1708_auto(false)!=ESP_OK)return false;
+    /* Same lock order as persist_trip(): NVS checkpoint lock BEFORE s.lock.
+     * Holding s.lock while waiting for trip_persist_lock would deadlock. */
+    if(xSemaphoreTake(s.trip_persist_lock,pdMS_TO_TICKS(500))!=pdTRUE)return false;
+    if(xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE){
+        xSemaphoreGive(s.trip_persist_lock);return false;
+    }
+    snapshot=recovery_snapshot(authorized,stationary);
+    eligible=tb_mid_hold_can_recover(&snapshot) && s.operator_hold;
+    tb_polling_guard_t previous=s.polling_guard;
+    if(!eligible){
+        xSemaphoreGive(s.lock);xSemaphoreGive(s.trip_persist_lock);return false;
+    }
+    esp_err_t err=nvs_set_blob(s.nvs,"jghist",&previous,sizeof(previous));
+    if(err==ESP_OK)err=nvs_erase_key(s.nvs,"jguard");
+    if(err==ESP_OK)err=nvs_commit(s.nvs);
+    if(err==ESP_OK){
+        memset(&s.polling_guard,0,sizeof(s.polling_guard));
+        s.guard_dirty=s.guard_persisted=s.guard_invalid=false;
+        s.automatic.last_enabled=false;
+    }
+    xSemaphoreGive(s.lock);
+    xSemaphoreGive(s.trip_persist_lock);
+    if(err!=ESP_OK)return false;
+
+    char audit[360];
+    snprintf(audit,sizeof(audit),
+        "{\"sample_kind\":\"J1708_REQUEST_EVENT\",\"event\":\"TECHNICAL_MID_HOLD_RECOVERED\","
+        "\"boot_id\":%" PRIu32 ",\"held_mid\":%u,\"held_boot\":%" PRIu32 ","
+        "\"frames_passive\":%" PRIu32 ",\"reason\":\"PARKED_MANUAL_REVIEW\","
+        "\"automatic_rearmed\":false}",
+        tb_boot_id(),(unsigned)previous.mid,previous.boot,snapshot.valid_frames);
+    tb_store_submit(audit);
+    return true;
 }
 
 bool tb_capture_automatic_enable(void)

@@ -31,5 +31,6 @@ bool tb_capture_confirm_physical(const cJSON *body);
 bool tb_capture_field_start(bool authorized,bool stationary);
 bool tb_capture_field_confirm(const cJSON *body);
 
+bool tb_capture_recover_stale_mid_hold(bool authorized,bool stationary);
 bool tb_capture_automatic_enable(void);
 void tb_capture_pause_maintenance(void);
