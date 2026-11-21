@@ -32,7 +32,7 @@ static int xQueueReceive(void *queue, void *item, unsigned timeout) {
 }
 #ifdef TEST_STORE
 #define STORE_IO_ATTEMPT_LIMIT 3U
-static struct { void *queue,*mutex; const char *base_path; bool ready,medium_initialized,initializing,rollback_paused,rollback_drained,io_paused,recovery_complete; unsigned recovery_failures;uint64_t scheduling_yields,next_sequence,highest_committed; } state;
+static struct { void *queue,*mutex; const char *base_path; bool ready,medium_initialized,initializing,rollback_paused,rollback_drained,io_paused,recovery_complete; unsigned recovery_failures,sequence_failures;uint64_t scheduling_yields,next_sequence,highest_committed; } state;
 typedef struct { unsigned payload; } queued_record_t;
 static void xSemaphoreTake(void *lock,unsigned wait) { (void)lock;(void)wait;++mutex_depth; }
 static void xSemaphoreGive(void *lock) { (void)lock;assert(mutex_depth==1);--mutex_depth; }

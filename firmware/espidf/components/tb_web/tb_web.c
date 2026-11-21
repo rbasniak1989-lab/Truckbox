@@ -271,6 +271,9 @@ static esp_err_t state_handler(httpd_req_t *request)
      * upload reserve. The partial response still reports real TX/RX counters. */
     if(free_before<24u*1024u+working_reserve || largest_before<1024)return health_reply(request,false);
     bool small=!full || free_before<full_tree_allowance+working_reserve;
+#ifdef CONFIG_TB_CORE_LITE
+    small = true;
+#endif
     cJSON *body = cJSON_CreateObject();
     if (!body) return health_reply(request,true);
     cJSON_AddBoolToObject(body, "ok", true);

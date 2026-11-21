@@ -40,6 +40,7 @@ sh components/tb_core/tests/run_capture_integration.sh
 sh components/tb_core/tests/run_core_gps.sh
 sh components/tb_core/tests/run_telemetry.sh
 TELEMETRY_TEST_FILE="$PWD/components/tb_core/tests/test_live_profile.c" sh components/tb_core/tests/run_telemetry.sh
+TELEMETRY_TEST_FILE="$PWD/components/tb_core/tests/test_lite_snapshot.c" sh components/tb_core/tests/run_telemetry.sh
 sh components/tb_core/tests/run_mid_hold_recovery.sh
 sh components/tb_core/tests/run_j1708_active.sh
 sh components/tb_core/tests/run_j1708_field.sh
@@ -50,6 +51,7 @@ sh components/tb_core/tests/run_field_audit.sh
 sh components/tb_core/tests/run_request_event_policy.sh
 sh components/tb_core/tests/run_j1708_uart.sh
 sh components/tb_link/tests/run_wifi_uplink.sh
+sh components/tb_link/tests/run_lite.sh
 test_binary=$(mktemp /tmp/tb-link-test.XXXXXX)
 trap 'rm -f "$test_binary"' EXIT HUP INT TERM
 cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror \

@@ -16,11 +16,14 @@ typedef struct {
     unsigned acknowledgements_since_checkpoint;
     uint64_t recovered_tail_bytes;
     uint64_t rejected_records;
+    bool telemetry;
     bool ready;
 } tb_gps_outbox_t;
 
 /* Caller serializes operations. Return zero or a POSIX errno value. */
 int tb_gps_outbox_init(tb_gps_outbox_t *box, const char *path, size_t maximum_bytes);
+/* Separate file format and a durable ACK for every record. */
+int tb_telemetry_outbox_init(tb_gps_outbox_t *box, const char *path, size_t maximum_bytes);
 int tb_gps_outbox_append(tb_gps_outbox_t *box, const char *json);
 int tb_gps_outbox_peek(tb_gps_outbox_t *box, char *json, size_t capacity);
 int tb_gps_outbox_ack(tb_gps_outbox_t *box);

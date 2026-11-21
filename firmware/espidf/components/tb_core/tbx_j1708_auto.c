@@ -45,6 +45,11 @@ void tbx_j1708_auto_tick(tbx_j1708_auto_t *a,tbx_j1708_active_t *c,const tbx_j17
         return;
     }
     if(e->ota_busy){if(a->phase!=TBX_AUTO_OTA)pause(a,c,"OTA_BUSY",TBX_AUTO_OTA,now);return;}
+    if(e->observed_conflict){
+        const char *reason="LOCAL_MID_CONFLICT";
+        if(a->phase!=TBX_AUTO_BLOCKED || a->reason!=reason)pause(a,c,reason,TBX_AUTO_BLOCKED,now);
+        return;
+    }
     if(a->phase==TBX_AUTO_BLOCKED || a->phase==TBX_AUTO_OTA){a->phase=TBX_AUTO_WAIT_RX;a->paused_us=now;}
     if(a->phase==TBX_AUTO_RUNNING && (!c->work_mode || !c->scheduler->armed)){
         ++a->pauses;if(a->failures<4)++a->failures;

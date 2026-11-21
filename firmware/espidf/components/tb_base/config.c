@@ -12,6 +12,9 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_random.h"
+#ifdef ESP_PLATFORM
+#include "esp_system.h"
+#endif
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
@@ -47,7 +50,7 @@ static const string_field_t STRING_FIELDS[] = {
     STRING_FIELD(admin_token), STRING_FIELD(ap_password), STRING_FIELD(pair_key),
     STRING_FIELD(core_ssid), STRING_FIELD(core_password), STRING_FIELD(core_host),
     STRING_FIELD(uplink_url), STRING_FIELD(uplink_token),
-    STRING_FIELD(cloud_device_uid), STRING_FIELD(gps_url),
+    STRING_FIELD(cloud_device_uid), STRING_FIELD(telemetry_core_uid), STRING_FIELD(gps_url),
     STRING_FIELD(gps_device_uid), STRING_FIELD(gps_token),
     STRING_FIELD(apn), STRING_FIELD(apn_user), STRING_FIELD(apn_password),
 };
@@ -55,6 +58,7 @@ static const string_field_t STRING_FIELDS[] = {
 static const bool_field_t BOOL_FIELDS[] = {
     BOOL_FIELD(j1708_expansion_enabled), BOOL_FIELD(j1708_auto_enabled), BOOL_FIELD(j1708_topology_attested), BOOL_FIELD(j1587_odometer_validated), BOOL_FIELD(j1587_fuel250_validated), BOOL_FIELD(capture_enabled), BOOL_FIELD(can_enabled), BOOL_FIELD(j1708_enabled), BOOL_FIELD(full_decode_enabled), BOOL_FIELD(sd_enabled), BOOL_FIELD(fram_enabled),
     BOOL_FIELD(modem_enabled), BOOL_FIELD(gnss_enabled), BOOL_FIELD(repaired_power_gates),
+    BOOL_FIELD(lite_upload_enabled), BOOL_FIELD(j1708_lite_tx_verified),
 };
 
 static esp_err_t invalid(char *error, size_t capacity, const char *message)
@@ -196,6 +200,11 @@ static bool v216_key(const char *name)
     return !strcmp(name,"j1708_auto_enabled") || !strcmp(name,"j1708_topology_attested") ||
         !strcmp(name,"j1708_local_mid") || !strcmp(name,"j1708_targets") ||
         !strcmp(name,"j1708_auto_intervals_ms") || !strcmp(name,"j1708_launch_intervals_ms");
+}
+static bool lite_key(const char *name)
+{
+    return !strcmp(name,"telemetry_core_uid") || !strcmp(name,"lite_upload_enabled") ||
+           !strcmp(name,"j1708_lite_tx_verified");
 }
 static bool known_key(const char *name, bool loading)
 {
@@ -532,6 +541,7 @@ static cJSON *private_json(const tb_config_t *config)
     }
     for (size_t i = 0; i < sizeof(STRING_FIELDS) / sizeof(STRING_FIELDS[0]); ++i) {
         const string_field_t *field = &STRING_FIELDS[i];
+        if (lite_key(field->name)) continue;
         if (cJSON_AddStringToObject(json, field->name,
                                    (const char *)config + field->offset) == NULL) {
             cJSON_Delete(json);
@@ -540,7 +550,7 @@ static cJSON *private_json(const tb_config_t *config)
     }
     for (size_t i = 0; i < sizeof(BOOL_FIELDS) / sizeof(BOOL_FIELDS[0]); ++i) {
         const bool_field_t *field = &BOOL_FIELDS[i];
-        if(v212_key(field->name) || v216_key(field->name) || v217_key(field->name))continue;
+        if(v212_key(field->name) || v216_key(field->name) || v217_key(field->name) || lite_key(field->name))continue;
         if (cJSON_AddBoolToObject(json, field->name,
                                  *(const bool *)((const char *)config + field->offset)) == NULL) {
             cJSON_Delete(json);
@@ -554,6 +564,40 @@ static cJSON *private_json(const tb_config_t *config)
         return NULL;
     }
     return json;
+}
+
+static void load_lite_extension(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(CONFIG_NAMESPACE,NVS_READONLY,&handle) != ESP_OK) return;
+    char text[256];
+    size_t size = sizeof(text);
+    esp_err_t result = nvs_get_str(handle,"lite_v1",text,&size);
+    nvs_close(handle);
+    if (result == ESP_ERR_NVS_NOT_FOUND) return;
+    cJSON *object = result == ESP_OK ? cJSON_ParseWithLengthOpts(text,size,NULL,true) : NULL;
+    bool keys = cJSON_IsObject(object);
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry,object) if (!entry->string || !lite_key(entry->string)) keys = false;
+    tb_config_t candidate=s_config;
+    if (keys && apply_fields(object,&candidate,true,NULL,0) == ESP_OK) s_config=candidate;
+    else ESP_LOGW(TAG,"Lite options unavailable; upload and TX attestation held off");
+    cJSON_Delete(object);
+}
+
+static esp_err_t persist_lite(nvs_handle_t handle, const tb_config_t *config)
+{
+    if (!strcmp(config->telemetry_core_uid,s_saved_config.telemetry_core_uid) &&
+        config->lite_upload_enabled == s_saved_config.lite_upload_enabled &&
+        config->j1708_lite_tx_verified == s_saved_config.j1708_lite_tx_verified) return ESP_OK;
+    cJSON *object = cJSON_CreateObject();
+    bool filled = object && cJSON_AddStringToObject(object,"telemetry_core_uid",config->telemetry_core_uid) &&
+        cJSON_AddBoolToObject(object,"lite_upload_enabled",config->lite_upload_enabled) &&
+        cJSON_AddBoolToObject(object,"j1708_lite_tx_verified",config->j1708_lite_tx_verified);
+    char text[256];
+    bool serialized = filled && cJSON_PrintPreallocated(object,text,sizeof(text),false);
+    cJSON_Delete(object);
+    return serialized ? nvs_set_str(handle,"lite_v1",text) : ESP_ERR_NO_MEM;
 }
 
 static esp_err_t persist(const tb_config_t *config,bool save_auto)
@@ -584,6 +628,7 @@ static esp_err_t persist(const tb_config_t *config,bool save_auto)
         if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v223","production-v1");
         if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v225","critical-10s-v1");
         if(result==ESP_OK)result=nvs_set_str(handle,"v217",extra_text);
+        if(result==ESP_OK)result=persist_lite(handle,config);
         if (result == ESP_OK) {
             result = nvs_commit(handle);
         }
@@ -630,7 +675,10 @@ esp_err_t tb_config_init(void)
     }
     esp_err_t result = nvs_flash_init();
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "NVS indisponivel (%s); dados existentes nao foram apagados", esp_err_to_name(result));
+#ifdef ESP_PLATFORM
+        ESP_LOGE(TAG, "nvs_flash_init failed: %s (%#x), free_heap=%u; configuration retained",
+                 esp_err_to_name(result), (unsigned)result, (unsigned)esp_get_free_heap_size());
+#endif
         return result;
     }
     uint8_t mac[6];
@@ -688,12 +736,14 @@ esp_err_t tb_config_init(void)
                         ESP_LOGE(TAG, "Configuracao persistida invalida: %s; sem apagar NVS", error);
                     }
                     for (size_t i = 0; i < sizeof(STRING_FIELDS) / sizeof(STRING_FIELDS[0]); ++i) {
-                        upgrade |= cJSON_GetObjectItemCaseSensitive(json, STRING_FIELDS[i].name) == NULL;
+                        if (!lite_key(STRING_FIELDS[i].name))
+                            upgrade |= cJSON_GetObjectItemCaseSensitive(json, STRING_FIELDS[i].name) == NULL;
                     }
                     for (size_t i = 0; i < sizeof(BOOL_FIELDS) / sizeof(BOOL_FIELDS[0]); ++i) {
                         /* Missing opt-in flag means LEGACY; no extra NVS write
                          * solely to introduce a field on an existing board. */
-                        if (!v212_key(BOOL_FIELDS[i].name) && !v216_key(BOOL_FIELDS[i].name) && !v217_key(BOOL_FIELDS[i].name) && strcmp(BOOL_FIELDS[i].name, "full_decode_enabled") != 0)
+                        if (!v212_key(BOOL_FIELDS[i].name) && !v216_key(BOOL_FIELDS[i].name) && !v217_key(BOOL_FIELDS[i].name) &&
+                            strcmp(BOOL_FIELDS[i].name, "full_decode_enabled") && !lite_key(BOOL_FIELDS[i].name))
                             upgrade |= cJSON_GetObjectItemCaseSensitive(json, BOOL_FIELDS[i].name) == NULL;
                     }
                     upgrade |= cJSON_GetObjectItemCaseSensitive(json, "can_baud") == NULL;
@@ -712,6 +762,7 @@ esp_err_t tb_config_init(void)
     load_extension();
     bool auto_migrate=load_auto_extension();
     bool expansion_migrate=load_expansion();
+    load_lite_extension();
     if(tb_role()==TB_ROLE_CORE && (auto_migrate || s_auto_persisted)){
         /* <=0.2.22 incorrectly persisted technical MID stops as operator OFF.
          * The product migration authorizes ON once; later operator OFF remains
@@ -748,7 +799,17 @@ esp_err_t tb_config_init(void)
                 if(auto_migrate){s_config.j1708_auto_enabled=false;s_auto_persisted=false;auto_migrate=false;
                     snprintf(extension_error,sizeof(extension_error),"v216 migration not saved; automatic TX blocked");}
                 s_config.j1708_expansion_enabled=false;
-            }else return result;
+            }
+#ifdef CONFIG_TB_CORE_LITE
+            else if(!first_boot && !created_access_credentials){
+                ESP_LOGW(TAG,"NVS optional config migration failed: %s (%#x), free_heap=%u; loaded configuration retained",
+                         esp_err_to_name(result),(unsigned)result,(unsigned)esp_get_free_heap_size());
+                s_config.j1708_auto_enabled=false;
+                s_auto_persisted=false;
+                auto_migrate=false;
+            }
+#endif
+            else return result;
         }
     }
     if(auto_migrate && !extension_error[0])s_auto_persisted=true;
@@ -756,10 +817,7 @@ esp_err_t tb_config_init(void)
     __atomic_store_n(&s_auto_enabled,s_config.j1708_auto_enabled,__ATOMIC_RELEASE);
     s_ready = true;
     if (first_boot || created_access_credentials) {
-        ESP_LOGW(TAG, "Credenciais criadas para %s. Guarde os valores abaixo em local privado.", s_device_uid);
-        ESP_LOGW(TAG, "Senha da rede de configuracao: %s", s_config.ap_password);
-        ESP_LOGW(TAG, "Senha/token de administracao: %s", s_config.admin_token);
-        ESP_LOGW(TAG, "As credenciais acima sao exibidas somente na primeira inicializacao.");
+        ESP_LOGW(TAG, "Credenciais criadas para %s. Consulte setup no console USB em local privado.", s_device_uid);
     }
     return ESP_OK;
 }
@@ -809,6 +867,15 @@ cJSON *tb_config_public_json(void)
     cJSON_AddStringToObject(json, "core_host", s_config.core_host);
     cJSON_AddStringToObject(json, "uplink_url", s_config.uplink_url);
     cJSON_AddStringToObject(json, "cloud_device_uid", s_config.cloud_device_uid);
+    cJSON_AddStringToObject(json, "telemetry_core_uid", s_config.telemetry_core_uid);
+    cJSON_AddBoolToObject(json, "lite_upload_enabled", s_config.lite_upload_enabled);
+    cJSON_AddBoolToObject(json, "j1708_lite_tx_verified", s_config.j1708_lite_tx_verified);
+#ifdef CONFIG_TB_CORE_LITE
+    cJSON_AddBoolToObject(json,"core_lite",true);
+#endif
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+    cJSON_AddBoolToObject(json,"link_telemetry_collector",true);
+#endif
     cJSON_AddStringToObject(json, "gps_url", s_config.gps_url);
     cJSON_AddStringToObject(json, "gps_device_uid", s_config.gps_device_uid);
     cJSON_AddStringToObject(json, "apn", s_config.apn);

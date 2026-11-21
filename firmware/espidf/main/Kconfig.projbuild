@@ -7,6 +7,19 @@ config TB_ROLE_CORE
 config TB_ROLE_LINK
     bool "Link"
 endchoice
+config TB_CORE_LITE
+    bool "Rev.B.1 Core Lite (J1708 and local service)"
+    depends on TB_ROLE_CORE
+    select TB_J1708_ONLY
+    help
+        Decode the bus and serve the live cache without a local telemetry
+        outbox, persistent trip checkpoint task or HTTP uplink bridge.
+config TB_LINK_TELEMETRY_COLLECTOR
+    bool "Rev.B.1 Link telemetry collector"
+    depends on TB_ROLE_LINK
+    help
+        Poll the paired Core Lite and publish from a separate durable outbox.
+        Official uploads require explicit per-device configuration.
 config TB_CORE_WIFI_SHARING_REQUIRED
     bool
     default y if TB_ROLE_CORE

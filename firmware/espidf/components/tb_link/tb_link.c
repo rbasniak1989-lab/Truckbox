@@ -1,6 +1,10 @@
 #include "tb.h"
 #include "tb_nmea.h"
 #include "tb_gps_outbox.h"
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+#include "tb_link_collector.h"
+#include "tb_link_telemetry_codec.h"
+#endif
 #include <errno.h>
 #include <inttypes.h>
 #include <math.h>
@@ -120,6 +124,9 @@ static void add_number(cJSON *object, const char *name, double value)
 
 void tb_application_add_json(cJSON *object)
 {
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+    tb_link_collector_json(object);
+#endif
     const tb_config_t *config = tb_config();
     link_state_t state = state_snapshot();
     const int64_t now = esp_timer_get_time();
@@ -550,6 +557,20 @@ static esp_err_t https_post_json(const char *url, const char *payload, size_t le
     return error;
 }
 
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+esp_err_t tb_link_collector_post(const char *payload, size_t length, uint64_t sequence, bool health, int *status)
+{
+    if (xSemaphoreTake(s_uplink_lock,0) != pdTRUE) return ESP_ERR_INVALID_STATE;
+    http_capture_t *capture = calloc(1,sizeof(*capture));
+    esp_err_t err = capture ? https_post_json(tb_config()->uplink_url,payload,length,capture,status) : ESP_ERR_NO_MEM;
+    if (err == ESP_OK && !tb_lite_ack_valid(capture->data,capture->used,*status,sequence,health))
+        err = ESP_ERR_INVALID_RESPONSE;
+    free(capture);
+    xSemaphoreGive(s_uplink_lock);
+    return err;
+}
+#endif
+
 esp_err_t tb_link_uplink(const char *json, size_t length, char **response_json)
 {
     if (!response_json) return ESP_ERR_INVALID_ARG;
@@ -726,9 +747,16 @@ static void gps_spool_task(void *arg)
 {
     (void)arg;
     esp_err_t mount = mount_gps_storage();
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+    tb_link_collector_storage(mount);
+#endif
     if (mount != ESP_OK) {
         publish_outbox_state("filesystem_unavailable", mount);
         ESP_LOGE(TAG, "GPS storage mount failed: %s; existing data retained", esp_err_to_name(mount));
+        vTaskDelete(NULL);
+        return;
+    }
+    if (!tb_config()->gnss_enabled) {
         vTaskDelete(NULL);
         return;
     }
@@ -863,6 +891,15 @@ static void gps_uploader_task(void *arg)
 static esp_err_t uplink_handler(httpd_req_t *request)
 {
     if (!tb_http_require_pair(request)) return ESP_OK;
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+    if (tb_config()->lite_upload_enabled) {
+        httpd_resp_set_status(request,"409 Conflict");
+        httpd_resp_set_type(request,"application/json");
+        httpd_resp_set_hdr(request,"Connection","close");
+        httpd_resp_sendstr(request,"{\"ok\":false,\"error\":\"collector_owns_uplink\"}");
+        return ESP_FAIL; /* close with the legacy body unread */
+    }
+#endif
     cJSON *batch = NULL;
     esp_err_t error = tb_http_read_json(request, TB_UPLINK_MAX, &batch);
     if (error != ESP_OK) return error;
@@ -882,6 +919,12 @@ static esp_err_t uplink_handler(httpd_req_t *request)
 
 esp_err_t tb_application_register_routes(httpd_handle_t server)
 {
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+    const httpd_uri_t reference = {.uri="/api/telemetry/reference", .method=HTTP_POST,
+        .handler=tb_link_collector_reset_reference};
+    esp_err_t result = httpd_register_uri_handler(server,&reference);
+    if (result != ESP_OK) return result;
+#endif
     httpd_uri_t route = {.uri = "/api/uplink", .method = HTTP_POST, .handler = uplink_handler};
     return httpd_register_uri_handler(server, &route);
 }
@@ -890,7 +933,11 @@ static void telemetry_task(void *arg)
 {
     (void)arg;
     for (;;) {
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+        vTaskDelay(pdMS_TO_TICKS(5000));
+#else
         vTaskDelay(pdMS_TO_TICKS(1000));
+#endif
         tb_network_status_t network;
         tb_network_status(&network);
         if (!network.station_connected || !tb_config()->pair_key[0] || tb_web_ota_busy()) continue;
@@ -967,7 +1014,13 @@ esp_err_t tb_application_start(void)
     modem_phase(tb_config()->modem_enabled ? "starting" : "disabled", ESP_OK);
     if (tb_config()->gnss_enabled && xTaskCreate(gnss_task, "tb_gnss", 4096, NULL, 5, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
-    if (tb_config()->gnss_enabled && xTaskCreate(gps_spool_task, "tb_gps_spool", 6144, NULL, 3, NULL) != pdPASS)
+    bool mount_storage = tb_config()->gnss_enabled;
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+    mount_storage = mount_storage || tb_config()->lite_upload_enabled;
+    esp_err_t collector_error = tb_link_collector_start(s_gps_outbox_lock);
+    if (collector_error != ESP_OK) return collector_error;
+#endif
+    if (mount_storage && xTaskCreate(gps_spool_task, "tb_gps_spool", 6144, NULL, 3, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
     if (tb_config()->gnss_enabled && xTaskCreate(gps_uploader_task, "tb_gps_upload", 8192, NULL, 3, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;

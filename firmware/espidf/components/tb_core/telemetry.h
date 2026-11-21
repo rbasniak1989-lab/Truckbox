@@ -1,6 +1,10 @@
 #pragma once
 
 #include "tb.h"
+#ifdef CONFIG_TB_CORE_LITE
+#include "tb_lite_wire.h"
+void tb_telemetry_lite_snapshot(tb_lite_snapshot_t *snapshot);
+#endif
 
 /* Acquisition only copies a bounded packet into RAM; decoding, JSON, file and
  * network work belongs to the worker. A false result is a reported RX gap. */

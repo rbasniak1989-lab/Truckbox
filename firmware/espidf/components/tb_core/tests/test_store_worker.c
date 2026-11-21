@@ -11,7 +11,7 @@
 #define pdMS_TO_TICKS(v) (v)
 #define STORE_IO_ATTEMPT_LIMIT 3U
 typedef struct{unsigned id;}queued_record_t;
-static struct{void *mutex,*queue;const char *base_path;bool ready,medium_initialized,initializing,rollback_paused,rollback_drained,io_paused,recovery_complete;unsigned recovery_failures;uint64_t highest_committed,next_sequence,scheduling_yields;}state;
+static struct{void *mutex,*queue;const char *base_path;bool ready,medium_initialized,initializing,rollback_paused,rollback_drained,io_paused,recovery_complete;unsigned recovery_failures,sequence_failures;uint64_t highest_committed,next_sequence,scheduling_yields;}state;
 static jmp_buf done;
 static unsigned received,initializations,recoveries,attempts[11],written[11],mode,mutex,paused_ticks;
 static bool fault;
@@ -33,7 +33,7 @@ static int xQueueReceive(void *q,void *p,unsigned timeout){(void)q;(void)timeout
 }
 static void append_record(const queued_record_t *row){assert(mutex && row->id<=10);++attempts[row->id];
     uint64_t seq=state.next_sequence++;now+=2000;
-    if(mode==4 && row->id==3 && attempts[3]<=3){state.ready=false;if(attempts[3]==3)state.io_paused=true;return;}
+    if(mode==4 && row->id==3 && attempts[3]<=3){state.ready=false;if(++state.sequence_failures==3)state.io_paused=true;return;}
     if(mode>0 && mode<4 && row->id==3 && !fault){fault=true;state.ready=false;
         if(mode==2){++written[row->id];media_sequence=seq;}return;
     }
@@ -41,7 +41,7 @@ static void append_record(const queued_record_t *row){assert(mutex && row->id<=1
     if(row->id==10)state.rollback_paused=true;
 }
 static void vTaskDelay(unsigned ticks){assert(!mutex);now+=ticks*1000u;
-    if(mode==4 && state.io_paused && ticks==1000){if(++paused_ticks==2)state.io_paused=false; /* authorized retry mock; passive tasks ran */}
+    if(mode==4 && state.io_paused && ticks==1000){if(++paused_ticks==2){state.io_paused=false;state.sequence_failures=0;} /* authorized retry mock; passive tasks ran */}
     if(state.rollback_drained){assert(ticks==100 && state.rollback_paused);longjmp(done,1);}
 }
 #include "worker_under_test.h"

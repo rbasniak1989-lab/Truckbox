@@ -78,6 +78,7 @@
                <label class="check"><input name="can_enabled" type="checkbox"><span>Recepção J1939 (indisponível em J1708_ONLY)</span></label>
                <label class="check"><input name="j1587_odometer_validated" type="checkbox"><span>PID 245 conferido fisicamente com o odômetro<small>Habilita deltas do contador para retomar a distância após reinício. Valide valor, escala e MID antes de marcar.</small></span></label>
                <label class="check"><input name="j1587_fuel250_validated" type="checkbox"><span>PID 250 validado com a ECU<small>Habilita reconciliação de combustível por contador acumulado. Não zera o contador do caminhão.</small></span></label>
+               <label class="check" id="lite-tx-attestation" hidden><input name="j1708_lite_tx_verified" type="checkbox"><span>Transmissão J1708 validada em bancada<small>Marque após confirmar o sinal físico, a resposta da ECU de teste e a ausência de conflito de MID.</small></span></label>
                <label>MID validado do odômetro (PID 245)<input name="j1587_odometer_mid" type="number" min="128" max="255" step="1"></label>
                <label>MID validado do combustível (PID 250)<input name="j1587_fuel250_mid" type="number" min="128" max="255" step="1"></label>
                <label>Timeout J1708 (ms)<input name="j1708_timeout_ms" type="number" min="100" max="5000" step="1"></label>
@@ -86,7 +87,6 @@
               <label class="check"><input name="sd_enabled" type="checkbox"><span>Usar cartão microSD</span></label>
             </div>
           </div>
-          <details><summary>Sequências de um cadastro existente</summary><div class="grid spacer"><label class="wide">Primeira sequência livre (migração)<input name="sequence_floor" type="number" min="0" max="9007199254740991" step="1" inputmode="numeric" placeholder="0"><small>Ao reutilizar uma identificação já cadastrada na nuvem, informe a maior sequência já usada mais 1. Para um cadastro novo, mantenha 0. Esse ajuste não reduz o contador já salvo na placa.</small></label></div></details>
         </div>
 
         <div class="config-group section" id="modem-config" hidden>
@@ -111,6 +111,11 @@
         <div class="config-group section">
           <h3>Identificação na nuvem</h3>
           <label>Identificador do dispositivo na ingestão<input name="cloud_device_uid" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Identificação cadastrada no servidor"><small>Use a identificação cadastrada no servidor de ingestão. Ela pode ser diferente da identificação de hardware mostrada no estado da placa.</small></label>
+          <details id="sequence-settings"><summary>Sequências de um cadastro existente</summary><div class="grid spacer"><label class="wide">Primeira sequência livre (migração)<input name="sequence_floor" type="number" min="0" max="9007199254740991" step="1" inputmode="numeric" placeholder="0"><small>Confira o máximo na Cloud e na fila local. Informe uma sequência acima dos dois valores antes de ativar o novo envio.</small></label></div></details>
+          <div id="lite-cloud-settings" hidden>
+            <label>Identificação de hardware do Core vinculado<input name="telemetry_core_uid" maxlength="32" autocomplete="off" spellcheck="false" placeholder="tb-c6-..."></label>
+            <label class="check"><input name="lite_upload_enabled" type="checkbox"><span>Ativar envio do coletor do Link<small>Valide a coleta em modo de observação e confirme a faixa de sequências antes de ativar. A ativação desabilita o recebimento de lotes do bridge antigo.</small></span></label>
+          </div>
         </div>
 
         <div class="config-group section">
@@ -327,7 +332,10 @@
     text('stat-role', role === 'core' ? 'Core' : role === 'link' ? 'Link' : value);
     $('core-config').hidden = role !== 'core';
     $('j1708-panel').hidden = role !== 'core';
-    $('storage-maintenance').hidden = role !== 'core';
+    $('storage-maintenance').hidden = role !== 'core' || lastState?.core_lite === true;
+    $('lite-tx-attestation').hidden = role !== 'core' || lastState?.core_lite !== true;
+    $('lite-cloud-settings').hidden = role !== 'link' || !lastState?.telemetry_collector;
+    $('sequence-settings').hidden = (role === 'core' && lastState?.core_lite === true) || (role === 'link' && !lastState?.telemetry_collector);
     $('discard-storage').disabled = true;
     updateFlashMaintenance();
     $('link-config').hidden = role !== 'link';
@@ -346,7 +354,7 @@
     try {
       const state = await request('/api/state?compact=1');
       lastState = state;
-      if(token && state.role==='core'){
+      if(token && state.role==='core' && !state.core_lite){
         try{
           const stats=[];
           for(let offset=0;offset<17;offset+=4){
@@ -531,6 +539,8 @@
     }
     if (!Object.keys(payload).length) { message('config-message', 'Nenhuma alteração para salvar.'); return; }
     if (payload.repaired_power_gates === true && !confirm('Os circuitos de alimentação da Rev B1 já foram retrabalhados e medidos? Esta opção permite acionar essas saídas.')) return;
+    if (payload.j1708_lite_tx_verified === true && !confirm('A transmissão foi comprovada em barramento isolado e o MID foi conferido no Volvo?')) return;
+    if (payload.lite_upload_enabled === true && !confirm('O Core Lite está em operação, o envio antigo foi interrompido e a faixa livre foi confirmada?')) return;
     if (!confirm('Salvar as alterações e reiniciar a placa? A conexão Wi‑Fi pode mudar.')) return;
     $('save-config').disabled = true;
     try {
@@ -639,7 +649,7 @@
     const reset={1:'alimentação',3:'software',4:'pânico',5:'watchdog interrupção',6:'watchdog tarefa',7:'watchdog',9:'brownout'};
     text('diag-core','Online · '+Math.floor((state.uptime_ms || 0)/1000)+' s · boot '+state.boot_id+' · '+(reset[state.reset_reason] || 'motivo '+state.reset_reason)+(number(state.last_reset_time_ms)?' · '+new Date(state.last_reset_time_ms).toLocaleString():''));
     text('diag-cloud','Envio '+age(bridge.last_send_attempt_age_ms)+' · confirmação '+age(bridge.last_cloud_ack_age_ms)+' · ACK '+(storage.last_ack_seq ?? '—'));
-    const phases={NORMAL:'Normal',BUSY:'Ocupado temporariamente com gravação ou sincronização',FULL:'Cheio — aguardando ACK ou revisão das evidências',RECOVERING:'Recuperando',RECOVERY_REQUIRED:'Recuperação necessária',MAINTENANCE_PAUSED:'Gravação pausada para rollback'};
+    const phases={NORMAL:'Normal',BUSY:'Ocupado temporariamente com gravação ou sincronização',FULL:'Cheio — aguardando ACK ou revisão das evidências',RECOVERING:'Recuperando',RECOVERY_REQUIRED:'Recuperação necessária',MAINTENANCE_PAUSED:'Gravação pausada para rollback',LINK_OWNED:'Telemetria armazenada e enviada pelo Link'};
     text('diag-store',(phases[storage.phase] || (storage.initializing?'Recuperando':'Indisponível'))+(storage.error && !storage.busy?' · '+storage.error:''));
     text('diag-space',number(storage.space_available_bytes)?(storage.space_available_bytes/1048576).toFixed(2)+' / '+(storage.space_total_bytes/1048576).toFixed(2)+' MB · '+(number(storage.offline_estimate_seconds)?Math.floor(storage.offline_estimate_seconds/60)+' min estimados':'calculando autonomia'):storage.busy?'Atualizando informações de espaço':'Aguardando recuperação');
     const oldest=storage.oldest_pending_ts || (number(storage.oldest_pending_uptime_ms)?'boot '+storage.oldest_pending_boot+', '+Math.floor(storage.oldest_pending_uptime_ms/1000)+' s':'—');

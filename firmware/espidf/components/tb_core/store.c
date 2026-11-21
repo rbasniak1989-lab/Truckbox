@@ -31,6 +31,7 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_random.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
@@ -132,6 +133,12 @@ typedef struct {
     bool write_confirmed, recovery_awaits_write, io_paused;
     unsigned consecutive_io_errors;
     unsigned recovery_failures;
+    unsigned sequence_failures;
+    esp_err_t reservation_error;
+    const char *reservation_stage;
+    unsigned reservation_heap_free;
+    size_t reservation_nvs_used, reservation_nvs_free, reservation_nvs_total;
+    bool reservation_nvs_stats_ok;
     uint32_t preserve_through;
     bool preserve_fence_set;
     uint64_t last_recovery_us;
@@ -152,6 +159,35 @@ typedef struct {
 static store_state_t state;
 static const char *TAG = "tb_store";
 static portMUX_TYPE counter_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static esp_err_t write_reservation(uint64_t end)
+{
+    const char *stage = "nvs_set_u64";
+    esp_err_t error = nvs_set_u64(state.nvs, "reserved", end);
+    if (error == ESP_OK) {
+        stage = "nvs_commit";
+        error = nvs_commit(state.nvs);
+    }
+    if (error == ESP_OK) {
+        state.sequence_failures = 0;
+        return error;
+    }
+    state.reservation_error = error;
+    state.reservation_stage = stage;
+    if (++state.sequence_failures >= STORE_IO_ATTEMPT_LIMIT) state.io_paused = true;
+#ifndef TB_STORE_HOST_TEST
+    nvs_stats_t stats = {0};
+    state.reservation_heap_free = esp_get_free_heap_size();
+    state.reservation_nvs_stats_ok = nvs_get_stats(NULL, &stats) == ESP_OK;
+    state.reservation_nvs_used = stats.used_entries;
+    state.reservation_nvs_free = stats.free_entries;
+    state.reservation_nvs_total = stats.total_entries;
+    ESP_LOGE(TAG, "Sequence reservation %s: %s (%#x), heap=%u, NVS valid=%d used=%zu free=%zu total=%zu",
+             stage, esp_err_to_name(error), (unsigned)error, state.reservation_heap_free,
+             state.reservation_nvs_stats_ok, stats.used_entries, stats.free_entries, stats.total_entries);
+#endif
+    return error;
+}
 
 #ifndef TB_STORE_HOST_TEST
 /* Observe the ORIGINAL FatFs return, before VFS maps several causes to errno13.
@@ -741,7 +777,7 @@ static bool recover_records(void)
     state.next_segment_id=largest_id+1;
     if(!state.next_segment_id){fail_store("segment identifier exhausted");return false;}
     if(state.highest_committed>state.reserved_end){
-        if(nvs_set_u64(state.nvs,"reserved",state.highest_committed)!=ESP_OK || nvs_commit(state.nvs)!=ESP_OK){fail_store("cannot reserve recovered sequences");return false;}
+        if(write_reservation(state.highest_committed)!=ESP_OK){fail_store("cannot reserve recovered sequences");return false;}
         state.reserved_end=state.highest_committed;
     }
     state.next_sequence=state.reserved_end+1;
@@ -823,10 +859,7 @@ static esp_err_t reserve_sequence(uint64_t *sequence)
     }
     if (state.next_sequence > state.reserved_end) {
         uint64_t end = state.next_sequence + STORE_RESERVATION - 1;
-        esp_err_t error = nvs_set_u64(state.nvs, "reserved", end);
-        if (error == ESP_OK) {
-            error = nvs_commit(state.nvs);
-        }
+        esp_err_t error = write_reservation(end);
         if (error != ESP_OK) {
             fail_store("cannot persist sequence reservation");
             return error;
@@ -1014,8 +1047,7 @@ static bool initialize_fram(void)
         reserved > state.reserved_end) {
         /* NVS remains the ACK authority. Only restore the reservation bound:
          * losing ACK metadata may duplicate an upload, never discard data. */
-        if (nvs_set_u64(state.nvs, "reserved", reserved) != ESP_OK ||
-            nvs_commit(state.nvs) != ESP_OK) {
+        if (write_reservation(reserved) != ESP_OK) {
             fail_store("cannot persist restored FRAM reservation");
             return false;
         }
@@ -1096,7 +1128,9 @@ static void storage_task(void *argument)
          * the in-flight row, and requeue only if recovery did not find its
          * CRC-valid sequence. This prevents duplicates after ambiguous fsync. */
         if (!state.ready) {
-            if(state.io_paused && !state.recovery_complete){vTaskDelay(pdMS_TO_TICKS(1000));continue;}
+            if(state.io_paused && (!state.recovery_complete || state.sequence_failures>=STORE_IO_ATTEMPT_LIMIT)){
+                vTaskDelay(pdMS_TO_TICKS(1000));continue;
+            }
             vTaskDelay(pdMS_TO_TICKS(5000));
             xSemaphoreTake(state.mutex,portMAX_DELAY);
             state.initializing=true;
@@ -1275,7 +1309,7 @@ esp_err_t tb_store_retry(void)
 {
     if(!state.mutex || xSemaphoreTake(state.mutex,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
     if(!state.base_path && !state.nvs_open){xSemaphoreGive(state.mutex);return ESP_ERR_INVALID_STATE;}
-    state.io_paused=false;state.consecutive_io_errors=0;state.recovery_failures=0;
+    state.io_paused=false;state.consecutive_io_errors=0;state.recovery_failures=0;state.sequence_failures=0;
     state.ready=false;state.write_confirmed=false;
     state.volume_rebind_required=state.medium && !strcmp(state.medium,"flash");
     xSemaphoreGive(state.mutex);return ESP_OK;
@@ -1658,6 +1692,19 @@ void tb_store_add_json(cJSON *object)
     cJSON_AddBoolToObject(storage,"io_retry_paused",state.io_paused);
     cJSON_AddNumberToObject(storage,"consecutive_io_errors",state.consecutive_io_errors);
     cJSON_AddNumberToObject(storage,"consecutive_recovery_failures",state.recovery_failures);
+    if (state.reservation_stage) {
+        cJSON *nvs = cJSON_AddObjectToObject(storage,"last_sequence_reservation_failure");
+        cJSON_AddStringToObject(nvs,"operation","telemetry_sequence_reservation");
+        cJSON_AddStringToObject(nvs,"stage",state.reservation_stage);
+        cJSON_AddNumberToObject(nvs,"esp_err_t",state.reservation_error);
+        cJSON_AddNumberToObject(nvs,"heap_free",state.reservation_heap_free);
+        cJSON_AddBoolToObject(nvs,"nvs_stats_valid",state.reservation_nvs_stats_ok);
+        cJSON_AddNumberToObject(nvs,"nvs_entries_used",state.reservation_nvs_used);
+        cJSON_AddNumberToObject(nvs,"nvs_entries_free",state.reservation_nvs_free);
+        cJSON_AddNumberToObject(nvs,"nvs_entries_total",state.reservation_nvs_total);
+        cJSON_AddStringToObject(nvs,"integrity_status",state.reservation_nvs_stats_ok
+            ? "NOT_DETERMINED_BY_STATS" : "NVS_STATS_UNAVAILABLE");
+    }
     cJSON_AddNumberToObject(storage,"io_attempt_limit",STORE_IO_ATTEMPT_LIMIT);
     cJSON_AddNumberToObject(storage,"preserve_existing_through_segment",state.preserve_through);
     size_t readonly_count=0,preserved_count=0;uint32_t first_readonly=0;

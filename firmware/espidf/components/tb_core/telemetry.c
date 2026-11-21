@@ -16,6 +16,9 @@
 #include "tbx_transmission.h"
 #include "tbx_volvo_operating.h"
 #include "live_number.h"
+#ifdef CONFIG_TB_CORE_LITE
+#include "../tb_base/include/tb_lite_wire.h"
+#endif
 
 static void add_live_json(cJSON *object);
 
@@ -1070,3 +1073,56 @@ cJSON *tb_telemetry_volvo_json(void)
 }
 
 #include "live_fields.inc"
+
+#ifdef CONFIG_TB_CORE_LITE
+void tb_telemetry_lite_snapshot(tb_lite_snapshot_t *out)
+{
+    const tb_config_t *config = tb_config();
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    struct timeval wall;
+    snprintf(out->uid, sizeof(out->uid), "%s", tb_device_uid());
+    out->boot_id = tb_boot_id();
+    out->uptime_ms = now_us / 1000;
+    if (gettimeofday(&wall, NULL) == 0 && wall.tv_sec >= 1704067200)
+        out->unix_ms = (uint64_t)wall.tv_sec * 1000 + (uint64_t)wall.tv_usec / 1000;
+    portENTER_CRITICAL(&s_mux);
+    out->local_seq = s.processed;
+    portEXIT_CRITICAL(&s_mux);
+    out->age_ms = UINT32_MAX;
+    for (unsigned i = 0; i < TB_LITE_FIELDS; ++i) {
+        const tb_lite_signal_t *signal = &tb_lite_signals[i];
+        uint8_t mid = signal->mid;
+        if (i == TB_LITE_PID250) mid = config->j1587_fuel250_mid;
+        if (i == TB_LITE_ODOMETER) mid = config->j1587_odometer_mid;
+        if (i == TB_LITE_AIR1) mid = config->j1708_targets[6];
+        if (i == TB_LITE_AIR2) mid = config->j1708_targets[7];
+        if (!mid && (i == TB_LITE_PID250 || i == TB_LITE_ODOMETER || i == TB_LITE_AIR1 || i == TB_LITE_AIR2))
+            continue;
+        latest_t reading;
+        if (!live_latest(signal->pid, mid, now_us, &reading)) continue;
+        uint64_t age = (now_us - reading.captured_us) / 1000;
+        if (age > signal->ttl_ms) {
+            out->stale |= TB_LITE_BIT(i);
+            continue;
+        }
+        if (!live_valid(&reading, now_us, (uint64_t)signal->ttl_ms * 1000)) continue;
+        double value = reading.value;
+        bool estimated = (i == TB_LITE_ODOMETER && !config->j1587_odometer_validated) ||
+                         (i == TB_LITE_PID250 && !config->j1587_fuel250_validated);
+        if (i == TB_LITE_GEAR || i == TB_LITE_SELECTED_GEAR) {
+            char number[40], label[4];
+            if (!live_gear(&reading, now_us, number, label)) continue;
+            value = strtol(number, NULL, 10);
+        } else if (!reading.has_value || !isfinite(value)) continue;
+        if (i == TB_LITE_TORQUE) {
+            if (strcmp(out->uid, "tb-c6-d40592b9190c")) continue;
+            value *= 100.0 / 2643.0;
+            estimated = true;
+        }
+        out->values[i] = value;
+        out->valid |= TB_LITE_BIT(i);
+        if (estimated) out->estimated |= TB_LITE_BIT(i);
+        if (age < out->age_ms) out->age_ms = (uint32_t)age;
+    }
+}
+#endif

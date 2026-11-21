@@ -43,6 +43,11 @@
 #include "nvs.h"
 
 static const char *TAG = "tb_capture";
+#ifdef CONFIG_TB_CORE_LITE
+#define CORE_LITE 1
+#else
+#define CORE_LITE 0
+#endif
 static struct {
     SemaphoreHandle_t lock, trip_persist_lock;
     nvs_handle_t nvs;
@@ -178,6 +183,7 @@ static bool request_event_should_persist(const char *name, bool work_mode)
 static void request_event(const char *event, uint16_t pid, const char *detail, void *unused)
 {
     (void)unused;
+    if(CORE_LITE)return;
     if(s.active.production_mode && ((!strcmp(event,"LINK_ERROR") && detail && strstr(detail,"TX_ECHO_TIMEOUT")==detail) || !strcmp(event,"LATE_TX_ECHO_FRAME"))){
         uint64_t now=(uint64_t)esp_timer_get_time();
         uint64_t *last=!strcmp(event,"LATE_TX_ECHO_FRAME")?&s.late_echo_notice_at_us:&s.echo_notice_at_us;
@@ -369,11 +375,15 @@ static void request_task(void *unused)
         if(enabled && s.edge_ready && !s.edge_enabled){s.rx_edge_us=(uint32_t)now;s.edge_enabled=gpio_intr_enable(GPIO_NUM_20)==ESP_OK;}
         tbx_j1708_auto_env_t env={.enabled=enabled,.persisted=tb_config_j1708_auto_persisted(),
             .interface_ready=s.j1708_ready && s.edge_ready && s.edge_enabled,.local_mid=cfg->j1708_local_mid,
-            .extended=cfg->j1708_expansion_enabled,.topology_attested=cfg->j1708_topology_attested,.ota_busy=ota_busy,.operator_hold=s.operator_hold,.timeout_ms=cfg->j1708_timeout_ms};
+            .extended=cfg->j1708_expansion_enabled,
+            .topology_attested=cfg->j1708_topology_attested && (!CORE_LITE || cfg->j1708_lite_tx_verified),
+            .ota_busy=ota_busy,.operator_hold=s.operator_hold,.timeout_ms=cfg->j1708_timeout_ms};
         env.bus_busy=!request_bus_idle((uint32_t)now);
         /* v223/v224 jguard is retained as historical evidence, never as a
          * production authorization latch. Current MID comes only from NVS. */
         env.local_conflict=false;
+        env.observed_conflict=CORE_LITE && cfg->j1708_local_mid>=128 &&
+            (s.observed_mid[cfg->j1708_local_mid>>3] & (1u<<(cfg->j1708_local_mid&7u)));
         memcpy(env.targets,cfg->j1708_targets,sizeof(env.targets));
         memcpy(env.periods,s.transmission.launch?cfg->j1708_launch_intervals_ms:cfg->j1708_auto_intervals_ms,sizeof(env.periods));
         tbx_auto_phase_t before=s.automatic.phase;
@@ -398,7 +408,7 @@ static void request_task(void *unused)
         xSemaphoreGive(s.lock);
         persist_polling_guard();
         request_event_t item;
-        for(unsigned i=0;i<2 && xQueueReceive(s.request_events,&item,0)==pdTRUE;i++)
+        for(unsigned i=0;s.request_events && i<2 && xQueueReceive(s.request_events,&item,0)==pdTRUE;i++)
             request_store_event(&item);
         vTaskDelay(1);
     }
@@ -410,6 +420,7 @@ typedef struct { uint32_t version; double distance, fuel; bool distance_valid, f
 
 static esp_err_t persist_trip(void)
 {
+    if (CORE_LITE) return ESP_ERR_NOT_SUPPORTED;
     if (!s.nvs_open || !s.trip_persist_lock) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s.trip_persist_lock, portMAX_DELAY);
     trip_blob_t previous={0};size_t previous_size=sizeof(previous);
@@ -538,6 +549,7 @@ static void can_task(void *unused)
 
 static void tb_j1708_store_matched_response(const tbx_j1587_observation_t *value, uint64_t now)
 {
+            if(CORE_LITE)return;
             /* Production coalesces successful results into timestamped sensor
              * snapshots/HEALTH, not two flash records for each frequent query. */
             if(s.active.production_mode)return;
@@ -691,7 +703,7 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
     }
     xSemaphoreGive(s.lock);
     if (echo) {
-        if (tb_config()->full_decode_enabled) tb_telemetry_j1708_echo(frame, size, captured_us, oversize);
+        if (!CORE_LITE && tb_config()->full_decode_enabled) tb_telemetry_j1708_echo(frame, size, captured_us, oversize);
         return;
     }
     /* Decode all passive and solicited J1587 PIDs regardless of storage policy. */
@@ -707,18 +719,18 @@ static void finish_j1708(uint8_t *frame, size_t size, bool oversize)
          * protection. Confirmed UART/echo failures still stop immediately. */
         return;
     }
-    char record[TB_RECORD_MAX];
-    if (tb_protocol_j1708_json(record, sizeof(record), captured_us, frame, size)) {
+    char record[CORE_LITE ? 1 : TB_RECORD_MAX];
+    if (CORE_LITE || tb_protocol_j1708_json(record, sizeof(record), captured_us, frame, size)) {
         ++s.j1708_frames;
         uint64_t now = captured_us / 1000;
         xSemaphoreTake(s.lock, portMAX_DELAY);
-        snprintf(s.j1708_last, sizeof(s.j1708_last), "%s", record);
+        if (!CORE_LITE) snprintf(s.j1708_last, sizeof(s.j1708_last), "%s", record);
         s.j1708_at = now;
         uint32_t before=s.requests.answered_total;
         (void)tbx_j1587_bridge_decode(frame, size, now, update_j1587_signal_locked, NULL);
         if(s.requests.answered_total>before){
             memcpy(s.trial_reply,frame,size);s.trial_reply_size=(uint8_t)size;
-            if(tbx_j1708_field_running(&s.active.field)){
+            if(!CORE_LITE && tbx_j1708_field_running(&s.active.field)){
                 request_event_t item={.field=true,.field_started_us=s.active.field.started_us,.uptime_us=captured_us,
                     .tx_start_us=s.last_tx_uart_us,.pid=s.active.last_response_pid,.local_mid=s.active.config.local_mid,
                     .target_mid=s.active.last_response_mid,.response_size=(uint8_t)size};
@@ -1060,6 +1072,15 @@ static void snapshot_task(void *unused)
     }
 }
 
+static void lite_supervisor(void *unused)
+{
+    (void)unused;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        request_supervise((uint64_t)esp_timer_get_time());
+    }
+}
+
 static void j1708_task(void *unused)
 {
     (void)unused;
@@ -1168,8 +1189,8 @@ esp_err_t tb_capture_start(void)
         .abort_tx = request_abort_tx, .event = request_event };
     tbx_j1708_active_init(&s.active, &s.requests, &active_ops, NULL);
     s.emergency_stop = true;
-    s.request_events=xQueueCreate(16,sizeof(request_event_t));
-    if (!s.lock || !s.trip_persist_lock || !s.request_events) return ESP_ERR_NO_MEM;
+    if (!CORE_LITE) s.request_events=xQueueCreate(16,sizeof(request_event_t));
+    if (!s.lock || !s.trip_persist_lock || (!CORE_LITE && !s.request_events)) return ESP_ERR_NO_MEM;
     s.nvs_open = nvs_open("tb_trip", NVS_READWRITE, &s.nvs) == ESP_OK;
     if(s.nvs_open){
         size_t n=sizeof(s.polling_guard);esp_err_t e=nvs_get_blob(s.nvs,"jguard",&s.polling_guard,&n);
@@ -1231,7 +1252,7 @@ esp_err_t tb_capture_start(void)
     s.fuel_checkpoint_id=s.fuel_account.interval_id;
     /* Record the power/reset cause once at boot; per-minute HEALTH repeats
      * it so the Cloud can distinguish a crash from an uplink backlog. */
-    record_boot_diagnostic();
+    if (!CORE_LITE) record_boot_diagnostic();
     /* Decode selected J1939 and J1587 in both profiles. LEGACY disables
      * per-frame RAW/DECODED persistence, not the decoder or sensor cache.
      * Active J1708 requests stay explicitly authorized and parked-only. */
@@ -1243,7 +1264,7 @@ esp_err_t tb_capture_start(void)
         gpio_set_level(GPIO_NUM_16, 0); gpio_set_direction(GPIO_NUM_16, GPIO_MODE_OUTPUT);
     }
     if (!tb_config()->capture_enabled) {
-        if (xTaskCreate(snapshot_task, "tb_snapshot", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+        if (!CORE_LITE && xTaskCreate(snapshot_task, "tb_snapshot", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
         return ESP_OK;
     }
     esp_err_t err=ESP_OK;
@@ -1290,8 +1311,13 @@ esp_err_t tb_capture_start(void)
         if (xTaskCreate(request_task, "tb_j1708_tx", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     } else snprintf(s.j1708_error, sizeof(s.j1708_error), "%s", esp_err_to_name(err));
     }
-    if (xTaskCreate(trip_checkpoint_task, "tb_trip", 3072, NULL, 3, &s.checkpoint_task) != pdPASS) return ESP_ERR_NO_MEM;
-    if (xTaskCreate(snapshot_task, "tb_snapshot", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+    if (CORE_LITE) {
+        if (s.j1708_ready && xTaskCreate(lite_supervisor, "tb_supervise", 2048, NULL, 4, NULL) != pdPASS)
+            return ESP_ERR_NO_MEM;
+    } else {
+        if (xTaskCreate(trip_checkpoint_task, "tb_trip", 3072, NULL, 3, &s.checkpoint_task) != pdPASS) return ESP_ERR_NO_MEM;
+        if (xTaskCreate(snapshot_task, "tb_snapshot", 6144, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+    }
     ESP_LOGI(TAG, "CAN listen-only=%s J1708 receive-only=%s", s.can_ready ? "ready" : s.can_error,
         s.j1708_ready ? "ready" : s.j1708_error);
     return ESP_OK;
@@ -1325,6 +1351,7 @@ static bool fuel_boundary_record(const tbx_fuel_account_t *a,bool start,uint64_t
 
 bool tb_capture_fuel_boundary(bool start,const char *uid,uint64_t requested_unix_ms,uint32_t queue_age_ms)
 {
+    if (CORE_LITE) return false;
     if(!s.lock || !s.nvs_open)return false;
     struct timeval utc;uint64_t unix_ms=0,now=(uint64_t)esp_timer_get_time()/1000;
     if(gettimeofday(&utc,NULL)==0 && utc.tv_sec>=1704067200)unix_ms=(uint64_t)utc.tv_sec*1000+utc.tv_usec/1000;
@@ -1419,6 +1446,76 @@ size_t tb_capture_health_fields(char *buffer,size_t capacity)
         ready?"true":"false",tb_config_j1708_auto_enabled()?"true":"false",running?"true":"false",frames,sent,replies,timeouts,tb_config()->j1708_local_mid);
     return n>0 && (size_t)n<capacity?(size_t)n:0;
 }
+
+#ifdef CONFIG_TB_CORE_LITE
+bool tb_capture_lite_stats(tb_lite_snapshot_t *out)
+{
+    if (!s.lock || xSemaphoreTake(s.lock, 0) != pdTRUE) return false;
+    out->frames = s.j1708_frames;
+    out->sent = s.requests.sent_total;
+    out->answered = s.requests.answered_total;
+    out->timeouts = s.requests.timeout_total;
+    uint8_t mid = tb_config()->j1708_local_mid;
+    out->guard = (s.j1708_ready ? TB_LITE_RX_READY : 0) |
+                 (s.requests.armed ? TB_LITE_TX_ARMED : 0) |
+                 ((mid>=128 && (s.observed_mid[mid>>3] & (1u<<(mid&7u)))) ? TB_LITE_MID_CONFLICT : 0);
+    xSemaphoreGive(s.lock);
+    out->heap_minimum = esp_get_minimum_free_heap_size();
+    return true;
+}
+
+static void light_capture_json(cJSON *root)
+{
+    tb_lite_snapshot_t stats = {0};
+    if (!tb_capture_lite_stats(&stats)) {
+        cJSON_AddBoolToObject(root,"capture_snapshot_available",false);
+        return;
+    }
+    struct {
+        uint8_t observed[32], held_mid;
+        uint32_t held_boot;
+        bool invalid, persisted;
+        tbx_auto_phase_t phase;
+        const char *reason;
+    } guard;
+    if (xSemaphoreTake(s.lock, 0) != pdTRUE) return;
+    memcpy(guard.observed, s.observed_mid, sizeof(guard.observed));
+    guard.held_mid = s.polling_guard.mid;
+    guard.held_boot = s.polling_guard.boot;
+    guard.invalid = s.guard_invalid;
+    guard.persisted = s.guard_persisted;
+    guard.phase = s.automatic.phase;
+    guard.reason = s.automatic.reason;
+    xSemaphoreGive(s.lock);
+    cJSON_AddBoolToObject(root,"capture_snapshot_available",true);
+    cJSON_AddStringToObject(root,"capture_profile","J1708_ONLY");
+    cJSON_AddStringToObject(root,"telemetry_profile","CORE_LITE");
+    cJSON *j1708 = cJSON_AddObjectToObject(root,"j1708");
+    cJSON_AddBoolToObject(j1708,"ready",(stats.guard & TB_LITE_RX_READY) != 0);
+    cJSON_AddNumberToObject(j1708,"frames",stats.frames);
+    cJSON *observed = cJSON_AddArrayToObject(j1708,"observed_mids");
+    for (unsigned mid = 128; observed && mid <= 255; ++mid) {
+        if ((guard.observed[mid>>3] & (1u << (mid & 7))) && !tb_json_add_array(observed,cJSON_CreateNumber(mid))) break;
+    }
+    cJSON *requests = cJSON_AddObjectToObject(j1708,"requests");
+    cJSON_AddBoolToObject(requests,"armed",(stats.guard & TB_LITE_TX_ARMED) != 0);
+    cJSON_AddNumberToObject(requests,"sent_total",stats.sent);
+    cJSON_AddNumberToObject(requests,"answered_total",stats.answered);
+    cJSON_AddNumberToObject(requests,"timeout_total",stats.timeouts);
+    cJSON_AddNumberToObject(requests,"local_mid",tb_config()->j1708_local_mid);
+    cJSON_AddBoolToObject(requests,"hardware_tx_available",tb_capture_tx_ready());
+    cJSON_AddBoolToObject(requests,"hardware_tx_verified",tb_config()->j1708_lite_tx_verified);
+    cJSON *automatic = cJSON_AddObjectToObject(requests,"automatic");
+    cJSON_AddBoolToObject(automatic,"enabled",tb_config_j1708_auto_enabled());
+    cJSON_AddStringToObject(automatic,"state",tbx_j1708_auto_phase_name(guard.phase));
+    cJSON_AddStringToObject(automatic,"reason",guard.reason ? guard.reason : "WAITING_PASSIVE_RX");
+    cJSON_AddNumberToObject(automatic,"technical_hold_mid",guard.held_mid);
+    cJSON_AddNumberToObject(automatic,"technical_hold_boot_id",guard.held_boot);
+    cJSON_AddBoolToObject(automatic,"technical_hold_invalid",guard.invalid);
+    cJSON_AddBoolToObject(automatic,"technical_hold_persisted",guard.persisted);
+    tb_telemetry_add_json(root);
+}
+#endif
 
 static void capture_json_mode(cJSON *object,bool compact)
 {
@@ -1631,7 +1728,14 @@ static void capture_json_mode(cJSON *object,bool compact)
 }
 
 void tb_capture_add_json(cJSON *object){capture_json_mode(object,false);}
-void tb_capture_add_json_compact(cJSON *object){capture_json_mode(object,true);}
+void tb_capture_add_json_compact(cJSON *object)
+{
+#ifdef CONFIG_TB_CORE_LITE
+    light_capture_json(object);
+#else
+    capture_json_mode(object,true);
+#endif
+}
 cJSON *tb_capture_request_stats_json(unsigned offset,unsigned limit)
 {
     cJSON *o=cJSON_CreateObject();if(!o)return NULL;
@@ -1672,6 +1776,7 @@ void tb_capture_pause_maintenance(void)
 
 bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
 {
+    if (arm && CORE_LITE && !tb_config()->j1708_lite_tx_verified) return false;
     bool saved=true;
     if (!arm) {
         s.emergency_stop=true;s.operator_hold=true;request_abort_tx(NULL);
@@ -1710,6 +1815,7 @@ bool tb_capture_request_control(bool arm, bool authorized, bool stationary)
 
 bool tb_capture_request_enable_work(bool authorized, bool stationary)
 {
+    if (CORE_LITE && !tb_config()->j1708_lite_tx_verified) return false;
     if(tb_config_j1708_auto_enabled())return false;
     if (!s.lock || !authorized || !stationary || !s.edge_ready || tb_web_ota_busy() ||
         xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
@@ -1810,6 +1916,7 @@ bool tb_capture_recover_stale_mid_hold(bool authorized,bool stationary)
 
 bool tb_capture_automatic_enable(void)
 {
+    if (CORE_LITE && !tb_config()->j1708_lite_tx_verified) return false;
     if(tb_config_set_j1708_auto(true)!=ESP_OK)return false;
     if(!s.lock || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
     s.operator_hold=false;s.automatic.last_enabled=false;
@@ -1969,6 +2076,8 @@ bool tb_capture_confirm_physical(const cJSON *body)
 
 bool tb_capture_field_start(bool authorized,bool stationary)
 {
+    /* Legacy field validation requires its durable per-query audit log. */
+    if (CORE_LITE) return false;
     if(!authorized || !stationary || !s.lock || tb_web_ota_busy() || xSemaphoreTake(s.lock,pdMS_TO_TICKS(100))!=pdTRUE)return false;
     uint64_t now=(uint64_t)esp_timer_get_time();uint8_t mid=s.active.config.local_mid;
     bool parked=s.speed_at && now/1000>=s.speed_at && now/1000-s.speed_at<=5000 && s.speed<=0.1;

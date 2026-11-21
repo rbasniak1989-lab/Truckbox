@@ -30,7 +30,9 @@
  * potentially 45-second HTTP wait. Decoder and durable queue sizes are unchanged. */
 #define BRIDGE_BATCH_LIMIT 8U
 #define BRIDGE_BATCH_BYTES 8192U
+#ifndef CONFIG_TB_CORE_LITE
 static const char *TAG = "tb_core";
+#endif
 typedef struct { char line[128]; size_t length; } live_line_t;
 typedef struct {
     bool valid, have_speed, have_bearing, have_altitude, have_accuracy, have_time;
@@ -149,6 +151,7 @@ static void live_task(void *unused)
 }
 #endif
 
+#ifndef CONFIG_TB_CORE_LITE
 typedef struct { char bytes[2048]; size_t length; bool overflow; } response_t;
 static esp_err_t response_event(esp_http_client_event_t *event)
 {
@@ -290,6 +293,7 @@ static esp_err_t batch_handler(httpd_req_t *request)
     }
     return tb_http_send_json(request, batch);
 }
+#endif
 
 static esp_err_t read_form(httpd_req_t *request, char *body, size_t capacity)
 {
@@ -322,6 +326,7 @@ static bool legacy_write_origin_ok(httpd_req_t *request)
     return !strcmp(origin, expected);
 }
 
+#ifndef CONFIG_TB_CORE_LITE
 static esp_err_t ack_handler(httpd_req_t *request)
 {
     if (!legacy_write_origin_ok(request)) return httpd_resp_send_err(request, HTTPD_403_FORBIDDEN, "cross-site write rejected");
@@ -347,6 +352,7 @@ static esp_err_t ack_handler(httpd_req_t *request)
     cJSON_AddBoolToObject(result, "ok", true); cJSON_AddNumberToObject(result, "ack_seq", sequence);
     return tb_http_send_json(request, result);
 }
+#endif
 
 static bool optional_json_number(const cJSON *object, const char *name, double minimum, double maximum, double *value)
 {
@@ -408,7 +414,12 @@ static esp_err_t link_telemetry_handler(httpd_req_t *request)
         xSemaphoreGive(s.lock);
     }
     xSemaphoreTake(s.lock, portMAX_DELAY);
-    cJSON_Delete(s.link_status); s.link_status = root; s.link_at = esp_timer_get_time();
+    s.link_at = esp_timer_get_time();
+#ifndef CONFIG_TB_CORE_LITE
+    cJSON_Delete(s.link_status); s.link_status = root;
+#else
+    cJSON_Delete(root);
+#endif
     xSemaphoreGive(s.lock);
     cJSON *reply = cJSON_CreateObject(); cJSON_AddBoolToObject(reply, "ok", true);
     return tb_http_send_json(request, reply);
@@ -447,6 +458,7 @@ static esp_err_t gps_handler(httpd_req_t *request)
 
 /* Intentional destructive operation. This is the new CORE, not the LINK.
  * Refuse until the OTA image is marked VALID (main.c confirms after 15 s). */
+#ifndef CONFIG_TB_CORE_LITE
 static esp_err_t discard_storage_handler(httpd_req_t *request)
 {
     if(!tb_http_require_admin(request))return ESP_OK;
@@ -527,6 +539,24 @@ static esp_err_t storage_backup_handler(httpd_req_t *request)
         return storage_maintenance_error(request,"OTA ou manutencao em andamento. Aguarde terminar.");
     esp_err_t result=tb_store_flash_backup(request);tb_web_set_ota_busy(false);return result;
 }
+#else
+static esp_err_t snapshot_handler(httpd_req_t *request)
+{
+    if (!tb_http_require_pair(request)) return ESP_OK;
+    tb_lite_snapshot_t snapshot = {0};
+    if (!tb_capture_lite_stats(&snapshot)) {
+        httpd_resp_set_status(request, "503 Service Unavailable");
+        return httpd_resp_sendstr(request, "capture busy");
+    }
+    tb_telemetry_lite_snapshot(&snapshot);
+    char json[TB_LITE_SNAPSHOT_MAX];
+    size_t length = tb_lite_snapshot_encode(&snapshot, json, sizeof(json));
+    if (!length) return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "snapshot unavailable");
+    httpd_resp_set_type(request, "application/json");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, json, length);
+}
+#endif
 
 static esp_err_t reset_handler(httpd_req_t *request)
 {
@@ -660,7 +690,11 @@ static esp_err_t requests_handler(httpd_req_t *request)
     if(cJSON_IsString(action) && !strcmp(action->valuestring,"automatic_enable")){
         bool ok=tb_capture_automatic_enable();cJSON_Delete(body);
         cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",ok);
-        cJSON_AddStringToObject(reply,"reason",ok?"persistent_policy_waiting_healthy_network":"NVS_or_capture_busy");
+        const char *reason = ok ? "persistent_policy_waiting_healthy_network" : "NVS_or_capture_busy";
+#ifdef CONFIG_TB_CORE_LITE
+        if (!tb_config()->j1708_lite_tx_verified) reason = "physical_tx_validation_required";
+#endif
+        cJSON_AddStringToObject(reply,"reason",reason);
         if(!ok)httpd_resp_set_status(request,"409 Conflict");
         return tb_http_send_json(request,reply);
     }
@@ -730,16 +764,22 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
         { .uri = "/api/sensors/catalog", .method = HTTP_GET, .handler = sensor_catalog_handler },
         { .uri = "/api/j1708/requests", .method = HTTP_GET, .handler = request_stats_handler },
         { .uri = "/api/j1708/requests", .method = HTTP_POST, .handler = requests_handler },
+#ifdef CONFIG_TB_CORE_LITE
+        { .uri = TB_LITE_SNAPSHOT_PATH, .method = HTTP_GET, .handler = snapshot_handler },
+#else
         { .uri = "/api/gateway/batch", .method = HTTP_GET, .handler = batch_handler },
         { .uri = "/api/gateway/ack", .method = HTTP_POST, .handler = ack_handler },
+#endif
         { .uri = "/api/link/telemetry", .method = HTTP_POST, .handler = link_telemetry_handler },
         { .uri = "/api/gps", .method = HTTP_POST, .handler = gps_handler },
         { .uri = "/api/reset", .method = HTTP_POST, .handler = reset_handler },
+#ifndef CONFIG_TB_CORE_LITE
         { .uri = "/api/storage/prepare-rollback", .method = HTTP_POST, .handler = rollback_prepare_handler },
         { .uri = "/api/storage/discard", .method = HTTP_POST, .handler = discard_storage_handler },
         { .uri = "/api/storage/retry", .method = HTTP_POST, .handler = storage_retry_handler },
         { .uri = "/api/storage/maintenance", .method = HTTP_POST, .handler = storage_maintenance_handler },
         { .uri = "/api/storage/backup", .method = HTTP_GET, .handler = storage_backup_handler },
+#endif
     };
     for (unsigned i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         esp_err_t err = httpd_register_uri_handler(server, &routes[i]);
@@ -757,20 +797,32 @@ esp_err_t tb_application_start(void)
 #else
     if (!s.lock) return ESP_ERR_NO_MEM;
 #endif
-    esp_err_t err = tb_store_init();
+    esp_err_t err;
+#ifndef CONFIG_TB_CORE_LITE
+    err = tb_store_init();
     if (err != ESP_OK) return err;
+#endif
     err = tb_capture_start();
     if (err != ESP_OK) return err;
 #if CONFIG_TB_RAW_TCP
     if (xTaskCreate(live_task, "tb_tcp", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
 #endif
+#ifndef CONFIG_TB_CORE_LITE
     if (xTaskCreate(bridge_task, "tb_bridge", 10240, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+#endif
     return ESP_OK;
 }
 
 static void application_json_mode(cJSON *object,bool compact)
 {
     if(compact)tb_capture_add_json_compact(object);else tb_capture_add_json(object);
+#ifdef CONFIG_TB_CORE_LITE
+    cJSON_AddBoolToObject(object, "core_lite", true);
+    cJSON *storage = cJSON_AddObjectToObject(object, "storage");
+    cJSON_AddBoolToObject(storage, "enabled", false);
+    cJSON_AddBoolToObject(storage, "ready", false);
+    cJSON_AddStringToObject(storage, "phase", "LINK_OWNED");
+#else
     tb_store_add_json(object);
     cJSON *live = cJSON_AddObjectToObject(object, "live_stream");
     cJSON_AddBoolToObject(live,"enabled",s.live!=NULL);
@@ -780,13 +832,18 @@ static void application_json_mode(cJSON *object,bool compact)
     cJSON_AddNumberToObject(live, "frames_sent", s.live_sent);
     cJSON_AddNumberToObject(live, "queue_dropped", s.live_dropped);
     cJSON_AddNumberToObject(live, "clients_rejected", s.live_rejected);
+#endif
     if (!s.lock || xSemaphoreTake(s.lock, pdMS_TO_TICKS(100)) != pdTRUE) return;
     cJSON *bridge = cJSON_AddObjectToObject(object, "bridge");
+#ifdef CONFIG_TB_CORE_LITE
+    cJSON_AddBoolToObject(bridge, "enabled", false);
+#else
     if(s.cloud_ack_at)cJSON_AddNumberToObject(bridge,"last_cloud_ack_age_ms",(double)(esp_timer_get_time()-s.cloud_ack_at)/1000.0);else cJSON_AddNullToObject(bridge,"last_cloud_ack_age_ms");
     if(s.uplink_at)cJSON_AddNumberToObject(bridge,"last_send_attempt_age_ms",(double)(esp_timer_get_time()-s.uplink_at)/1000.0);else cJSON_AddNullToObject(bridge,"last_send_attempt_age_ms");
     cJSON_AddNumberToObject(bridge, "attempts", s.uplink_attempts);
     cJSON_AddNumberToObject(bridge, "successful_acks", s.uplink_success);
     cJSON_AddStringToObject(bridge, "error", s.uplink_error);
+#endif
     if (s.link_at) cJSON_AddNumberToObject(bridge, "last_telemetry_age_ms", (esp_timer_get_time() - s.link_at) / 1000);
     if(s.link_status)tb_json_add_object(object,"link",cJSON_Duplicate(s.link_status,true));
     xSemaphoreGive(s.lock);

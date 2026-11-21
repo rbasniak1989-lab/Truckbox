@@ -12,6 +12,7 @@ static char *persisted;
 static char *pending;
 static char *extension_saved,*extension_pending,*auto_saved,*auto_pending;
 static char *extra_saved,*extra_pending,*policy_saved,*policy_pending,*cadence_saved,*cadence_pending;
+static char *lite_saved,*lite_pending;
 static bool target_mac;
 static esp_err_t flash_error;
 static esp_err_t write_error;
@@ -68,6 +69,10 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
     assert(handle == 1);
+    if(!strcmp(key,"lite_v1")){
+        if(!lite_saved)return ESP_ERR_NVS_NOT_FOUND;
+        size_t n=strlen(lite_saved)+1;if(value){assert(*size>=n);memcpy(value,lite_saved,n);}*size=n;return ESP_OK;
+    }
     if(!strcmp(key,"v225")){
         if(!cadence_saved)return ESP_ERR_NVS_NOT_FOUND;
         size_t n=strlen(cadence_saved)+1;if(value){assert(*size>=n);memcpy(value,cadence_saved,n);}*size=n;return ESP_OK;
@@ -105,6 +110,7 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
     assert(handle == 1);
+    if(!strcmp(key,"lite_v1")){if(write_error!=ESP_OK)return write_error;free(lite_pending);lite_pending=strdup(value);assert(lite_pending);return ESP_OK;}
     if(!strcmp(key,"v225")){if(write_error!=ESP_OK)return write_error;free(cadence_pending);cadence_pending=strdup(value);assert(cadence_pending);return ESP_OK;}
     if(!strcmp(key,"v223")){if(write_error!=ESP_OK)return write_error;free(policy_pending);policy_pending=strdup(value);assert(policy_pending);return ESP_OK;}
     if(!strcmp(key,"v217")){if(write_error!=ESP_OK)return write_error;free(extra_pending);extra_pending=strdup(value);assert(extra_pending);return ESP_OK;}
@@ -123,6 +129,7 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if(lite_pending){free(lite_saved);lite_saved=lite_pending;lite_pending=NULL;}
     if(cadence_pending){free(cadence_saved);cadence_saved=cadence_pending;cadence_pending=NULL;}
     if(policy_pending){free(policy_saved);policy_saved=policy_pending;policy_pending=NULL;}
     if(extra_pending){free(extra_saved);extra_saved=extra_pending;extra_pending=NULL;}
@@ -154,6 +161,7 @@ static void clear_storage(void)
     free(extra_saved);free(extra_pending);extra_saved=extra_pending=NULL;
     free(policy_saved);free(policy_pending);policy_saved=policy_pending=NULL;
     free(cadence_saved);free(cadence_pending);cadence_saved=cadence_pending=NULL;
+    free(lite_saved);free(lite_pending);lite_saved=lite_pending=NULL;
     free(auto_saved);free(auto_pending);auto_saved=auto_pending=NULL;target_mac=false;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;
@@ -394,8 +402,24 @@ static void test_v225_cadence_migration_preserves_owner_mid(void)
     clear_storage();
 #endif
 }
+static void test_lite_rollback_keys(void)
+{
+    clear_storage();assert(tb_config_init()==ESP_OK);
+    char previous_token[33];strcpy(previous_token,tb_config()->admin_token);
+    assert(apply("{\"j1708_lite_tx_verified\":true,\"telemetry_core_uid\":\"tb-c6-test\"}")==ESP_OK);
+    assert(!strstr(persisted,"j1708_lite_tx_verified") && !strstr(persisted,"telemetry_core_uid"));
+    assert(lite_saved && strstr(lite_saved,"tb-c6-test"));
+    reboot();assert(tb_config_init()==ESP_OK);
+    assert(tb_config()->j1708_lite_tx_verified && !tb_config()->lite_upload_enabled);
+    assert(!strcmp(previous_token,tb_config()->admin_token));
+    free(lite_saved);lite_saved=strdup("{\"j1708_lite_tx_verified\":\"bad\"}");
+    reboot();assert(tb_config_init()==ESP_OK);
+    assert(!tb_config()->j1708_lite_tx_verified && !strcmp(previous_token,tb_config()->admin_token));
+}
+
 int main(void)
 {
+    test_lite_rollback_keys();
     test_expansion_persistence();
     test_v225_cadence_migration_preserves_owner_mid();test_automatic_persistence();
     test_v212_extension_rollback_compatibility();

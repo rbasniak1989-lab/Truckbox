@@ -1,5 +1,9 @@
 #pragma once
 #include "tb.h"
+#ifdef CONFIG_TB_CORE_LITE
+#include "tb_lite_wire.h"
+bool tb_capture_lite_stats(tb_lite_snapshot_t *snapshot);
+#endif
 
 esp_err_t tb_store_init(void);
 esp_err_t tb_store_retry(void);

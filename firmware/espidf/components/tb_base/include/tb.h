@@ -26,6 +26,7 @@ typedef struct {
     char uplink_url[257];
     char uplink_token[129];
     char cloud_device_uid[65];
+    char telemetry_core_uid[33];
     char gps_url[257];
     char gps_device_uid[65];
     char gps_token[129];
@@ -50,6 +51,8 @@ typedef struct {
     bool modem_enabled;
     bool gnss_enabled;
     bool repaired_power_gates;
+    bool lite_upload_enabled;
+    bool j1708_lite_tx_verified;
 } tb_config_t;
 
 typedef struct {

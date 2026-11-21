@@ -2,9 +2,11 @@
 #include <inttypes.h>
 #include <stdlib.h>
 #include <time.h>
+#include "bootloader_random.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -27,6 +29,14 @@ uint32_t tb_boot_id(void)
 /* Called once after NVS initialization and before role tasks start. */
 esp_err_t tb_runtime_init(void)
 {
+#ifdef CONFIG_TB_CORE_LITE
+    /* Used only to correlate this boot's RAM cache. The Link owns the durable
+     * Cloud sequence and treats boot IDs as opaque, never as an ordering. */
+    bootloader_random_enable();
+    do { s_boot_id = esp_random(); } while (!s_boot_id);
+    bootloader_random_disable();
+    return ESP_OK;
+#else
     nvs_handle_t handle;
     esp_err_t err = nvs_open("tb_system", NVS_READWRITE, &handle);
     if (err != ESP_OK) return err;
@@ -41,6 +51,7 @@ esp_err_t tb_runtime_init(void)
     if (err == ESP_OK) err = nvs_commit(handle);
     nvs_close(handle);
     return err;
+#endif
 }
 
 static void restart_task(void *arg)

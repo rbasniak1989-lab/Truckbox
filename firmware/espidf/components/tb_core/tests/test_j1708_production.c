@@ -165,6 +165,9 @@ static void scheduler_supervision_and_stale_baseline(void)
     f.env.local_conflict=true;seconds(&f,1);sent=f.s.sent_total;seconds(&f,600);
     assert(f.env.enabled && f.automatic.phase==TBX_AUTO_RUNNING && f.s.sent_total>sent);
     f.env.local_mid=174;seconds(&f,60);assert(f.c.work_mode && f.c.config.local_mid==174);
+    f.env.observed_conflict=true;seconds(&f,1);sent=f.s.sent_total;
+    seconds(&f,180);assert(!f.s.armed && f.s.sent_total==sent);
+    assert(f.automatic.phase==TBX_AUTO_BLOCKED && !strcmp(f.automatic.reason,"LOCAL_MID_CONFLICT"));
     initialize(&f);seconds(&f,60);assert(f.writes); /* Reboot after a transient stop re-evaluates fresh RX. */
     puts("Polling supervisor: real TX stall -> controlled backoff/restart; MID suspicion is diagnostic, saved MID174 is used, desired policy stays ON PASS");
 }
