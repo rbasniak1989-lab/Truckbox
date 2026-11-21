@@ -3,6 +3,8 @@ package br.com.truckbox.multimedia
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.ForkJoinPool
@@ -10,7 +12,19 @@ import java.util.concurrent.ForkJoinPool
 internal data class CloudTripSummary(
     val distance: Double?, val fuel: Double?, val average: Double?,
     val origin: String?, val destination: String?, val weight: Double?, val mode: String?,
+    val fuelConfirmed: Boolean,
 )
+
+private fun timestampMs(value: String): Long? = try {
+    OffsetDateTime.parse(value.replace(' ', 'T')).toInstant().toEpochMilli()
+} catch (_: DateTimeParseException) { null }
+
+internal fun freshCloudTelemetry(j: JSONObject, now: Long): Boolean {
+    if (!j.optBoolean("online", true)) return false
+    val stamp = timestampMs(j.optJSONObject("latest")?.optString("ts") ?: j.optString("ts")) ?: return false
+    // updated_at is receipt time and can advance while replaying old data.
+    return now - stamp in -5000L..30_000L
+}
 
 internal fun cloudTripSummary(j: JSONObject): CloudTripSummary? {
     val trip = j.optJSONObject("trip")
@@ -21,9 +35,24 @@ internal fun cloudTripSummary(j: JSONObject): CloudTripSummary? {
         val source = if (j.has(key) && !j.isNull(key)) j else data
         return if (!source.has(key) || source.isNull(key)) null else source.optDouble(key).takeIf { it.isFinite() && it >= 0 }
     }
-    return CloudTripSummary(number("trip_distance_km"),number("trip_fuel_l"),number("trip_average_kml"),
+    val raw = data.optJSONObject("raw")
+    val start = trip?.optString("started_at")?.let(::timestampMs)
+    val base = raw?.optLong("lite_reference_ms") ?: 0L
+    val baseFuel = raw?.optLong("lite_pid250_reference_ms") ?: 0L
+    val odo = trip?.optDouble("start_odometer_km") ?: Double.NaN
+    val baseOdo = raw?.optDouble("lite_start_odometer_km") ?: Double.NaN
+    val pid250 = raw?.optDouble("trip_fuel_l")?.takeIf { it.isFinite() && it >= 0 }
+    val confirmed = raw != null && raw.optString("source") == "REVB1_LINK_LITE" &&
+        raw.optString("fuel_quality") == "CONFIRMED_ECU_PID250" &&
+        start != null && base >= start && base - start <= 120_000L && baseFuel == base &&
+        kotlin.math.abs(odo - baseOdo) <= 0.25 && pid250 != null
+    val distance = number("trip_distance_km")
+    val fuel = if (confirmed) pid250 else number("trip_fuel_l")
+    val average = if (confirmed) distance?.let { d -> fuel?.takeIf { it > 0.01 }?.let { d / it } }
+                  else number("trip_average_kml")
+    return CloudTripSummary(distance,fuel,average,
         trip?.optString("origin")?.takeIf { it.isNotBlank() },trip?.optString("destination")?.takeIf { it.isNotBlank() },
-        trip?.takeIf { !it.isNull("weight_t") }?.optDouble("weight_t")?.takeIf { it.isFinite() },mode)
+        trip?.takeIf { !it.isNull("weight_t") }?.optDouble("weight_t")?.takeIf { it.isFinite() },mode,confirmed)
 }
 
 private fun requestLiveJson(url: String, connectTimeout: Int, readTimeout: Int): JSONObject? {
@@ -77,20 +106,22 @@ internal class LiveRepository(
                 diagnosticAttempt=now;val base=coreBase!!;val uid=currentUid!!
                 diagnosticFuture=CompletableFuture.supplyAsync({fetchDiagnostics(base,uid)},executor)
             }
-            val recent=cloud?.takeIf { now-cloudReceived<=30000 }
+            val recent=cloud?.takeIf { now-cloudReceived<=30000 && freshCloudTelemetry(it,now) }
             val trip=recent?.let(::cloudTripSummary)
             val cloudState=recent?.takeIf { it.optBoolean("online",true) }?.let { parse(it,"CLOUD") }
             val cloudPosition=cloudState?.takeIf { it.latitude!=null && it.longitude!=null && (it.latitude!=0.0 || it.longitude!=0.0) }
             return local.copy(tripDistanceKm=trip?.distance,tripFuelLiters=trip?.fuel,tripAverageKml=trip?.average,
                 origin=trip?.origin,destination=trip?.destination,tripWeightT=trip?.weight,operationMode=trip?.mode,
                 latitude=local.latitude?:cloudPosition?.latitude,longitude=local.longitude?:cloudPosition?.longitude,
-                tripCloudAvailable=recent!=null,ecuFaults=faults.snapshot(),diagnosticsAvailable=diagnosticsAvailable)
+                tripCloudAvailable=recent!=null,tripFuelConfirmed=trip?.fuelConfirmed==true,
+                ecuFaults=faults.snapshot(),diagnosticsAvailable=diagnosticsAvailable)
         }
-        return cloud?.takeIf { now-cloudReceived<=30000 }?.let { j ->
+        return cloud?.takeIf { now-cloudReceived<=30000 && freshCloudTelemetry(it,now) }?.let { j ->
             val trip=cloudTripSummary(j)
             parse(j,"CLOUD").copy(tripDistanceKm=trip?.distance,tripFuelLiters=trip?.fuel,tripAverageKml=trip?.average,
                 origin=trip?.origin,destination=trip?.destination,tripWeightT=trip?.weight,operationMode=trip?.mode,
-                tripCloudAvailable=true,ecuFaults=faults.snapshot(),diagnosticsAvailable=false)
+                tripCloudAvailable=true,tripFuelConfirmed=trip?.fuelConfirmed==true,
+                ecuFaults=faults.snapshot(),diagnosticsAvailable=false)
         }
     }
     private fun fetchCore(): LiveState? {

@@ -11,8 +11,8 @@ android {
         applicationId = "br.com.truckbox.multimedia"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.1-core-live"
+        versionCode = 5
+        versionName = "0.3.2-revb1-lite"
     }
 
     buildFeatures {

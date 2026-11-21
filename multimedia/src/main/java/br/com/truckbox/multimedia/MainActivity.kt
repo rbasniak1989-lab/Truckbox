@@ -154,6 +154,7 @@ internal data class LiveState(
     val ecuFaults: List<EcuFault> = emptyList(),
     val diagnosticsAvailable: Boolean = false,
     val tripCloudAvailable: Boolean = false,
+    val tripFuelConfirmed: Boolean = false,
     val operationMode: String? = null,
 )
 
@@ -272,7 +273,7 @@ private fun HomePage(s: LiveState) {
             HeroCard("VELOCIDADE", s.speedKmh?.fmt0() ?: "—", "km/h", Modifier.weight(1.25f), 54)
             HeroCard("RPM", s.rpm?.fmt0() ?: "—", "rpm", Modifier.weight(1f), 42)
             GearCard(s, Modifier.weight(1f))
-            HeroCard("MÉDIA", s.effectiveAverage()?.fmt2() ?: "—", "km/L", Modifier.weight(1f), 40)
+            HeroCard("MÉDIA", s.effectiveAverage()?.fmt2() ?: "—", s.averageUnit(), Modifier.weight(1f), 40)
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -313,7 +314,7 @@ private fun OperationCard(s: LiveState, modifier: Modifier) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 SmallMetric("Distância", s.tripDistanceKm?.let { "${it.fmt1()} km" } ?: "—")
                 SmallMetric("Consumido", s.tripFuelLiters?.let { "${it.fmt1()} L" } ?: "—")
-                SmallMetric("Média", s.effectiveAverage()?.let { "${it.fmt2()} km/L" } ?: "—")
+                SmallMetric("Média", s.effectiveAverage()?.let { "${it.fmt2()} ${s.averageUnit()}" } ?: "—")
                 SmallMetric("Carga", s.tripWeightT?.let { "${it.fmt1()} t" } ?: "—")
             }
         }
@@ -341,7 +342,7 @@ private fun FuelPage(s: LiveState) {
     ) {
         Text("Consumo", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HeroCard("MÉDIA GERAL DA VIAGEM", s.effectiveAverage()?.fmt2() ?: "—", "km/L", Modifier.weight(1.35f), 50)
+            HeroCard("MÉDIA GERAL DA VIAGEM", s.effectiveAverage()?.fmt2() ?: "—", s.averageUnit(), Modifier.weight(1.35f), 50)
             HeroCard("ÚLTIMOS 100 KM", s.last100KmAverageKml?.fmt2() ?: "—", "km/L", Modifier.weight(1.35f), 50)
             HeroCard("CONSUMO AGORA", instantConsumption(s)?.fmt2() ?: "—", "km/L", Modifier.weight(1f), 40)
             HeroCard("TOTAL CONSUMIDO", s.tripFuelLiters?.fmt1() ?: "—", "L", Modifier.weight(1f), 40)
@@ -355,7 +356,11 @@ private fun FuelPage(s: LiveState) {
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF151A20))) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Eficiência", fontWeight = FontWeight.Bold)
-                Text("Esta primeira versão já respeita a hierarquia que definimos: média geral, últimos 100 km, consumo instantâneo e litros da viagem. Histórico e assistente entram nas próximas versões.")
+                Text(when {
+                    s.tripFuelConfirmed -> "Diesel da viagem confirmado pelo contador acumulado da ECU (PID 250)."
+                    s.tripFuelLiters != null -> "Diesel e média da viagem estimados pela Cloud."
+                    else -> "Aguardando uma leitura atual da viagem."
+                })
             }
         }
     }
@@ -375,7 +380,7 @@ private fun TripPage(s: LiveState) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     SmallMetric("Distância", s.tripDistanceKm?.let { "${it.fmt1()} km" } ?: "—")
                     SmallMetric("Diesel", s.tripFuelLiters?.let { "${it.fmt1()} L" } ?: "—")
-                    SmallMetric("Média", s.effectiveAverage()?.let { "${it.fmt2()} km/L" } ?: "—")
+                    SmallMetric("Média", s.effectiveAverage()?.let { "${it.fmt2()} ${s.averageUnit()}" } ?: "—")
                     SmallMetric("Peso cadastrado", s.tripWeightT?.let { "${it.fmt1()} t" } ?: "—")
                     SmallMetric("Odômetro", s.odometerKm?.let { "${it.fmt1()} km" } ?: "—")
                 }
@@ -629,6 +634,7 @@ private fun StateLine(label: String, active: Boolean?, detail: String? = null) {
 }
 
 private fun LiveState.effectiveAverage(): Double? = tripAverageKml ?: if (tripDistanceKm != null && tripFuelLiters != null && tripFuelLiters > 0.01) tripDistanceKm / tripFuelLiters else null
+private fun LiveState.averageUnit(): String = if (effectiveAverage() != null && !tripFuelConfirmed) "km/L est." else "km/L"
 
 private fun instantConsumption(s: LiveState): Double? {
     val speed = s.speedKmh ?: return null
