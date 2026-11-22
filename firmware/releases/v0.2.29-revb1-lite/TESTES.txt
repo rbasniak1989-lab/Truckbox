@@ -1,0 +1,363 @@
+TruckBox Rev.B.1 Lite 0.2.29
+ESP-IDF 5.5.2, alvo esp32c6, imagens de aplicação OTA
+Fonte das imagens eb0ac8f87caefec1f9c3d4939606d407f86e5c3f
+Revisão de testes de lotes 291aaa077a84f0caf8c0f201c7c523c2e0c36594
+Suíte local executada com ASan/UBSan e leak detection desabilitada no ambiente.
+Os ensaios de ESP32 físico, Starlink e Cloud de homologação seguem pendentes.
+
+Tabela de partições idêntica para Core e Link. SHA-256 esperado da v0.2.27.
+e55838fc61f9490cce18b019b42ff48ca9d7c18550507ac994ea3ec163b3e044
+
+Inspeção do firmware link
+esptool.py v4.13.0
+File size: 1512160 (bytes)
+
+ESP32C6 image header
+====================
+Image version: 1
+Entry point: 0x408002e6
+Segments: 4
+Flash size: 8MB
+Flash freq: 80m
+Flash mode: DIO
+
+ESP32C6 extended image header
+=============================
+WP pin: 0xee (disabled)
+Flash pins drive settings: clk_drv: 0x0, q_drv: 0x0, d_drv: 0x0, cs0_drv: 0x0, hd_drv: 0x0, wp_drv: 0x0
+Chip ID: 13 (ESP32-C6)
+Minimal chip revision: v0.0, (legacy min_rev = 0)
+Maximal chip revision: v0.99
+
+Segments information
+====================
+Segment   Length   Load addr   File offs  Memory types
+-------  -------  ----------  ----------  ------------
+      0  0x51e70  0x42100020  0x00000018  DROM, IROM
+      1  0x0e180  0x40800000  0x00051e90  DRAM, BYTE_ACCESSIBLE, IRAM
+      2  0xfed60  0x42000020  0x00060018  DROM, IROM
+      3  0x12530  0x4080e180  0x0015ed80  DRAM, BYTE_ACCESSIBLE, IRAM
+
+ESP32C6 image footer
+====================
+Checksum: 0x76 (valid)
+Validation hash: e57bd74e61c13a97841f368fb7d4d24c571cc1c1b775207438ff4760b62e9fde (valid)
+
+Application information
+=======================
+Project name: truckbox_link
+App version: 0.2.29-lite
+Compile time: Nov 22 2026 08:17:55
+ELF file SHA256: 4350ae1c8ba760070132788fdc253c2069017391d99d7a95c0f5cae74d82116c
+ESP-IDF: v5.5.2
+Minimal eFuse block revision: 0.0
+Maximal eFuse block revision: 0.99
+MMU page size: 64 KB
+Secure version: 0
+
+Mapa de tamanho estático link
+{
+    "dram_data": 0,
+    "dram_bss": 0,
+    "dram_rodata": 0,
+    "dram_other": 0,
+    "used_dram": 0,
+    "dram_total": 0,
+    "used_dram_ratio": 0,
+    "dram_remain": 0,
+    "iram_vectors": 0,
+    "iram_text": 0,
+    "iram_other": 0,
+    "used_iram": 0,
+    "iram_total": 0,
+    "used_iram_ratio": 0,
+    "iram_remain": 0,
+    "diram_data": 14512,
+    "diram_bss": 38408,
+    "diram_text": 118272,
+    "diram_vectors": 0,
+    "diram_rodata": 0,
+    "diram_other": 0,
+    "diram_total": 452112,
+    "used_diram": 171192,
+    "used_diram_ratio": 0.3786495381675337,
+    "diram_remain": 280920,
+    "flash_code": 1043806,
+    "flash_rodata": 335216,
+    "flash_other": 256,
+    "used_flash_non_ram": 1379278,
+    "total_size": 1512062
+}
+
+Inspeção do firmware core
+esptool.py v4.13.0
+File size: 1436176 (bytes)
+
+ESP32C6 image header
+====================
+Image version: 1
+Entry point: 0x408002e6
+Segments: 5
+Flash size: 8MB
+Flash freq: 80m
+Flash mode: DIO
+
+ESP32C6 extended image header
+=============================
+WP pin: 0xee (disabled)
+Flash pins drive settings: clk_drv: 0x0, q_drv: 0x0, d_drv: 0x0, cs0_drv: 0x0, hd_drv: 0x0, wp_drv: 0x0
+Chip ID: 13 (ESP32-C6)
+Minimal chip revision: v0.0, (legacy min_rev = 0)
+Maximal chip revision: v0.99
+
+Segments information
+====================
+Segment   Length   Load addr   File offs  Memory types
+-------  -------  ----------  ----------  ------------
+      0  0x437bc  0x42100020  0x00000018  DROM, IROM
+      1  0x0c834  0x40800000  0x000437dc  DRAM, BYTE_ACCESSIBLE, IRAM
+      2  0xfa944  0x42000020  0x00050018  DROM, IROM
+      3  0x107d4  0x4080c834  0x0014a964  DRAM, BYTE_ACCESSIBLE, IRAM
+      4  0x038a0  0x4081d010  0x0015b140  DRAM, BYTE_ACCESSIBLE, IRAM
+
+ESP32C6 image footer
+====================
+Checksum: 0x61 (valid)
+Validation hash: a1aeb5be2d4054bf935ec39da558831f2eb0492f8cb9cfbb13a3a5144b494cff (valid)
+
+Application information
+=======================
+Project name: truckbox_core
+App version: 0.2.29-lite
+Compile time: Nov 22 2026 08:28:18
+ELF file SHA256: 33cabbb40a6085d4281b5ec46d4edf6c1092c2f770807817da8478fd4d5559a3
+ESP-IDF: v5.5.2
+Minimal eFuse block revision: 0.0
+Maximal eFuse block revision: 0.99
+MMU page size: 64 KB
+Secure version: 0
+
+Mapa de tamanho estático core
+{
+    "dram_data": 0,
+    "dram_bss": 0,
+    "dram_rodata": 0,
+    "dram_other": 0,
+    "used_dram": 0,
+    "dram_total": 0,
+    "used_dram_ratio": 0,
+    "dram_remain": 0,
+    "iram_vectors": 0,
+    "iram_text": 0,
+    "iram_other": 0,
+    "used_iram": 0,
+    "iram_total": 0,
+    "used_iram_ratio": 0,
+    "iram_remain": 0,
+    "diram_data": 14504,
+    "diram_bss": 60712,
+    "diram_text": 118790,
+    "diram_vectors": 0,
+    "diram_rodata": 0,
+    "diram_other": 0,
+    "diram_total": 452112,
+    "used_diram": 194006,
+    "used_diram_ratio": 0.4291104858972998,
+    "diram_remain": 258106,
+    "flash_code": 1026372,
+    "flash_rodata": 276156,
+    "flash_other": 256,
+    "used_flash_non_ram": 1302784,
+    "total_size": 1436078
+}
+
+Estimativas por função do GCC RISC-V com -fstack-usage, sem pilhas de bibliotecas ou medição de execução
+tb_link_collector.c:233:20:pull_snapshot	1952	static
+tb_link_collector.c:504:12:read_batch	2512	static
+tb_link_collector.c:583:13:uploader_task	800	static
+tb_link_collector.c:438:13:collector_task	992	static
+tb_link_journal.c:235:12:scan_segment	1808	static
+tb_link_journal.c:348:5:tb_lite_journal_append	1824	static
+tb_link_journal.c:432:5:tb_lite_journal_read	1664	static
+tb_link_journal.c:452:5:tb_lite_journal_commit	1664	static
+
+Ensaios de Link com lotes limitados a oito registros e 8 KiB
+Link Lite: bounded snapshot/low memory, clock+boot changes, PID250 fallback, outage/retry, exact ACK, restart/torn tail, compaction, quota and sequence ranges passed
+Offline 15 min: 34906 B, 105 registros íntegros, 14 POSTs no replay, 0 perdas/duplicatas
+Offline 60 min com reboot e corte da cauda: 154999 B, 420 registros íntegros, 60 POSTs no replay, 0 perdas/duplicatas
+Offline 360 min com reboot e corte da cauda: 931916 B, 2520 registros íntegros, 360 POSTs no replay, 0 perdas/duplicatas
+40 oscilações: 681 registros únicos, 8 reofertados após corte antes do ACK, fila vazia
+Cota 512 KiB: primeira perda de saúde aos 177.9 min, limite operacional 206.1 min, 1414 pendentes, descartes persistidos 29 saúde / 1 operacional; JSON/flash máximos 1031/392 B op e 1188/321 B saúde
+Cota 1024 KiB: primeira perda de saúde aos 379.9 min, limite operacional 405.4 min, 2812 pendentes, descartes persistidos 26 saúde / 1 operacional; JSON/flash máximos 1031/392 B op e 1188/322 B saúde
+Índice de segmentos em RAM: 2720 B fixos; CRC, ACK alternado, lotes e discriminação de boot PASS
+
+Supabase v26 com mock e PostgreSQL PGlite 0.3.14 sem acesso de escrita a produção
+
+SHA-256 verificado da fonte privada normalizada da função v26
+
+329573d097b495ee19f44065ed7324928b301e42b7a01ba978c271370e7cabd3
+
+Os três blocos do patch correspondem à fonte retornada pelo Supabase.
+PASS: RAW/DECODED/request events persist and ACK without latest/trip/runtime side effects
+PASS: mixed batches update aggregates from OPERATIONAL only, ACKing every persisted sequence
+PASS: legacy samples without sample_kind retain operational behavior
+PASS: previous-boot monotonic samples keep original time quality and no invented GPS
+PASS: persistence failure prevents ACK and aggregate side effects
+Cloud ingest compatibility mock tests: PASS (local only; no deployment/network/database)
+PASS: compact GUARD_DECISION persists unchanged and ACKs without trip/latest or external-validation effects
+PASS: automatic status and synchronized transmission snapshot retain RAW/age/quality/null/candidate data without trip or consumption side effects
+PASS: 0.2.17 DTC/raw-change/counter/Volvo/PID summary events retain data and ACK without changing existing trip/finance/latest
+PASS: mixed replay has durable ACK and original timestamp; late/higher sequence cannot regress latest, counters or trip attribution
+PostgreSQL isolado: replay persiste uma vez, painel/runtime/saúde monotônicos, leitura nova e rollback PASS
+
+Suíte host completa. O bloco do Link foi incluído acima com a revisão do limite por bytes.
+config host tests passed (core)
+config host tests passed (link)
+config host tests passed (core)
+Known Rev.B.1 Core: one-time TX activation, NVS error, other UID/MID and persisted operator stop PASS
+config host tests passed (core)
+JSON memory: 25624-byte native tree / 14401-byte wire output: old print fails with 256 free bytes; streaming uses zero new cJSON allocations
+JSON equivalence, references, all sink failures, depth/size limits, OOM and insertion ownership passed
+Production diagnostics native cJSON: full tree 42913 bytes; old print peak 70266; compact tree 11649 (72.9% smaller); 27 stats fetched in pages <=8
+Production capture full: 1093 individual allocation failures leave no orphan nodes
+Production capture compact: 311 individual allocation failures leave no orphan nodes
+Production diagnostics native cJSON: full tree 56545 bytes; old print peak 86615; compact tree 12854 (77.3% smaller); 27 stats fetched in pages <=8
+Production capture full: 1464 individual allocation failures leave no orphan nodes
+Production capture compact: 342 individual allocation failures leave no orphan nodes
+Production bridge payload: one exact allocation, wire equivalence, exact sequence list, invalid batches and OOM consume all nodes
+Real HTTP pressure: field budget41596, unbounded full peak41550 (incomplete), compact peak13665 including8192 upload+3232 checkpoint; 200 repeats, zero leaks/allocations under TX mutex; passive state and disabled polling preserved; health works with zero heap PASS
+Production HTTP: chunked wire equivalence, maximum 1024-byte staging, zero serializer allocations and all client disconnect points free the tree
+Production HTTP health remains available without cJSON allocations; state OOM returns RAM metadata; full endpoint and opt-in compact endpoint preserved
+Crash evidence: admin/OTA guards, 512-byte streaming, CRC/bounds, unknown boot association, incomplete read refusal and allocation faults PASS
+Network peer cache: same LAN/private AP, own/foreign address rejection, DHCP change and stale fallback passed
+Real sockets: v0.2.2 IPv4-on-IPv6 regression reproduced; mapped IPv4 and native IPv4 learned; native IPv6/invalid FD rejected
+Wi-Fi sharing: routing, DNS, overlap, disconnect/lost IP, recovery and RAM guards passed (host stubs; physical NAT pending).
+image policy: valid roles, malformed/truncated images, chip, hash and string boundaries passed
+Protocol tests passed
+Validated 4000 generated records with an independent JSON parser
+Storage record CRC and interrupted-tail tests passed
+FRAM codec tests passed: golden CRC, 512 corruptions, sequence bounds, generation wrap, 65 interrupted writes, NVS-reset checkpoint
+Independent Python CRC/serialization golden vector passed
+Storage transactions: no GPS/offline/reboot, late GPS immutability, ACK gaps/idempotence/NVS fault, fsync fault, torn tail, corruption, capacity and startup queue passed
+Storage codec: UTF-8/key tokens, lossless roundtrip, output bounds, all truncations, malformed base64/backreferences and 3000 deterministic fuzz inputs PASS
+Power cuts: 90 byte boundaries, CRC-valid completion without newline, append/reboot after every cut PASS
+0.2.11-compatible non-final/oversized/CRC corruption, repeated resets, suffix salvage, ACK refusal and immutable evidence PASS
+Real writer loop: retry uncommitted row, avoid duplicate after ambiguous fsync, repeated read-only recovery, drain barrier and maintenance pause PASS
+Actual FatFs: 24 successful scans/remounts still OPEN/EACCES on AM_RDO; new exclusive segment works, old bytes/attrs remain; full directory with free clusters stays denied; exact FRESULT trace PASS
+Boot 559 reproduction: FAT12/512 slots, flags7, FR_DENIED7/stat4; full directory OR orphan LFNs; rebinds never fix; original bytes preserved until explicit production formatter; partition guard, new file/sync/readback/reboot PASS
+Actual IDF FatFs: failed sync/close leaves FR_LOCKED; same-volume rebind clears it without writes, preserves confirmed bytes/archives, persistent IO stays failed PASS
+Store IO: 10 failing stages, first/close errno, 3-attempt pause, no false recovery success, retained CRC recovery, NVS retry, no duplicate and ACK-only recycling PASS
+Store OPEN regression: readonly legacy rolled to new exclusive segment; preserved bytes/IDs/attrs across reboot+ACK; no collision overwrite; fence commit fault; 24 scans != durable recovery PASS
+Storage retry route: admin, explicit authorization, JSON/OTA/mutex guards; actual retry preserves RAM queue, record IDs, durable pending, errors and NVS; no restart or acquisition control PASS
+Storage maintenance: movement allowed, no automatic wipe; admin/target/OTA/protocol/UID/boot/nonce/expiry guards; format/probe/NVS failure; replay rejection; retained RAM and sequence/ACK; telemetry/ACK/reboot; JSON errors and backup authorization PASS
+Raw backup: real bounded stream, exact storage/WL bytes, wrong partition/read-only/mutex/OOM/read/send failure guards; no speed dependency, released mutex, no writes PASS
+tb_decode: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
+storage_task: bounded scheduling PASS; continuously nonempty queue, 100/1000Hz tick, fast/slow items, lower-priority USB/IDLE opportunities, unlocked yield
+OK: LEGACY=6/60 state snapshots; FULL=60/60
+J1939: 76 catalog rows / 29 PGNs; 55 evidenced mappings, 15 partial/raw, 6 pending/unavailable; SAE status, source isolation and delta tests PASS
+J1939 TP.BAM: complete30/19byte, interleaving, bounds, seq, timeout, capacity PASS
+OK: J1939 inventory 76 signal rows / 29 PGNs; 46 observed PGNs; confidence tags
+J1939 C/PythonV1: 80 scalar/component equivalence checks + explicit safety differences PASS; constructed Master vectors, no full Logs Mae replay
+OK: 17 PIDs, authorization, spacing, replies and cutoffs
+OK: 17 PID scales, raw retention, status bits, unavailable and malformed frames
+OK: 48 passive PIDs; numeric/raw/invalid/unavailable
+OK: 31/31 passive PID decoder paths, physical units, masks, codes and time
+PID194: actual A/B/C/D, page2 PID/SID, 119-code parser, unknowns, states/history/no absent-clear, bounded no-overwrite and concurrent PID192 assembly PASS
+OK: J1587 bridge48+17, multiparameter/page2, checksum/bounds/NA, counter deltas, hardware TX inhibit
+Trip: checkpoint/reboot, source priority, counter reset/jump/gap and fallback overlap PASS
+Required SI examples: 9->10 (+1), 5->4 (-1) =14 confirmed; 12->13 =13, never25 PASS
+A/B scalar checkpoint: restart inside pending interval, no duplicate, UTC gap recovery, missing-clock hold, CRC corruption and v3 import PASS
+Offline integration, unknown vs bounded estimated gaps, trip/empty/trip boundaries and explicit estimated allocation PASS
+PID250 paired mean: unchanged10s anchor, provisional exclusion, matched endpoints, v5 CRC/reboot, v4 layout, trip/empty frozen mean and odometer reset PASS
+Fuel state 672B; v4 checkpoint 736B; all accounting tests PASS
+boot602 exact AC80218231: 1..4/5 echo,20ms electrical abort,21.589ms complete frame, late echo not external proof, matched reply and diagnostic-only MID observation PASS
+Operation audit: durable NVS before outbox, immutable boundary identity, duplicate/reordered events and delayed-reference quality PASS
+Independent snapshot-task supervisor: missing TX task heartbeat releases TX, diagnoses unavailable, retains desired policy, no reset/NVS disable PASS
+boot564 exact AC802282308222005C replay: 30 delayed/fragmented cases, one-time echo consumption and manual-trial MID hold PASS
+Actual UART PID439: six echo fragmentations + adjacent reply never self-conflict; independent MID172 fixture keeps the manual-trial stop and passive RX PASS
+Actual UART task/finish replay: fragmented echo, split/idle frame, bad checksum, oversized/coalesced input, wrong MID, spontaneous candidates, RX overflow during TX and passive continuation PASS
+Actual capture functions passed: v1 migration/v2 reboot, GPS-independent trip/source selection, gap/reset rebasing, unavailable readings, NVS outside RX lock, canonical C0 derived fuel/fallback boundaries
+Actual Core GPS functions passed: absent GPS, no invented coordinates/time, receipt-vs-aged fix guard, no retroactive queued/history fixes, expiry/restart, source speed preservation
+J1587 compact sensor OOM: every allocation fault leaves a complete [value,age,MID,raw] or no observation; no leaks
+Transmission cache snapshot: J1587/J1939 MID, raw, age, unit, quality, NULL and all allocation failures preserve synchronized tuple ownership PASS
+Sensor API: <=8 entries/page, remaining observations accessible, every allocation failure leaves a complete page or no page; zero leaks PASS
+Critical current API: configured MID, original raw, age and explicit stale quality retained PASS
+Actual telemetry state/live JSON: native peak=5826 bytes, 172 allocation fault points, no leaks; streaming live remains allocation-free PASS
+Core live: real boot610 gear3132=12, torque20=867.2Nm/2643 derived%, fuel81=4.4505bar; load92 never torque, profile isolation, stale/NA/raw/age, zero JSON heap PASS
+OK: RAW mode serialization and LEGACY J1939/J1587 decode with zero raw persistent writes
+J1708_ONLY cache:128 entries, complete maximum17-byte PID payload retained; latest_t=176B, no capacity reduction PASS
+Core Lite snapshot reads decoder cache with persistence unavailable, no NVS or cJSON allocations; stale data omitted
+Stale MID hold recovery: old evidence, idle/parked, clean/passive RX, no current MID or TX PASS
+J1708 active: 17 targeted PID128 frames, no TX default, explicit MIDs, idle/spacing, echo/collision, lease, MID/PID timing, errors/timeouts, wrap and immediate stop passed
+Field J1708: baseline/control/3x17/after, measured latency/echo, indirect operator confirmation, ambiguity rejection, conflicts/faults/stop/reboot and existing travel cadence PASS
+0.2.14 synthetic 599 valid/6 invalid window stops; 0.2.15 isolated burst does not. Incident branch itself remains unidentifiable from minute aggregates.
+RX guard A-J: stable traffic, isolated noise, traffic/engine changes, persistent RX faults, TX faults, repeated timeouts, offline/reconnect, reboot, spontaneous candidates and stale calibration PASS
+PID94/MID128 fuel pressure: single existing scheduler, 10.000ms configuration, <=2requests/s and matching candidates PASS
+PID117/MID140,118/MID140,250/MID128: 10s targets staggered >=2s, gaps9.99..11s with silent117; stale captures rejected and all other PIDs continue PASS
+Polling supervisor: real TX stall -> controlled backoff/restart; MID suspicion is diagnostic, saved MID174 is used, desired policy stays ON PASS
+PID153: one timeout + bounded successful candidate retry; unchanged450ms deadline, passive RX and production continue PASS
+Production J1708: automatic boot/reboot, original17 + 10 candidates including page2 PID439, normal/launch priority, <=2/s, one pending, matching candidates/latency, timeout/echo backoff and healthy recovery, OTA/MID/NVS interlocks and provisional clutch candidates PASS
+PID194 OOM: 258 allocation fault points; no partial kind/raw identity accepted by store PASS
+Volvo real modules: PID194 wire length/Cloud bytes, dedup, A/B NVS/torn checkpoint, offline store retry, counter capture/start/end/reboot, unchanged suppression and reset/MID/time/range guards PASS (1055 bounded records, peak 689 bytes)
+Actual field audit: 482-byte PID result, measured raw response, no fabricated external capture or control TX, exhaustive allocation failures preserve ownership and block lost evidence PASS
+Guard upper-range fixture fits 731 bytes (limit 767); Guard record: 522 bytes, live/ref counters and actual predicate/mode flags, atomic arrays and allocation failure ownership PASS
+J1708 event persistence policy: PASSED
+Production UART: FIFO/ring/queue/partial RX, real-edge guard/wrap, preparation race, faults, pin21 inversion, no RX discard and immediate DE release passed
+Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed
+Link Wi-Fi: DNS failure, HTTPS deadline, cleanup and recovery while LAN remains associated passed
+NMEA parser tests passed
+GPS outbox tests passed
+test_actual_application_idf_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_idf_version_must_match) ... ok
+test_actual_application_version_must_match (test_build_release.ReleasePackageTests.test_actual_application_version_must_match) ... ok
+test_archive_contains_compilable_sibling_sources_and_integrity_manifest (test_build_release.ReleasePackageTests.test_archive_contains_compilable_sibling_sources_and_integrity_manifest) ... ok
+test_binary_contract_required_even_if_sdkconfig_claims_enabled (test_build_release.ReleasePackageTests.test_binary_contract_required_even_if_sdkconfig_claims_enabled) ... ok
+test_cached_sdkconfig_cannot_disable_sharing (test_build_release.ReleasePackageTests.test_cached_sdkconfig_cannot_disable_sharing) ... ok
+test_checked_rollback_is_separate_from_install_regions (test_build_release.ReleasePackageTests.test_checked_rollback_is_separate_from_install_regions) ... ok
+test_cmake_missing_source_fails_before_publishing (test_build_release.ReleasePackageTests.test_cmake_missing_source_fails_before_publishing) ... ok
+test_core_only_keeps_link_untouched (test_build_release.ReleasePackageTests.test_core_only_keeps_link_untouched) ... ok
+test_existing_nonempty_release_is_never_overwritten (test_build_release.ReleasePackageTests.test_existing_nonempty_release_is_never_overwritten) ... ok
+test_missing_sibling_fails_before_publishing (test_build_release.ReleasePackageTests.test_missing_sibling_fails_before_publishing) ... ok
+test_nvs_region_rejected_before_publishing (test_build_release.ReleasePackageTests.test_nvs_region_rejected_before_publishing) ... ok
+test_rollback_is_checked_before_publishing (test_build_release.ReleasePackageTests.test_rollback_is_checked_before_publishing) ... ok
+test_shipped_archive_is_audited_and_different_standalone_ota_is_rejected (test_build_release.ReleasePackageTests.test_shipped_archive_is_audited_and_different_standalone_ota_is_rejected) ... ok
+test_diff_cannot_overwrite_source_or_private_review (test_cloud_patch.CloudPatchTests.test_diff_cannot_overwrite_source_or_private_review) ... ok
+test_input_cannot_be_overwritten (test_cloud_patch.CloudPatchTests.test_input_cannot_be_overwritten) ... ok
+test_missing_or_duplicate_fragments_rejected (test_cloud_patch.CloudPatchTests.test_missing_or_duplicate_fragments_rejected) ... ok
+test_only_reviewed_fragments_change (test_cloud_patch.CloudPatchTests.test_only_reviewed_fragments_change) ... ok
+test_public_diff_contains_no_authentication_block (test_cloud_patch.CloudPatchTests.test_public_diff_contains_no_authentication_block) ... ok
+test_wrong_source_hash_leaves_input_and_output_untouched (test_cloud_patch.CloudPatchTests.test_wrong_source_hash_leaves_input_and_output_untouched) ... ok
+test_raw_tcp_optional_without_disabling_capture_storage_or_bridge (test_core_profile_resources.CoreProfileResources.test_raw_tcp_optional_without_disabling_capture_storage_or_bridge) ... ok
+test_corrupt_file_rejected_before_usb (test_flash_package.FlashPackageTests.test_corrupt_file_rejected_before_usb) ... ok
+test_manifest_cannot_write_nvs (test_flash_package.FlashPackageTests.test_manifest_cannot_write_nvs) ... ok
+test_path_escape_rejected (test_flash_package.FlashPackageTests.test_path_escape_rejected) ... ok
+test_success_preserves_nvs_and_uses_argument_list (test_flash_package.FlashPackageTests.test_success_preserves_nvs_and_uses_argument_list) ... ok
+test_wrong_flash_size_never_writes (test_flash_package.FlashPackageTests.test_wrong_flash_size_never_writes) ... ok
+test_wrong_role_binary_rejected_even_with_matching_hash (test_flash_package.FlashPackageTests.test_wrong_role_binary_rejected_even_with_matching_hash) ... ok
+test_missing_invalid_reset_and_source_change_skip_intervals (test_fuel_equivalence.FuelEquivalence.test_missing_invalid_reset_and_source_change_skip_intervals) ... ok
+test_python_c_1000_generated_valid_samples (test_fuel_equivalence.FuelEquivalence.test_python_c_1000_generated_valid_samples) ... ok
+test_data_policy_only_no_auth_or_transport_change (test_fuel_v2_patch.FuelPatchTests.test_data_policy_only_no_auth_or_transport_change) ... ok
+test_output_aliases_cannot_destroy_input (test_fuel_v2_patch.FuelPatchTests.test_output_aliases_cannot_destroy_input) ... ok
+test_public_diff_does_not_contain_authentication_block (test_fuel_v2_patch.FuelPatchTests.test_public_diff_does_not_contain_authentication_block) ... ok
+test_unreviewed_source_is_preserved (test_fuel_v2_patch.FuelPatchTests.test_unreviewed_source_is_preserved) ... ok
+test_embedded_script_syntax (test_j1708_panel.J1708PanelTests.test_embedded_script_syntax) ... ok
+test_work_mode_gate_and_emergency_stop (test_j1708_panel.J1708PanelTests.test_work_mode_gate_and_emergency_stop) ... ok
+
+----------------------------------------------------------------------
+Ran 34 tests in 2.874s
+
+OK
+Cloud fuel v2: canonical replacement/idempotence, negative correction, no cross-trip allocation, zero denominator, immutable legacy and repeated interval dedup PASS
+Core Lite panel: compact counters, TX confirmation reason and parked/latest MID interlocks PASS
+Offline scheduler counts: sent=10249 answered=10249 timeouts=0
+Offline source: clock=0 virtual_seconds=7200 frames=443209 records=3909 requests=10249 response_candidates=10249 latest=76 RAW_writes=0
+Offline storage: duration=7200s input_records=3909 original_JSON_bytes=2643165 physical_bytes=1631250 budget_bytes=1818624 segments=34 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 686003 bytes; remains on disk and reduces future offline space until explicit review
+Reconnect: unique_Cloud_rows=3909 deliveries_including_retries=3917 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
+Offline scheduler counts: sent=10249 answered=10249 timeouts=0
+Offline source: clock=1 virtual_seconds=7200 frames=443209 records=4341 requests=10249 response_candidates=10249 latest=76 RAW_writes=0
+Offline storage: duration=7200s input_records=4341 original_JSON_bytes=2835991 physical_bytes=1803282 budget_bytes=1818624 segments=37 reboots=14 dropped_full=0
+Preserved archive evidence after ACK: 685174 bytes; remains on disk and reduces future offline space until explicit review
+Reconnect: unique_Cloud_rows=4341 deliveries_including_retries=4349 duplicates_in_Cloud=0 valid_pending=0 before new boot; isolated evidence preserved
+Drive300: virtual_seconds=12000 nominal_km=300 measured_trip_km=299.98172160 canonical_l=59.81502658 confirmed_paired_l=25.07835307 core_reboots=3 resets=POWERON/TASK_WDT/OTA polling_boots=4 records=1207 local_mid=188 PID117/118/250_sent=1188/1188/1188 zero_global_request_stops PASS
+Drive300 outbox: offline=7200s rows=1207 unique_mock_Cloud=1207 deliveries=1208 duplicates_in_Cloud=0 peak_pending=725 peak_bytes=343633 torn_write_reboots=2 valid_pending=0 evidence_preserved=98109 PASS
+Host tests passed; ESP32 physical tests remain pending.

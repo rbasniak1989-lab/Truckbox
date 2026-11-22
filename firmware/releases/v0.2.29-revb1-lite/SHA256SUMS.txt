@@ -1,0 +1,2 @@
+e3c88d0894f522ce2f3b0be3c6eb3104302ce1fc2075f063a94d946c7ea0adea  truckbox_link_0.2.29-lite_ota.bin
+9de2db39ecb70d540ff6abcfc67465785a0e35e963f702ebe993a5ee15bd3c5e  truckbox_core_0.2.29-lite_ota.bin
