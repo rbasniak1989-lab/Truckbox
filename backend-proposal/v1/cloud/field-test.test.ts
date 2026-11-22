@@ -10,6 +10,7 @@ const hash=await sha256(new TextEncoder().encode(token));
 const keys=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
 const spki=Buffer.from(await crypto.subtle.exportKey('spki',keys.publicKey)).toString('base64');
 const migration=await readFile(new URL('../supabase/migrations/20261114221000_multimedia_field_test_v1.sql',import.meta.url),'utf8');
+const fuelMigration=await readFile(new URL('../supabase/migrations/20261122220644_multimedia_fuel_projection.sql',import.meta.url),'utf8');
 async function fixture() {
  const pg=new PGlite();await pg.exec(`create role anon;create role authenticated;create role service_role;
  create table public.trucks(id uuid primary key,name text);
@@ -61,6 +62,24 @@ test('wrong Core, missing token, forged signature and old time do not activate t
   assert.equal((await f.app(new Request(req.url,{method:'POST',headers,body:await req.text()}))).status,401);
   assert.equal((await f.app(await signed('activate','{}',{at:Date.now()-120000}))).status,401);
   const r=await f.pg.query<{n:number}>('select count(*)::int n from multimedia_field_test_v1.access where device_id is not null');assert.equal(r.rows[0].n,0);
+ } finally {await f.pg.close();}
+});
+test('signed field access projects the same trip fuel and timestamp as the regular channel',async()=>{
+ const f=await fixture();try {
+  await f.pg.exec(fuelMigration);
+  assert.equal((await activate(f)).status,200);
+  assert.deepEqual((await (await f.app(await signed())).json()).legs,[]);
+  await f.pg.exec(`alter table public.trips add column status text,add column distance_km float8,
+    add column fuel_liters float8,add column fuel_source text,add column fuel_window_summary jsonb;
+    update public.trips set status='ACTIVE',distance_km=742,fuel_liters=542,fuel_source='J1587_PID183_WINDOW_CORE_V2',
+      fuel_window_summary='{"quality":"RECONCILED_PID250","sampledAt":"2026-11-22T22:00:00.123456+00:00","baseLitres":542}'`);
+  const r=await f.app(await signed());assert.equal(r.status,200);const reply=await r.json();
+  assert.equal(reply.trip.consumption.averageKml,742/542);
+  assert.deepEqual(reply.legs[0].fuel,{quality:'RECONCILED_PID250',sampledAt:'2026-11-22T22:00:00.123456Z'});
+  assert.ok(!JSON.stringify(reply).includes('baseLitres'));
+  await f.pg.exec('set role anon');
+  await assert.rejects(f.pg.query("select public.truckbox_multimedia_field_test_v1('context',$1,$2)",[hash,ids.device]),/permission denied/);
+  await f.pg.exec('reset role');
  } finally {await f.pg.close();}
 });
 test('nonce replay, policy ACK, logout and revoked Core are checked in the database',async()=>{

@@ -26,6 +26,18 @@ export function fieldTestWireDto(value: Record<string,unknown>): Record<string,u
     const nested=out[key];
     if(nested&&typeof nested==='object'&&!Array.isArray(nested))out[key]=dates(nested as Record<string,unknown>,[...fields]);
   }
+  function fuelDates(leg: unknown): unknown {
+    if(!leg || typeof leg!=='object' || Array.isArray(leg))return leg;
+    const value=leg as Record<string,unknown>;
+    const fuel=value.fuel;
+    return fuel && typeof fuel==='object' && !Array.isArray(fuel)
+      ? {...value,fuel:dates(fuel as Record<string,unknown>,['sampledAt'])} : value;
+  }
+  if(Array.isArray(out.legs))out.legs=out.legs.map(fuelDates);
+  if(out.trip && typeof out.trip==='object' && !Array.isArray(out.trip)) {
+    const trip=out.trip as Record<string,unknown>;
+    if(trip.consumption)out.trip={...trip,consumption:fuelDates(trip.consumption)};
+  }
   return out;
 }
 
