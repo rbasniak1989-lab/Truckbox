@@ -19,18 +19,19 @@ import java.time.Instant
     val leg=state.legs.singleOrNull { it.kind==selected }
     val instant=instantConsumption(state.speed,state.fuelRate,now)
     val local=state.localFuel?.takeIf {it.coreUid==state.coreDeviceUid && it.fresh(now)}
+    val localTrip=local?.trip?.takeIf {state.trip==null && state.legs.isEmpty()}
     val localNote=local?.let { window ->
         window.averageLph?.let { "Janela local de 10 s · ${format(it,2)} L/h" }
             ?: "Janela local · ${format(window.coveredMs/1000.0,1)} s cobertos"
     }
     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-        Metric("Média da viagem / etapa",format(leg?.averageKml,2),"km/l",Modifier.weight(1f),leg?.fuel?.label(now))
+        Metric("Média da viagem / etapa",format(leg?.averageKml ?: localTrip?.averageKml,2),"km/l",Modifier.weight(1f),leg?.fuel?.label(now) ?: localTrip?.label)
         Metric("Últimos 100 km",format(state.last100Kml,2),"km/l",Modifier.weight(1f),"Janela técnica · não altera litros da etapa")
         Metric("Consumo instantâneo",format(instant?.value,2),instant?.unit ?: "km/l · L/h",Modifier.weight(1f),localNote)
     }
     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-        Metric("Litros consumidos da etapa",format(leg?.consumedLiters),"L",Modifier.weight(1f))
-        Metric("Distância da etapa",format(leg?.distanceKm),"km",Modifier.weight(1f))
+        Metric("Litros consumidos da etapa",format(leg?.consumedLiters ?: localTrip?.litres),"L",Modifier.weight(1f))
+        Metric("Distância da etapa",format(leg?.distanceKm ?: localTrip?.distanceKm),"km",Modifier.weight(1f))
         Metric("Diesel estimado no tanque",format(state.tankLiters),"L",Modifier.weight(1f),state.tankStatus)
         Metric("Autonomia estimada",format(if(state.tankLiters!=null && state.last100Kml!=null) state.tankLiters*state.last100Kml else null,0),"km",Modifier.weight(1f),"Herda qualidade do saldo")
     }

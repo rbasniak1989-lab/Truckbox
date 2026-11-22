@@ -97,7 +97,12 @@ data class FuelMeasurement(val quality: FuelQuality, val sampledAt: Instant?) {
         else -> "Estimado pelo PID 183"
     }
 }
-data class LocalFuelWindow(val coreUid: String, val endedAt: Instant, val coveredMs: Long, val microlitres: Long) {
+data class LocalTripFuel(val distanceKm: Double?, val litres: Double, val gaps: Boolean) {
+    val averageKml get() = distanceKm?.let { if (litres > 0) it / litres else null }
+    val label get() = if (gaps) "Estimativa local · lacunas" else "Estimativa local pelo PID 183"
+}
+data class LocalFuelWindow(val coreUid: String, val endedAt: Instant, val coveredMs: Long, val microlitres: Long,
+                           val trip: LocalTripFuel? = null) {
     fun fresh(now: Instant) = !endedAt.isAfter(now) && !endedAt.isBefore(now.minusSeconds(30))
     val averageLph: Double? get() = if (coveredMs == 10000L) microlitres * 0.00036 else null
 }

@@ -29,4 +29,12 @@ class FuelWindowTest {
         assertEquals("Conferido pelo PID 250", leg.fuel?.label(now))
         assertEquals("Leitura desatualizada", leg.fuel?.label(now.plusSeconds(36)))
     }
+
+    @Test fun localTripUsesOnlyCoreTotalsAndNeedsAnOdometerForTheAverage() {
+        val withTrip=message.dropLast(1)+",\"local_trip\":{\"litres\":2,\"distance_km\":10,\"gaps\":true}}"
+        val trip=requireNotNull(parseCoreFuel(withTrip,"core",now)?.trip)
+        assertEquals(5.0,trip.averageKml!!,0.0)
+        assertEquals("Estimativa local · lacunas",trip.label)
+        assertNull(parseCoreFuel(withTrip.replace(",\"distance_km\":10",""),"core",now)?.trip?.averageKml)
+    }
 }

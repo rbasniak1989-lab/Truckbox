@@ -1,6 +1,7 @@
 package br.com.truckbox.multimedia.next.data
 
 import br.com.truckbox.multimedia.next.domain.LocalFuelWindow
+import br.com.truckbox.multimedia.next.domain.LocalTripFuel
 import br.com.truckbox.multimedia.next.domain.validCoreHost
 import com.google.gson.JsonParser
 import java.net.URL
@@ -19,7 +20,13 @@ internal fun parseCoreFuel(body: String, uid: String, received: Instant): LocalF
     if (age !in 0..30000) return null
     val covered = integer(3).takeIf { it in 0..10000 } ?: return null
     val microlitres = integer(2).takeIf { it in 0..(covered * 1000000 + 3599) / 3600 } ?: return null
-    LocalFuelWindow(uid, received.minusMillis(age), covered, microlitres)
+    val trip = runCatching localTrip@{
+        val local = value.getAsJsonObject("local_trip") ?: return@localTrip null
+        val litres = local.get("litres").asDouble.takeIf {it in 0.0..1e9} ?: return@localTrip null
+        val km = local.get("distance_km")?.asDouble?.takeIf {it in 0.0..1e9}
+        LocalTripFuel(km, litres, local.get("gaps").asBoolean)
+    }.getOrNull()
+    LocalFuelWindow(uid, received.minusMillis(age), covered, microlitres, trip)
 }.getOrNull()
 
 class CoreFuelClient(private val connections: CoreConnectionFactory, private val now: () -> Instant = Instant::now) {
