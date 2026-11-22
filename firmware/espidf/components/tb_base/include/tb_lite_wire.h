@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #define TB_LITE_SNAPSHOT_PATH "/api/telemetry/snapshot"
-#define TB_LITE_SNAPSHOT_MAX 1440u
+#define TB_LITE_SNAPSHOT_MAX 1720u
 #define TB_LITE_RECORD_MAX 1600u
 #define TB_LITE_SAFE_SEQ UINT64_C(9007199254740991)
 #define TB_LITE_EPOCH_MS UINT64_C(1704067200000)
@@ -14,6 +14,10 @@
 #define TB_LITE_HEALTH_MS 60000u
 #define TB_LITE_FUEL_GAP_MS 3000u
 #define TB_LITE_FUEL_MAX_LPH 1000.0
+#define TB_FUEL_PAGE_SIZE 3u
+#define TB_FUEL_HISTORY 12u
+#define TB_FUEL_COUNTER_MATCHED 1u
+#define TB_FUEL_COUNTER_VALIDATED 2u
 
 /* Order is part of version 1: bit n qualifies the nth field. */
 typedef enum {
@@ -57,6 +61,34 @@ bool tb_lite_fuel_delta(const tb_lite_fuel_counter_t *previous, const tb_lite_fu
                         tb_lite_fuel_window_t *window);
 
 typedef struct {
+    uint64_t at_ms, observed_ul, covered_ms;
+    uint32_t ticks;
+    uint8_t mid, flags;
+} tb_fuel_anchor_t;
+
+typedef struct {
+    uint64_t end_utc_ms, total_ul;
+    tb_fuel_anchor_t counter;
+    uint32_t slot, ul, covered_ms, readings, min_mlph, max_mlph;
+} tb_fuel_window_t;
+
+typedef struct {
+    tb_fuel_window_t ring[TB_FUEL_HISTORY], open;
+    tb_fuel_anchor_t last_counter, trip_reference;
+    uint64_t product, covered_ms, last_at, clock_offset_ms;
+    uint64_t valid_at, valid_count, invalid_count, gap_count;
+    uint32_t rate_mlph, spacing_min_ms, spacing_max_ms, last_spacing_ms;
+    bool valid;
+} tb_fuel_meter_t;
+
+void tb_fuel_observe(tb_fuel_meter_t *meter, uint64_t at_ms, double lph);
+void tb_fuel_observe_counter(tb_fuel_meter_t *meter, uint64_t at_ms, uint32_t ticks, uint8_t mid, uint8_t flags);
+void tb_fuel_tick(tb_fuel_meter_t *meter, uint64_t now_ms, uint64_t epoch_ms);
+unsigned tb_fuel_page(const tb_fuel_meter_t *meter, uint32_t after, tb_fuel_window_t *out, unsigned capacity);
+void tb_fuel_trip_mark(tb_fuel_meter_t *meter, uint64_t at_ms);
+bool tb_fuel_trip_total(const tb_fuel_meter_t *meter, tb_lite_fuel_counter_t *total);
+
+typedef struct {
     char uid[33];
     uint32_t boot_id, age_ms, valid, stale, estimated;
     uint64_t local_seq, uptime_ms, unix_ms;
@@ -67,6 +99,9 @@ typedef struct {
     tb_lite_fuel_counter_t flow;
     uint64_t pid250_at_ms, odometer_at_ms;
     uint8_t pid250_mid, odometer_mid;
+    bool fuel_v2;
+    uint8_t fuel_count;
+    tb_fuel_window_t fuel_windows[TB_FUEL_PAGE_SIZE];
 } tb_lite_snapshot_t;
 
 typedef struct {
@@ -78,4 +113,5 @@ typedef struct {
 bool tb_lite_append(tb_lite_buffer_t *buf, const char *format, ...)
     __attribute__((format(printf, 2, 3)));
 bool tb_lite_uid_valid(const char *uid);
+void tb_fuel_append_windows(tb_lite_buffer_t *out, const tb_fuel_window_t *windows, unsigned count);
 size_t tb_lite_snapshot_encode(const tb_lite_snapshot_t *snapshot, char *buffer, size_t capacity);

@@ -541,11 +541,23 @@ static esp_err_t storage_backup_handler(httpd_req_t *request)
     esp_err_t result=tb_store_flash_backup(request);tb_web_set_ota_busy(false);return result;
 }
 #else
+static uint32_t fuel_query_number(const char *query, const char *key)
+{
+    char value[12], *end;
+    if (httpd_query_key_value(query, key, value, sizeof(value)) != ESP_OK ||
+        value[0] < '0' || value[0] > '9') return 0;
+    uint64_t number = strtoull(value, &end, 10);
+    return !*end && number <= UINT32_MAX ? (uint32_t)number : 0;
+}
+
 static esp_err_t snapshot_handler(httpd_req_t *request)
 {
     if (!tb_http_require_pair(request)) return ESP_OK;
     tb_lite_snapshot_t snapshot = {0};
-    if (!tb_capture_lite_stats(&snapshot)) {
+    char query[48] = "";
+    (void)httpd_req_get_url_query_str(request, query, sizeof(query));
+    if (!tb_capture_lite_stats(&snapshot) ||
+        !tb_capture_fuel_page(&snapshot, fuel_query_number(query, "fb"), fuel_query_number(query, "fs"))) {
         httpd_resp_set_status(request, "503 Service Unavailable");
         return httpd_resp_sendstr(request, "capture busy");
     }
@@ -555,6 +567,19 @@ static esp_err_t snapshot_handler(httpd_req_t *request)
     char json[TB_LITE_SNAPSHOT_MAX];
     size_t length = tb_lite_snapshot_encode(&snapshot, json, sizeof(json));
     if (!length) return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "snapshot unavailable");
+    httpd_resp_set_type(request, "application/json");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, json, length);
+}
+
+static esp_err_t fuel_status_handler(httpd_req_t *request)
+{
+    char json[1400];
+    size_t length = tb_capture_fuel_status(json, sizeof(json));
+    if (!length) {
+        httpd_resp_set_status(request, "503 Service Unavailable");
+        return httpd_resp_sendstr(request, "fuel status unavailable");
+    }
     httpd_resp_set_type(request, "application/json");
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     return httpd_resp_send(request, json, length);
@@ -589,13 +614,22 @@ static esp_err_t counter_boundary_handler(httpd_req_t *request)
     if(at && (!cJSON_IsNumber(at) || !isfinite(at->valuedouble) || at->valuedouble<1704067200000.0 || at->valuedouble>253402300799999.0 || floor(at->valuedouble)!=at->valuedouble))valid=false;
     const cJSON *age=cJSON_GetObjectItemCaseSensitive(body,"queue_age_ms");
     if(age && (!cJSON_IsNumber(age) || !isfinite(age->valuedouble) || age->valuedouble<0 || age->valuedouble>UINT32_MAX || floor(age->valuedouble)!=age->valuedouble))valid=false;
+#ifdef CONFIG_TB_CORE_LITE
+    bool ok=valid && tb_capture_fuel_boundary(!strcmp(event->valuestring,"START"),uid->valuestring,at?(uint64_t)at->valuedouble:0,age?(uint32_t)age->valuedouble:UINT32_MAX);
+#else
     bool ok=valid && tb_ecu_counters_boundary_at(!strcmp(event->valuestring,"START"),uid->valuestring,at?(uint64_t)at->valuedouble:0,age?(uint32_t)age->valuedouble:UINT32_MAX);
     if(ok)ok=tb_capture_fuel_boundary(!strcmp(event->valuestring,"START"),uid->valuestring,at?(uint64_t)at->valuedouble:0,age?(uint32_t)age->valuedouble:UINT32_MAX);
+#endif
     cJSON_Delete(body);
     if(!valid)return httpd_resp_send_err(request,HTTPD_400_BAD_REQUEST,"invalid trip boundary");
     if(!ok){httpd_resp_set_status(request,"503 Service Unavailable");httpd_resp_set_type(request,"application/json");
         return httpd_resp_sendstr(request,"{\"ok\":false,\"error\":\"capture_not_persisted_or_queue_full\"}");}
-    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);cJSON_AddStringToObject(reply,"result","READ_CAPTURE_QUEUED_NO_ECU_RESET");cJSON_AddBoolToObject(reply,"durable",true);
+    cJSON *reply=cJSON_CreateObject();cJSON_AddBoolToObject(reply,"ok",true);
+#ifdef CONFIG_TB_CORE_LITE
+    cJSON_AddStringToObject(reply,"result","LOCAL_FUEL_REFERENCE");cJSON_AddBoolToObject(reply,"durable",false);
+#else
+    cJSON_AddStringToObject(reply,"result","READ_CAPTURE_QUEUED_NO_ECU_RESET");cJSON_AddBoolToObject(reply,"durable",true);
+#endif
     return tb_http_send_json(request,reply);
 }
 
@@ -769,6 +803,7 @@ esp_err_t tb_application_register_routes(httpd_handle_t server)
         { .uri = "/api/j1708/requests", .method = HTTP_POST, .handler = requests_handler },
 #ifdef CONFIG_TB_CORE_LITE
         { .uri = TB_LITE_SNAPSHOT_PATH, .method = HTTP_GET, .handler = snapshot_handler },
+        { .uri = "/api/fuel", .method = HTTP_GET, .handler = fuel_status_handler },
 #else
         { .uri = "/api/gateway/batch", .method = HTTP_GET, .handler = batch_handler },
         { .uri = "/api/gateway/ack", .method = HTTP_POST, .handler = ack_handler },

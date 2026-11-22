@@ -1,0 +1,53 @@
+--- index.ts
++++ index.ts
+@@ -265,0 +266 @@
++    const nativeFuel=(r:any)=>r.raw?.source==='REVB1_LINK_LITE'&&Array.isArray(r.raw?.w183);
+@@ -270 +271,2 @@
+-      const timeOk=tripStartMs==null||tms==null||tms>=tripStartMs-300000;
++      const timeOk=nativeFuel(r) ? (r.raw?.time_valid===true&&tms!=null&&(tripStartMs==null||tms>=tripStartMs))
++        : tripStartMs==null||tms==null||tms>=tripStartMs-300000;
+@@ -313 +315 @@
+-          cloud_fuel_source:'PENDING_SPN183_RATE_CLOUD_V1'
++          cloud_fuel_source:nativeFuel(r)?'PENDING_PID183_CORE_WINDOW_V2':'PENDING_SPN183_RATE_CLOUD_V1'
+@@ -329 +331 @@
+-        // Trigger SPN183 trip consumption update by telemetry time, not shared sample sequence.
++        // A replay may contain a newly durable Core window older than the current UI cursor.
+@@ -332,14 +334,2 @@
+-        const shouldQueueTripRate=tripRows.length>0 && newestTripMs>0 &&
+-          (lastRatedMs===0 || newestTripMs-lastRatedMs>=30000);
+-        if(shouldQueueTripRate){
+-          rateUpdateStatus='QUEUED';
+-          const tripId=activeTrip!.id;
+-          rateJob=(async()=>{
+-            try{
+-              const {error:rateErr}=await sb.rpc('truckbox_apply_trip_rate_tail',{p_trip_id:tripId,p_gap_limit_s:180});
+-              if(rateErr)console.error('rate_tail_background_deferred',rateErr);
+-            }catch(rateErr){
+-              console.error('rate_tail_background_exception',String(rateErr));
+-            }
+-          })();
+-        }
++        const shouldQueueTripRate=tripRows.length>0 && (tripRows.some(nativeFuel) ||
++          (newestTripMs>0&&(lastRatedMs===0||newestTripMs-lastRatedMs>=30000)));
+@@ -356 +346 @@
+-            cloud_fuel_source:'SPN183_RATE_CLOUD_V1',
++            cloud_fuel_source:activeTrip.fuel_source??'SPN183_RATE_CLOUD_V1',
+@@ -365 +355,3 @@
+-        const acceptLatest=!existingLatest||(!regressesOdo&&(!regressesSeq||newOdo==null||oldOdo==null||newOdo>=oldOdo-0.05));
++        const latestMs=isoMs(existingLatest?.ts),candidateAt=isoMs(candidate.ts);
++        const staleCapture=candidate.raw?.source==='REVB1_LINK_LITE'&&latestMs!=null&&candidateAt!=null&&candidateAt<latestMs;
++        const acceptLatest=!existingLatest||(!staleCapture&&!regressesOdo&&(!regressesSeq||newOdo==null||oldOdo==null||newOdo>=oldOdo-0.05));
+@@ -391,0 +384,13 @@
++        }
++        // Persist and publish the incoming snapshot before its aggregate can update latest.
++        if(shouldQueueTripRate){
++          rateUpdateStatus='QUEUED';
++          const tripId=activeTrip!.id;
++          rateJob=(async()=>{
++            try{
++              const {error:rateErr}=await sb.rpc('truckbox_apply_trip_rate_tail',{p_trip_id:tripId,p_gap_limit_s:180});
++              if(rateErr)console.error('rate_tail_background_deferred',rateErr);
++            }catch(rateErr){
++              console.error('rate_tail_background_exception',String(rateErr));
++            }
++          })();

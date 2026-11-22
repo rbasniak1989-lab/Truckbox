@@ -56,6 +56,40 @@ static bool uint_array(const cJSON *object, const char *key, unsigned size, uint
     return true;
 }
 
+static bool fuel_windows(const cJSON *object, tb_lite_snapshot_t *snapshot)
+{
+    const cJSON *page = cJSON_GetObjectItemCaseSensitive(object, "w183");
+    if (!page) return true;
+    if (!cJSON_IsArray(page) || cJSON_GetArraySize(page) > (int)TB_FUEL_PAGE_SIZE) return false;
+    snapshot->fuel_v2 = true;
+    const cJSON *row;
+    uint64_t previous = 0;
+    cJSON_ArrayForEach(row, page) {
+        const int size = cJSON_GetArraySize(row);
+        uint64_t v[14];
+        if (!cJSON_IsArray(row) || (size != 8 && size != 14)) return false;
+        for (int i = 0; i < size; ++i)
+            if (!exact_unsigned(cJSON_GetArrayItem(row, i), TB_LITE_SAFE_SEQ, &v[i])) return false;
+        uint64_t end = v[0] * TB_LITE_OPERATIONAL_MS;
+        if (!v[0] || v[0] > UINT32_MAX || v[0] <= previous || end > snapshot->uptime_ms ||
+            (v[1] && v[1] < TB_LITE_EPOCH_MS) || v[2] > (v[3] * 1000000 + 3599) / 3600 ||
+            v[3] > TB_LITE_OPERATIONAL_MS || v[4] > UINT32_MAX || v[5] > v[6] || v[6] > 1000000 ||
+            (!v[4] && v[6]) || v[7] < v[2]) return false;
+        tb_fuel_window_t *w = &snapshot->fuel_windows[snapshot->fuel_count++];
+        *w = (tb_fuel_window_t){.slot = (uint32_t)v[0], .end_utc_ms = v[1], .ul = (uint32_t)v[2],
+            .covered_ms = (uint32_t)v[3], .readings = (uint32_t)v[4], .min_mlph = (uint32_t)v[5],
+            .max_mlph = (uint32_t)v[6], .total_ul = v[7]};
+        if (size == 14) {
+            if (!v[8] || v[8] >= end || v[9] >= UINT32_MAX || v[10] < 128 || v[10] > 255 || v[11] > 3 ||
+                v[12] > v[7] || v[13] > v[8]) return false;
+            w->counter = (tb_fuel_anchor_t){.at_ms = v[8], .ticks = (uint32_t)v[9], .mid = (uint8_t)v[10],
+                .flags = (uint8_t)v[11], .observed_ul = v[12], .covered_ms = v[13]};
+        }
+        previous = v[0];
+    }
+    return true;
+}
+
 bool tb_lite_snapshot_decode(const char *json, size_t size, tb_lite_snapshot_t *s)
 {
     if (!s || size >= TB_LITE_SNAPSHOT_MAX) return false;
@@ -108,6 +142,7 @@ bool tb_lite_snapshot_decode(const char *json, size_t size, tb_lite_snapshot_t *
         s->pid250_mid = (uint8_t)anchors[0]; s->odometer_mid = (uint8_t)anchors[1];
         s->pid250_at_ms = anchors[2]; s->odometer_at_ms = anchors[3];
     }
+    ok = ok && fuel_windows(o, s);
     cJSON_Delete(o);
     return ok;
 }
@@ -115,16 +150,19 @@ bool tb_lite_snapshot_decode(const char *json, size_t size, tb_lite_snapshot_t *
 bool tb_lite_candidate(const tb_lite_cursor_t *cursor, const tb_lite_snapshot_t *s,
                        uint64_t link_now_ms, uint64_t *captured_ms)
 {
-    if (!s->valid || !s->local_seq || s->age_ms > TB_LITE_MAX_AGE_MS || s->age_ms > s->uptime_ms ||
-        (cursor->boot_id == s->boot_id && s->local_seq <= cursor->local_seq)) return false;
+    const bool fuel_due = s->fuel_count && s->fuel_windows[0].end_utc_ms >= TB_LITE_EPOCH_MS;
+    const uint32_t age = s->valid ? s->age_ms : 0;
+    if ((!fuel_due && (!s->valid || !s->local_seq ||
+        (cursor->boot_id == s->boot_id && s->local_seq <= cursor->local_seq))) ||
+        age > TB_LITE_MAX_AGE_MS || age > s->uptime_ms) return false;
     uint64_t now = link_now_ms >= TB_LITE_EPOCH_MS ? link_now_ms : 0;
     if (s->unix_ms >= TB_LITE_EPOCH_MS) {
         uint64_t skew = now > s->unix_ms ? now - s->unix_ms : s->unix_ms - now;
         now = now && skew > 10000u ? 0 : s->unix_ms;
     }
     /* Preserve unknown-time samples for diagnostics. Never invent a trip timestamp. */
-    *captured_ms = now >= TB_LITE_EPOCH_MS + s->age_ms && now - s->age_ms > cursor->captured_ms
-        ? now - s->age_ms : 0;
+    *captured_ms = now >= TB_LITE_EPOCH_MS + age && now - age > cursor->captured_ms ? now - age : 0;
+    if (!*captured_ms && fuel_due && now >= TB_LITE_EPOCH_MS && now > cursor->captured_ms) *captured_ms = now;
     return true;
 }
 
@@ -170,15 +208,16 @@ static bool plausible_delta(double current, double baseline, uint64_t time, uint
 size_t tb_lite_operational(char *json, size_t capacity, uint64_t seq, uint64_t captured_ms,
                            const tb_lite_snapshot_t *s, const tb_lite_reference_t *ref)
 {
-    if (!seq || seq > TB_LITE_SAFE_SEQ || !s->valid || s->age_ms > s->uptime_ms ||
+    const uint32_t age = s->valid ? s->age_ms : 0;
+    if (!seq || seq > TB_LITE_SAFE_SEQ || (!s->valid && !s->fuel_count) || age > s->uptime_ms ||
         (captured_ms && captured_ms < TB_LITE_EPOCH_MS)) return 0;
     tb_lite_buffer_t out = {.data=json, .capacity=capacity};
     tb_lite_append(&out,"{\"seq\":%" PRIu64 ",\"sample_kind\":\"%s\",\"source\":\"REVB1_LINK_LITE\","
         "\"boot_id\":%" PRIu32 ",\"core_seq\":%" PRIu64 ",\"uptime_ms\":%" PRIu64
         ",\"time_valid\":%s,\"unix_ms\":%" PRIu64 ",\"sensor_age_ms\":%" PRIu32
         ",\"valid_mask\":%" PRIu32 ",\"stale_mask\":%" PRIu32 ",\"estimated_mask\":%" PRIu32,
-        seq,captured_ms ? "OPERATIONAL" : "DECODED",s->boot_id,s->local_seq,s->uptime_ms-s->age_ms,
-        captured_ms ? "true" : "false",captured_ms,s->age_ms,s->valid,s->stale,s->estimated);
+        seq,captured_ms ? "OPERATIONAL" : "DECODED",s->boot_id,s->local_seq,s->uptime_ms-age,
+        captured_ms ? "true" : "false",captured_ms,age,s->valid,s->stale,s->estimated);
     if (tb_lite_uid_valid(s->uid)) tb_lite_append(&out, ",\"core_uid\":\"%s\"", s->uid);
     for (unsigned i = 0; i < TB_LITE_FIELDS; ++i) {
         if (!(s->valid & TB_LITE_BIT(i))) continue;
@@ -192,10 +231,14 @@ size_t tb_lite_operational(char *json, size_t capacity, uint64_t seq, uint64_t c
     }
     if (s->flow.at_ms) tb_lite_append(&out, ",\"f183\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "]",
         s->flow.at_ms, s->flow.covered_ms, s->flow.microlitres);
+    if (s->fuel_v2) {
+        const unsigned dated = s->fuel_count && s->fuel_windows[0].end_utc_ms >= TB_LITE_EPOCH_MS ? s->fuel_count : 0;
+        tb_fuel_append_windows(&out, s->fuel_windows, dated);
+    }
     double odo=s->values[TB_LITE_ODOMETER], fuel=s->values[TB_LITE_PID250];
     const uint64_t pair_gap = s->pid250_at_ms > s->odometer_at_ms
         ? s->pid250_at_ms - s->odometer_at_ms : s->odometer_at_ms - s->pid250_at_ms;
-    if (s->pid250_at_ms && s->odometer_at_ms && s->pid250_at_ms <= s->uptime_ms && s->odometer_at_ms <= s->uptime_ms &&
+    if (!s->fuel_v2 && s->pid250_at_ms && s->odometer_at_ms && s->pid250_at_ms <= s->uptime_ms && s->odometer_at_ms <= s->uptime_ms &&
         pair_gap <= 5000 && validated_counter(s, TB_LITE_PID250) && validated_counter(s, TB_LITE_ODOMETER)) {
         /* Store monotonic ages. Cloud combines them with unix_ms + sensor_age_ms. */
         tb_lite_append(&out, ",\"a250\":[%u,%u,%" PRIu64 ",%" PRIu64 "]",

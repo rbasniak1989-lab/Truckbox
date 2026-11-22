@@ -78,7 +78,12 @@ static struct {
     tbx_trip_t trip;
     tbx_fuel_account_t fuel_account;
 #ifdef CONFIG_TB_CORE_LITE
-    tb_lite_fuel_meter_t pid183_flow;
+    tb_fuel_meter_t fuel_meter;
+    uint32_t pid250_valid_matches;
+    uint64_t pid250_last_match_ms;
+    uint32_t pid250_valid_latency_ms;
+    char fuel_trip_uid[65];
+    double fuel_trip_odometer;
 #endif
     uint32_t checkpoint_generation;
     TaskHandle_t checkpoint_task;
@@ -605,12 +610,30 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
 #ifdef CONFIG_TB_CORE_LITE
     if (value->pid == 183 && value->mid == 128) {
         const bool valid = value->quality == TBX_J1587_OBS_EM_VALIDACAO && value->has_numeric;
-        tb_lite_fuel_observe(&s.pid183_flow, now, valid ? value->value : NAN);
+        tb_fuel_observe(&s.fuel_meter, now, valid ? value->value : NAN);
     }
 #endif
     if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL) {
         tbx_j1708_field_note_parameter(&s.active,value->mid,value->pid,now*1000);
         const bool matched=tbx_j1708_active_note_response(&s.active,value->mid,value->pid,now*1000);
+#ifdef CONFIG_TB_CORE_LITE
+        if (value->pid == 250 && value->mid == tb_config()->j1587_fuel250_mid && value->raw_len == 4 &&
+            value->quality == TBX_J1587_OBS_EM_VALIDACAO && value->has_numeric) {
+            uint32_t ticks = (uint32_t)value->raw[0] | (uint32_t)value->raw[1] << 8 |
+                (uint32_t)value->raw[2] << 16 | (uint32_t)value->raw[3] << 24;
+            if (ticks != UINT32_MAX && fabs(value->value - ticks * 0.473176473) <= 1e-6) {
+                uint8_t flags = (matched ? TB_FUEL_COUNTER_MATCHED : 0) |
+                    (tb_config()->j1587_fuel250_validated ? TB_FUEL_COUNTER_VALIDATED : 0);
+                if (matched) {
+                    ++s.pid250_valid_matches;
+                    s.pid250_last_match_ms = now;
+                    if (s.active.last_sent_pid == 250 && s.active.last_sent_us && now >= s.active.last_sent_us / 1000)
+                        s.pid250_valid_latency_ms = now - s.active.last_sent_us / 1000;
+                }
+                tb_fuel_observe_counter(&s.fuel_meter, now, ticks, value->mid, flags);
+            }
+        }
+#endif
         tb_ecu_counters_observe(value,matched);
         if (matched)
             tb_j1708_store_matched_response(value,now);
@@ -1087,6 +1110,17 @@ static void lite_supervisor(void *unused)
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         request_supervise((uint64_t)esp_timer_get_time());
+#ifdef CONFIG_TB_CORE_LITE
+        struct timeval wall;
+        uint64_t utc_ms = 0;
+        if (gettimeofday(&wall, NULL) == 0 && wall.tv_sec >= 1704067200)
+            utc_ms = (uint64_t)wall.tv_sec * 1000 + (uint64_t)wall.tv_usec / 1000;
+        const uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000;
+        if (xSemaphoreTake(s.lock, 0) == pdTRUE) {
+            tb_fuel_tick(&s.fuel_meter, now_ms, utc_ms);
+            xSemaphoreGive(s.lock);
+        }
+#endif
     }
 }
 
@@ -1332,6 +1366,7 @@ esp_err_t tb_capture_start(void)
     return ESP_OK;
 }
 
+#ifndef CONFIG_TB_CORE_LITE
 static bool fuel_boundary_record(const tbx_fuel_account_t *a,bool start,uint64_t requested_unix_ms,uint32_t queue_age_ms)
 {
     cJSON *o=cJSON_CreateObject();if(!o)return false;
@@ -1357,10 +1392,33 @@ static bool fuel_boundary_record(const tbx_fuel_account_t *a,bool start,uint64_t
     char text[TB_RECORD_MAX];ok=ok && cJSON_PrintPreallocated(o,text,sizeof(text),false) && tb_store_submit(text)==ESP_OK;
     cJSON_Delete(o);return ok;
 }
+#endif
 
 bool tb_capture_fuel_boundary(bool start,const char *uid,uint64_t requested_unix_ms,uint32_t queue_age_ms)
 {
-    if (CORE_LITE) return false;
+#ifdef CONFIG_TB_CORE_LITE
+    if (!s.lock || !tb_lite_uid_valid(uid)) return false;
+    struct timeval wall;
+    uint64_t utc = 0;
+    if (gettimeofday(&wall, NULL) == 0 && wall.tv_sec >= 1704067200)
+        utc = (uint64_t)wall.tv_sec*1000 + (uint64_t)wall.tv_usec/1000;
+    bool current = requested_unix_ms && utc ? requested_unix_ms <= utc && utc - requested_unix_ms <= 30000
+                                           : queue_age_ms <= 30000;
+    if (xSemaphoreTake(s.lock, 0) != pdTRUE) return false;
+    bool same = !strcmp(uid, s.fuel_trip_uid);
+    bool accepted = same || (start && current);
+    if (start && !same && current) {
+        uint64_t now = (uint64_t)esp_timer_get_time()/1000;
+        tb_fuel_trip_mark(&s.fuel_meter, now);
+        snprintf(s.fuel_trip_uid, sizeof(s.fuel_trip_uid), "%s", uid);
+        s.fuel_trip_odometer = tb_config()->j1587_odometer_validated && s.total_j1587 && s.total_at &&
+            now >= s.total_at && now - s.total_at <= 5000 ? s.distance_total : NAN;
+    } else if (!start && same) {
+        tb_fuel_trip_mark(&s.fuel_meter, 0);
+    }
+    xSemaphoreGive(s.lock);
+    return accepted;
+#else
     if(!s.lock || !s.nvs_open)return false;
     struct timeval utc;uint64_t unix_ms=0,now=(uint64_t)esp_timer_get_time()/1000;
     if(gettimeofday(&utc,NULL)==0 && utc.tv_sec>=1704067200)unix_ms=(uint64_t)utc.tv_sec*1000+utc.tv_usec/1000;
@@ -1382,6 +1440,7 @@ bool tb_capture_fuel_boundary(bool start,const char *uid,uint64_t requested_unix
     /* Durable NVS reference first. Duplicate HTTP deliveries retain the same
      * boundary identity; consumers upsert it, never add its cumulative values. */
     return ok && persist_trip()==ESP_OK && fuel_boundary_record(&reference,start,requested_unix_ms,queue_age_ms);
+#endif
 }
 
 void tb_capture_reset_trip(void)
@@ -1460,8 +1519,6 @@ size_t tb_capture_health_fields(char *buffer,size_t capacity)
 bool tb_capture_lite_stats(tb_lite_snapshot_t *out)
 {
     if (!s.lock || xSemaphoreTake(s.lock, 0) != pdTRUE) return false;
-    out->flow = (tb_lite_fuel_counter_t){.at_ms = s.pid183_flow.at_ms, .covered_ms = s.pid183_flow.covered_ms,
-        .microlitres = (uint64_t)llround(s.pid183_flow.litres * 1000000.0)};
     out->frames = s.j1708_frames;
     out->sent = s.requests.sent_total;
     out->answered = s.requests.answered_total;
@@ -1473,6 +1530,83 @@ bool tb_capture_lite_stats(tb_lite_snapshot_t *out)
     xSemaphoreGive(s.lock);
     out->heap_minimum = esp_get_minimum_free_heap_size();
     return true;
+}
+
+bool tb_capture_fuel_page(tb_lite_snapshot_t *out, uint32_t boot, uint32_t after)
+{
+    if (!s.lock || xSemaphoreTake(s.lock, 0) != pdTRUE) return false;
+    out->fuel_v2 = true;
+    out->fuel_count = (uint8_t)tb_fuel_page(&s.fuel_meter, boot == tb_boot_id() ? after : 0,
+                                         out->fuel_windows, TB_FUEL_PAGE_SIZE);
+    xSemaphoreGive(s.lock);
+    return true;
+}
+
+size_t tb_capture_fuel_status(char *json, size_t capacity)
+{
+    if (!s.lock || xSemaphoreTake(s.lock, 0) != pdTRUE) return 0;
+    const uint64_t now = (uint64_t)esp_timer_get_time() / 1000;
+    const tb_fuel_meter_t *meter = &s.fuel_meter;
+    tb_fuel_window_t window;
+    const unsigned count = meter->open.slot > 1 ? tb_fuel_page(meter, meter->open.slot - 2, &window, 1) : 0;
+    uint64_t valid = meter->valid_count, invalid = meter->invalid_count, gaps = meter->gap_count, last = meter->valid_at;
+    uint32_t spacing = meter->last_spacing_ms, min = meter->spacing_min_ms, max = meter->spacing_max_ms;
+    tb_fuel_anchor_t a = meter->last_counter;
+    tb_lite_fuel_counter_t local_total = {0};
+    bool local_trip = tb_fuel_trip_total(meter, &local_total);
+    double local_km = local_trip && tb_config()->j1587_odometer_validated && s.total_j1587 && s.total_at &&
+        now >= s.total_at && now - s.total_at <= 5000 && s.distance_total >= s.fuel_trip_odometer
+        ? s.distance_total - s.fuel_trip_odometer : NAN;
+    if (local_km > 0.5 + (double)(now - local_total.at_ms) * (180.0 / 3600000.0)) local_km = NAN;
+    const bool local_gaps = local_trip && now - local_total.at_ms > local_total.covered_ms + TB_LITE_FUEL_GAP_MS;
+    tbx_j1708_request_stat_t stat = {0};
+    for (unsigned i = 0; i < TBX_J1708_REQUEST_CAPACITY; ++i) {
+        if (s.requests.pids[i].pid == 250) { stat = s.requests.pids[i]; break; }
+    }
+    uint32_t verified = s.pid250_valid_matches, collisions = s.active.collisions;
+    uint64_t valid_at = s.pid250_last_match_ms;
+    uint32_t valid_latency = s.pid250_valid_latency_ms;
+    bool armed = s.requests.armed;
+    const char *reason = s.automatic.reason;
+    xSemaphoreGive(s.lock);
+
+    tb_lite_buffer_t out = {.data = json, .capacity = capacity};
+    tb_lite_append(&out, "{\"contract\":\"TBX_FUEL_10S_V2\",\"device_uid\":\"%s\",\"boot_id\":%" PRIu32
+        ",\"uptime_ms\":%" PRIu64 ",\"pid183\":{\"valid\":%" PRIu64 ",\"invalid\":%" PRIu64
+        ",\"gaps\":%" PRIu64 ",\"last_at_ms\":%" PRIu64 ",\"last_spacing_ms\":%" PRIu32 ",\"min_spacing_ms\":%" PRIu32
+        ",\"max_spacing_ms\":%" PRIu32 "},\"pid250\":{\"interval_ms\":%" PRIu32 ",\"sent\":%" PRIu32
+        ",\"response_candidates\":%" PRIu32 ",\"matched_valid\":%" PRIu32 ",\"timeouts\":%" PRIu32
+        ",\"tx_errors\":%" PRIu32 ",\"collisions\":%" PRIu32 ",\"last_latency_ms\":%" PRIu32
+        ",\"last_response_uptime_ms\":%" PRIu32 ",\"armed\":%s,\"guard_reason\":\"%s\"",
+        tb_device_uid(), tb_boot_id(), now, valid, invalid, gaps, last, spacing, min, max, stat.period_ms,
+        stat.sent, stat.answered, verified, stat.timed_out, stat.tx_errors, collisions,
+        stat.last_latency_ms, stat.last_answered_ms, armed ? "true" : "false", reason ? reason : "UNAVAILABLE");
+    if (a.at_ms && now >= a.at_ms) tb_lite_append(&out, ",\"ticks\":%" PRIu32 ",\"mid\":%u,\"flags\":%u,\"age_ms\":%" PRIu64,
+        a.ticks, a.mid, a.flags, now - a.at_ms);
+    if (valid_at) tb_lite_append(&out, ",\"last_valid_match_uptime_ms\":%" PRIu64 ",\"last_valid_match_latency_ms\":%" PRIu32,
+        valid_at, valid_latency);
+    tb_lite_append(&out, "}");
+    tb_fuel_append_windows(&out, &window, count);
+    if (local_trip) {
+        tb_lite_append(&out, ",\"local_trip\":{\"litres\":%.6f,\"covered_ms\":%" PRIu64 ",\"gaps\":%s",
+            local_total.microlitres / 1000000.0, local_total.covered_ms, local_gaps ? "true" : "false");
+        if (isfinite(local_km)) tb_lite_append(&out, ",\"distance_km\":%.6f", local_km);
+        tb_lite_append(&out, "}");
+    }
+    if (count) {
+        const uint64_t end = (uint64_t)window.slot * TB_LITE_OPERATIONAL_MS;
+        const char *quality = !window.covered_ms ? "NO_DATA" : window.covered_ms < TB_LITE_OPERATIONAL_MS ? "PARTIAL" : "MEASURED";
+        tb_lite_append(&out, ",\"window\":{\"start_uptime_ms\":%" PRIu64 ",\"end_uptime_ms\":%" PRIu64
+            ",\"duration_ms\":%u,\"uncovered_ms\":%" PRIu32 ",\"litres\":%.6f,\"quality\":\"%s\"",
+            end - TB_LITE_OPERATIONAL_MS, end, TB_LITE_OPERATIONAL_MS, TB_LITE_OPERATIONAL_MS - window.covered_ms,
+            window.ul / 1000000.0, quality);
+        if (window.covered_ms == TB_LITE_OPERATIONAL_MS) tb_lite_append(&out, ",\"average_lph\":%.6f", window.ul * 0.00036);
+        if (window.readings) tb_lite_append(&out, ",\"min_lph\":%.3f,\"max_lph\":%.3f,\"readings\":%" PRIu32,
+            window.min_mlph / 1000.0, window.max_mlph / 1000.0, window.readings);
+        tb_lite_append(&out, "}");
+    }
+    tb_lite_append(&out, "}");
+    return out.failed ? 0 : out.used;
 }
 
 static void light_capture_json(cJSON *root)

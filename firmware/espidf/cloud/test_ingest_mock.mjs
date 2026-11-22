@@ -32,7 +32,7 @@ async function invoke(path, samples, options = {}) {
     update(data) { this.operation = 'update'; this.data = clone(data); return this; }
     async maybeSingle() {
       if (this.table === 'devices') return { data: { id: 'test-device', truck_id: 'test-truck', active: true, token_hash: tokenHash, last_seen_at: new Date().toISOString() }, error: null };
-      if (this.table === 'trips') return { data: options.noTrip ? null : { id: 'test-trip', started_at: new Date(T0 - 3600000).toISOString(), start_odometer_km: null, distance_km: 0, fuel_liters: 10, average_kml: 2, rate_last_ts: options.rateLast ?? null }, error: null };
+      if (this.table === 'trips') return { data: options.noTrip ? null : { id: 'test-trip', started_at: new Date(T0 - 3600000).toISOString(), start_odometer_km: null, distance_km: 0, fuel_liters: 10, average_kml: 2, rate_last_ts: options.rateLast ?? null, ...options.trip }, error: null };
       if (this.table === 'telemetry_latest') return { data: clone(state.latest), error: null };
       if (this.table === 'operation_state') return { data: { runtime_counters: clone(state.counters), last_telemetry_ts: null }, error: null };
       throw new Error('Unexpected mock query');
@@ -296,4 +296,25 @@ if (args.includes('--verify-fuel-window')) {
   assert.equal(got.rows[0].raw.unix_ms, T0);
   assert.ok(got.rpcs.some(rpc => rpc.name === 'truckbox_apply_trip_rate_tail'));
   console.log('PASS: v26 persists PID183 coverage and PID250 anchor ages, ACKs and queues trip aggregation');
+}
+
+if (args.includes('--verify-continuous-fuel')) {
+  const trip = {live_base_distance_km:742,live_core_start_odometer_km:1205072.442,
+    live_baseline_at:new Date(T0 - 60000).toISOString(),distance_km:742,fuel_liters:542,average_kml:742/542};
+  const marker = {seq:1000040,source:'REVB1_LINK_LITE',sample_kind:'OPERATIONAL',time_valid:true,
+    unix_ms:T0+10000,uptime_ms:12500,boot_id:420,core_uid:'unit-test-device',odometer_provisional_km:1205072.642,
+    w183:[[1,T0+8000,18889,10000,10,2000,50000,18889]]};
+  const got=await invoke(sourcePath,[marker],{trip,rateLast:new Date(T0+13000).toISOString()});
+  assert.equal(got.status,200);
+  assert.equal(got.response.ack_seq,marker.seq);
+  assert.ok(Math.abs(got.rows[0].trip_distance_km-742.2)<1e-8);
+  assert.equal(got.rows[0].raw.cloud_distance_source,'CORE_PROVISIONAL_ANCHORED');
+  assert.deepEqual(got.rows[0].raw.w183,marker.w183);
+  assert.ok(got.rpcs.some(rpc => rpc.name==='truckbox_apply_trip_rate_tail'));
+  const later={device_id:'test-device',seq:1000038,ts:new Date(T0+60000).toISOString(),data:{trip_fuel_l:542.5}};
+  const delayed=await invoke(sourcePath,[{...marker,odometer_provisional_km:513000}],{trip,latest:later});
+  assert.equal(delayed.status,200);
+  assert.deepEqual(delayed.state.latest,later);
+  assert.equal(delayed.rows[0].trip_distance_km,742);
+  console.log('PASS: v27 distance anchor intact, native fuel replay durable and scheduled, older capture cannot overwrite latest');
 }

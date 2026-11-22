@@ -65,6 +65,22 @@ bool tb_lite_uid_valid(const char *uid)
     return true;
 }
 
+void tb_fuel_append_windows(tb_lite_buffer_t *out, const tb_fuel_window_t *windows, unsigned count)
+{
+    tb_lite_append(out, ",\"w183\":[");
+    for (unsigned i = 0; i < count; ++i) {
+        const tb_fuel_window_t *w = &windows[i];
+        tb_lite_append(out, "%s[%" PRIu32 ",%" PRIu64 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32
+            ",%" PRIu32 ",%" PRIu32 ",%" PRIu64, i ? "," : "", w->slot, w->end_utc_ms,
+            w->ul, w->covered_ms, w->readings, w->min_mlph, w->max_mlph, w->total_ul);
+        const tb_fuel_anchor_t *a = &w->counter;
+        if (a->at_ms) tb_lite_append(out, ",%" PRIu64 ",%" PRIu32 ",%u,%u,%" PRIu64 ",%" PRIu64,
+            a->at_ms, a->ticks, a->mid, a->flags, a->observed_ul, a->covered_ms);
+        tb_lite_append(out, "]");
+    }
+    tb_lite_append(out, "]");
+}
+
 bool tb_lite_append(tb_lite_buffer_t *buf, const char *format, ...)
 {
     if (buf->failed || buf->used >= buf->capacity) return false;
@@ -99,6 +115,7 @@ size_t tb_lite_snapshot_encode(const tb_lite_snapshot_t *s, char *buffer, size_t
         s->flow.at_ms, s->flow.covered_ms, s->flow.microlitres);
     if (s->pid250_at_ms && s->odometer_at_ms) tb_lite_append(&out, ",\"a250\":[%u,%u,%" PRIu64 ",%" PRIu64 "]",
         s->pid250_mid, s->odometer_mid, s->pid250_at_ms, s->odometer_at_ms);
+    if (s->fuel_v2) tb_fuel_append_windows(&out, s->fuel_windows, s->fuel_count);
     tb_lite_append(&out, ",\"values\":{");
     bool first = true;
     for (unsigned i = 0; i < TB_LITE_FIELDS; ++i) {

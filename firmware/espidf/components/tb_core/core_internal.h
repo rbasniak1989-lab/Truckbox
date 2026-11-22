@@ -3,6 +3,8 @@
 #ifdef CONFIG_TB_CORE_LITE
 #include "tb_lite_wire.h"
 bool tb_capture_lite_stats(tb_lite_snapshot_t *snapshot);
+bool tb_capture_fuel_page(tb_lite_snapshot_t *snapshot, uint32_t boot, uint32_t after);
+size_t tb_capture_fuel_status(char *json, size_t capacity);
 #endif
 
 esp_err_t tb_store_init(void);

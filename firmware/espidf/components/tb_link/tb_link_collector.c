@@ -80,6 +80,7 @@ static staged_record_t s_stage[STAGED_RECORDS];
 static unsigned s_stage_head, s_stage_count;
 static char s_stage_json[TB_LITE_RECORD_MAX];
 static uint32_t s_lost_operational, s_lost_health;
+static uint32_t s_fuel_boot, s_fuel_slot;
 
 static uint64_t ticks_ms(void) { return (uint64_t)esp_timer_get_time() / 1000; }
 
@@ -244,8 +245,9 @@ static const char *pull_snapshot(const tb_config_t *config, tb_lite_snapshot_t *
     if (!config->pair_key[0]) return "pairing_missing";
     if (esp_get_free_heap_size() < 18000u) return "heap_guard";
     char url[128], authorization[sizeof(config->pair_key) + 8];
-    snprintf(url, sizeof(url), "http://%s%s",
-             tb_network_wifi_uplink() ? config->core_host : TB_CORE_AP_IP, TB_LITE_SNAPSHOT_PATH);
+    int url_length = snprintf(url, sizeof(url), "http://%s%s?fb=%" PRIu32 "&fs=%" PRIu32,
+             tb_network_wifi_uplink() ? config->core_host : TB_CORE_AP_IP, TB_LITE_SNAPSHOT_PATH, s_fuel_boot, s_fuel_slot);
+    if (url_length < 0 || (size_t)url_length >= sizeof(url)) return "core_address_too_long";
     snprintf(authorization, sizeof(authorization), "Bearer %s", config->pair_key);
     reply_t reply = {0};
     esp_http_client_config_t request = {.url = url, .method = HTTP_METHOD_GET, .timeout_ms = 1600,
@@ -393,7 +395,16 @@ static void flush_stage(const tb_config_t *config)
                 break; /* Retry the very same sequence and bytes after reopening. */
             }
             if (error) account_drop(item->health);
-            else ++saved;
+            else {
+                ++saved;
+                if (!item->health && item->captured_ms && item->snapshot.fuel_count) {
+                    const tb_fuel_window_t *last = &item->snapshot.fuel_windows[item->snapshot.fuel_count - 1];
+                    if (last->end_utc_ms && (item->snapshot.boot_id != s_fuel_boot || last->slot > s_fuel_slot)) {
+                        s_fuel_boot = item->snapshot.boot_id;
+                        s_fuel_slot = last->slot;
+                    }
+                }
+            }
             s_stage_head = (s_stage_head + 1) % STAGED_RECORDS;
             --s_stage_count;
             s_stage_json[0] = '\0';
@@ -452,6 +463,7 @@ static void collector_task(void *unused)
     for (;;) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(TB_LITE_OPERATIONAL_MS));
         if (tb_web_ota_busy()) continue;
+        if (publish && s_stage_count) flush_stage(config);
         tb_lite_snapshot_t current;
         const char *failure = NULL;
         for (unsigned attempt = 0; attempt < 3; ++attempt) {
@@ -489,10 +501,20 @@ static void collector_task(void *unused)
         if (!publish) continue;
         if (seen && tb_lite_candidate(&cursor, &last, utc, &captured)) {
             tb_lite_fuel_window_t window = {0};
-            if (cursor.boot_id == last.boot_id) (void)tb_lite_fuel_delta(&previous_flow, &last.flow, &window);
+            uint64_t window_time = captured;
+            if (last.fuel_count) {
+                const tb_fuel_window_t *native = &last.fuel_windows[last.fuel_count - 1];
+                window = (tb_lite_fuel_window_t){.span_ms = TB_LITE_OPERATIONAL_MS,
+                    .covered_ms = native->covered_ms, .microlitres = native->ul};
+                window_time = native->end_utc_ms;
+            } else if (!last.fuel_v2 && cursor.boot_id == last.boot_id) {
+                (void)tb_lite_fuel_delta(&previous_flow, &last.flow, &window);
+            }
             portENTER_CRITICAL(&s_mux);
-            s_state.fuel_window = window;
-            s_state.fuel_window_time = window.span_ms ? captured : 0;
+            if (window.span_ms || !last.fuel_v2) {
+                s_state.fuel_window = window;
+                s_state.fuel_window_time = window.span_ms ? window_time : 0;
+            }
             portEXIT_CRITICAL(&s_mux);
             stage_record(&last, true, captured, NULL, TB_LITE_NO_EVENT);
             previous_flow = last.flow;
@@ -762,8 +784,11 @@ void tb_link_collector_json(cJSON *root)
             cJSON_AddNumberToObject(window, "covered_ms", (double)view.fuel_window.covered_ms);
             if (view.fuel_window.covered_ms) {
                 cJSON_AddNumberToObject(window, "litres", (double)view.fuel_window.microlitres / 1000000.0);
-                cJSON_AddNumberToObject(window, "average_lph",
+                cJSON_AddNumberToObject(window, "covered_average_lph",
                     (double)view.fuel_window.microlitres * 3.6 / (double)view.fuel_window.covered_ms);
+                if (view.fuel_window.covered_ms == view.fuel_window.span_ms)
+                    cJSON_AddNumberToObject(window, "average_lph",
+                        (double)view.fuel_window.microlitres * 3.6 / (double)view.fuel_window.span_ms);
             }
         }
     }

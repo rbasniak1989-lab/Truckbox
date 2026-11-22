@@ -35,13 +35,14 @@ static void sample(unsigned index, bool dense, char json[TB_LITE_RECORD_MAX], ui
     core.values[TB_LITE_ODOMETER] = 1204000.1987 + hours * 76.781;
     core.values[TB_LITE_PID250] = 988632.80834 + hours * 36.634;
     uint64_t running_ms = *captured - epoch;
-    core.flow = (tb_lite_fuel_counter_t){.at_ms = core.uptime_ms - 360,
-        .covered_ms = UINT64_C(6000000) + running_ms,
-        .microlitres = UINT64_C(61056667) + running_ms * 36634 / 3600};
-    core.pid250_mid = 128;
-    core.odometer_mid = 128;
-    core.pid250_at_ms = core.uptime_ms - 1010;
-    core.odometer_at_ms = core.uptime_ms - 740;
+    const uint32_t slot_id = 20599 + (uint32_t)(running_ms / 10000u);
+    const uint64_t total_ul = UINT64_C(61056667) + running_ms * 36634 / 3600;
+    core.fuel_v2 = true;
+    core.fuel_count = 1;
+    core.fuel_windows[0] = (tb_fuel_window_t){.slot = slot_id, .end_utc_ms = *captured - 800,
+        .ul = 101761, .total_ul = total_ul, .covered_ms = 10000, .readings = 14, .min_mlph = 2000, .max_mlph = 58000,
+        .counter = {.at_ms = (uint64_t)slot_id*10000u - 700, .observed_ul = total_ul - 1000,
+            .covered_ms = 6000000 + running_ms, .ticks = 4125012 + index/5, .mid = 128, .flags = 3}};
     tb_lite_reference_t ref = {.started_ms = epoch, .odometer_ms = epoch, .pid250_ms = epoch,
         .odometer = 1204000.1987, .pid250 = 988632.80834};
     tb_lite_link_health_t link = {.link_boot_id = 1118, .link_reset_reason = 1, .heap_free = 176400,
@@ -309,7 +310,7 @@ int main(void)
 {
     outage(15, false, false);
     outage(60, true, true);
-    outage(320, true, true);
+    outage(300, true, true);
     interrupted_delivery();
     capacity(512 * 1024);
     capacity(TB_LITE_JOURNAL_LIMIT);

@@ -123,6 +123,78 @@ static void test_pid183_window(void)
     assert(!strstr(record, "\"a250\""));
 }
 
+static void test_continuous_windows(void)
+{
+    const uint64_t wall = UINT64_C(1795370000000);
+    tb_fuel_meter_t m = {0};
+    tb_fuel_tick(&m, 0, wall);
+    for (unsigned second = 0; second <= 10; ++second) tb_fuel_observe(&m, second * 1000, second < 9 ? 2 : 50);
+    tb_fuel_window_t page[TB_FUEL_PAGE_SIZE];
+    assert(tb_fuel_page(&m, 0, page, TB_FUEL_PAGE_SIZE) == 1);
+    assert(page[0].slot == 1 && page[0].covered_ms == 10000 && page[0].readings == 10);
+    assert(page[0].ul == 18889 && page[0].total_ul == 18889);
+    assert(page[0].min_mlph == 2000 && page[0].max_mlph == 50000 && page[0].end_utc_ms == wall + 10000);
+    assert(fabs(page[0].ul * 0.00036 - 6.8) < 0.0001);
+
+    m = (tb_fuel_meter_t){0};
+    for (unsigned second = 0; second <= 8; ++second) tb_fuel_observe(&m, second * 1000, second < 4 ? 10 : 80);
+    tb_fuel_observe(&m, 9250, 36);
+    tb_fuel_observe_counter(&m, 9800, 1200, 128, 3);
+    tb_fuel_tick(&m, 10500, 0); /* Wait for a valid pair crossing 10 s. */
+    assert(!tb_fuel_page(&m, 0, page, TB_FUEL_PAGE_SIZE));
+    tb_fuel_observe(&m, 11250, 90);
+    assert(tb_fuel_page(&m, 0, page, TB_FUEL_PAGE_SIZE) == 1);
+    assert(page[0].covered_ms == 10000 && page[0].ul == 135278);
+    assert(page[0].counter.at_ms == 9800 && page[0].counter.covered_ms == 9800);
+    assert(page[0].counter.observed_ul == 133278 && m.open.covered_ms == 1250);
+    tb_fuel_tick(&m, 34500, wall + 34500);
+    assert(tb_fuel_page(&m, 1, page, TB_FUEL_PAGE_SIZE) == 2);
+    assert(page[0].slot == 2 && page[0].ul == 12500 && page[0].covered_ms == 1250);
+    assert(page[1].slot == 3 && !page[1].covered_ms && !page[1].ul);
+    tb_fuel_observe(&m, 11000, 20); /* rewind */
+    tb_fuel_observe(&m, 35000, -1);
+    tb_fuel_observe(&m, 36000, NAN);
+    tb_fuel_observe(&m, 37000, 9000);
+    assert(m.invalid_count == 4);
+    tb_fuel_observe(&m, 38000, 60);
+    tb_fuel_observe(&m, 39000, 60);
+    tb_fuel_observe(&m, 40500, 60);
+    assert(tb_fuel_page(&m, 3, page, TB_FUEL_PAGE_SIZE) == 1 && page[0].covered_ms == 2000);
+
+    tb_lite_snapshot_t snapshot = {.uid="tb-c6-test",.boot_id=29,.local_seq=0,.age_ms=UINT32_MAX,
+        .uptime_ms=40500,.unix_ms=wall+40500,.fuel_v2=true,.fuel_count=1};
+    snapshot.fuel_windows[0] = page[0];
+    char wire[TB_LITE_SNAPSHOT_MAX], record[TB_LITE_RECORD_MAX];
+    size_t n = tb_lite_snapshot_encode(&snapshot, wire, sizeof(wire));
+    tb_lite_snapshot_t decoded;
+    assert(n && tb_lite_snapshot_decode(wire, n, &decoded) && decoded.fuel_count == 1 && decoded.fuel_v2);
+    tb_lite_cursor_t cursor = {.boot_id=29};
+    uint64_t captured;
+    const tb_lite_reference_t ref = {0};
+    assert(tb_lite_candidate(&cursor, &decoded, wall+40500, &captured) && captured == wall+40500);
+    assert(tb_lite_operational(record, sizeof(record), 20, captured, &decoded, &ref) && strstr(record, "\"w183\":[[4,"));
+    assert(!strstr(record, "\"fuel_rate_lph\""));
+
+    m = (tb_fuel_meter_t){0};
+    tb_fuel_observe(&m, 1000, 36);
+    tb_fuel_observe(&m, 2000, 36);
+    tb_fuel_trip_mark(&m, 2500);
+    tb_fuel_observe(&m, 4000, 36);
+    tb_lite_fuel_counter_t trip;
+    assert(tb_fuel_trip_total(&m, &trip) && trip.at_ms == 2500 && trip.covered_ms == 1500 && trip.microlitres == 15000);
+    tb_fuel_trip_mark(&m, 0);
+    assert(!tb_fuel_trip_total(&m, &trip));
+
+    m = (tb_fuel_meter_t){0};
+    for (unsigned second = 0; second <= 86400; ++second) {
+        tb_fuel_observe(&m, (uint64_t)second*1000, 36);
+        if (!(second % 10)) tb_fuel_tick(&m, (uint64_t)second*1000, wall+(uint64_t)second*1000);
+    }
+    assert(tb_fuel_page(&m, 8639, page, TB_FUEL_PAGE_SIZE) == 1 && page[0].total_ul == 864000000);
+    assert(tb_fuel_page(&m, 0, page, TB_FUEL_PAGE_SIZE) == TB_FUEL_PAGE_SIZE && page[0].slot == 8640-TB_FUEL_HISTORY+1);
+    printf("PID183 9 s a 2 L/h + 1 s a 50 L/h: 18889 uL, 6.80004 L/h; fronteira, silêncio, retomada, relógio, 24 h e %zu B de acumulador PASS\n", sizeof(m));
+}
+
 static void test_ack_and_spool(void)
 {
     char dir[]="/tmp/tblite.XXXXXX";
@@ -181,6 +253,7 @@ int main(void)
     test_snapshot();
     test_fuel_and_capacity();
     test_pid183_window();
+    test_continuous_windows();
     test_ack_and_spool();
     uint64_t first,end,next,last=0;
     assert(!tb_lite_sequence_range(0,0,&first,&end));
