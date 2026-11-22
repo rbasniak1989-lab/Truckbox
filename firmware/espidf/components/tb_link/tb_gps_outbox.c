@@ -15,7 +15,7 @@
 #define HEADER_SIZE (sizeof(MAGIC) - 1)
 #define LINE_MAXIMUM (TB_LITE_RECORD_MAX + 32)
 
-static uint32_t crc32(const unsigned char *data, size_t length)
+uint32_t tb_outbox_crc32(const unsigned char *data, size_t length)
 {
     uint32_t crc = UINT32_C(0xffffffff);
     while (length--) {
@@ -53,7 +53,7 @@ static int parse_line(char *line, char *kind, char **payload)
     unsigned long expected = strtoul(line + 2, &end, 16);
     bool malformed = errno || end != line + 10 || expected > UINT32_MAX;
     line[10] = saved;
-    if (malformed || crc32((unsigned char *)line + 11, length - 12) != (uint32_t)expected) return EINVAL;
+    if (malformed || tb_outbox_crc32((unsigned char *)line + 11, length - 12) != (uint32_t)expected) return EINVAL;
     *kind = line[0];
     *payload = line + 11;
     return 0;
@@ -211,7 +211,7 @@ static int append_line(tb_gps_outbox_t *box, char kind, const char *payload)
 {
     char line[LINE_MAXIMUM];
     int length = snprintf(line, sizeof(line), "%c %08" PRIX32 " %s\n", kind,
-                          crc32((const unsigned char *)payload, strlen(payload)), payload);
+                          tb_outbox_crc32((const unsigned char *)payload, strlen(payload)), payload);
     if (length < 0 || (size_t)length >= sizeof(line)) return EINVAL;
     FILE *file = fopen(box->path, "ab");
     if (!file) return errno;

@@ -17,6 +17,7 @@
 #include "esp_http_client.h"
 #include "esp_ota_ops.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -549,6 +550,8 @@ static esp_err_t snapshot_handler(httpd_req_t *request)
         return httpd_resp_sendstr(request, "capture busy");
     }
     tb_telemetry_lite_snapshot(&snapshot);
+    snapshot.reset_reason = (uint32_t)esp_reset_reason();
+    snapshot.reset_reason_valid = true;
     char json[TB_LITE_SNAPSHOT_MAX];
     size_t length = tb_lite_snapshot_encode(&snapshot, json, sizeof(json));
     if (!length) return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "snapshot unavailable");

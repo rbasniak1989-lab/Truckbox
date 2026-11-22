@@ -26,6 +26,7 @@
 #include "esp_netif_sntp.h"
 #include "esp_partition.h"
 #include "esp_timer.h"
+#include "esp_tls_errors.h"
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
 #include "lwip/sockets.h"
@@ -447,6 +448,7 @@ typedef struct {
     char data[4096];
     size_t used;
     int64_t started_us;
+    int64_t limit_us;
     bool overflow;
     bool deadline;
 } http_capture_t;
@@ -455,7 +457,7 @@ static esp_err_t capture_http_event(esp_http_client_event_t *event)
 {
     http_capture_t *capture = event->user_data;
     if (!capture) return ESP_OK;
-    if (esp_timer_get_time() - capture->started_us > INT64_C(30000000)) {
+    if (esp_timer_get_time() - capture->started_us > capture->limit_us) {
         capture->deadline = true;
         return ESP_ERR_TIMEOUT;
     }
@@ -501,6 +503,12 @@ static bool safe_sequence(const cJSON *item, double *value)
     return true;
 }
 
+static esp_netif_t *cellular_netif(void)
+{
+    return s_ppp_events && s_ppp_netif && (xEventGroupGetBits(s_ppp_events) & TB_PPP_CONNECTED)
+        ? s_ppp_netif : NULL;
+}
+
 static esp_netif_t *uplink_netif(void)
 {
     tb_network_status_t network;
@@ -509,21 +517,23 @@ static esp_netif_t *uplink_netif(void)
         esp_netif_t *wifi = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
         if (wifi) return wifi;
     }
-    if (s_ppp_events && s_ppp_netif && (xEventGroupGetBits(s_ppp_events) & TB_PPP_CONNECTED))
-        return s_ppp_netif;
-    return NULL;
+    return cellular_netif();
 }
 
-static esp_err_t https_post_json(const char *url, const char *payload, size_t length,
-                                 http_capture_t *capture, int *status)
+static esp_err_t https_post(const char *url, const char *payload, size_t length, esp_netif_t *netif,
+                            http_capture_t *capture, int *status, unsigned deadline_ms, const char **stage)
 {
+    if (stage) *stage = "configuration";
     if (strncmp(url, "https://", 8) != 0 || !url[8]) return ESP_ERR_INVALID_ARG;
-    esp_netif_t *netif = uplink_netif();
+    if (stage) *stage = "no_route";
     if (!netif) return ESP_ERR_INVALID_STATE;
+    if (stage) *stage = "clock";
     if (time(NULL) < 1704067200) return ESP_ERR_INVALID_STATE;
+    if (stage) *stage = "interface";
     struct ifreq interface = {0};
     if (esp_netif_get_netif_impl_name(netif, interface.ifr_name) != ESP_OK) return ESP_ERR_INVALID_STATE;
     capture->started_us = esp_timer_get_time();
+    capture->limit_us = (int64_t)deadline_ms * 1000;
     esp_http_client_config_t http = {
         .url = url,
         .method = HTTP_METHOD_POST,
@@ -538,6 +548,7 @@ static esp_err_t https_post_json(const char *url, const char *payload, size_t le
         .if_name = &interface,
     };
     esp_http_client_handle_t client = esp_http_client_init(&http);
+    if (stage) *stage = "http_allocation";
     if (!client) return ESP_ERR_NO_MEM;
     esp_http_client_set_header(client, "Content-Type", "application/json");
     esp_http_client_set_post_field(client, payload, (int)length);
@@ -545,7 +556,7 @@ static esp_err_t https_post_json(const char *url, const char *payload, size_t le
     do {
         error = esp_http_client_perform(client);
         if (capture->overflow || capture->deadline ||
-            esp_timer_get_time() - capture->started_us > INT64_C(30000000)) {
+            esp_timer_get_time() - capture->started_us > capture->limit_us) {
             if (!capture->overflow) capture->deadline = true;
             error = capture->overflow ? ESP_ERR_INVALID_SIZE : ESP_ERR_TIMEOUT;
             break;
@@ -553,18 +564,44 @@ static esp_err_t https_post_json(const char *url, const char *payload, size_t le
         if (error == ESP_ERR_HTTP_EAGAIN) vTaskDelay(pdMS_TO_TICKS(10));
     } while (error == ESP_ERR_HTTP_EAGAIN);
     *status = esp_http_client_get_status_code(client);
+    if (stage) {
+        int tls = 0, flags = 0;
+        esp_err_t transport = esp_http_client_get_and_clear_last_tls_error(client, &tls, &flags);
+        *stage = capture->overflow ? "response_too_large" : capture->deadline || error == ESP_ERR_TIMEOUT
+            ? "http_timeout" : error == ESP_OK ? "http" :
+            transport == ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME ? "dns" :
+            tls || flags ? "tls" : "https_transport";
+    }
     esp_http_client_cleanup(client);
     return error;
 }
 
-#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
-esp_err_t tb_link_collector_post(const char *payload, size_t length, uint64_t sequence, bool health, int *status)
+static esp_err_t https_post_json(const char *url, const char *payload, size_t length,
+                                 http_capture_t *capture, int *status)
 {
+    return https_post(url, payload, length, uplink_netif(), capture, status, 30000, NULL);
+}
+
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+bool tb_link_collector_has_route(void) { return uplink_netif() != NULL; }
+
+esp_err_t tb_link_collector_post(const char *payload, size_t length, uint64_t sequence,
+                                unsigned operational, unsigned health, bool alternate,
+                                int *status, const char **stage)
+{
+    *stage = "uplink_busy";
     if (xSemaphoreTake(s_uplink_lock,0) != pdTRUE) return ESP_ERR_INVALID_STATE;
+    esp_netif_t *netif = alternate ? cellular_netif() : NULL;
+    if (!netif) netif = uplink_netif();
     http_capture_t *capture = calloc(1,sizeof(*capture));
-    esp_err_t err = capture ? https_post_json(tb_config()->uplink_url,payload,length,capture,status) : ESP_ERR_NO_MEM;
-    if (err == ESP_OK && !tb_lite_ack_valid(capture->data,capture->used,*status,sequence,health))
+    *stage = "response_buffer";
+    esp_err_t err = capture ? https_post(tb_config()->uplink_url, payload, length, netif, capture, status, 15000, stage)
+        : ESP_ERR_NO_MEM;
+    if (err == ESP_OK && !tb_lite_ack_valid(capture->data, capture->used, *status, sequence, operational, health)) {
         err = ESP_ERR_INVALID_RESPONSE;
+        *stage = *status >= 200 && *status < 300 ? "invalid_ack" : "http_status";
+    }
+    if (err == ESP_OK) *stage = "ack";
     free(capture);
     xSemaphoreGive(s_uplink_lock);
     return err;

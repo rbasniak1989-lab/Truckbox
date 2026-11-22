@@ -220,6 +220,29 @@ static void reconnect_task(void *unused)
     vTaskDelete(NULL);
 }
 
+#ifdef CONFIG_TB_LINK_TELEMETRY_COLLECTOR
+void tb_network_retry_link_station(void)
+{
+    /* Rescue failed connection calls or lost DHCP events without touching a
+     * working local link just because its internet uplink is unavailable. */
+    static int64_t last_try;
+    int64_t now = esp_timer_get_time();
+    if (!s_station || !station_ssid()[0] || now - last_try < INT64_C(30000000)) return;
+    portENTER_CRITICAL(&s_status_lock);
+    bool recover = !s_status.station_connected && !s_retry_pending;
+    portEXIT_CRITICAL(&s_status_lock);
+    if (!recover) return;
+    last_try = now;
+    wifi_ap_record_t ap;
+    if (tb_network_wifi_uplink() && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        (void)esp_netif_dhcpc_stop(s_station);
+        (void)esp_netif_dhcpc_start(s_station);
+    } else {
+        (void)esp_wifi_connect();
+    }
+}
+#endif
+
 static void network_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;

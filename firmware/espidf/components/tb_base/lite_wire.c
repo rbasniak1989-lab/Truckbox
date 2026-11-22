@@ -63,9 +63,11 @@ size_t tb_lite_snapshot_encode(const tb_lite_snapshot_t *s, char *buffer, size_t
         ",\"age_ms\":%" PRIu32 ",\"valid\":%" PRIu32 ",\"stale\":%" PRIu32
         ",\"estimated\":%" PRIu32 ",\"frames\":%" PRIu32 ",\"sent\":%" PRIu32
         ",\"answered\":%" PRIu32 ",\"timeouts\":%" PRIu32 ",\"guard\":%" PRIu32
-        ",\"heap_minimum\":%" PRIu32 ",\"values\":{", s->uid, s->boot_id, s->local_seq,
+        ",\"heap_minimum\":%" PRIu32, s->uid, s->boot_id, s->local_seq,
         s->uptime_ms, s->unix_ms, s->age_ms, s->valid, s->stale, s->estimated, s->frames,
         s->sent, s->answered, s->timeouts, s->guard, s->heap_minimum);
+    if (s->reset_reason_valid) tb_lite_append(&out, ",\"reset_reason\":%" PRIu32, s->reset_reason);
+    tb_lite_append(&out, ",\"values\":{");
     bool first = true;
     for (unsigned i = 0; i < TB_LITE_FIELDS; ++i) {
         if (!(s->valid & TB_LITE_BIT(i))) continue;

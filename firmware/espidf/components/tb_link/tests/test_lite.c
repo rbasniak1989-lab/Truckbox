@@ -20,12 +20,15 @@ static void test_snapshot(void)
                              .stale=TB_LITE_BIT(TB_LITE_RPM),.estimated=TB_LITE_BIT(TB_LITE_PID250)};
     in.values[TB_LITE_SPEED]=76.5;
     in.values[TB_LITE_PID250]=10000;
+    in.reset_reason=3;
+    in.reset_reason_valid=true;
     char wire[TB_LITE_SNAPSHOT_MAX];
     size_t bytes=tb_lite_snapshot_encode(&in,wire,sizeof(wire));
     assert(bytes>0);
     tb_lite_snapshot_t s;
     assert(tb_lite_snapshot_decode(wire,bytes,&s));
     assert(s.valid==in.valid && s.stale==in.stale && s.estimated==in.estimated);
+    assert(s.reset_reason_valid && s.reset_reason == 3);
     assert(s.values[TB_LITE_SPEED] == 76.5 && !strstr(wire,"\"rpm\":"));
     cJSON_Hooks fail = {no_alloc,free};
     cJSON_InitHooks(&fail);
@@ -34,7 +37,7 @@ static void test_snapshot(void)
 
     tb_lite_cursor_t cursor = {0};
     uint64_t captured;
-    assert(!tb_lite_candidate(&cursor,&in,0,&captured));
+    assert(tb_lite_candidate(&cursor,&in,0,&captured) && captured==epoch-200);
     assert(tb_lite_candidate(&cursor,&in,epoch,&captured) && captured==epoch-200);
     cursor=(tb_lite_cursor_t){in.boot_id,in.local_seq,captured};
     assert(!tb_lite_candidate(&cursor,&in,epoch,&captured));
@@ -43,6 +46,7 @@ static void test_snapshot(void)
     assert(tb_lite_candidate(&cursor,&in,epoch+120000,&captured));
     in.unix_ms=0;
     assert(tb_lite_candidate(&cursor,&in,epoch+120000,&captured));
+    assert(tb_lite_candidate(&cursor,&in,0,&captured) && !captured);
     in.valid=0;
     assert(!tb_lite_candidate(&cursor,&in,epoch+120000,&captured));
 }
@@ -70,6 +74,9 @@ static void test_fuel_and_capacity(void)
     assert(tb_lite_operational(record,sizeof(record),123,epoch+120000,&s,&ref));
     assert(!strstr(record,"\"trip_fuel_l\""));
     assert(!tb_lite_operational(record,20,123,epoch,&s,&ref));
+    assert(tb_lite_operational(record,sizeof(record),123,0,&s,&ref));
+    assert(strstr(record,"\"sample_kind\":\"DECODED\"") && strstr(record,"\"time_valid\":false"));
+    assert(!strstr(record,"\"trip_fuel_l\""));
 }
 
 static void test_ack_and_spool(void)
@@ -89,26 +96,26 @@ static void test_ack_and_spool(void)
     uint64_t seq;bool is_health;
     const char ack[]="{\"ok\":true,\"accepted\":1,\"ack_seq\":1000000}";
     const char wrong[]="{\"ok\":true,\"accepted\":1,\"ack_seq\":1000001}";
-    assert(!tb_gps_outbox_peek(&box,record,sizeof(record)) && tb_lite_record_meta(record,&seq,&is_health));
-    assert(!tb_lite_ack_valid(wrong,strlen(wrong),200,seq,is_health));
-    assert(!tb_lite_ack_valid(ack,strlen(ack),503,seq,is_health));
+    assert(!tb_gps_outbox_peek(&box,record,sizeof(record)) && tb_lite_record_meta(record,&seq,&is_health,NULL) && !is_health);
+    assert(!tb_lite_ack_valid(wrong,strlen(wrong),200,seq,1,0));
+    assert(!tb_lite_ack_valid(ack,strlen(ack),503,seq,1,0));
     const char ambiguous[]="{\"ok\":true,\"accepted\":1,\"ack_seq\":1000000,\"ack_seq\":1000001}";
-    assert(!tb_lite_ack_valid(ambiguous,strlen(ambiguous),200,seq,is_health));
-    assert(!tb_lite_ack_valid("{\"ok\":true}",11,200,seq,is_health));
+    assert(!tb_lite_ack_valid(ambiguous,strlen(ambiguous),200,seq,1,0));
+    assert(!tb_lite_ack_valid("{\"ok\":true}",11,200,seq,1,0));
     tb_gps_outbox_retry(&box);
     assert(!tb_telemetry_outbox_init(&box,path,4096) && tb_gps_outbox_pending(&box)==2);
     assert(!tb_gps_outbox_peek(&box,record,sizeof(record)) && !strcmp(sample,record));
-    assert(tb_lite_ack_valid(ack,strlen(ack),200,seq,is_health));
+    assert(tb_lite_ack_valid(ack,strlen(ack),200,seq,1,0));
     assert(!tb_gps_outbox_ack(&box));
     assert(tb_gps_outbox_ack(&box)==EINVAL);
     FILE *tail=fopen(path,"ab");assert(tail);fputs("P torn",tail);fclose(tail);
     assert(!tb_telemetry_outbox_init(&box,path,4096) && box.recovered_tail_bytes==6);
     assert(!rename(path,backup)); /* interrupted compaction before replacement */
     assert(!tb_telemetry_outbox_init(&box,path,4096) && tb_gps_outbox_pending(&box)==1);
-    assert(!tb_gps_outbox_peek(&box,record,sizeof(record)) && tb_lite_record_meta(record,&seq,&is_health) && is_health);
-    assert(!tb_lite_ack_valid(ack,strlen(ack),200,seq,true));
+    assert(!tb_gps_outbox_peek(&box,record,sizeof(record)) && tb_lite_record_meta(record,&seq,&is_health,NULL) && is_health);
+    assert(!tb_lite_ack_valid(ack,strlen(ack),200,seq,0,1));
     const char health_ack[]="{\"ok\":true,\"accepted\":0,\"health\":1,\"ack_seq\":1000001}";
-    assert(tb_lite_ack_valid(health_ack,strlen(health_ack),200,seq,true));
+    assert(tb_lite_ack_valid(health_ack,strlen(health_ack),200,seq,0,1));
     assert(!tb_gps_outbox_ack(&box));
     for (unsigned i=0;i<500;i++) { /* accelerate a multi-hour enqueue/ACK cycle */
         snprintf(record,sizeof(record),"{\"seq\":%u,\"sample_kind\":\"OPERATIONAL\"}",1000002u+i);

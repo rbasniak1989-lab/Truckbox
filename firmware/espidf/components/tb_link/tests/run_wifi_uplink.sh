@@ -7,7 +7,8 @@ python3 - "$test_dir/../tb_link.c" "$work_dir/uplink_under_test.h" <<'PY'
 from pathlib import Path
 import re,sys
 s=Path(sys.argv[1]).read_text()
-names=['capture_http_event','result_json','uplink_error','safe_sequence','uplink_netif','https_post_json','tb_link_uplink']
+names=['capture_http_event','result_json','uplink_error','safe_sequence','cellular_netif',
+       'uplink_netif','https_post','https_post_json','tb_link_uplink']
 chunks=[re.search(r'typedef struct\s*\{\s*char data\[4096\];[^}]*}\s*http_capture_t;',s).group()]
 for name in names:
     m=re.search(r'^(?:static\s+)?(?:char\s*\*|bool|esp_err_t|esp_netif_t\s*\*)\s*'+name+r'\([^;]*?\)\s*\{',s,re.M)

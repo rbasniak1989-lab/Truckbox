@@ -73,6 +73,10 @@ bool tb_lite_snapshot_decode(const char *json, size_t size, tb_lite_snapshot_t *
         exact_number(o,"unix_ms",TB_LITE_SAFE_SEQ,&s->unix_ms) &&
         (s->valid ? s->local_seq && s->age_ms <= TB_LITE_MAX_AGE_MS && s->age_ms <= s->uptime_ms
                   : s->age_ms == UINT32_MAX);
+    if (ok && cJSON_GetObjectItemCaseSensitive(o, "reset_reason")) {
+        ok = exact_number(o, "reset_reason", UINT32_MAX, &number);
+        if (ok) { s->reset_reason = (uint32_t)number; s->reset_reason_valid = true; }
+    }
     for (unsigned i = 0; ok && i < TB_LITE_FIELDS; ++i) {
         const cJSON *item = cJSON_GetObjectItemCaseSensitive(values,tb_lite_signals[i].key);
         if (!(s->valid & TB_LITE_BIT(i))) { ok = !item; continue; }
@@ -86,17 +90,16 @@ bool tb_lite_snapshot_decode(const char *json, size_t size, tb_lite_snapshot_t *
 bool tb_lite_candidate(const tb_lite_cursor_t *cursor, const tb_lite_snapshot_t *s,
                        uint64_t link_now_ms, uint64_t *captured_ms)
 {
-    if (!s->valid || !s->local_seq || s->age_ms > TB_LITE_MAX_AGE_MS ||
-        link_now_ms < TB_LITE_EPOCH_MS + s->age_ms ||
+    if (!s->valid || !s->local_seq || s->age_ms > TB_LITE_MAX_AGE_MS || s->age_ms > s->uptime_ms ||
         (cursor->boot_id == s->boot_id && s->local_seq <= cursor->local_seq)) return false;
-    uint64_t now = link_now_ms;
+    uint64_t now = link_now_ms >= TB_LITE_EPOCH_MS ? link_now_ms : 0;
     if (s->unix_ms >= TB_LITE_EPOCH_MS) {
-        uint64_t skew = s->unix_ms > now ? s->unix_ms - now : now - s->unix_ms;
-        if (skew > 10000u) return false;
-        if (s->unix_ms < now) now = s->unix_ms;
+        uint64_t skew = now > s->unix_ms ? now - s->unix_ms : s->unix_ms - now;
+        now = now && skew > 10000u ? 0 : s->unix_ms;
     }
-    if (now < TB_LITE_EPOCH_MS + s->age_ms || now - s->age_ms <= cursor->captured_ms) return false;
-    *captured_ms = now - s->age_ms;
+    /* Preserve unknown-time samples for diagnostics. Never invent a trip timestamp. */
+    *captured_ms = now >= TB_LITE_EPOCH_MS + s->age_ms && now - s->age_ms > cursor->captured_ms
+        ? now - s->age_ms : 0;
     return true;
 }
 
@@ -142,18 +145,25 @@ static bool plausible_delta(double current, double baseline, uint64_t time, uint
 size_t tb_lite_operational(char *json, size_t capacity, uint64_t seq, uint64_t captured_ms,
                            const tb_lite_snapshot_t *s, const tb_lite_reference_t *ref)
 {
-    if (!seq || seq > TB_LITE_SAFE_SEQ || !s->valid || captured_ms < TB_LITE_EPOCH_MS) return 0;
+    if (!seq || seq > TB_LITE_SAFE_SEQ || !s->valid || s->age_ms > s->uptime_ms ||
+        (captured_ms && captured_ms < TB_LITE_EPOCH_MS)) return 0;
     tb_lite_buffer_t out = {.data=json, .capacity=capacity};
-    tb_lite_append(&out,"{\"seq\":%" PRIu64 ",\"sample_kind\":\"OPERATIONAL\",\"source\":\"REVB1_LINK_LITE\","
+    tb_lite_append(&out,"{\"seq\":%" PRIu64 ",\"sample_kind\":\"%s\",\"source\":\"REVB1_LINK_LITE\","
         "\"boot_id\":%" PRIu32 ",\"core_seq\":%" PRIu64 ",\"uptime_ms\":%" PRIu64
-        ",\"time_valid\":true,\"unix_ms\":%" PRIu64 ",\"sensor_age_ms\":%" PRIu32
+        ",\"time_valid\":%s,\"unix_ms\":%" PRIu64 ",\"sensor_age_ms\":%" PRIu32
         ",\"valid_mask\":%" PRIu32 ",\"stale_mask\":%" PRIu32 ",\"estimated_mask\":%" PRIu32,
-        seq,s->boot_id,s->local_seq,s->uptime_ms-s->age_ms,captured_ms,s->age_ms,s->valid,s->stale,s->estimated);
+        seq,captured_ms ? "OPERATIONAL" : "DECODED",s->boot_id,s->local_seq,s->uptime_ms-s->age_ms,
+        captured_ms ? "true" : "false",captured_ms,s->age_ms,s->valid,s->stale,s->estimated);
+    if (tb_lite_uid_valid(s->uid)) tb_lite_append(&out, ",\"core_uid\":\"%s\"", s->uid);
     for (unsigned i = 0; i < TB_LITE_FIELDS; ++i) {
         if (!(s->valid & TB_LITE_BIT(i))) continue;
         const char *key = i == TB_LITE_ODOMETER && !validated_counter(s,TB_LITE_ODOMETER)
             ? "odometer_provisional_km" : tb_lite_signals[i].key;
         tb_lite_append(&out,",\"%s\":%.11g",key,s->values[i]);
+    }
+    if (!captured_ms) {
+        tb_lite_append(&out, ",\"offline_time_quality\":\"BOOT_UPTIME_ONLY\"}");
+        return out.failed ? 0 : out.used;
     }
     double odo=s->values[TB_LITE_ODOMETER], fuel=s->values[TB_LITE_PID250];
     bool distance = validated_counter(s,TB_LITE_ODOMETER) && plausible_delta(odo,ref->odometer,captured_ms,ref->odometer_ms,200);
@@ -171,44 +181,78 @@ size_t tb_lite_operational(char *json, size_t capacity, uint64_t seq, uint64_t c
 }
 
 size_t tb_lite_health(char *json, size_t capacity, uint64_t seq, uint64_t epoch_ms,
-                      const tb_lite_snapshot_t *s, bool online, unsigned pending,
-                      unsigned dropped, unsigned link_heap, tb_lite_event_t event)
+                      const tb_lite_snapshot_t *s, bool online, const tb_lite_link_health_t *link,
+                      tb_lite_event_t event)
 {
-    static const char *const events[] = {"MINUTE", "CORE_LOST", "CORE_RESTORED", "CORE_BOOT", "MID_GUARD_CHANGED"};
-    if (!seq || seq > TB_LITE_SAFE_SEQ || epoch_ms < TB_LITE_EPOCH_MS || (unsigned)event >= sizeof(events)/sizeof(events[0])) return 0;
+    static const char *const events[] = {"MINUTE", "CORE_LOST", "CORE_RESTORED", "CORE_BOOT", "MID_GUARD_CHANGED", "CORE_SEEN"};
+    if (!seq || seq > TB_LITE_SAFE_SEQ || epoch_ms < TB_LITE_EPOCH_MS || !link ||
+        (unsigned)event >= sizeof(events)/sizeof(events[0])) return 0;
     tb_lite_buffer_t out = {.data=json, .capacity=capacity};
     tb_lite_append(&out,"{\"seq\":%" PRIu64 ",\"sample_kind\":\"HEALTH\",\"time_valid\":true,\"unix_ms\":%" PRIu64
-        ",\"window_seconds\":%u,\"metrics\":{\"link_heap_minimum\":%u,\"pending\":%u,\"dropped\":%u",
-        seq,epoch_ms,event == TB_LITE_NO_EVENT ? 60 : 1,link_heap,pending,dropped);
+        ",\"window_seconds\":%u,\"metrics\":{\"link_heap_minimum\":%" PRIu32 ",\"pending\":%" PRIu32 ",\"dropped\":%" PRIu32,
+        seq,epoch_ms,event == TB_LITE_NO_EVENT ? 60 : 1,link->heap_minimum,link->pending,link->dropped);
     if (online) tb_lite_append(&out,",\"core_heap_minimum\":%" PRIu32 ",\"j1708_frames\":%" PRIu32
         ",\"j1708_sent\":%" PRIu32 ",\"j1708_answered\":%" PRIu32 ",\"j1708_timeouts\":%" PRIu32 ",\"j1708_guard\":%" PRIu32,
         s->heap_minimum,s->frames,s->sent,s->answered,s->timeouts,s->guard);
+    tb_lite_append(&out, ",\"link_heap_free\":%" PRIu32 ",\"link_heap_largest_block\":%" PRIu32
+        ",\"link_uptime_ms\":%" PRIu64 ",\"link_reset_reason\":%" PRIu32 ",\"wifi_rssi\":%d,\"wifi_connected\":%s"
+        ",\"internet_reachable\":%s,\"cloud_connected\":%s,\"cloud_last_success_ms\":%" PRIu64
+        ",\"cloud_last_http_status\":%d,\"cloud_consecutive_failures\":%" PRIu32
+        ",\"offline_queue_capacity_bytes\":%" PRIu32 ",\"offline_queue_used_bytes\":%" PRIu32
+        ",\"offline_queue_pending_records\":%" PRIu32 ",\"offline_queue_dropped_records\":%" PRIu32
+        ",\"offline_queue_replayed_records\":%" PRIu32 ",\"queue_recovered_tail_bytes\":%" PRIu32
+        ",\"queue_dropped_operational\":%" PRIu32 ",\"queue_dropped_health\":%" PRIu32
+        ",\"core_link_disconnect_count\":%" PRIu32 ",\"core_poll_failures\":%" PRIu32,
+        link->heap_free, link->largest_block, link->link_uptime_ms, link->link_reset_reason,
+        link->wifi_rssi, link->wifi_connected ? "true" : "false",
+        link->internet_reachable < 0 ? "null" : link->internet_reachable ? "true" : "false",
+        link->cloud_connected ? "true" : "false", link->cloud_last_success_ms, link->last_http_status,
+        link->consecutive_failures, link->capacity, link->used, link->pending, link->dropped, link->replayed,
+        link->recovered_tail_bytes, link->dropped_operational, link->dropped_health,
+        link->link_disconnects, link->poll_failures);
+    if (link->oldest_age_valid)
+        tb_lite_append(&out, ",\"offline_queue_oldest_age_seconds\":%" PRIu32, link->oldest_age);
+    else tb_lite_append(&out, ",\"offline_queue_oldest_age_seconds\":null");
+    if (s->reset_reason_valid) tb_lite_append(&out, ",\"core_reset_reason\":%" PRIu32, s->reset_reason);
     tb_lite_append(&out,"},\"context\":{\"source\":\"REVB1_LINK_LITE\",\"core_online\":%s,\"core_boot_id\":%" PRIu32
-        ",\"event\":\"%s\"}}",online ? "true" : "false",s->boot_id,events[event]);
+        ",\"link_boot_id\":%" PRIu32 ",\"event\":\"%s\",\"core_link_last_disconnect_reason\":\"%s\","
+        "\"cloud_error_stage\":\"%s\"}}",online ? "true" : "false",s->boot_id,link->link_boot_id,events[event],
+        link->disconnect_reason ? link->disconnect_reason : "", link->cloud_error_stage ? link->cloud_error_stage : "");
     return out.failed ? 0 : out.used;
 }
 
-bool tb_lite_record_meta(const char *record, uint64_t *sequence, bool *health)
+bool tb_lite_record_meta(const char *record, uint64_t *sequence, bool *health, uint64_t *captured)
 {
     cJSON *o = parse_object(record,strlen(record));
     const cJSON *kind = cJSON_GetObjectItemCaseSensitive(o,"sample_kind");
     bool valid = cJSON_IsString(kind) && exact_number(o,"seq",TB_LITE_SAFE_SEQ,sequence) && *sequence;
     if (valid) {
         *health = !strcmp(kind->valuestring,"HEALTH");
-        valid = *health || !strcmp(kind->valuestring,"OPERATIONAL");
+        valid = *health || !strcmp(kind->valuestring,"OPERATIONAL") ||
+            (!strcmp(kind->valuestring,"DECODED") && cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(o,"time_valid")));
+        if (captured && !exact_number(o,"unix_ms",TB_LITE_SAFE_SEQ,captured)) *captured = 0;
     }
     cJSON_Delete(o);
     return valid;
 }
 
-bool tb_lite_ack_valid(const char *response, size_t size, int status, uint64_t offered, bool health)
+static bool acknowledged_count(const cJSON *o, const char *key, unsigned expected)
 {
-    if (status < 200 || status >= 300 || !offered || offered > TB_LITE_SAFE_SEQ) return false;
+    uint64_t count;
+    if (!expected && !cJSON_GetObjectItemCaseSensitive(o, key)) return true;
+    return exact_number(o, key, expected, &count) && count == expected;
+}
+
+bool tb_lite_ack_valid(const char *response, size_t size, int status, uint64_t offered,
+                       unsigned operational, unsigned health)
+{
+    if (status < 200 || status >= 300 || !offered || offered > TB_LITE_SAFE_SEQ || (!operational && !health)) return false;
     cJSON *o = parse_object(response,size);
-    uint64_t seq, count;
+    uint64_t seq;
     bool valid = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o,"ok")) &&
         exact_number(o,"ack_seq",TB_LITE_SAFE_SEQ,&seq) && seq == offered &&
-        exact_number(o,health?"health":"accepted",1,&count) && count == 1;
+        acknowledged_count(o,"accepted",operational) && acknowledged_count(o,"health",health) &&
+        acknowledged_count(o,"events",0);
     cJSON_Delete(o);
     return valid;
 }
@@ -223,4 +267,27 @@ bool tb_lite_sequence_range(uint64_t floor, uint64_t previous_end, uint64_t *fir
     *first = from;
     *end = from + reservation - 1;
     return true;
+}
+
+tb_lite_event_t tb_lite_contact_update(tb_lite_contact_t *contact, uint32_t observed_boot)
+{
+    if (!observed_boot) {
+        if (contact->misses < 3) ++contact->misses;
+        if (contact->boot && contact->misses == 3 && !contact->disconnected) {
+            contact->disconnected = true;
+            return TB_LITE_CORE_LOST;
+        }
+        return TB_LITE_NO_EVENT;
+    }
+    tb_lite_event_t event = !contact->boot ? TB_LITE_CORE_SEEN : contact->boot != observed_boot
+        ? TB_LITE_CORE_BOOT : contact->disconnected ? TB_LITE_CORE_RESTORED : TB_LITE_NO_EVENT;
+    *contact = (tb_lite_contact_t){.boot = observed_boot};
+    return event;
+}
+
+uint32_t tb_lite_retry_delay(unsigned failures, int status)
+{
+    if (!failures) return 1000;
+    if (status == 401 || status == 403 || status == 429) return 60000;
+    return failures >= 5 ? 30000 : 1000u << failures;
 }

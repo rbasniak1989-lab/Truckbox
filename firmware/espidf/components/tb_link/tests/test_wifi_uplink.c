@@ -31,6 +31,7 @@ typedef void *esp_http_client_handle_t;
 #define ESP_ERR_NO_MEM 5
 #define ESP_ERR_HTTP_EAGAIN 6
 #define ESP_ERR_INVALID_RESPONSE 7
+#define ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME 8
 #define HTTP_EVENT_ON_DATA 1
 #define HTTP_METHOD_POST 1
 #define TB_UPLINK_MAX (32*1024)
@@ -48,7 +49,9 @@ static esp_netif_t *s_ppp_netif=&ppp_netif;
 static struct {unsigned uplink_ok,uplink_failed;char uplink_error[48];int last_http_status;} s_state;
 static tb_config_t cfg;
 static bool wifi_configured,station_connected,ppp_connected;
-static int http_status=200,http_calls,host_interface;
+static int http_status=200,http_calls,host_interface,client_opens,client_closes;
+static esp_err_t transport_error,transport_result;
+static int64_t mock_clock_us=1000000;
 static const char *http_response;
 static esp_http_client_config_t active_http;
 static const char *posted_payload;
@@ -71,12 +74,12 @@ static esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key)
 static int xEventGroupGetBits(int group){assert(group);return ppp_connected?TB_PPP_CONNECTED:0;}
 static bool xSemaphoreTake(int lock,unsigned ticks){(void)ticks;return lock!=0;}
 static void xSemaphoreGive(int lock){assert(lock);}
-static int64_t esp_timer_get_time(void){return 1000000;}
-static void vTaskDelay(unsigned ticks){(void)ticks;}
+static int64_t esp_timer_get_time(void){return mock_clock_us;}
+static void vTaskDelay(unsigned ticks){mock_clock_us+=(int64_t)ticks*1000;}
 static esp_err_t esp_netif_get_netif_impl_name(esp_netif_t *netif,char *name)
 {host_interface=*netif;strcpy(name,*netif==1?"st1":"pp1");return ESP_OK;}
 static esp_http_client_handle_t esp_http_client_init(const esp_http_client_config_t *http)
-{assert(http->crt_bundle_attach&&http->disable_auto_redirect&&http->if_name);active_http=*http;return (void *)1;}
+{assert(http->crt_bundle_attach&&http->disable_auto_redirect&&http->if_name);active_http=*http;++client_opens;return (void *)1;}
 static void esp_http_client_set_header(void *client,const char *name,const char *value)
 {assert(client&&name&&value);}
 static void esp_http_client_set_post_field(void *client,const char *data,int size)
@@ -84,6 +87,7 @@ static void esp_http_client_set_post_field(void *client,const char *data,int siz
 static esp_err_t esp_http_client_perform(void *client)
 {
  assert(client);++http_calls;
+ if(transport_result!=ESP_OK)return transport_result;
  /* Both input/envelope JSON trees must have been freed before a potentially slow TLS request. */
  assert(live_json_allocations==1);
  cJSON *post=cJSON_Parse(posted_payload);assert(post);
@@ -96,7 +100,9 @@ static esp_err_t esp_http_client_perform(void *client)
  return active_http.event_handler(&event);
 }
 static int esp_http_client_get_status_code(void *client){assert(client);return http_status;}
-static void esp_http_client_cleanup(void *client){assert(client);}
+static esp_err_t esp_http_client_get_and_clear_last_tls_error(void *client,int *tls,int *flags)
+{assert(client);*tls=*flags=0;return transport_error;}
+static void esp_http_client_cleanup(void *client){assert(client);++client_closes;}
 
 #define free host_free
 #define strlcpy host_strlcpy
@@ -136,6 +142,27 @@ int main(void)
  ppp_connected=true;invoke(true,NULL);assert(host_interface==2);
  ppp_connected=false;station_connected=false;invoke(false,"wifi_or_cellular_not_connected");
  assert(http_calls==8);
+ /* Router still associated. Failure diagnostics distinguish DNS from a timed-out transport,
+    release the socket, and allow a fresh request on the same interface. */
+ wifi_configured=station_connected=true;
+ int observed_status=0;
+ const char *stage=NULL;
+ http_capture_t capture={0};
+ http_status=0;
+ transport_error=ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME;
+ transport_result=ESP_FAIL;
+ assert(https_post(cfg.uplink_url,"{}",2,&wifi_netif,&capture,&observed_status,15000,&stage)==ESP_FAIL);
+ assert(!observed_status&&!strcmp(stage,"dns")&&client_opens==client_closes);
+ capture=(http_capture_t){0};
+ transport_error=ESP_OK;
+ transport_result=ESP_ERR_HTTP_EAGAIN;
+ assert(https_post(cfg.uplink_url,"{}",2,&wifi_netif,&capture,&observed_status,15000,&stage)==ESP_ERR_TIMEOUT);
+ assert(capture.deadline&&!strcmp(stage,"http_timeout")&&client_opens==client_closes);
+ transport_result=ESP_OK;
+ http_status=200;
+ invoke(true,NULL);
+ assert(client_opens==client_closes);
  puts("Link Wi-Fi: LTE disabled, TLS interface binding, raw/no-GPS forwarding, exact offered ACK, failure retention and bounded JSON lifetime passed");
+ puts("Link Wi-Fi: DNS failure, HTTPS deadline, cleanup and recovery while LAN remains associated passed");
  return 0;
 }

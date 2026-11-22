@@ -5,6 +5,8 @@
 
 #define TB_GPS_OUTBOX_JSON_MAX 640
 
+uint32_t tb_outbox_crc32(const unsigned char *data, size_t length);
+
 typedef struct {
     char path[128];
     size_t maximum_bytes;

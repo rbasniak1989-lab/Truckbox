@@ -6,7 +6,7 @@
 
 #define TB_LITE_SNAPSHOT_PATH "/api/telemetry/snapshot"
 #define TB_LITE_SNAPSHOT_MAX 1440u
-#define TB_LITE_RECORD_MAX 1152u
+#define TB_LITE_RECORD_MAX 1600u
 #define TB_LITE_SAFE_SEQ UINT64_C(9007199254740991)
 #define TB_LITE_EPOCH_MS UINT64_C(1704067200000)
 #define TB_LITE_MAX_AGE_MS 65000u
@@ -42,6 +42,8 @@ typedef struct {
     uint64_t local_seq, uptime_ms, unix_ms;
     double values[TB_LITE_FIELDS];
     uint32_t frames, sent, answered, timeouts, guard, heap_minimum;
+    uint32_t reset_reason;
+    bool reset_reason_valid;
 } tb_lite_snapshot_t;
 
 typedef struct {
