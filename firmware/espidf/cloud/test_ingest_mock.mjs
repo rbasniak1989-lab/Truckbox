@@ -18,7 +18,7 @@ const clone = x => structuredClone(x);
 
 async function invoke(path, samples, options = {}) {
   const writes = [], rpcs = [], pending = [];
-  const initialLatest = { device_id: 'test-device', seq: 1, ts: new Date(T0 - 60000).toISOString(), data: { rpm: 1500, speed_kmh: 40, odometer_km: null } };
+  const initialLatest = options.latest ?? { device_id: 'test-device', seq: 1, ts: new Date(T0 - 60000).toISOString(), data: { rpm: 1500, speed_kmh: 40, odometer_km: null } };
   const state = { latest: clone(initialLatest), counters: { engine_seconds: 42 } };
   class Query {
     constructor(table) { this.table = table; this.operation = 'select'; }
@@ -32,7 +32,7 @@ async function invoke(path, samples, options = {}) {
     update(data) { this.operation = 'update'; this.data = clone(data); return this; }
     async maybeSingle() {
       if (this.table === 'devices') return { data: { id: 'test-device', truck_id: 'test-truck', active: true, token_hash: tokenHash, last_seen_at: new Date().toISOString() }, error: null };
-      if (this.table === 'trips') return { data: options.noTrip ? null : { id: 'test-trip', started_at: new Date(T0 - 3600000).toISOString(), start_odometer_km: null, distance_km: 0, fuel_liters: 10, average_kml: 2, rate_last_ts: null }, error: null };
+      if (this.table === 'trips') return { data: options.noTrip ? null : { id: 'test-trip', started_at: new Date(T0 - 3600000).toISOString(), start_odometer_km: null, distance_km: 0, fuel_liters: 10, average_kml: 2, rate_last_ts: options.rateLast ?? null }, error: null };
       if (this.table === 'telemetry_latest') return { data: clone(state.latest), error: null };
       if (this.table === 'operation_state') return { data: { runtime_counters: clone(state.counters), last_telemetry_ts: null }, error: null };
       throw new Error('Unexpected mock query');
@@ -239,4 +239,42 @@ if (args.includes('--v26')) {
   assert.deepEqual(got.state.latest,got.initialLatest);assert.equal(got.rpcs.length,0);
   for(let i=0;i<samples.length;i++){assert.deepEqual(got.rows[i].raw,samples[i]);assert.equal(got.rows[i].trip_id,null);}
   console.log('PASS: 0.2.17 DTC/raw-change/counter/Volvo/PID summary events retain data and ACK without changing existing trip/finance/latest');
+}
+
+if (args.includes('--verify-replay')) {
+  const newer = { device_id: 'test-device', seq: 1000007, ts: new Date(T0).toISOString(),
+    data: { odometer_km: null, trip_fuel_l: 30, trip_distance_km: 51, rpm: 1300 } };
+  const rateLast = new Date(T0).toISOString();
+  const old = { seq: 1000008, source: 'REVB1_LINK_LITE', sample_kind: 'OPERATIONAL', time_valid: true,
+    unix_ms: T0 - 180000, boot_id: 55, uptime_ms: 120000, speed_kmh: 18, fuel_rate_lph: 10,
+    trip_fuel_l: 5, trip_distance_km: 9 };
+  const health = {seq: 1000009, sample_kind: 'HEALTH', time_valid: true, unix_ms: old.unix_ms,
+    context: {source: 'REVB1_LINK_LITE', link_boot_id: 7}, metrics: {offline_queue_pending_records: 13}};
+  const got = await invoke(sourcePath, [old, health], {latest: newer, rateLast});
+  assert.equal(got.status, 200);
+  assert.equal(got.response.accepted, 1);
+  assert.equal(got.response.health, 1);
+  assert.equal(got.response.ack_seq, 1000009);
+  assert.equal(got.rows[0].ts, new Date(old.unix_ms).toISOString());
+  assert.deepEqual(got.state.latest, newer);
+  assert.equal(got.rpcs.length, 0);
+  assert.deepEqual(got.state.counters, {engine_seconds: 42});
+
+  const beforeTrip = {...old, seq: 1000010, unix_ms: T0 - 3650000};
+  const beforeHealth = {...health, seq: 1000011, unix_ms: beforeTrip.unix_ms};
+  const cold = {...old, seq: 1000012, sample_kind: 'DECODED', time_valid: false, unix_ms: 0,
+    offline_time_quality: 'BOOT_UPTIME_ONLY'};
+  const archive = await invoke(sourcePath, [beforeTrip, beforeHealth, cold], {latest: newer, rateLast});
+  assert.equal(archive.status, 200);
+  assert.equal(archive.response.ack_seq, 1000012);
+  assert.deepEqual(archive.state.latest, newer);
+  assert.equal(archive.rpcs.length, 0);
+  assert.equal(archive.rows[0].trip_id, null);
+  assert.equal(archive.writes.find(w => w.table === 'health_minute_samples').data[0].trip_id, null);
+  assert.deepEqual(archive.rows[1].raw, cold);
+
+  const fresh = await invoke(sourcePath, [{...old, seq: 1000013, unix_ms: T0 + 40000}], {latest: newer, rateLast});
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.state.latest.seq, 1000013);
+  console.log('PASS: mixed replay has durable ACK and original timestamp; late/higher sequence cannot regress latest, counters or trip attribution');
 }

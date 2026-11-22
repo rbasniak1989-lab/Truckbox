@@ -1,0 +1,30 @@
+--- ingest-v26.ts
++++ ingest-v26.ts
+@@ -261,5 +261,7 @@
+       const odo=num(r.odometer_km),tms=isoMs(r.ts);
+       const odoOk=tripStartOdo==null||odo==null||odo>=tripStartOdo-0.25;
+-      const timeOk=tripStartMs==null||tms==null||tms>=tripStartMs-300000;
++      const lite=r.raw?.source==='REVB1_LINK_LITE';
++      const timeOk=lite ? (r.raw?.time_valid===true&&tms!=null&&(tripStartMs==null||tms>=tripStartMs))
++        : (tripStartMs==null||tms==null||tms>=tripStartMs-300000);
+       return odoOk&&timeOk;
+     };
+@@ -332,5 +334,8 @@
+         const regressesOdo=oldOdo!=null&&newOdo!=null&&newOdo<oldOdo-0.5;
+         const regressesSeq=oldSeq!=null&&candidate.seq<oldSeq;
+-        const acceptLatest=!existingLatest||(!regressesOdo&&(!regressesSeq||newOdo==null||oldOdo==null||newOdo>=oldOdo-0.05));
++        const previousCapture=isoMs(existingLatest?.ts),nextCapture=isoMs(candidate.ts);
++        const advancesCapture=nextCapture!=null&&(previousCapture==null||nextCapture>previousCapture||
++          (nextCapture===previousCapture&&existingLatest?.device_id===device.id&&oldSeq!=null&&candidate.seq>oldSeq));
++        const acceptLatest=advancesCapture&&(!existingLatest||(!regressesOdo&&(!regressesSeq||newOdo==null||oldOdo==null||newOdo>=oldOdo-0.05)));
+   
+         if(acceptLatest){
+@@ -367,5 +372,7 @@
+       const seconds=Math.max(1,Math.min(3600,Number(h.window_seconds??60)));
+       const start=str(h.window_start)??new Date(new Date(end).getTime()-seconds*1000).toISOString();
+-      const endMs=isoMs(end),tripOk=!!activeTrip&&(tripStartMs==null||endMs==null||endMs>=tripStartMs-300000);
++      const endMs=isoMs(end),lite=h.context?.source==='REVB1_LINK_LITE';
++      const tripOk=!!activeTrip&&(lite ? endMs!=null&&(tripStartMs==null||endMs>=tripStartMs)
++        : tripStartMs==null||endMs==null||endMs>=tripStartMs-300000);
+       return{
+         truck_id:device.truck_id,device_id:device.id,trip_id:tripOk?activeTrip?.id??null:null,
