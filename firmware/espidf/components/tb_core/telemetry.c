@@ -1122,6 +1122,8 @@ void tb_telemetry_lite_snapshot(tb_lite_snapshot_t *out)
         out->values[i] = value;
         out->valid |= TB_LITE_BIT(i);
         if (estimated) out->estimated |= TB_LITE_BIT(i);
+        else if (i == TB_LITE_PID250) { out->pid250_mid = mid; out->pid250_at_ms = reading.captured_us / 1000; }
+        else if (i == TB_LITE_ODOMETER) { out->odometer_mid = mid; out->odometer_at_ms = reading.captured_us / 1000; }
         if (age < out->age_ms) out->age_ms = (uint32_t)age;
     }
 }

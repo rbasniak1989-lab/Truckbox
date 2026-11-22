@@ -27,6 +27,34 @@ const tb_lite_signal_t tb_lite_signals[TB_LITE_FIELDS] = {
     [TB_LITE_LOAD] = {92, 128, 40000, "load_pct"},
 };
 
+void tb_lite_fuel_observe(tb_lite_fuel_meter_t *meter, uint64_t at_ms, double lph)
+{
+    if (!at_ms || at_ms < meter->at_ms) return;
+    const bool valid = isfinite(lph) && lph >= 0 && lph <= TB_LITE_FUEL_MAX_LPH;
+    const uint64_t elapsed = at_ms - meter->at_ms;
+    if (meter->last_valid && valid && elapsed <= TB_LITE_FUEL_GAP_MS) {
+        meter->litres += meter->last_lph * (double)elapsed / 3600000.0;
+        meter->covered_ms += elapsed;
+    }
+    meter->at_ms = at_ms;
+    meter->last_lph = lph;
+    meter->last_valid = valid;
+}
+
+bool tb_lite_fuel_delta(const tb_lite_fuel_counter_t *previous, const tb_lite_fuel_counter_t *current,
+                        tb_lite_fuel_window_t *window)
+{
+    if (!previous->at_ms || current->at_ms <= previous->at_ms ||
+        current->covered_ms < previous->covered_ms || current->microlitres < previous->microlitres) return false;
+    const tb_lite_fuel_window_t result = {.span_ms = current->at_ms - previous->at_ms,
+        .covered_ms = current->covered_ms - previous->covered_ms,
+        .microlitres = current->microlitres - previous->microlitres};
+    if (result.covered_ms > result.span_ms ||
+        (double)result.microlitres > TB_LITE_FUEL_MAX_LPH * (double)result.covered_ms / 3.6 + 1) return false;
+    *window = result;
+    return true;
+}
+
 bool tb_lite_uid_valid(const char *uid)
 {
     if (!uid || !uid[0] || strlen(uid) > 64) return false;
@@ -67,6 +95,10 @@ size_t tb_lite_snapshot_encode(const tb_lite_snapshot_t *s, char *buffer, size_t
         s->uptime_ms, s->unix_ms, s->age_ms, s->valid, s->stale, s->estimated, s->frames,
         s->sent, s->answered, s->timeouts, s->guard, s->heap_minimum);
     if (s->reset_reason_valid) tb_lite_append(&out, ",\"reset_reason\":%" PRIu32, s->reset_reason);
+    if (s->flow.at_ms) tb_lite_append(&out, ",\"f183\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "]",
+        s->flow.at_ms, s->flow.covered_ms, s->flow.microlitres);
+    if (s->pid250_at_ms && s->odometer_at_ms) tb_lite_append(&out, ",\"a250\":[%u,%u,%" PRIu64 ",%" PRIu64 "]",
+        s->pid250_mid, s->odometer_mid, s->pid250_at_ms, s->odometer_at_ms);
     tb_lite_append(&out, ",\"values\":{");
     bool first = true;
     for (unsigned i = 0; i < TB_LITE_FIELDS; ++i) {

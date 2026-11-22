@@ -278,3 +278,22 @@ if (args.includes('--verify-replay')) {
   assert.equal(fresh.state.latest.seq, 1000013);
   console.log('PASS: mixed replay has durable ACK and original timestamp; late/higher sequence cannot regress latest, counters or trip attribution');
 }
+
+if (args.includes('--verify-fuel-window')) {
+  const input = {seq: 1000020, sample_kind: 'OPERATIONAL', source: 'REVB1_LINK_LITE',
+    time_valid: true, unix_ms: T0, sensor_age_ms: 100, boot_id: 17, uptime_ms: 17900,
+    core_uid: 'tb-c6-test', valid_mask: 224, estimated_mask: 0, fuel_rate_lph: 100,
+    odometer_km: 100010, ecu_fuel_total_l: 33000, f183: [18000,10000,188889], a250: [128,140,2500,700]};
+  const got = await invoke(sourcePath, [input], {bigintContract:true});
+  assert.equal(got.status, 200);
+  assert.equal(got.response.ack_seq, input.seq);
+  assert.equal(got.rows[0].fuel_rate_lph, 100);
+  assert.equal(got.rows[0].odometer_km, 100010);
+  assert.deepEqual(got.rows[0].raw.f183, input.f183);
+  assert.deepEqual(got.rows[0].raw.a250, input.a250);
+  assert.equal(got.rows[0].raw.ecu_fuel_total_l, 33000);
+  assert.equal(got.rows[0].raw.sensor_age_ms, 100);
+  assert.equal(got.rows[0].raw.unix_ms, T0);
+  assert.ok(got.rpcs.some(rpc => rpc.name === 'truckbox_apply_trip_rate_tail'));
+  console.log('PASS: v26 persists PID183 coverage and PID250 anchor ages, ACKs and queues trip aggregation');
+}

@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,6 +80,49 @@ static void test_fuel_and_capacity(void)
     assert(!strstr(record,"\"trip_fuel_l\""));
 }
 
+static void test_pid183_window(void)
+{
+    tb_lite_fuel_meter_t meter = {0};
+    tb_lite_fuel_observe(&meter, 1000, 20);
+    tb_lite_fuel_observe(&meter, 3000, 80);
+    for (uint64_t at = 5000; at <= 11000; at += 2000) tb_lite_fuel_observe(&meter, at, 80);
+    assert(meter.covered_ms == 10000 && fabs(meter.litres - 680.0 / 3600.0) < 1e-10);
+    tb_lite_fuel_observe(&meter, 16000, 80); /* 5 s without samples is uncovered. */
+    tb_lite_fuel_observe(&meter, 17000, NAN);
+    tb_lite_fuel_observe(&meter, 18000, 100);
+    tb_lite_fuel_observe(&meter, 17000, 500); /* stale frame cannot move the meter back. */
+    assert(meter.covered_ms == 10000 && meter.at_ms == 18000 && meter.last_lph == 100);
+
+    tb_lite_snapshot_t s = {.uid="tb-c6-test", .boot_id=1, .local_seq=4, .uptime_ms=18000,
+        .age_ms=100, .valid=TB_LITE_BIT(TB_LITE_ODOMETER) | TB_LITE_BIT(TB_LITE_PID250),
+        .flow={.at_ms=meter.at_ms,.covered_ms=meter.covered_ms,.microlitres=(uint64_t)llround(meter.litres*1000000)},
+        .pid250_at_ms=15500, .odometer_at_ms=17300, .pid250_mid=128, .odometer_mid=140};
+    s.values[TB_LITE_ODOMETER] = 100010;
+    s.values[TB_LITE_PID250] = 33000;
+    char wire[TB_LITE_SNAPSHOT_MAX];
+    size_t bytes=tb_lite_snapshot_encode(&s, wire, sizeof(wire));
+    tb_lite_snapshot_t decoded;
+    assert(bytes && tb_lite_snapshot_decode(wire, bytes, &decoded));
+    assert(decoded.flow.microlitres == 188889 && decoded.pid250_mid == 128 && decoded.pid250_at_ms == 15500);
+    const tb_lite_fuel_counter_t first = {.at_ms=1000};
+    tb_lite_fuel_window_t window;
+    assert(tb_lite_fuel_delta(&first, &decoded.flow, &window) && window.span_ms == 17000 && window.covered_ms == 10000);
+    assert(fabs((double)window.microlitres * 3.6 / (double)window.covered_ms - 68) < 0.0001);
+    assert(!tb_lite_fuel_delta(&decoded.flow, &first, &window));
+    assert(!tb_lite_fuel_delta(&decoded.flow, &decoded.flow, &window));
+    char record[TB_LITE_RECORD_MAX];
+    const tb_lite_reference_t ref = {0};
+    assert(tb_lite_operational(record, sizeof(record), 7, epoch, &decoded, &ref));
+    assert(strstr(record, "\"f183\":[18000,10000,188889]") && strstr(record, "\"a250\":[128,140,2500,700]"));
+    decoded.odometer_at_ms = 1000;
+    assert(tb_lite_operational(record, sizeof(record), 8, epoch, &decoded, &ref));
+    assert(!strstr(record, "\"a250\""));
+    decoded.odometer_at_ms = s.odometer_at_ms;
+    decoded.estimated = TB_LITE_BIT(TB_LITE_PID250);
+    assert(tb_lite_operational(record, sizeof(record), 9, epoch, &decoded, &ref));
+    assert(!strstr(record, "\"a250\""));
+}
+
 static void test_ack_and_spool(void)
 {
     char dir[]="/tmp/tblite.XXXXXX";
@@ -136,6 +180,7 @@ int main(void)
 {
     test_snapshot();
     test_fuel_and_capacity();
+    test_pid183_window();
     test_ack_and_spool();
     uint64_t first,end,next,last=0;
     assert(!tb_lite_sequence_range(0,0,&first,&end));

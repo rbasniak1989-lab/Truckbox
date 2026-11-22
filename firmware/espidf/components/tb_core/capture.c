@@ -77,6 +77,9 @@ static struct {
     volatile bool emergency_stop;
     tbx_trip_t trip;
     tbx_fuel_account_t fuel_account;
+#ifdef CONFIG_TB_CORE_LITE
+    tb_lite_fuel_meter_t pid183_flow;
+#endif
     uint32_t checkpoint_generation;
     TaskHandle_t checkpoint_task;
     uint32_t fuel_checkpoint_id;
@@ -599,6 +602,12 @@ static void update_j1587_signal_locked(const tbx_j1587_observation_t *value, voi
 {
     (void)unused;
     uint64_t now = value->uptime_ms;
+#ifdef CONFIG_TB_CORE_LITE
+    if (value->pid == 183 && value->mid == 128) {
+        const bool valid = value->quality == TBX_J1587_OBS_EM_VALIDACAO && value->has_numeric;
+        tb_lite_fuel_observe(&s.pid183_flow, now, valid ? value->value : NAN);
+    }
+#endif
     if (value->quality == TBX_J1587_OBS_EM_VALIDACAO || value->quality == TBX_J1587_OBS_INDISPONIVEL) {
         tbx_j1708_field_note_parameter(&s.active,value->mid,value->pid,now*1000);
         const bool matched=tbx_j1708_active_note_response(&s.active,value->mid,value->pid,now*1000);
@@ -1451,6 +1460,8 @@ size_t tb_capture_health_fields(char *buffer,size_t capacity)
 bool tb_capture_lite_stats(tb_lite_snapshot_t *out)
 {
     if (!s.lock || xSemaphoreTake(s.lock, 0) != pdTRUE) return false;
+    out->flow = (tb_lite_fuel_counter_t){.at_ms = s.pid183_flow.at_ms, .covered_ms = s.pid183_flow.covered_ms,
+        .microlitres = (uint64_t)llround(s.pid183_flow.litres * 1000000.0)};
     out->frames = s.j1708_frames;
     out->sent = s.requests.sent_total;
     out->answered = s.requests.answered_total;

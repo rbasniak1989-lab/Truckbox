@@ -12,6 +12,8 @@
 #define TB_LITE_MAX_AGE_MS 65000u
 #define TB_LITE_OPERATIONAL_MS 10000u
 #define TB_LITE_HEALTH_MS 60000u
+#define TB_LITE_FUEL_GAP_MS 3000u
+#define TB_LITE_FUEL_MAX_LPH 1000.0
 
 /* Order is part of version 1: bit n qualifies the nth field. */
 typedef enum {
@@ -37,6 +39,24 @@ extern const tb_lite_signal_t tb_lite_signals[TB_LITE_FIELDS];
 enum { TB_LITE_RX_READY = 1u, TB_LITE_TX_ARMED = 2u, TB_LITE_MID_CONFLICT = 4u };
 
 typedef struct {
+    uint64_t at_ms, covered_ms, microlitres;
+} tb_lite_fuel_counter_t;
+
+typedef struct {
+    uint64_t at_ms, covered_ms;
+    double litres, last_lph;
+    bool last_valid;
+} tb_lite_fuel_meter_t;
+
+typedef struct {
+    uint64_t span_ms, covered_ms, microlitres;
+} tb_lite_fuel_window_t;
+
+void tb_lite_fuel_observe(tb_lite_fuel_meter_t *meter, uint64_t at_ms, double litres_per_hour);
+bool tb_lite_fuel_delta(const tb_lite_fuel_counter_t *previous, const tb_lite_fuel_counter_t *current,
+                        tb_lite_fuel_window_t *window);
+
+typedef struct {
     char uid[33];
     uint32_t boot_id, age_ms, valid, stale, estimated;
     uint64_t local_seq, uptime_ms, unix_ms;
@@ -44,6 +64,9 @@ typedef struct {
     uint32_t frames, sent, answered, timeouts, guard, heap_minimum;
     uint32_t reset_reason;
     bool reset_reason_valid;
+    tb_lite_fuel_counter_t flow;
+    uint64_t pid250_at_ms, odometer_at_ms;
+    uint8_t pid250_mid, odometer_mid;
 } tb_lite_snapshot_t;
 
 typedef struct {

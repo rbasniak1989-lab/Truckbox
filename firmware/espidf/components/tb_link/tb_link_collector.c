@@ -47,6 +47,8 @@ typedef struct {
     esp_err_t uplink_error;
     bool core_online, ready, core_reset_valid;
     uint32_t core_reset;
+    tb_lite_fuel_window_t fuel_window;
+    uint64_t fuel_window_time;
 } collector_state_t;
 
 typedef struct {
@@ -441,6 +443,7 @@ static void collector_task(void *unused)
     const tb_config_t *config = tb_config();
     const bool publish = publisher_configured(config);
     tb_lite_cursor_t cursor = {0};
+    tb_lite_fuel_counter_t previous_flow = {0};
     tb_lite_snapshot_t last = {0};
     tb_lite_contact_t contact = {0};
     uint64_t health_due = ticks_ms() + TB_LITE_HEALTH_MS;
@@ -485,7 +488,14 @@ static void collector_task(void *unused)
         portEXIT_CRITICAL(&s_mux);
         if (!publish) continue;
         if (seen && tb_lite_candidate(&cursor, &last, utc, &captured)) {
+            tb_lite_fuel_window_t window = {0};
+            if (cursor.boot_id == last.boot_id) (void)tb_lite_fuel_delta(&previous_flow, &last.flow, &window);
+            portENTER_CRITICAL(&s_mux);
+            s_state.fuel_window = window;
+            s_state.fuel_window_time = window.span_ms ? captured : 0;
+            portEXIT_CRITICAL(&s_mux);
             stage_record(&last, true, captured, NULL, TB_LITE_NO_EVENT);
+            previous_flow = last.flow;
             cursor.boot_id = last.boot_id;
             cursor.local_seq = last.local_seq;
             if (captured) cursor.captured_ms = captured;
@@ -744,4 +754,17 @@ void tb_link_collector_json(cJSON *root)
     cJSON_AddNumberToObject(o, "core_link_disconnect_count", health.link_disconnects);
     cJSON_AddStringToObject(o, "core_link_last_disconnect_reason", health.disconnect_reason ? health.disconnect_reason : "");
     cJSON_AddStringToObject(o, "core_poll_error", view.poll_error ? view.poll_error : "");
+    if (view.fuel_window.span_ms) {
+        cJSON *window = cJSON_AddObjectToObject(o, "pid183_window");
+        if (window) {
+            cJSON_AddNumberToObject(window, "utc_ms", (double)view.fuel_window_time);
+            cJSON_AddNumberToObject(window, "span_ms", (double)view.fuel_window.span_ms);
+            cJSON_AddNumberToObject(window, "covered_ms", (double)view.fuel_window.covered_ms);
+            if (view.fuel_window.covered_ms) {
+                cJSON_AddNumberToObject(window, "litres", (double)view.fuel_window.microlitres / 1000000.0);
+                cJSON_AddNumberToObject(window, "average_lph",
+                    (double)view.fuel_window.microlitres * 3.6 / (double)view.fuel_window.covered_ms);
+            }
+        }
+    }
 }

@@ -32,14 +32,27 @@ static cJSON *parse_object(const char *json, size_t size)
     return NULL;
 }
 
-static bool exact_number(const cJSON *object, const char *name, uint64_t maximum, uint64_t *result)
+static bool exact_unsigned(const cJSON *item, uint64_t maximum, uint64_t *result)
 {
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
     if (!cJSON_IsNumber(item) || !isfinite(item->valuedouble) || item->valuedouble < 0 ||
         item->valuedouble > (double)maximum) return false;
     uint64_t integer = (uint64_t)item->valuedouble;
     if ((double)integer != item->valuedouble) return false;
     *result = integer;
+    return true;
+}
+
+static bool exact_number(const cJSON *object, const char *name, uint64_t maximum, uint64_t *result)
+{
+    return exact_unsigned(cJSON_GetObjectItemCaseSensitive(object, name), maximum, result);
+}
+
+static bool uint_array(const cJSON *object, const char *key, unsigned size, uint64_t *out)
+{
+    const cJSON *array = cJSON_GetObjectItemCaseSensitive(object, key);
+    if (!cJSON_IsArray(array) || cJSON_GetArraySize(array) != (int)size) return false;
+    for (unsigned i = 0; i < size; ++i)
+        if (!exact_unsigned(cJSON_GetArrayItem(array, (int)i), TB_LITE_SAFE_SEQ, &out[i])) return false;
     return true;
 }
 
@@ -82,6 +95,18 @@ bool tb_lite_snapshot_decode(const char *json, size_t size, tb_lite_snapshot_t *
         if (!(s->valid & TB_LITE_BIT(i))) { ok = !item; continue; }
         ok = cJSON_IsNumber(item) && isfinite(item->valuedouble) && fabs(item->valuedouble) < 1e12;
         if (ok) s->values[i] = item->valuedouble;
+    }
+    uint64_t flow[3], anchors[4];
+    if (ok && uint_array(o, "f183", 3, flow) && flow[0] && flow[0] <= s->uptime_ms && flow[1] <= flow[0] &&
+        (double)flow[2] <= TB_LITE_FUEL_MAX_LPH * (double)flow[1] / 3.6 + 1)
+        s->flow = (tb_lite_fuel_counter_t){.at_ms = flow[0], .covered_ms = flow[1], .microlitres = flow[2]};
+    const uint32_t pairedbits = TB_LITE_BIT(TB_LITE_PID250) | TB_LITE_BIT(TB_LITE_ODOMETER);
+    if (ok && ((s->valid & ~s->estimated) & pairedbits) == pairedbits && uint_array(o, "a250", 4, anchors) &&
+        anchors[0] >= 128 && anchors[0] <= 255 && anchors[1] >= 128 && anchors[1] <= 255 &&
+        anchors[2] && anchors[2] <= s->uptime_ms && s->uptime_ms - anchors[2] <= tb_lite_signals[TB_LITE_PID250].ttl_ms &&
+        anchors[3] && anchors[3] <= s->uptime_ms && s->uptime_ms - anchors[3] <= tb_lite_signals[TB_LITE_ODOMETER].ttl_ms) {
+        s->pid250_mid = (uint8_t)anchors[0]; s->odometer_mid = (uint8_t)anchors[1];
+        s->pid250_at_ms = anchors[2]; s->odometer_at_ms = anchors[3];
     }
     cJSON_Delete(o);
     return ok;
@@ -165,7 +190,17 @@ size_t tb_lite_operational(char *json, size_t capacity, uint64_t seq, uint64_t c
         tb_lite_append(&out, ",\"offline_time_quality\":\"BOOT_UPTIME_ONLY\"}");
         return out.failed ? 0 : out.used;
     }
+    if (s->flow.at_ms) tb_lite_append(&out, ",\"f183\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "]",
+        s->flow.at_ms, s->flow.covered_ms, s->flow.microlitres);
     double odo=s->values[TB_LITE_ODOMETER], fuel=s->values[TB_LITE_PID250];
+    const uint64_t pair_gap = s->pid250_at_ms > s->odometer_at_ms
+        ? s->pid250_at_ms - s->odometer_at_ms : s->odometer_at_ms - s->pid250_at_ms;
+    if (s->pid250_at_ms && s->odometer_at_ms && s->pid250_at_ms <= s->uptime_ms && s->odometer_at_ms <= s->uptime_ms &&
+        pair_gap <= 5000 && validated_counter(s, TB_LITE_PID250) && validated_counter(s, TB_LITE_ODOMETER)) {
+        /* Store monotonic ages. Cloud combines them with unix_ms + sensor_age_ms. */
+        tb_lite_append(&out, ",\"a250\":[%u,%u,%" PRIu64 ",%" PRIu64 "]",
+            s->pid250_mid, s->odometer_mid, s->uptime_ms - s->pid250_at_ms, s->uptime_ms - s->odometer_at_ms);
+    }
     bool distance = validated_counter(s,TB_LITE_ODOMETER) && plausible_delta(odo,ref->odometer,captured_ms,ref->odometer_ms,200);
     bool direct = validated_counter(s,TB_LITE_PID250) && plausible_delta(fuel,ref->pid250,captured_ms,ref->pid250_ms,200);
     tb_lite_append(&out,",\"lite_reference_ms\":%" PRIu64 ",\"fuel_quality\":\"%s\"",ref->started_ms,
