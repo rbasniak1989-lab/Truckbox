@@ -89,6 +89,19 @@ test('trip metadata remains available when verified counters and optional models
     assert.equal(body.financial,null);assert.equal(body.journey,null);assert.equal(body.availability.consumption,'data_unavailable');
   } finally {await f.pg.close();}
 });
+test('a scoped active trip projects consolidated fuel without exposing its checkpoint or history',async()=>{
+  const f=await fixture();try {
+    await f.pg.exec(`alter table public.trips add column status text, add column fuel_source text,
+                    add column distance_km float8, add column fuel_liters float8, add column fuel_window_summary jsonb`);
+    const meter=JSON.stringify({quality:'RECONCILED_PID250',sampledAt:new Date().toISOString(),manualLitres:542,checkpoint:'PRIVATE'});
+    await f.db.query(`update public.trips set status='ACTIVE',fuel_source='J1587_PID183_WINDOW_CORE_V2',
+                      distance_km=742.2,fuel_liters=542.75,fuel_window_summary=$2::jsonb where id=$1`,[ids.trip,meter]);
+    const r=await f.app(await signed());assert.equal(r.status,200);const body=await r.json();
+    assert.equal(body.trip.consumption.averageKml,742.2/542.75);
+    assert.equal(body.legs[0].fuel.quality,'RECONCILED_PID250');
+    assert.ok(!JSON.stringify(body).includes('PRIVATE'));
+  } finally {await f.pg.close();}
+});
 test('GPS comes only from the authenticated vehicle Cloud record and keeps its real time and source',async()=>{
   const f=await fixture();try {
     await f.db.query("insert into public.gps_latest values($1,$2,'ANDROID_PHONE',now()-interval '1 hour',-15.0,-47.0,12.5,'TEST_PROVIDER')",[ids.truck,ids.device]);

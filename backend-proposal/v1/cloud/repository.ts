@@ -108,8 +108,9 @@ export class CloudRepository implements DeviceRegistry {
     if(rows.length)return {scope,legs:rows.map(x=>({legId:x.leg_id,kind:x.kind,distanceKm:x.distance_km,consumedLiters:x.consumed_liters}))};
     if(op.kind!=='LOADED')return null;
     const [current]=await this.db.query<{distance_km:number;fuel_liters:number;meter:Record<string,unknown>|null}>(`
-      select t.distance_km,t.fuel_liters,to_jsonb(t)->'fuel_window_summary' as meter from public.trips t
-      where t.id=$1 and t.truck_id=$2 and t.status='ACTIVE' and t.fuel_source='J1587_PID183_WINDOW_CORE_V2'`,[op.trip.id,scope.vehicleId]);
+      select (to_jsonb(t)->>'distance_km')::float8 as distance_km,(to_jsonb(t)->>'fuel_liters')::float8 as fuel_liters,
+        to_jsonb(t)->'fuel_window_summary' as meter from public.trips t
+      where t.id=$1 and t.truck_id=$2 and to_jsonb(t) @> '{"status":"ACTIVE","fuel_source":"J1587_PID183_WINDOW_CORE_V2"}'`,[op.trip.id,scope.vehicleId]);
     const quality=current?.meter?.quality;
     if(!current || !Number.isFinite(current.distance_km) || !Number.isFinite(current.fuel_liters) ||
        !['INTEGRATED_PID183','RECONCILED_PID250','ESTIMATED_GAPS','INSUFFICIENT'].includes(String(quality)))return null;
