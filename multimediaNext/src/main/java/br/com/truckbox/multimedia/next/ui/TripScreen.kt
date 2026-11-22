@@ -66,7 +66,7 @@ import java.util.Locale
         }
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                Metric("Média da operação",format(trip?.consumption?.averageKml,2),"km/l",Modifier.weight(1f))
+                Metric("Média da operação",format(trip?.consumption?.averageKml,2),"km/l",Modifier.weight(1f),trip?.consumption?.fuel?.label(now))
                 Metric("Diesel consumido",format(trip?.consumption?.consumedLiters),"L",Modifier.weight(1f))
             }
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {

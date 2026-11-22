@@ -1,4 +1,4 @@
-import type {ConsumptionSource,FinancialSource,GpsData,JourneySource,Policy,Scope,Session,TripData,TripSource} from '../contracts.ts';
+import type {ConsumptionSource,FinancialSource,FuelQuality,GpsData,JourneySource,Policy,Scope,Session,TripData,TripSource} from '../contracts.ts';
 import {AccessError,type DeviceIdentity,type DeviceRegistry,type UserIdentity} from './security.ts';
 export interface Database {
   query<T=Record<string,unknown>>(text: string,params?: unknown[]): Promise<T[]>;
@@ -105,8 +105,18 @@ export class CloudRepository implements DeviceRegistry {
     const op=await this.operation(scope);if(!op)return null;
     const rows=await this.db.query<{leg_id: string;kind:'LOADED'|'EMPTY';distance_km:number;consumed_liters:number}>(`select leg_id,kind,distance_km,consumed_liters from multimedia_v1.verified_consumption
       where tenant_id=$1 and vehicle_id=$2 and leg_id=$3 and kind=$4 and source_verified`,[scope.tenantId,scope.vehicleId,op.legId,op.kind]);
-    if(!rows.length)return null;
-    return {scope,legs:rows.map(x=>({legId:x.leg_id,kind:x.kind,distanceKm:x.distance_km,consumedLiters:x.consumed_liters}))};
+    if(rows.length)return {scope,legs:rows.map(x=>({legId:x.leg_id,kind:x.kind,distanceKm:x.distance_km,consumedLiters:x.consumed_liters}))};
+    if(op.kind!=='LOADED')return null;
+    const [current]=await this.db.query<{distance_km:number;fuel_liters:number;meter:Record<string,unknown>|null}>(`
+      select t.distance_km,t.fuel_liters,to_jsonb(t)->'fuel_window_summary' as meter from public.trips t
+      where t.id=$1 and t.truck_id=$2 and t.status='ACTIVE' and t.fuel_source='J1587_PID183_WINDOW_CORE_V2'`,[op.trip.id,scope.vehicleId]);
+    const quality=current?.meter?.quality;
+    if(!current || !Number.isFinite(current.distance_km) || !Number.isFinite(current.fuel_liters) ||
+       !['INTEGRATED_PID183','RECONCILED_PID250','ESTIMATED_GAPS','INSUFFICIENT'].includes(String(quality)))return null;
+    const at=current.meter?.sampledAt;
+    const sampledAt=typeof at==='string'&&Number.isFinite(Date.parse(at))?iso(at):null;
+    return {scope,legs:[{legId:op.legId,kind:op.kind,distanceKm:current.distance_km,consumedLiters:current.fuel_liters,
+      fuel:{quality:quality as FuelQuality,sampledAt}}]};
   }
   async trip(scope: Scope): Promise<TripSource|null> {
     if(!await this.authorizeScope(scope))return null;

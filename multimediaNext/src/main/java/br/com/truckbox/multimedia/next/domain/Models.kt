@@ -87,7 +87,22 @@ enum class AnalysisPeriod(val title: String, val seconds: Long?) {
     MINUTES_15("15 min", 900), HOUR("1 hora", 3600), TRIP("Viagem", null)
 }
 enum class LegKind(val title: String) { COMPLETE("Viagem completa"), LOADED("Trecho carregado"), EMPTY("Trecho vazio") }
-data class LegConsumption(val legId: String, val kind: LegKind, val distanceKm: Double, val consumedLiters: Double) {
+enum class FuelQuality { INTEGRATED_PID183, RECONCILED_PID250, ESTIMATED_GAPS, INSUFFICIENT }
+data class FuelMeasurement(val quality: FuelQuality, val sampledAt: Instant?) {
+    fun label(now: Instant): String = when {
+        quality == FuelQuality.INSUFFICIENT -> "Cobertura insuficiente"
+        sampledAt == null || sampledAt.isAfter(now.plusSeconds(5)) || sampledAt.isBefore(now.minusSeconds(35)) -> "Leitura desatualizada"
+        quality == FuelQuality.RECONCILED_PID250 -> "Conferido pelo PID 250"
+        quality == FuelQuality.ESTIMATED_GAPS -> "Estimado · lacunas de leitura"
+        else -> "Estimado pelo PID 183"
+    }
+}
+data class LocalFuelWindow(val coreUid: String, val endedAt: Instant, val coveredMs: Long, val microlitres: Long) {
+    fun fresh(now: Instant) = !endedAt.isAfter(now) && !endedAt.isBefore(now.minusSeconds(30))
+    val averageLph: Double? get() = if (coveredMs == 10000L) microlitres * 0.00036 else null
+}
+data class LegConsumption(val legId: String, val kind: LegKind, val distanceKm: Double, val consumedLiters: Double,
+                          val fuel: FuelMeasurement? = null) {
     val averageKml: Double? get() = if (distanceKm >= 0 && consumedLiters > 0) distanceKm / consumedLiters else null
 }
 data class TripView(
@@ -129,6 +144,7 @@ data class AppState(
     val faultOverflow: Int = 0,
     val speed: Reading? = null,
     val fuelRate: Reading? = null,
+    val localFuel: LocalFuelWindow? = null,
     val trip: TripView? = null,
     val gps: CloudPosition? = null,
     val legs: List<LegConsumption> = emptyList(),

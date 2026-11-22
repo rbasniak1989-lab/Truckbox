@@ -18,10 +18,15 @@ import java.time.Instant
     // Completa só existe se o backend fornecer essa agregação; nunca somar etapas implicitamente.
     val leg=state.legs.singleOrNull { it.kind==selected }
     val instant=instantConsumption(state.speed,state.fuelRate,now)
+    val local=state.localFuel?.takeIf {it.coreUid==state.coreDeviceUid && it.fresh(now)}
+    val localNote=local?.let { window ->
+        window.averageLph?.let { "Janela local de 10 s · ${format(it,2)} L/h" }
+            ?: "Janela local · ${format(window.coveredMs/1000.0,1)} s cobertos"
+    }
     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-        Metric("Média da viagem / etapa",format(leg?.averageKml,2),"km/l",Modifier.weight(1f))
+        Metric("Média da viagem / etapa",format(leg?.averageKml,2),"km/l",Modifier.weight(1f),leg?.fuel?.label(now))
         Metric("Últimos 100 km",format(state.last100Kml,2),"km/l",Modifier.weight(1f),"Janela técnica · não altera litros da etapa")
-        Metric("Consumo instantâneo",format(instant?.value,2),instant?.unit ?: "km/l · L/h",Modifier.weight(1f))
+        Metric("Consumo instantâneo",format(instant?.value,2),instant?.unit ?: "km/l · L/h",Modifier.weight(1f),localNote)
     }
     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
         Metric("Litros consumidos da etapa",format(leg?.consumedLiters),"L",Modifier.weight(1f))

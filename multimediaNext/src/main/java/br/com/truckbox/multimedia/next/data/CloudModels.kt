@@ -26,14 +26,17 @@ internal val UUID_PATTERN=Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 data class CloudPolicyDto(val scope: CloudScopeDto?=null,val version: Long?=null,val issuedAt: String?=null,val expiresAt: String?=null,val financialRead: Boolean?=null,val journeyRead: Boolean?=null) {
     fun domain()=CloudPolicy(requireNotNull(scope).identity(),requireNotNull(version),Instant.parse(requireNotNull(issuedAt)),Instant.parse(requireNotNull(expiresAt)),requireNotNull(financialRead),requireNotNull(journeyRead))
 }
-data class CloudLegDto(val legId: String?=null,val kind: String?=null,val distanceKm: Double?=null,val consumedLiters: Double?=null,val averageKml: Double?=null) {
+data class CloudFuelDto(val quality: FuelQuality?=null,val sampledAt: String?=null)
+data class CloudLegDto(val legId: String?=null,val kind: String?=null,val distanceKm: Double?=null,val consumedLiters: Double?=null,val averageKml: Double?=null,
+                       val fuel: CloudFuelDto?=null) {
     fun domain(): LegConsumption {
         require(!legId.isNullOrBlank() && kind in setOf("LOADED","EMPTY"))
         val km=requireNotNull(distanceKm);val liters=requireNotNull(consumedLiters)
         require(km.isFinite() && liters.isFinite() && km>=0 && liters>=0)
         if(liters>0) require(averageKml?.isFinite()==true && kotlin.math.abs(averageKml-km/liters)<.000001)
         else require(averageKml==null)
-        return LegConsumption(legId,LegKind.valueOf(kind!!),km,liters)
+        val measurement=fuel?.let{FuelMeasurement(it.quality ?: FuelQuality.INSUFFICIENT,it.sampledAt?.let(Instant::parse))}
+        return LegConsumption(legId,LegKind.valueOf(kind!!),km,liters,measurement)
     }
 }
 data class CloudTripDto(val id: String?=null,val legId: String?=null,val kind: String?=null,val origin: String?=null,val destination: String?=null,val weightT: Double?=null,val legStartedAt: String?=null,val consumption: CloudLegDto?=null) {

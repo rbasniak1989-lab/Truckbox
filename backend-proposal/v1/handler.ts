@@ -34,7 +34,7 @@ export function createHandler(ports: Ports): (req: Request)=>Promise<Response> {
         if(!latest || !latest.monitoringRead || !sameScope(latest.scope,session.scope)) return reply(403,{error:'session_revoked'});
         // Projeção independente de frete, custos, direção e descanso; nunca serializar o objeto SQL.
         return reply(200,{contractVersion:1,trip:trip?{id:trip.id,legId:trip.legId,kind:trip.kind,origin:trip.origin,destination:trip.destination,weightT:trip.weightT,legStartedAt:trip.legStartedAt,
-          consumption:c?{legId:c.legId,kind:c.kind,distanceKm:c.distanceKm,consumedLiters:c.consumedLiters,averageKml:c.consumedLiters>0?c.distanceKm/c.consumedLiters:null}:null}:null});
+          consumption:c?{legId:c.legId,kind:c.kind,distanceKm:c.distanceKm,consumedLiters:c.consumedLiters,averageKml:c.consumedLiters>0?c.distanceKm/c.consumedLiters:null,fuel:c.fuel}:null}:null});
       }
       if(url.pathname==='/v1/consumption') {
         const source=await ports.consumption(session.scope);
@@ -46,7 +46,7 @@ export function createHandler(ports: Ports): (req: Request)=>Promise<Response> {
         // Verificar sessão novamente cobre revogação de monitoramento durante a consulta.
         const latestSession=await ports.authenticate(req);
         if(!latestSession || !latestSession.monitoringRead || !sameScope(latestSession.scope,session.scope)) return reply(403,{error:'session_revoked'});
-        return reply(200,{contractVersion:1,legs:source.legs.map(x=>({legId:x.legId,kind:x.kind,distanceKm:x.distanceKm,consumedLiters:x.consumedLiters,averageKml:x.consumedLiters>0?x.distanceKm/x.consumedLiters:null}))});
+        return reply(200,{contractVersion:1,legs:source.legs.map(x=>({legId:x.legId,kind:x.kind,distanceKm:x.distanceKm,consumedLiters:x.consumedLiters,averageKml:x.consumedLiters>0?x.distanceKm/x.consumedLiters:null,fuel:x.fuel}))});
       }
       const policy=await ports.policy(session.scope);
       if(!valid(policy,session,ports.now())) return reply(403,{error:'policy_unavailable_or_expired'});

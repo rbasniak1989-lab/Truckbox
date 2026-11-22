@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
                 val hostChanged = local.value.coreHost != it.coreHost
                 local.value=it;preferencesStore.save(it)
                 if(hostChanged) {
-                    state.update {it.copy(readings=emptyMap(),speed=null,fuelRate=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED,
+                    state.update {it.copy(readings=emptyMap(),speed=null,fuelRate=null,localFuel=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED,
                         coreFaults=emptyList(),faultUid=null,faultSnapshotAt=null,faultReadable=false,faultIncomplete=true,faultOverflow=0)}
                     coreRetry.value++
                 }
@@ -130,6 +130,22 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         delay(15000)
+                    }
+                }
+              }
+              launch {
+                val fuel=CoreFuelClient(WifiCoreConnectionFactory(this@MainActivity))
+                coreRetry.collectLatest {
+                    while(isActive) {
+                        val host=local.value.coreHost
+                        val uid=state.value.coreDeviceUid
+                        if(uid!=null) {
+                            val window=withContext(Dispatchers.IO) {fuel.fetch(host,uid)}
+                            ensureActive()
+                            if(host==local.value.coreHost && uid==state.value.coreDeviceUid)
+                                state.update {it.copy(localFuel=window)}
+                        }
+                        delay(10000)
                     }
                 }
               }
