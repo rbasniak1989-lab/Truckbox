@@ -5,6 +5,7 @@ import br.com.truckbox.multimedia.next.data.CoreFaultClient
 import br.com.truckbox.multimedia.next.data.CoreLiveClient
 import br.com.truckbox.multimedia.next.domain.Instrument
 import br.com.truckbox.multimedia.next.domain.Quality
+import br.com.truckbox.multimedia.next.domain.confirmedActive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
