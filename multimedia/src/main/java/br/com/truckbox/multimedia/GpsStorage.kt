@@ -41,9 +41,9 @@ internal class GpsSettings(context: Context) {
     private fun readConfig(): JSONObject? = runCatching { JSONObject(encrypted.readFully().decodeToString()) }.getOrNull()
 
     fun credentials(): GpsCredentials? = runCatching {
-        val config = readConfig() ?: return null
+        val config = readConfig() ?: return@runCatching null
         val uid = config.getString("device_uid")
-        val key = keyStore().getKey(KEY_ALIAS, null) as? SecretKey ?: return null
+        val key = keyStore().getKey(KEY_ALIAS, null) as? SecretKey ?: return@runCatching null
         val cipher = Cipher.getInstance(CIPHER)
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(config.getString("iv"), Base64.DEFAULT)))
         cipher.updateAAD(uid.toByteArray(Charsets.UTF_8))

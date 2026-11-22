@@ -70,7 +70,7 @@ class GpsSharingService : Service(), LocationListener {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val settings by lazy { GpsSettings(this) }
-    private val locations by lazy { getSystemService(LocationManager::class.java) }
+    private val locations by lazy { getSystemService(Context.LOCATION_SERVICE) as LocationManager }
     private val fix = AtomicReference<Location?>()
     private var started = false
     private var listening = false
@@ -86,7 +86,7 @@ class GpsSharingService : Service(), LocationListener {
         }
         if (started) return START_NOT_STICKY
 
-        val notificationManager = getSystemService(NotificationManager::class.java)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(NotificationChannel(CHANNEL, "GPS TruckBox", NotificationManager.IMPORTANCE_LOW))
         val stop = PendingIntent.getService(this, 0, Intent(this, GpsSharingService::class.java).setAction(STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
