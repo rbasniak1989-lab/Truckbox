@@ -522,8 +522,6 @@ static int read_batch(char *payload, upload_batch_t *batch, size_t limit)
 
     /* A legacy record may be newer than a V2 record after an explicit
      * rollback. Merge the two heads without acknowledging across a hole. */
-    char legacy_record[TB_LITE_RECORD_MAX];
-    if (legacy.sequence) strcpy(legacy_record, record);
     for (size_t i = 0; i < limit; ++i) {
         tb_lite_ticket_t entry = {0};
         int error = tb_lite_journal_read(&s_journal, i ? &batch->ticket[i - 1] : NULL, &entry, record, sizeof(record));
@@ -531,7 +529,9 @@ static int read_batch(char *payload, upload_batch_t *batch, size_t limit)
         if (!error && legacy.sequence == entry.sequence) return EBADMSG;
         if (legacy.sequence && (error == ENOENT || legacy.sequence < entry.sequence)) {
             if (i) break;
-            tb_lite_append(&body, "%s", legacy_record);
+            error = tb_gps_outbox_peek(&s_legacy, record, sizeof(record));
+            if (error) return error;
+            tb_lite_append(&body, "%s", record);
             batch->ticket[0] = legacy;
             batch->count = 1;
             batch->health = legacy.health;
