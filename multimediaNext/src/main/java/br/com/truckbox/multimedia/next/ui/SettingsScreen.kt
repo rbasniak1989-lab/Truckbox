@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import br.com.truckbox.multimedia.next.BuildConfig
 import br.com.truckbox.multimedia.next.domain.*
+import br.com.truckbox.multimedia.next.gps.GpsSettingsCard
 import java.time.Instant
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -103,6 +104,7 @@ private val sections=listOf("Geral","Veículo e perfil","Módulos e permissões"
         }
         Caption("Entrar solicita o vínculo; permissões Financeiro/Jornada continuam somente leitura e são concedidas na Cloud.")
     }
+    if (section == 4 && !state.demo && BuildConfig.FLAVOR == "homolog") GpsSettingsCard()
     if(section==0 || section==5) PanelCard(Modifier.fillMaxWidth()) {
         SectionTitle("Tela e aparência",Icons.Outlined.DarkMode)
         ChoiceRow(listOf("Automático","Noite","Dia"),preferences.appearance.ordinal,{onPreferences(preferences.copy(appearance=Appearance.entries[it]))})

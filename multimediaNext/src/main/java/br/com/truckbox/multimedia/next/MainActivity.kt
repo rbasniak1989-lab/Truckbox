@@ -13,6 +13,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import br.com.truckbox.multimedia.next.data.*
 import br.com.truckbox.multimedia.next.domain.*
+import br.com.truckbox.multimedia.next.gps.GpsSettings
+import br.com.truckbox.multimedia.next.gps.GpsSharingService
+import br.com.truckbox.multimedia.next.gps.hasPreciseLocation
 import br.com.truckbox.multimedia.next.ui.TruckBoxApp
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,6 +158,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         enterImmersiveMode()
+        if (BuildConfig.FLAVOR == "homolog" && GpsSettings(this).enabled && hasPreciseLocation(this)) {
+            GpsSharingService.start(this)
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

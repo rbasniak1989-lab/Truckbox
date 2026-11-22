@@ -21,15 +21,18 @@ android {
         applicationId = "br.com.truckbox.multimedia.next"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.1-core026-falhas"
+        versionCode = 5
+        versionName = "0.2.2-gps"
         buildConfigField("String","CLOUD_URL","\"$cloudUrl\"")
         buildConfigField("String","CLOUD_PUBLISHABLE_KEY","\"$cloudPublishableKey\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     flavorDimensions += "environment"
     productFlavors {
-        create("homolog") { dimension = "environment" }
+        create("homolog") {
+            dimension = "environment"
+            applicationIdSuffix = ".gps"
+        }
         create("demo") {
             dimension = "environment"
             applicationIdSuffix = ".demo"

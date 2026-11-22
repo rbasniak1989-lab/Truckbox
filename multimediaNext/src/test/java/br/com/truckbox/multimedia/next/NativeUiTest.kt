@@ -83,6 +83,17 @@ class NativeUiTest {
         compose.onNodeWithText("truckbox.local · Nome do Core não resolvido").assertExists()
         compose.onNodeWithText("192.168.4.1 · JSON recebido · HTTP 200").assertExists()
     }
+    @Test @Config(qualifiers="w1920dp-h1080dp-land-mdpi") fun gpsIsOptInOnlyInTheConnectionsTab() {
+        compose.setContent { TruckBoxApp(AppState(), startingPage = Page.SETTINGS, nowOverride = now) }
+        compose.onNodeWithText("GPS da multimídia").assertDoesNotExist()
+        compose.onNodeWithText("Conexões").performClick()
+        compose.onNodeWithText("Ativar GPS para a Cloud").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("GPS da multimídia").assertExists()
+        compose.onNodeWithText("Parar compartilhamento").assertDoesNotExist()
+        val file = File("build/screenshots/homolog/settings-gps-1920x1080.png")
+        file.parentFile?.mkdirs()
+        saveNativeWindow(file)
+    }
     @Test fun receivedLegacyValueIsOnlyShownAsUnverifiedInsideSensorDetails() {
         val reading=Reading(4.4,"bar",Origin.CORE,receivedAt=now,quality=Quality.UNVERIFIED)
         compose.setContent{TruckBoxApp(AppState(readings=mapOf(Instrument.OIL_PRESSURE to InstrumentValue(reading))),nowOverride=now)}
