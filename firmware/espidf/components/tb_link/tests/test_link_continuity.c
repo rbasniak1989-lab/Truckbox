@@ -75,6 +75,7 @@ static int append(tb_lite_journal_t *journal, unsigned index, bool dense)
 static unsigned offer(tb_lite_journal_t *journal, tb_lite_ticket_t *tickets, bool dense, unsigned *health)
 {
     *health = 0;
+    size_t bytes = sizeof("{\"device_uid\":\"tb-c6-test123456\",\"token\":\"test-token\",\"samples\":[") - 1;
     unsigned count = 0;
     for (; count < TB_LITE_BATCH_MAX; ++count) {
         char json[TB_LITE_RECORD_MAX], expected[TB_LITE_RECORD_MAX];
@@ -87,6 +88,9 @@ static unsigned offer(tb_lite_journal_t *journal, tb_lite_ticket_t *tickets, boo
         sample((unsigned)(tickets[count].sequence - FIRST), dense, expected, &captured, &kind);
         assert(tickets[count].captured_ms == captured && tickets[count].health == kind);
         assert(!strcmp(json, expected));
+        size_t length = strlen(json);
+        if (length + 4 >= 8192u - bytes) break;
+        bytes += length + (count != 0);
         *health += kind;
     }
     return count;
