@@ -82,6 +82,11 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent { TruckBoxMultimediaApp() }
     }
+
+    override fun onResume() {
+        super.onResume()
+        if (GpsSettings(this).enabled && hasPreciseLocation(this)) GpsSharingService.start(this)
+    }
 }
 
 private enum class Page(val title: String) {
@@ -551,10 +556,11 @@ private fun SettingsPage(coreHost: String, onSave: (String) -> Unit, live: LiveS
                 if (live.error != null) Text(live.error, color = MaterialTheme.colorScheme.error)
             }
         }
+        GpsSettingsCard()
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF151A20))) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Arquitetura", fontWeight = FontWeight.Bold)
-                Text("Core → dados ao vivo. Cloud → fallback e histórico. Multimídia → visualização. Este aplicativo não assume a função de Gateway e não precisa ficar ligado para a TruckBox continuar registrando.")
+                Text("A multimídia lê sensores do Core e histórico da Cloud. Com o GPS ativado, ela também envia posições da central. O Link continua publicando a telemetria do caminhão.")
             }
         }
     }

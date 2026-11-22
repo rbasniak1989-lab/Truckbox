@@ -8,13 +8,12 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // The workshop build uses its own ID so a CI debug signature never
-        // requires uninstalling the installed Multimedia application.
-        applicationId = "br.com.truckbox.multimedia.revb1lite"
+        // Keep the GPS build installable alongside both earlier multimedia APKs.
+        applicationId = "br.com.truckbox.multimedia.revb1lite.gps"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.2-revb1-lite"
+        versionCode = 6
+        versionName = "0.3.3-revb1-lite-gps"
     }
 
     buildFeatures {
