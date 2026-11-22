@@ -1473,7 +1473,7 @@ static void light_capture_json(cJSON *root)
     }
     struct {
         uint8_t observed[32], held_mid;
-        uint32_t held_boot;
+        uint32_t held_boot, echo_ok, collisions, echo_timeouts;
         bool invalid, persisted;
         tbx_auto_phase_t phase;
         const char *reason;
@@ -1484,6 +1484,9 @@ static void light_capture_json(cJSON *root)
     guard.held_boot = s.polling_guard.boot;
     guard.invalid = s.guard_invalid;
     guard.persisted = s.guard_persisted;
+    guard.echo_ok = s.active.echo_ok;
+    guard.collisions = s.active.collisions;
+    guard.echo_timeouts = s.active.echo_timeouts;
     guard.phase = s.automatic.phase;
     guard.reason = s.automatic.reason;
     xSemaphoreGive(s.lock);
@@ -1502,6 +1505,9 @@ static void light_capture_json(cJSON *root)
     cJSON_AddNumberToObject(requests,"sent_total",stats.sent);
     cJSON_AddNumberToObject(requests,"answered_total",stats.answered);
     cJSON_AddNumberToObject(requests,"timeout_total",stats.timeouts);
+    cJSON_AddNumberToObject(requests,"echo_ok",guard.echo_ok);
+    cJSON_AddNumberToObject(requests,"collisions",guard.collisions);
+    cJSON_AddNumberToObject(requests,"echo_timeouts",guard.echo_timeouts);
     cJSON_AddNumberToObject(requests,"local_mid",tb_config()->j1708_local_mid);
     cJSON_AddBoolToObject(requests,"hardware_tx_available",tb_capture_tx_ready());
     cJSON_AddBoolToObject(requests,"hardware_tx_verified",tb_config()->j1708_lite_tx_verified);
@@ -1860,6 +1866,7 @@ static tb_mid_hold_recovery_t recovery_snapshot(bool authorized,bool stationary)
         .rx_fresh=rx->seen_valid && now>=rx->last_valid_us && now-rx->last_valid_us<=UINT64_C(2000000),
         .rx_healthy=rx->reference_count==3 && rx->suspect_streak==0 && !rx->clock_fault &&
             rx->last_window.count.valid!=0,
+        .opaque_boot_id=CORE_LITE,
         .configured_mid=mid,.held_mid=s.polling_guard.mid,
         .held_boot=s.polling_guard.boot,.current_boot=tb_boot_id(),
         .valid_frames=rx->total.valid,.uptime_us=now

@@ -13,6 +13,7 @@ static char *pending;
 static char *extension_saved,*extension_pending,*auto_saved,*auto_pending;
 static char *extra_saved,*extra_pending,*policy_saved,*policy_pending,*cadence_saved,*cadence_pending;
 static char *lite_saved,*lite_pending;
+static bool lite_tx_activation_saved, lite_tx_activation_pending;
 static bool target_mac;
 static esp_err_t flash_error;
 static esp_err_t write_error;
@@ -69,6 +70,12 @@ esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
 esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t *size)
 {
     assert(handle == 1);
+    if (!strcmp(key, LITE_TX_MIGRATION_KEY)) {
+        if (!lite_tx_activation_saved) return ESP_ERR_NVS_NOT_FOUND;
+        if (value) { assert(*size >= 2); memcpy(value, "1", 2); }
+        *size = 2;
+        return ESP_OK;
+    }
     if(!strcmp(key,"lite_v1")){
         if(!lite_saved)return ESP_ERR_NVS_NOT_FOUND;
         size_t n=strlen(lite_saved)+1;if(value){assert(*size>=n);memcpy(value,lite_saved,n);}*size=n;return ESP_OK;
@@ -110,6 +117,12 @@ esp_err_t nvs_get_str(nvs_handle_t handle, const char *key, char *value, size_t 
 esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 {
     assert(handle == 1);
+    if (!strcmp(key, LITE_TX_MIGRATION_KEY)) {
+        if (write_error != ESP_OK) return write_error;
+        assert(!strcmp(value, "1"));
+        lite_tx_activation_pending = true;
+        return ESP_OK;
+    }
     if(!strcmp(key,"lite_v1")){if(write_error!=ESP_OK)return write_error;free(lite_pending);lite_pending=strdup(value);assert(lite_pending);return ESP_OK;}
     if(!strcmp(key,"v225")){if(write_error!=ESP_OK)return write_error;free(cadence_pending);cadence_pending=strdup(value);assert(cadence_pending);return ESP_OK;}
     if(!strcmp(key,"v223")){if(write_error!=ESP_OK)return write_error;free(policy_pending);policy_pending=strdup(value);assert(policy_pending);return ESP_OK;}
@@ -129,6 +142,10 @@ esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const char *value)
 esp_err_t nvs_commit(nvs_handle_t handle)
 {
     assert(handle == 1 && pending != NULL);
+    if (lite_tx_activation_pending) {
+        lite_tx_activation_saved = true;
+        lite_tx_activation_pending = false;
+    }
     if(lite_pending){free(lite_saved);lite_saved=lite_pending;lite_pending=NULL;}
     if(cadence_pending){free(cadence_saved);cadence_saved=cadence_pending;cadence_pending=NULL;}
     if(policy_pending){free(policy_saved);policy_saved=policy_pending;policy_pending=NULL;}
@@ -162,6 +179,9 @@ static void clear_storage(void)
     free(policy_saved);free(policy_pending);policy_saved=policy_pending=NULL;
     free(cadence_saved);free(cadence_pending);cadence_saved=cadence_pending=NULL;
     free(lite_saved);free(lite_pending);lite_saved=lite_pending=NULL;
+    /* General config tests exercise existing units after the one-time update. */
+    lite_tx_activation_saved = true;
+    lite_tx_activation_pending = false;
     free(auto_saved);free(auto_pending);auto_saved=auto_pending=NULL;target_mac=false;
     persisted = pending = NULL;
     flash_error = write_error = ESP_OK;
@@ -417,6 +437,60 @@ static void test_lite_rollback_keys(void)
     assert(!tb_config()->j1708_lite_tx_verified && !strcmp(previous_token,tb_config()->admin_token));
 }
 
+#if defined(CONFIG_TB_CORE_LITE) && defined(TB_LITE_CONFIRMED_CORE_UID)
+static void test_confirmed_lite_tx_activation(void)
+{
+    clear_storage();
+    lite_tx_activation_saved = false;
+    assert(tb_config_init() == ESP_OK);
+    assert(apply("{\"j1708_local_mid\":172,\"j1708_topology_attested\":true,\"j1708_auto_enabled\":false}") == ESP_OK);
+    reboot();
+    assert(tb_config_init() == ESP_OK && !lite_tx_activation_saved);
+    assert(!tb_config_j1708_auto_enabled() && !tb_config()->j1708_lite_tx_verified);
+
+    clear_storage();
+    target_mac = true;
+    lite_tx_activation_saved = false;
+    assert(tb_config_init() == ESP_OK && !lite_tx_activation_saved && !tb_config()->j1708_lite_tx_verified);
+    assert(apply("{\"j1708_auto_enabled\":false,\"wifi_ssid\":\"QA router\",\"j1587_odometer_validated\":true}") == ESP_OK);
+    tb_config_t expected = s_saved_config;
+    unsigned count = writes;
+
+    write_error = ESP_FAIL;
+    reboot();
+    assert(tb_config_init() == ESP_OK && writes == count && !lite_tx_activation_saved);
+    assert(!tb_config_j1708_auto_enabled() && !tb_config()->j1708_lite_tx_verified);
+
+    write_error = ESP_OK;
+    reboot();
+    assert(tb_config_init() == ESP_OK && writes == count + 1 && lite_tx_activation_saved);
+    assert(tb_config_j1708_auto_enabled() && tb_config_j1708_auto_persisted());
+    expected.j1708_auto_enabled = true;
+    expected.j1708_lite_tx_verified = true;
+    assert(!memcmp(&expected, tb_config(), sizeof(expected)));
+    count = writes;
+    reboot();
+    assert(tb_config_init() == ESP_OK && writes == count && tb_config_j1708_auto_enabled());
+    assert(tb_config()->j1708_lite_tx_verified);
+
+    assert(tb_config_set_j1708_auto(false) == ESP_OK);
+    count = writes;
+    reboot();
+    assert(tb_config_init() == ESP_OK && writes == count && !tb_config_j1708_auto_enabled());
+    assert(tb_config()->j1708_lite_tx_verified);
+
+    clear_storage();
+    target_mac = true;
+    lite_tx_activation_saved = false;
+    assert(tb_config_init() == ESP_OK);
+    assert(apply("{\"j1708_local_mid\":188,\"j1708_auto_enabled\":false}") == ESP_OK);
+    reboot();
+    assert(tb_config_init() == ESP_OK && !lite_tx_activation_saved && tb_config()->j1708_local_mid == 188);
+    assert(!tb_config_j1708_auto_enabled() && !tb_config()->j1708_lite_tx_verified);
+    puts("Known Rev.B.1 Core: one-time TX activation, NVS error, other UID/MID and persisted operator stop PASS");
+}
+#endif
+
 int main(void)
 {
     test_lite_rollback_keys();
@@ -427,6 +501,9 @@ int main(void)
     test_save_reboot_and_partial_updates();
     test_invalid_inputs_never_persist();
     test_storage_corruption_and_upgrade();
+#if defined(CONFIG_TB_CORE_LITE) && defined(TB_LITE_CONFIRMED_CORE_UID)
+    test_confirmed_lite_tx_activation();
+#endif
     clear_storage();
     printf("config host tests passed (%s)\n", tb_role_name());
     return 0;

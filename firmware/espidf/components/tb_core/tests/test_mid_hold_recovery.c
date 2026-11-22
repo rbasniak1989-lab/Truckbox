@@ -35,6 +35,12 @@ int main(void)
     DENY(held_boot,0);
     DENY(valid_frames,2999);
     DENY(uptime_us,UINT64_C(59999999));
+    p.opaque_boot_id = true;
+    p.held_boot = UINT32_C(3900000001);
+    assert(tb_mid_hold_can_recover(&p));
+    DENY(held_boot,920);
+    DENY(current_boot,0);
+    DENY(mid_observed_this_boot,true);
 #undef DENY
     puts("Stale MID hold recovery: old evidence, idle/parked, clean/passive RX, no current MID or TX PASS");
     return 0;

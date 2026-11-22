@@ -23,6 +23,7 @@
 #define CONFIG_JSON_MAX 8192
 #define CONFIG_NAMESPACE "tb_cfg"
 #define CONFIG_KEY "config"
+#define LITE_TX_MIGRATION_KEY "lite_tx_v228"
 
 static const char *TAG = "tb_config";
 static tb_config_t s_config;
@@ -600,7 +601,7 @@ static esp_err_t persist_lite(nvs_handle_t handle, const tb_config_t *config)
     return serialized ? nvs_set_str(handle,"lite_v1",text) : ESP_ERR_NO_MEM;
 }
 
-static esp_err_t persist(const tb_config_t *config,bool save_auto)
+static esp_err_t persist(const tb_config_t *config, bool save_auto, bool mark_lite_tx_activation)
 {
     cJSON *json = private_json(config);
     if (json == NULL) {
@@ -629,6 +630,7 @@ static esp_err_t persist(const tb_config_t *config,bool save_auto)
         if(result==ESP_OK && save_auto)result=nvs_set_str(handle,"v225","critical-10s-v1");
         if(result==ESP_OK)result=nvs_set_str(handle,"v217",extra_text);
         if(result==ESP_OK)result=persist_lite(handle,config);
+        if(result==ESP_OK && mark_lite_tx_activation)result=nvs_set_str(handle,LITE_TX_MIGRATION_KEY,"1");
         if (result == ESP_OK) {
             result = nvs_commit(handle);
         }
@@ -643,6 +645,35 @@ static esp_err_t persist(const tb_config_t *config,bool save_auto)
     free(serialized);free(ext);free(auto_text);free(extra_text);
     return result;
 }
+
+#if defined(CONFIG_TB_CORE_LITE) && defined(TB_LITE_CONFIRMED_CORE_UID)
+static void migrate_confirmed_lite_tx(void)
+{
+    if (strcmp(s_device_uid, TB_LITE_CONFIRMED_CORE_UID) != 0 ||
+        !s_auto_persisted || !s_config.j1708_topology_attested || s_config.j1708_local_mid != 172) return;
+
+    nvs_handle_t handle;
+    esp_err_t result = nvs_open(CONFIG_NAMESPACE, NVS_READONLY, &handle);
+    if (result != ESP_OK) return;
+    size_t size = 0;
+    result = nvs_get_str(handle, LITE_TX_MIGRATION_KEY, NULL, &size);
+    nvs_close(handle);
+    if (result != ESP_ERR_NVS_NOT_FOUND) return;
+
+    /* Board-specific owner authorization. Record it once before starting any
+     * role tasks, so a later operator stop survives restarts and reinstalls. */
+    const bool verified = s_config.j1708_lite_tx_verified;
+    const bool enabled = s_config.j1708_auto_enabled;
+    s_config.j1708_lite_tx_verified = true;
+    s_config.j1708_auto_enabled = true;
+    result = persist(&s_config, true, true);
+    if (result != ESP_OK) {
+        s_config.j1708_lite_tx_verified = verified;
+        s_config.j1708_auto_enabled = enabled;
+        ESP_LOGW(TAG, "Previous J1708 policy retained after activation write failed: %s", esp_err_to_name(result));
+    }
+}
+#endif
 
 tb_role_t tb_role(void)
 {
@@ -791,7 +822,7 @@ esp_err_t tb_config_init(void)
         }
     }
     if (first_boot || upgrade || auto_migrate || expansion_migrate) {
-        result = persist(&s_config,auto_migrate || s_auto_persisted);
+        result = persist(&s_config, auto_migrate || s_auto_persisted, false);
         if (result != ESP_OK) {
             if(!first_boot && !upgrade && (auto_migrate || expansion_migrate)){
                 /* A new optional policy must not brick a previously valid
@@ -813,6 +844,9 @@ esp_err_t tb_config_init(void)
         }
     }
     if(auto_migrate && !extension_error[0])s_auto_persisted=true;
+#if defined(CONFIG_TB_CORE_LITE) && defined(TB_LITE_CONFIRMED_CORE_UID)
+    if (!first_boot) migrate_confirmed_lite_tx();
+#endif
     s_saved_config = s_config;
     __atomic_store_n(&s_auto_enabled,s_config.j1708_auto_enabled,__ATOMIC_RELEASE);
     s_ready = true;
@@ -833,7 +867,7 @@ esp_err_t tb_config_apply_json(const cJSON *json, char *error, size_t error_size
     tb_config_t candidate = s_saved_config;
     esp_err_t result = apply_fields(json, &candidate, false, error, error_size);
     if (result == ESP_OK) {
-        result = persist(&candidate,true);
+        result = persist(&candidate, true, false);
         if (result == ESP_OK) {
             s_saved_config = candidate;s_auto_persisted=true;extension_error[0]=0;
             __atomic_store_n(&s_auto_enabled,candidate.j1708_auto_enabled,__ATOMIC_RELEASE);

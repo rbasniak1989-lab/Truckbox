@@ -298,7 +298,12 @@
 
   function errorText(body, fallback) {
     if (body && typeof body === 'object') {
-      const value = body.error || body.message || body.detail;
+      const reasons = {
+        physical_tx_validation_required: 'Registre a validação de transmissão em Configuração → Coleta e armazenamento.',
+        NVS_or_capture_busy: 'O Core não confirmou a gravação do polling. Confira o estado e tente novamente com o caminhão parado.',
+        recovery_interlock_or_nvs_failed_check_stopped_rx_and_local_mid: 'Arquivamento recusado. Confira velocidade zero, recepção J1708 e o MID observado neste boot.'
+      };
+      const value = body.error || body.message || body.detail || reasons[body.reason] || body.reason;
       if (typeof value === 'string') return value;
     }
     return fallback;
@@ -665,19 +670,20 @@
     const field = status.field_validation || {};
     const guard = status.rx_guard || {};
     const automatic=status.automatic || {};
+    const needsTxConfirmation=lastState?.core_lite===true && status.hardware_tx_verified===false;
     const phasesAuto={WAITING_HEALTHY_RX:'aguardando rede saudável',RUNNING:'J1708 ativa',RECOVERY_BACKOFF:'pausa automática; aguardando recuperação',BLOCKED:'bloqueado',DISABLED:'desabilitado na configuração',OTA_PAUSED:'pausado durante atualização'};
     const autoReasons={PERSISTENT_POLICY_OPERATIONAL_INDIRECT:'operação permanente',WAITING_STABLE_PASSIVE_NETWORK:'observando a rede antes de transmitir',LOCAL_TX_PROFILE_REQUIRED:'perfil local ainda não configurado',NVS_POLICY_UNAVAILABLE:'configuração persistente indisponível',UART_OR_EDGE_MONITOR_UNAVAILABLE:'interface de recepção indisponível',MATCHING_RESPONSE_TIMEOUT:'sem resposta candidata no prazo',LOCAL_MID_CONFLICT:'conflito no identificador local',OTA_BUSY:'atualização em andamento',PERSISTENT_OPERATOR_DISABLE:'desativação salva',OPERATOR_OR_MAINTENANCE_HOLD:'parado para manutenção'};
     const advanced=$('j1708-advanced'),autoState=automatic.enabled===true?'on':'off';
     if(advanced.dataset.autoState!==autoState){advanced.open=autoState==='off';advanced.dataset.autoState=autoState;}
-    text('j1708-automatic-status', 'Requisições automáticas: '+(automatic.enabled?'habilitadas':'desabilitadas')+' · '+(phasesAuto[automatic.state] || 'diagnóstico indisponível')+' · '+(automatic.TRANSMISSION_LAUNCH_MONITOR?'monitor de arrancada ativo':'frequência normal')+' · '+(autoReasons[automatic.reason] || automatic.reason || '')+(automatic.retry_in_ms?' · nova avaliação em '+Math.ceil(automatic.retry_in_ms/1000)+' s':''));
-    $('j1708-automatic-enable').disabled=role!=='core' || !token || uploadBusy || automatic.enabled===true;
+    text('j1708-automatic-status', 'Requisições automáticas: '+(automatic.enabled?'habilitadas':'desabilitadas')+' · '+(phasesAuto[automatic.state] || 'diagnóstico indisponível')+' · '+(automatic.TRANSMISSION_LAUNCH_MONITOR?'monitor de arrancada ativo':'frequência normal')+' · '+(autoReasons[automatic.reason] || automatic.reason || '')+(automatic.retry_in_ms?' · nova avaliação em '+Math.ceil(automatic.retry_in_ms/1000)+' s':'')+(needsTxConfirmation?' · confirmação de transmissão pendente em Configuração':''));
+    $('j1708-automatic-enable').disabled=role!=='core' || !token || uploadBusy || automatic.enabled===true || needsTxConfirmation;
 
     const numbers = v => Number.isFinite(Number(v)) ? String(v) : '—';
-    text('j1708-sent', numbers(status.sent));
+    text('j1708-sent', numbers(status.sent ?? status.sent_total));
     text('j1708-echo', numbers(status.echo_ok));
-    text('j1708-responses', numbers(status.responses));
+    text('j1708-responses', numbers(status.responses ?? status.answered_total));
     text('j1708-errors', numbers(status.collisions) + ' / ' +
-      numbers(status.echo_timeouts) + ' / ' + numbers(status.timeouts));
+      numbers(status.echo_timeouts) + ' / ' + numbers(status.timeouts ?? status.timeout_total));
     text('j1708-mode', automatic.enabled?(phasesAuto[automatic.state] || 'Automático') : status.sequential_scan && status.armed ?
       'Sequencial '+numbers(status.scan_sent)+'/'+numbers(status.scan_total) :
       status.work_mode ? 'Em operação' :
@@ -692,8 +698,8 @@
       Number.isInteger(n) && n >= 128 && n <= 255;
     const midInUse = Array.isArray(mids) && mids.includes(n);
     const presetConflict = [128,130,140,144].includes(n);
-    const speed = lastState && lastState.speedKph;
-    const stopped = typeof speed === 'number' && Number.isFinite(speed) && speed <= 0.1;
+    const speed = lastState?.core_lite ? lastState.live?.speedKph : lastState?.speedKph;
+    const stopped = Number.isFinite(speed) && speed >= 0 && speed <= 0.1;
     const heldMid=Number(automatic.technical_hold_mid || 0);
     const midSeen=Array.isArray(mids) && mids.includes(heldMid);
     $('j1708-recover-hold').disabled=role!=='core' || !token || uploadBusy || j1708Busy ||
