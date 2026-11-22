@@ -342,9 +342,10 @@ begin
       select 1 from public.telemetry_samples s where s.trip_id=t.id and s.sample_kind='OPERATIONAL' and s.raw ? 'w183') then
     return query select * from public.truckbox_rebuild_trip_fuel_rate_legacy(p_trip_id,p_gap_limit_s); return;
   end if;
-  return query select r.trip_id,r.fuel_liters,r.average_kml,r.last_ts,r.last_seq,r.last_rate_lph,r.gap_count,
-    r.gap_seconds,coalesce((x.fuel_window_summary->>'windows')::bigint,0)
-    from public.truckbox_apply_trip_rate_tail(p_trip_id,p_gap_limit_s) r join public.trips x on x.id=r.trip_id;
+  perform public.truckbox_apply_trip_rate_tail(p_trip_id,p_gap_limit_s);
+  select * into t from public.trips where id=p_trip_id;
+  return query select t.id,t.fuel_liters,t.average_kml,t.rate_last_ts,t.rate_last_seq,t.rate_last_lph,
+    coalesce(t.rate_gap_count,0),coalesce(t.rate_gap_seconds,0),coalesce((t.fuel_window_summary->>'windows')::bigint,0);
 end $$;
 
 create function truckbox_fuel.protect_close() returns trigger

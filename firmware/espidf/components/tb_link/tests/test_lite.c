@@ -175,6 +175,25 @@ static void test_continuous_windows(void)
     assert(tb_lite_operational(record, sizeof(record), 20, captured, &decoded, &ref) && strstr(record, "\"w183\":[[4,"));
     assert(!strstr(record, "\"fuel_rate_lph\""));
 
+    snapshot.valid = TB_LITE_ALL;
+    snapshot.local_seq = 211;
+    snapshot.age_ms = 230;
+    snapshot.uptime_ms = 63000;
+    snapshot.unix_ms = wall + 63000;
+    snapshot.fuel_count = TB_FUEL_PAGE_SIZE;
+    for (unsigned i = 0; i < TB_LITE_FIELDS; ++i) snapshot.values[i] = 1234567.123456 + i;
+    for (unsigned i = 0; i < TB_FUEL_PAGE_SIZE; ++i) {
+        uint32_t slot = 4 + i;
+        snapshot.fuel_windows[i] = (tb_fuel_window_t){.slot=slot,.end_utc_ms=wall+slot*10000,
+            .ul=280000,.covered_ms=10000,.readings=40,.min_mlph=34000,.max_mlph=480000,.total_ul=slot*280000,
+            .counter={.at_ms=slot*10000-500,.observed_ul=slot*280000-10000,.covered_ms=slot*10000-1200,
+                .ticks=123456789,.mid=128,.flags=3}};
+    }
+    n = tb_lite_snapshot_encode(&snapshot, wire, sizeof(wire));
+    assert(n && tb_lite_snapshot_decode(wire, n, &decoded) && decoded.fuel_count == TB_FUEL_PAGE_SIZE);
+    assert(tb_lite_operational(record, sizeof(record), 21, wall+62770, &decoded, &ref));
+    assert(strstr(record, "[6,") && strstr(record, "\"fuel_rate_lph\""));
+
     m = (tb_fuel_meter_t){0};
     tb_fuel_observe(&m, 1000, 36);
     tb_fuel_observe(&m, 2000, 36);
@@ -192,7 +211,7 @@ static void test_continuous_windows(void)
     }
     assert(tb_fuel_page(&m, 8639, page, TB_FUEL_PAGE_SIZE) == 1 && page[0].total_ul == 864000000);
     assert(tb_fuel_page(&m, 0, page, TB_FUEL_PAGE_SIZE) == TB_FUEL_PAGE_SIZE && page[0].slot == 8640-TB_FUEL_HISTORY+1);
-    printf("PID183 9 s a 2 L/h + 1 s a 50 L/h: 18889 uL, 6.80004 L/h; fronteira, silêncio, retomada, relógio, 24 h e %zu B de acumulador PASS\n", sizeof(m));
+    printf("PID183 9 s a 2 L/h + 1 s a 50 L/h: 18889 uL, 6.80004 L/h; fronteira, silêncio, referência, replay de 3 janelas, 24 h e %zu B de acumulador PASS\n", sizeof(m));
 }
 
 static void test_ack_and_spool(void)
