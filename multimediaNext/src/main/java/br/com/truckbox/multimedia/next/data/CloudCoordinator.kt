@@ -142,6 +142,12 @@ class CloudCoordinator(
         }
         val trip=dto.trip?.domain()
         val gps=dto.gps?.domain(now())
+        val fuelRange = runCatching { dto.fuelRange?.domain(received) }.getOrNull()
+        val fuelHistory = trip?.let { runCatching { dto.fuelHistory?.domain(it.id, received) }.getOrNull() }
+        val route = trip?.takeIf { it.kind == LegKind.LOADED }
+            ?.let { runCatching { dto.route?.domain(it.id, received) }.getOrNull() }
+        val routeForecast = route?.let { runCatching { dto.routeForecast?.domain(it, received) }.getOrNull() }
+        val operationalDeadline = if (applied) minOf(auth.expiresAt, requireNotNull(remote).expiresAt) else leaseDeadline
         val legs=(dto.legs ?: emptyList()).map {it.domain()}
         require(legs.map {it.legId}.distinct().size==legs.size)
         require(legs.isEmpty() || (trip!=null && legs.all {it.legId==trip.legId && it.kind==trip.kind}))
@@ -164,6 +170,8 @@ class CloudCoordinator(
             app.update {previous ->
                 val changed=previous.expectedCoreUid!=dto.coreDeviceUid
                 previous.copy(cloud=ConnectionState.CLOUD_AUTHENTICATED,trip=trip,legs=legs,gps=gps,
+                    fuelRange=fuelRange, fuelHistory=fuelHistory, route=route, routeForecast=routeForecast?.withFinancialAccess(flags.first),
+                    operationalExpiresAt=operationalDeadline,
                     financial=views.financial,journey=views.journey,financialAllowed=flags.first,journeyAllowed=flags.second,
                     policyVersion=remote?.version.takeIf {applied},policyExpiresAt=remote?.expiresAt?.let {minOf(it,leaseDeadline)}.takeIf {applied},
                     policyLabel=when {
@@ -189,19 +197,22 @@ class CloudCoordinator(
             error is CloudHttpError->ConnectionState.UNVERIFIED
             error is java.io.IOException->ConnectionState.OFFLINE
             else->ConnectionState.UNVERIFIED}
-        clearViews(status)
+        clearViews(status, keepOperational = status == ConnectionState.OFFLINE)
         if(error is CloudHttpError && error.status in listOf(400,401)) {tokens.invalidate();session=null;sessionEpoch=-1;registeredSession=null}
         mutableUi.update {it.copy(authenticated=session!=null,busy=false,deviceId=signer?.deviceId,message=when {
             error is CloudHttpError && error.status==404->"Canal Cloud aguardando publicação neste ambiente"
             error is CloudHttpError && error.status==403->"Aguardando aprovação do usuário, veículo e multimídia na Cloud"
             error is CloudHttpError && error.status in listOf(400,401)->"Autenticação recusada. Confira o acesso e a data/hora do aparelho"
-            error is java.io.IOException->"Cloud sem resposta; conteúdo protegido removido"
+            error is java.io.IOException->"Cloud sem resposta · dados operacionais com horário da última consulta"
             else->"Não foi possível validar a resposta ou a identidade da Cloud"
         })}
     }
-    private fun clearViews(status: ConnectionState) {
+    private fun clearViews(status: ConnectionState, keepOperational: Boolean = false) {
         policy?.disconnect()
         app.update {it.copy(cloud=status,trip=null,gps=null,legs=emptyList(),financial=null,journey=null,financialAllowed=false,journeyAllowed=false,
+            fuelRange=it.fuelRange.takeIf { keepOperational }, fuelHistory=it.fuelHistory.takeIf { keepOperational },
+            route=it.route.takeIf { keepOperational }, routeForecast=it.routeForecast.takeIf { keepOperational }?.withFinancialAccess(false),
+            operationalExpiresAt=it.operationalExpiresAt.takeIf { keepOperational },
             policyVersion=null,policyExpiresAt=null,policyLabel="Aguardando sincronização segura",cloudScope=null,vehicleLabel=null,expectedCoreUid=null)}
     }
 }

@@ -80,6 +80,23 @@ class CloudCoordinatorTest {
         assertNull(state.value.financial);assertNull(state.value.journey);assertFalse(state.value.financialAllowed);assertFalse(state.value.journeyAllowed)
         assertEquals(core,state.value.readings[Instrument.INTAKE]!!.first)
     }
+    @Test fun offlineOperationalCacheKeepsAgeAndClearsOnLogout() = runBlocking {
+        val state = MutableStateFlow(AppState())
+        val api = Api(frame().copy(fuelRange = FuelRangeDto(capacityLiters = 720.0, remainingLiters = 480.0,
+            autonomyKm = 805.0, quality = "APPROXIMATE", updatedAt = clock.minusSeconds(50).toString())))
+        val c = coordinator(api, state)
+        c.signIn("test@example.invalid", "TEST_ONLY")
+        assertEquals(480.0, state.value.fuelRange?.remainingLiters)
+        api.error = IOException("TEST offline")
+        c.refresh()
+        assertEquals(ConnectionState.OFFLINE, state.value.cloud)
+        assertEquals(805.0, state.value.redacted(clock.plusSeconds(21)).fuelRange?.autonomyKm)
+        assertEquals(clock.minusSeconds(50), state.value.fuelRange?.updatedAt)
+        assertNull(state.value.redacted(clock.plusSeconds(301)).fuelRange)
+        assertNull(state.value.financial)
+        c.signOut()
+        assertNull(state.value.fuelRange)
+    }
     @Test fun staleLeaseAndHighRoundTripCannotPublishProtectedValues()=runBlocking {
         for(bad in listOf(frame().copy(roundTripMillis=20000),frame().copy(receivedAt=clock.minusSeconds(61).toString()))) {
             val state=MutableStateFlow(AppState());val c=coordinator(Api(bad),state)

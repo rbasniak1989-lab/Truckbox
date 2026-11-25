@@ -10,6 +10,30 @@ fun instantConsumption(speed: Reading?, flow: Reading?, now: Instant): InstantCo
     return if (s == 0.0) InstantConsumption(f, "L/h") else if (f > 0) InstantConsumption(s / f, "km/l") else null
 }
 
+data class FuelDisplay(val value: Double?, val unit: String, val explanation: String)
+
+fun displayedConsumption(speed: Reading?, rate: Reading?, window: LocalFuelWindow?, now: Instant): FuelDisplay? {
+    val kmh = speed?.observed(now)?.takeIf { it >= 0 }
+    val lph = rate?.observed(now)?.takeIf { it >= 0 && (it > 0 || rate.quality == Quality.VALID) }
+    if (lph != null) {
+        val oldest = if (kmh != null && speed.sampledAt != null) minOf(requireNotNull(rate.sampledAt), speed.sampledAt)
+            else requireNotNull(rate.sampledAt)
+        val age = java.time.Duration.between(oldest, now).seconds
+        val source = if (rate.sourceId?.endsWith("/PID:183") == true) "PID 183" else rate.sourceId ?: "Vazão local"
+        val motionSource = if (speed?.sourceId?.endsWith("/PID:84") == true) "PID 84" else speed?.sourceId ?: "velocidade local"
+        val origin = "$source · ${if (rate.quality == Quality.PROVISIONAL || speed?.quality == Quality.PROVISIONAL) "provisório" else "medido"} · ${age}s"
+        if (lph == 0.0 && kmh != null && kmh > 0 && speed.quality == Quality.VALID) {
+            return FuelDisplay(null, "km/L", "Corte de combustível · $origin")
+        }
+        return if (kmh != null && kmh > 0 && lph > 0) FuelDisplay(kmh / lph, "km/L", "$origin · $motionSource")
+        else FuelDisplay(lph, "L/h", if (kmh == null) "$origin · sem velocidade atual" else origin)
+    }
+    val complete = window?.takeIf { it.fresh(now) } ?: return null
+    val mean = complete.averageLph ?: return null
+    val age = java.time.Duration.between(complete.endedAt, now).seconds
+    return FuelDisplay(mean, "L/h", "Média ponderada PID 183 · 10 s · ${age}s atrás")
+}
+
 data class TimeSample(val id: String, val at: Instant, val value: Double?, val quality: Quality, val sourceId: String)
 data class TimeStats(val min: Double, val mean: Double, val max: Double, val coverage: Double, val samples: Int)
 /** Degrau constante à esquerda, sem carregar leitura além de maxGapSeconds.

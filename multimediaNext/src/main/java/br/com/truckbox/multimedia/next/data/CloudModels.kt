@@ -78,7 +78,9 @@ data class CloudGpsDto(val latitude: Double?=null,val longitude: Double?=null,va
 data class CloudSnapshotDto(val contractVersion: Int?=null,val scope: CloudScopeDto?=null,val policy: CloudPolicyDto?=null,val requestNonce: String?=null,
     val vehicleLabel: String?=null,val coreDeviceUid: String?=null,val trip: CloudTripDto?=null,val legs: List<CloudLegDto>?=null,
     val financial: CloudFinancialDto?=null,val journey: CloudJourneyDto?=null,val gps: CloudGpsDto?=null,val receivedAt: String?=null,val leaseExpiresAt: String?=null,
-    @Transient val roundTripMillis: Long=0)
+    @Transient val roundTripMillis: Long=0,
+    val fuelRange: FuelRangeDto? = null, val fuelHistory: FuelHistoryDto? = null,
+    val route: JourneyRouteDto? = null, val routeForecast: RouteFuelForecastDto? = null)
 
 interface CloudApi {
     fun activateTest(code: String,signer: DeviceSigner,coreUid: String): CloudAuthSession = throw UnsupportedOperationException("Test access unavailable")

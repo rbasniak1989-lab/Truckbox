@@ -102,12 +102,13 @@ data class FuelMeasurement(val quality: FuelQuality, val sampledAt: Instant?) {
         else -> "Estimado pelo PID 183"
     }
 }
-data class LocalTripFuel(val distanceKm: Double?, val litres: Double, val gaps: Boolean) {
+data class LocalTripFuel(val distanceKm: Double?, val litres: Double, val gaps: Boolean, val coveredMs: Long? = null) {
     val averageKml get() = distanceKm?.let { if (litres > 0) it / litres else null }
     val label get() = if (gaps) "Estimativa local · lacunas" else "Estimativa local pelo PID 183"
 }
 data class LocalFuelWindow(val coreUid: String, val endedAt: Instant, val coveredMs: Long, val microlitres: Long,
-                           val trip: LocalTripFuel? = null) {
+                           val trip: LocalTripFuel? = null, val bootId: Long? = null, val uptimeMs: Long? = null,
+                           val slot: Long? = null) {
     fun fresh(now: Instant) = !endedAt.isAfter(now) && !endedAt.isBefore(now.minusSeconds(30))
     val averageLph: Double? get() = if (coveredMs == 10000L) microlitres * 0.00036 else null
 }
@@ -156,6 +157,12 @@ data class AppState(
     val speed: Reading? = null,
     val fuelRate: Reading? = null,
     val localFuel: LocalFuelWindow? = null,
+    val localFuelHistory: FuelHistory? = null,
+    val fuelRange: FuelRange? = null,
+    val fuelHistory: FuelHistory? = null,
+    val route: JourneyRoute? = null,
+    val routeForecast: RouteFuelForecast? = null,
+    val operationalExpiresAt: Instant? = null,
     val trip: TripView? = null,
     val gps: CloudPosition? = null,
     val legs: List<LegConsumption> = emptyList(),
@@ -191,7 +198,11 @@ data class AppState(
     fun redacted(now: Instant=Instant.now()): AppState {
         val lease=demo || policyExpiresAt?.isAfter(now)==true
         val f=financialAllowed && lease;val j=journeyAllowed && lease
+        val operational = demo || operationalExpiresAt?.isAfter(now) == true
+        val linkedRoute = route?.takeIf { operational && it.validUntil?.isAfter(now) != false }
         return copy(financial=financial.takeIf {f},journey=journey.takeIf {j},financialAllowed=f,journeyAllowed=j,
+            fuelRange=fuelRange.takeIf {operational},fuelHistory=fuelHistory.takeIf {operational},
+            route=linkedRoute,routeForecast=routeForecast.takeIf {linkedRoute != null}?.withFinancialAccess(f),
             policyLabel=if(!lease && policyVersion!=null) "Sem sincronização recente da Cloud" else policyLabel)
     }
 }

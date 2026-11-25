@@ -97,11 +97,30 @@ import java.time.Instant
     var paused by remember { mutableStateOf(false) }
     LaunchedEffect(paused) { if(!paused) while(true) { delay(14000);slide=(slide+1)%3 } }
     PanelCard(modifier.fillMaxWidth().clickable { paused=!paused },contentPadding=if(compact) 8.dp else 16.dp,spacing=if(compact) 4.dp else 10.dp) {
-        Text("Eficiência e previsões",fontWeight=FontWeight.Bold,fontSize=(if(compact) 12 else 16).sp)
+        Text("TruckBox Intelligence",fontWeight=FontWeight.Bold,fontSize=(if(compact) 12 else 16).sp)
         AnimatedContent(slide,transitionSpec={fadeIn(tween(500)) togetherWith fadeOut(tween(500))},label="Efficiency fade") { index ->
             Column(Modifier.heightIn(min=if(compact) 0.dp else 66.dp),verticalArrangement=Arrangement.spacedBy(if(compact) 3.dp else 6.dp)) {
                 Text(listOf("Consumo da viagem","Desempenho","Projeções")[index],color=Orange,fontSize=(if(compact) 11 else 14).sp)
-                Text(if(index==0) state.trip?.consumption?.averageKml?.let { "${format(it,2)} km/l" } ?: "Dados insuficientes" else if(index==1) "Análise indisponível" else "Previsão indisponível",fontWeight=FontWeight.Bold,fontSize=(if(compact) 13 else 17).sp)
+                val forecast = state.routeForecast
+                val message = when (index) {
+                    0 -> state.trip?.consumption?.averageKml?.let { "${format(it,2)} km/L" } ?: "Dados insuficientes"
+                    1 -> forecast?.comparison?.differenceLiters?.let { delta ->
+                        when {
+                            delta > 0 -> "${format(delta,1)} L acima do previsto"
+                            delta < 0 -> "${format(-delta,1)} L abaixo do previsto"
+                            else -> "Consumo no valor previsto"
+                        }
+                    } ?: "Comparação por relevo indisponível"
+                    else -> if ((forecast?.range?.deficitLiters ?: 0.0) > 0) "Abastecer para chegar com a reserva"
+                        else forecast?.next50?.let { horizon ->
+                            "${format(horizon.distanceM / 1_000,0)} km à frente · ${format(horizon.liters,1)} L previstos"
+                        } ?: "Previsão topográfica indisponível"
+                }
+                Text(message,fontWeight=FontWeight.Bold,fontSize=(if(compact) 13 else 17).sp)
+                if (index != 0 && forecast != null) {
+                    val level = when(forecast.confidence) { "HIGH" -> "alta"; "MEDIUM" -> "média"; else -> "baixa" }
+                    Caption("Confiança $level · ${dataAge(forecast.computedAt, Instant.now())}")
+                }
             }
         }
         if(compact) Caption("${slide+1} de 3 · ${if(paused) "Pausado · toque para retomar" else "Toque para pausar"}")

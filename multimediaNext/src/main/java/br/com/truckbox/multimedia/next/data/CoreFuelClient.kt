@@ -16,7 +16,8 @@ internal fun parseCoreFuel(body: String, uid: String, received: Instant): LocalF
     if (row.size() != 8 && row.size() != 14) return null
     fun integer(index: Int) = row[index].asBigDecimal.longValueExact()
     val slot = integer(0).takeIf { it in 1..4294967295L } ?: return null
-    val age = value.get("uptime_ms").asBigDecimal.longValueExact() - slot * 10000
+    val uptime = value.get("uptime_ms").asBigDecimal.longValueExact()
+    val age = uptime - slot * 10000
     if (age !in 0..30000) return null
     val covered = integer(3).takeIf { it in 0..10000 } ?: return null
     val microlitres = integer(2).takeIf { it in 0..(covered * 1000000 + 3599) / 3600 } ?: return null
@@ -24,9 +25,11 @@ internal fun parseCoreFuel(body: String, uid: String, received: Instant): LocalF
         val local = value.getAsJsonObject("local_trip") ?: return@localTrip null
         val litres = local.get("litres").asDouble.takeIf {it in 0.0..1e9} ?: return@localTrip null
         val km = local.get("distance_km")?.asDouble?.takeIf {it in 0.0..1e9}
-        LocalTripFuel(km, litres, local.get("gaps").asBoolean)
+        val totalCoverage = local.get("covered_ms")?.asBigDecimal?.longValueExact()?.takeIf { it in 0..uptime }
+        LocalTripFuel(km, litres, local.get("gaps").asBoolean, totalCoverage)
     }.getOrNull()
-    LocalFuelWindow(uid, received.minusMillis(age), covered, microlitres, trip)
+    val boot = value.get("boot_id")?.asBigDecimal?.longValueExact()?.takeIf { it in 0..4294967295L }
+    LocalFuelWindow(uid, received.minusMillis(age), covered, microlitres, trip, boot, uptime, slot)
 }.getOrNull()
 
 class CoreFuelClient(private val connections: CoreConnectionFactory, private val now: () -> Instant = Instant::now) {

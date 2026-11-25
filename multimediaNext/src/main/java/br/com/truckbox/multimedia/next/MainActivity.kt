@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 val hostChanged = local.value.coreHost != it.coreHost
                 local.value=it;preferencesStore.save(it)
                 if(hostChanged) {
-                    state.update {it.copy(readings=emptyMap(),localInstruments=emptyMap(),speed=null,fuelRate=null,localFuel=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED,
+                    state.update {it.copy(readings=emptyMap(),localInstruments=emptyMap(),speed=null,fuelRate=null,localFuel=null,localFuelHistory=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED,
                         coreFaults=emptyList(),faultUid=null,faultSnapshotAt=null,faultReadable=false,faultIncomplete=true,faultOverflow=0)}
                     coreRetry.value++
                 }
@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 if (BuildConfig.FLAVOR == "demo") return@repeatOnLifecycle
+              val windowHistory = br.com.truckbox.multimedia.next.domain.WindowFuelHistory()
               launch {
                 val localConnection=WifiCoreConnectionFactory(this@MainActivity)
                 val client = CoreSensorClient(localConnection)
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
                                 faultReadable=false)}
                         } else {
                             failures=0
+                            windowHistory.speedReading(result.physicalDeviceUid, result.speed, result.receivedAt)
                             state.update {if(it.expectedCoreUid!=expectedCore)it else it.copy(core=if(fetch.diagnostics.sensorApi) ConnectionState.SENSORS_RECEIVED else ConnectionState.HTTP_RESPONDED,coreDiagnostics=fetch.diagnostics,
                                 readings=retainCoreReadings(it.readings.takeIf {_ -> result.physicalDeviceUid!=null && result.physicalDeviceUid==it.coreDeviceUid} ?: emptyMap(),result.values),
                                 coreDeviceUid=result.physicalDeviceUid,coreInternetSharing=result.internetSharing,speed=result.speed,fuelRate=result.flow,lastCoreResponse=result.receivedAt,
@@ -149,16 +151,30 @@ class MainActivity : ComponentActivity() {
               }
               launch {
                 val fuel=CoreFuelClient(WifiCoreConnectionFactory(this@MainActivity))
+                val history=br.com.truckbox.multimedia.next.domain.LocalFuelHistory()
+                var previousHost: String? = null
+                var previousUid: String? = null
                 coreRetry.collectLatest {
                     while(isActive) {
                         val host=local.value.coreHost
                         val uid=state.value.coreDeviceUid
+                        if (host != previousHost || uid != null && uid != previousUid) {
+                            history.clear()
+                            windowHistory.clear()
+                            state.update { it.copy(localFuelHistory = null) }
+                        }
+                        previousHost = host
+                        if (uid != null) previousUid = uid
                         if(uid!=null) {
                             val window=withContext(Dispatchers.IO) {fuel.fetch(host,uid)}
                             ensureActive()
-                            if(host==local.value.coreHost && uid==state.value.coreDeviceUid)
-                                state.update {it.copy(localFuel=window)}
-                        }
+                            if(host==local.value.coreHost && uid==state.value.coreDeviceUid) {
+                                val withOdometer = history.observe(window)
+                                val fromWindows = windowHistory.observe(window)
+                                val observed = withOdometer ?: fromWindows.takeIf { window?.trip?.distanceKm == null }
+                                state.update { it.copy(localFuel=window, localFuelHistory=observed ?: it.localFuelHistory) }
+                            }
+                        } else history.observe(null)
                         delay(10000)
                     }
                 }
