@@ -198,7 +198,13 @@ class CloudCoordinator(
             error is java.io.IOException->ConnectionState.OFFLINE
             else->ConnectionState.UNVERIFIED}
         clearViews(status, keepOperational = status == ConnectionState.OFFLINE)
-        if(error is CloudHttpError && error.status in listOf(400,401)) {tokens.invalidate();session=null;sessionEpoch=-1;registeredSession=null}
+        if(error is CloudHttpError && error.status in listOf(400,401)) {
+            val credential = session?.takeIf { sessionEpoch == epoch }?.refreshToken
+                ?: tokens.read()?.takeIf { it.generation == epoch }?.token
+            // Erros de prova ou relógio encerram as visualizações, preservando o código de campo cifrado.
+            if (credential?.let(::isFieldTestToken) != true) tokens.invalidate()
+            session=null;sessionEpoch=-1;registeredSession=null
+        }
         mutableUi.update {it.copy(authenticated=session!=null,busy=false,deviceId=signer?.deviceId,message=when {
             error is CloudHttpError && error.status==404->"Canal Cloud aguardando publicação neste ambiente"
             error is CloudHttpError && error.status==403->"Aguardando aprovação do usuário, veículo e multimídia na Cloud"

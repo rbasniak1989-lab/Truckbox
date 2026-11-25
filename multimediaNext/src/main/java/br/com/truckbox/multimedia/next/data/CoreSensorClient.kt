@@ -200,7 +200,8 @@ class CoreSensorClient(
         }
         seen[identity]=Seen(row.captureId,row.uptimeUs,row.value,sampled)
         val unit=when(spec.key){"SPEED"->"km/h";"FLOW"->"L/h";"AIR_1","AIR_2"->"bar";else->Instrument.valueOf(spec.key).unit}
-        return Triple(spec.key,spec.priority,Reading(row.value,unit,Origin.CORE,sampled,received,quality,source,row.captureId,row.bootId,row.validation))
+        return Triple(spec.key,spec.priority,Reading(row.value,unit,Origin.CORE,sampled,received,quality,source,
+            row.captureId,row.bootId,row.validation,sampleUptimeMs=row.uptimeUs/1_000))
     }
 
     private fun java.io.InputStream.readBounded(): String {

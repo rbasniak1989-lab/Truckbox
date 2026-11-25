@@ -16,11 +16,16 @@ import kotlin.math.ceil
 import kotlin.math.max
 
 @Composable fun ConsumptionScreen(state: AppState, now: Instant) {
-    var legIndex by remember(state.legs.map { it.kind }) {
-        mutableIntStateOf(LegKind.entries.indexOfFirst { kind -> state.legs.any { it.kind == kind } }.coerceAtLeast(0))
+    val activeTrip = state.trip?.let { trip ->
+        trip.consumption ?: state.legs.singleOrNull { it.legId == trip.legId && it.kind == trip.kind }
+    }
+    var legIndex by remember(state.legs.map { it.kind }, activeTrip?.kind) {
+        mutableIntStateOf(activeTrip?.kind?.ordinal
+            ?: LegKind.entries.indexOfFirst { kind -> state.legs.any { it.kind == kind } }.coerceAtLeast(0))
     }
     ChoiceRow(LegKind.entries.map { it.title }, legIndex, { legIndex = it })
     val leg = state.legs.singleOrNull { it.kind == LegKind.entries[legIndex] }
+        ?: activeTrip?.takeIf { it.kind == LegKind.entries[legIndex] }
     val local = state.localFuel?.takeIf { it.coreUid == state.coreDeviceUid && it.fresh(now) }
     val localTrip = local?.trip?.takeIf { state.trip == null && state.legs.isEmpty() }
     val flow = displayedConsumption(state.speed, state.fuelRate, local, now)
@@ -65,7 +70,7 @@ import kotlin.math.max
     if (forecast?.range != null && balance?.autonomyKm != null) {
         Caption("Autonomia convencional ${format(balance.autonomyKm, 0)} km · ${balance.averageLabel}")
     }
-    FuelHistoryPanel(history, now)
+    FuelHistoryPanel(history, activeTrip, now)
     RouteFuelPanel(state.route, forecast, now)
     RotatingEfficiency(state, Modifier.fillMaxWidth())
 }
@@ -79,14 +84,20 @@ private fun summarize(rows: List<FuelInterval>): FuelTotals? = if (rows.isEmpty(
     if (rows.all { it.plannedLiters != null }) rows.sumOf { requireNotNull(it.plannedLiters) } else null,
 )
 
-@Composable private fun FuelHistoryPanel(history: FuelHistory?, now: Instant) {
+@Composable private fun FuelHistoryPanel(history: FuelHistory?, activeTrip: LegConsumption?, now: Instant) {
     var period by remember { mutableIntStateOf(1) }
     var block by remember { mutableIntStateOf(0) }
     PanelCard(Modifier.fillMaxWidth()) {
         SectionTitle("Evolução do consumo")
         ChoiceRow(listOf("Últimos 10 km", "Últimos 50 km", "Últimos 100 km", "Viagem", "Blocos de 50 km"), period, { period = it })
+        if (period == 3 && activeTrip != null) {
+            Caption(listOfNotNull(
+                "Totais da operação atual: ${format(activeTrip.distanceKm, 1)} km · ${format(activeTrip.consumedLiters, 1)} L",
+                activeTrip.averageKml?.let { "${format(it, 2)} km/L" }, activeTrip.fuel?.label(now),
+            ).joinToString(" · "))
+        }
         if (history == null || history.rows.isEmpty()) {
-            Caption("Ainda sem intervalos medidos para o gráfico.")
+            Caption("O gráfico precisa de novas leituras de distância e combustível pelo Core ou do histórico da Cloud.")
         } else {
             val limit = max(0, ceil(history.throughKm / 50.0).toInt() - 1)
             val selectedBlock = block.coerceIn(0, limit)
@@ -106,6 +117,7 @@ private fun summarize(rows: List<FuelInterval>): FuelTotals? = if (rows.isEmpty(
             val rows = remember(history, from, to) { history.between(from, to) }
             val totals = remember(rows) { summarize(rows) }
             Caption("${history.source} · ${dataAge(history.sampledAt, now)}")
+            if (history.coreUid != null) Caption("O gráfico cobre o trecho registrado nesta central.")
             if (totals == null) Caption("Nenhum intervalo medido neste trecho.")
             else {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

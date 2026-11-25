@@ -7,7 +7,8 @@ import java.time.Instant
 data class CloudConfig(val url: String,val publishableKey: String) {
     val configured: Boolean get()=url.isNotEmpty() && publishableKey.startsWith("sb_publishable_")
 }
-data class CloudAuthSession(val accessToken: String,val refreshToken: String,val userId: String,val sessionId: String,val expiresAt: Instant)
+data class CloudAuthSession(val accessToken: String,val refreshToken: String,val userId: String,val sessionId: String,val expiresAt: Instant,
+                            val legacyFieldChannel: Boolean = false)
 data class AuthUserDto(val id: String?=null)
 data class AuthTokenDto(
     @SerializedName("access_token") val accessToken: String?=null,

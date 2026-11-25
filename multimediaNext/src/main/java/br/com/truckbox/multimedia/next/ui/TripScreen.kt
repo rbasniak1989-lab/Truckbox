@@ -70,6 +70,7 @@ import java.util.Locale
                 }
             }
             if (route != null) {
+                Caption("${format(route.distanceM / 1000, 1)} km no traçado${route.provider?.let { " · $it" }.orEmpty()}")
                 Caption("Laranja · planejado${if (route.driven.isNotEmpty()) "   Branco · percorrido" else ""}")
                 state.gps?.let { Caption("Última posição recebida · ${dataAge(it.sampledAt, now)} · ${it.source}") }
             }
@@ -81,7 +82,7 @@ import java.util.Locale
             }
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 Metric("Distância da operação",format(trip?.consumption?.distanceKm ?: localTrip?.distanceKm),"km",Modifier.weight(1f))
-                Metric("Previsão de chegada",null,modifier=Modifier.weight(1f),note="ETA não verificada")
+                Metric("Duração planejada",route?.durationSeconds?.let(::duration),modifier=Modifier.weight(1f))
             }
             PanelCard(Modifier.fillMaxWidth()) {
                 SectionTitle("Projeção até o destino")
@@ -94,7 +95,7 @@ import java.util.Locale
     PanelCard(Modifier.fillMaxWidth()) {
         SectionTitle("Pedágios da operação",Icons.Outlined.PinDrop)
         if (route?.tolls.isNullOrEmpty()) Caption("Nenhuma praça informada para exibir.")
-        else route?.tolls?.forEach { Text(it) }
+        else route?.tolls?.forEach { Text(it.name) }
     }
     if(state.financialAllowed) PanelCard(Modifier.fillMaxWidth().testTag("financial-card"),accent=true) {
         SectionTitle("Resultado da viagem",Icons.Outlined.AccountBalanceWallet)
@@ -142,6 +143,12 @@ import java.util.Locale
         }
         drawPath(line(planned), Orange, style = RouteStroke(3.dp.toPx()))
         route.driven.forEach { drawPath(line(it), androidx.compose.ui.graphics.Color.White, style = RouteStroke(2.dp.toPx())) }
+        route.tolls.forEach { toll ->
+            toll.position?.let { position ->
+                val at = xy(position.latitude, position.longitude)
+                if (at.x in 0f..size.width && at.y in 0f..size.height) drawCircle(Muted, 3.dp.toPx(), at)
+            }
+        }
         val end = planned.last()
         drawCircle(Orange, 6.dp.toPx(), xy(end.latitude, end.longitude))
         gps?.let {

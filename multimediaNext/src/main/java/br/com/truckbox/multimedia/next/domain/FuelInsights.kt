@@ -52,12 +52,14 @@ data class FuelHistory(
 
 data class ElevationPoint(val distanceM: Double, val altitudeM: Double)
 data class RoutePosition(val latitude: Double, val longitude: Double)
+data class RouteToll(val name: String, val position: RoutePosition?)
 data class JourneyRoute(
     val id: String, val tripId: String, val revision: Int?, val distanceM: Double,
-    val points: List<RoutePosition>, val tolls: List<String>, val validUntil: Instant?,
+    val points: List<RoutePosition>, val tolls: List<RouteToll>, val validUntil: Instant?,
     val remainingM: Double? = null, val progressSampledAt: Instant? = null,
     val elevation: List<ElevationPoint> = emptyList(),
     val driven: List<List<RoutePosition>> = emptyList(),
+    val provider: String? = null, val durationSeconds: Long? = null,
 )
 
 data class FuelHorizon(
@@ -84,36 +86,52 @@ data class RouteFuelForecast(
 /** Local observations are deltas of the existing integrated PID 183 trip counters. */
 internal class LocalFuelHistory {
     private var previous: LocalFuelWindow? = null
+    private var gap = false
     private val rows = ArrayDeque<FuelInterval>()
 
     fun clear() {
         previous = null
+        gap = false
         rows.clear()
     }
 
     fun observe(window: LocalFuelWindow?): FuelHistory? {
         val current = window?.takeIf { it.trip?.distanceKm != null && it.trip.coveredMs != null && it.bootId != null && it.uptimeMs != null }
         val prior = previous
+        if (current == null) {
+            previous = null
+            gap = rows.isNotEmpty()
+            return null
+        }
         previous = current
-        if (current == null || prior == null) return null
+        if (prior == null) return null
         val before = requireNotNull(prior.trip)
         val after = requireNotNull(current.trip)
         val start = requireNotNull(before.distanceKm)
         val end = requireNotNull(after.distanceKm)
-        val elapsed = requireNotNull(current.uptimeMs) - requireNotNull(prior.uptimeMs)
+        val uptime = requireNotNull(current.uptimeMs)
+        val elapsed = uptime - requireNotNull(prior.uptimeMs)
         val covered = requireNotNull(after.coveredMs) - requireNotNull(before.coveredMs)
         val liters = after.litres - before.litres
         if (prior.coreUid != current.coreUid || prior.bootId != current.bootId || end < start || covered < 0 || liters < 0 || elapsed < 0) {
             rows.clear()
-            return FuelHistory(end, current.endedAt, "PID 183 local · etapa medida", emptyList(), current.coreUid)
+            gap = false
+            return FuelHistory(end, current.endedAt, "PID 183 local · distância pelo hodômetro", emptyList(), current.coreUid)
         }
         if (elapsed in 1..25_000 && covered > 0 && kotlin.math.abs(elapsed - covered) <= 2_000 &&
             end - start <= 1.5 && liters <= elapsed / 3_600.0) {
-            rows.addLast(FuelInterval(start, end, end - start, liters))
+            rows.addLast(FuelInterval(start, end, end - start, liters, gapBefore = gap))
             if (rows.size > 4_320) rows.removeFirst()
+            gap = false
+        } else if (elapsed > 0) {
+            gap = true
         }
         if (rows.isEmpty()) return null
-        return FuelHistory(end, current.endedAt, "PID 183 local · etapa medida", rows.toList(), current.coreUid)
+        // Uma consulta repetida ou sem cobertura não torna o histórico mais recente.
+        if (gap || elapsed == 0L) return null
+        val sampledAt = current.slot?.let { current.endedAt.plusMillis(uptime - it * 10_000L) }
+            ?: current.endedAt
+        return FuelHistory(end, sampledAt, "PID 183 local · distância pelo hodômetro", rows.toList(), current.coreUid)
     }
 }
 
@@ -124,6 +142,7 @@ internal class WindowFuelHistory {
     private var lastSlot: Long? = null
     private var hadGap = false
     private var distanceKm = 0.0
+    private var speedSource: String? = null
     private val speed = ArrayDeque<TimeSample>()
     private val rows = ArrayDeque<FuelInterval>()
 
@@ -133,6 +152,7 @@ internal class WindowFuelHistory {
         lastSlot = null
         hadGap = false
         distanceKm = 0.0
+        speedSource = null
         speed.clear()
         rows.clear()
     }
@@ -140,7 +160,7 @@ internal class WindowFuelHistory {
     fun speedReading(coreUid: String?, reading: Reading?, now: Instant) {
         if (coreUid == null || reading?.source != Origin.CORE || reading.unit != "km/h") return
         val id = reading.captureId ?: return
-        val at = reading.sampledAt ?: return
+        val at = Instant.ofEpochMilli(reading.sampleUptimeMs?.takeIf { it >= 0 } ?: return)
         val source = reading.sourceId ?: return
         val newBoot = reading.bootId ?: return
         if (coreUid != uid || newBoot != boot) {
@@ -148,9 +168,17 @@ internal class WindowFuelHistory {
             uid = coreUid
             boot = newBoot
         }
-        if (reading.current(now)?.let { it in 0.0..180.0 } != true) return
+        if (reading.quality == Quality.STALE || reading.sampledAt == null || reading.sampledAt.isAfter(now) ||
+            reading.sampledAt.isBefore(now.minusSeconds(5))) return
+        if (source != speedSource) {
+            speed.clear()
+            speedSource = source
+        }
+        if (speed.lastOrNull()?.at?.isAfter(at) == true) return
         val key = "$source/$id"
-        if (speed.lastOrNull()?.id != key) speed.addLast(TimeSample(key, at, reading.value, reading.quality, source))
+        // A janela de combustível e o PID 84 usam o mesmo relógio do Core.
+        val sample = reading.value?.takeIf { it in 0.0..180.0 }
+        if (speed.lastOrNull()?.id != key) speed.addLast(TimeSample(key, at, sample, reading.quality, source))
         while (speed.size > 90) speed.removeFirst()
     }
 
@@ -160,7 +188,8 @@ internal class WindowFuelHistory {
         val prior = lastSlot
         if (prior != null && slot <= prior) return null
         lastSlot = slot
-        val measured = timeStats(speed.toList(), window.endedAt.minusSeconds(10), window.endedAt,
+        val endAtCore = Instant.ofEpochMilli(slot * 10_000L)
+        val measured = timeStats(speed.toList(), endAtCore.minusSeconds(10), endAtCore,
             maxGapSeconds = 3, minimumCoverage = 1.0)
         if (measured == null || window.coveredMs != 10_000L) {
             hadGap = true

@@ -28,6 +28,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var preferencesStore: PreferencesStore
     private lateinit var local: MutableState<LocalPreferences>
     private val coreRetry = MutableStateFlow(0L)
+    private val odometerHistory = LocalFuelHistory()
+    private val windowHistory = WindowFuelHistory()
+    private var fuelHistoryCore: Pair<String, String>? = null
+    private var fuelHistoryBoot: Long? = null
+    private var fuelHistoryLeg: String? = null
     private var cloud: CloudCoordinator?=null
     private val cloudFallback=MutableStateFlow(CloudUiState())
     private var cloudAction: Job?=null
@@ -68,7 +73,6 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 if (BuildConfig.FLAVOR == "demo") return@repeatOnLifecycle
-              val windowHistory = br.com.truckbox.multimedia.next.domain.WindowFuelHistory()
               launch {
                 val localConnection=WifiCoreConnectionFactory(this@MainActivity)
                 val client = CoreSensorClient(localConnection)
@@ -151,31 +155,44 @@ class MainActivity : ComponentActivity() {
               }
               launch {
                 val fuel=CoreFuelClient(WifiCoreConnectionFactory(this@MainActivity))
-                val history=br.com.truckbox.multimedia.next.domain.LocalFuelHistory()
-                var previousHost: String? = null
-                var previousUid: String? = null
                 coreRetry.collectLatest {
                     while(isActive) {
+                        val started = SystemClock.elapsedRealtime()
                         val host=local.value.coreHost
                         val uid=state.value.coreDeviceUid
-                        if (host != previousHost || uid != null && uid != previousUid) {
-                            history.clear()
+                        val core = uid?.let { host to it }
+                        val leg = state.value.trip?.legId
+                        if ((core != null && core != fuelHistoryCore) ||
+                            (leg != null && fuelHistoryLeg != null && leg != fuelHistoryLeg)) {
+                            odometerHistory.clear()
                             windowHistory.clear()
+                            fuelHistoryBoot = null
                             state.update { it.copy(localFuelHistory = null) }
                         }
-                        previousHost = host
-                        if (uid != null) previousUid = uid
+                        if (core != null) fuelHistoryCore = core
+                        if (leg != null) fuelHistoryLeg = leg
                         if(uid!=null) {
                             val window=withContext(Dispatchers.IO) {fuel.fetch(host,uid)}
                             ensureActive()
-                            if(host==local.value.coreHost && uid==state.value.coreDeviceUid) {
-                                val withOdometer = history.observe(window)
+                            if(host==local.value.coreHost && uid==state.value.coreDeviceUid &&
+                                (state.value.trip?.legId == null || state.value.trip?.legId == leg)) {
+                                val boot = window?.bootId
+                                val coreRestarted = boot != null && fuelHistoryBoot != null && boot != fuelHistoryBoot
+                                if (boot != null) fuelHistoryBoot = boot
+                                if (coreRestarted) odometerHistory.clear()
+                                val withOdometer = odometerHistory.observe(window)
+                                val counterReset = withOdometer?.rows?.isEmpty() == true
+                                if (counterReset) windowHistory.clear()
                                 val fromWindows = windowHistory.observe(window)
-                                val observed = withOdometer ?: fromWindows.takeIf { window?.trip?.distanceKm == null }
-                                state.update { it.copy(localFuel=window, localFuelHistory=observed ?: it.localFuelHistory) }
+                                val observed = withOdometer?.takeIf { it.rows.isNotEmpty() } ?: fromWindows
+                                state.update {
+                                    it.copy(localFuel=window, localFuelHistory=observed ?: it.localFuelHistory.takeUnless {
+                                        coreRestarted || counterReset
+                                    })
+                                }
                             }
-                        } else history.observe(null)
-                        delay(10000)
+                        } else odometerHistory.observe(null)
+                        delay((10_000L - (SystemClock.elapsedRealtime() - started)).coerceAtLeast(1L))
                     }
                 }
               }

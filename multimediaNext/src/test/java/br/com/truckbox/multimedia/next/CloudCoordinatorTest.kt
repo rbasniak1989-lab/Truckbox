@@ -162,6 +162,30 @@ class CloudCoordinatorTest {
         coordinator(api,state,tokens).refresh()
         assertEquals(2,api.activations);assertTrue(state.value.financialAllowed)
     }
+    @Test fun temporaryProofFailureKeepsTheStoredFieldCredential() = runBlocking {
+        val state = MutableStateFlow(AppState(coreDeviceUid = "test-core"))
+        val tokens = Tokens()
+        val api = Api(frame())
+        val c = coordinator(api, state, tokens)
+        val code = "tbxft_" + "b".repeat(64)
+        c.activateTest(code)
+        val activeGeneration = tokens.generation()
+
+        api.error = CloudHttpError(401, "invalid_device_proof")
+        c.refresh()
+        assertEquals(ConnectionState.AUTH_REQUIRED, state.value.cloud)
+        assertNull(state.value.trip)
+        assertNull(state.value.financial)
+        assertEquals(activeGeneration, tokens.generation())
+        assertTrue(tokens.read()?.token == code)
+
+        api.error = null
+        state.value = state.value.copy(coreDeviceUid = "test-core")
+        c.refresh()
+        assertEquals(ConnectionState.CLOUD_AUTHENTICATED, state.value.cloud)
+        assertEquals(2, api.activations)
+        assertTrue(tokens.read()?.token == code)
+    }
     @Test fun gpsKeepsItsRealCaptureTimeAndIsClearedOnCloudFailure()=runBlocking {
         val gps=CloudGpsDto(-15.0,-47.0,clock.minusSeconds(3600).toString(),"TEST_GNSS","TEST_PROVIDER",12.5,"RECEIVED_NOT_PHYSICALLY_VERIFIED")
         val state=MutableStateFlow(AppState());val api=Api(frame().copy(gps=gps));val c=coordinator(api,state)

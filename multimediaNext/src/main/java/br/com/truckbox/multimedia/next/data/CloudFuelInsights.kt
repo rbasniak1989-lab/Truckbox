@@ -62,7 +62,14 @@ data class FuelHistoryDto(
 }
 
 data class ElevationPointDto(val distanceM: Double? = null, val altitudeM: Double? = null)
-data class RouteTollDto(val name: String? = null)
+data class RouteTollDto(val name: String? = null, val lat: Double? = null, val lon: Double? = null) {
+    fun domain(): RouteToll? {
+        val label = name?.trim()?.takeIf { it.length in 1..160 } ?: return null
+        val latitude = lat?.takeIf { it in -90.0..90.0 }
+        val longitude = lon?.takeIf { it in -180.0..180.0 }
+        return RouteToll(label, if (latitude != null && longitude != null) RoutePosition(latitude, longitude) else null)
+    }
+}
 data class JourneyRouteDto(
     val id: String? = null, val tripId: String? = null, val revision: Int? = null,
     val distanceM: Double? = null, val polyline: String? = null,
@@ -70,6 +77,7 @@ data class JourneyRouteDto(
     val remainingM: Double? = null, val progressSampledAt: String? = null,
     val elevation: List<ElevationPointDto>? = null,
     val drivenPolylines: List<String>? = null,
+    val provider: String? = null, val durationSec: Long? = null,
 ) {
     fun domain(trip: String, received: Instant): JourneyRoute {
         require(tripId == trip && id?.let(UUID_PATTERN::matches) == true)
@@ -86,10 +94,11 @@ data class JourneyRouteDto(
         if (profile.size != elevation.orEmpty().size || profile.zipWithNext().any { (a, b) -> a.distanceM >= b.distanceM }) profile = emptyList()
         val progressAt = progressSampledAt.wireTime()?.takeUnless { it.isAfter(received.plusSeconds(5)) }
         return JourneyRoute(id, trip, revision?.takeIf { it > 0 }, distance, shape,
-            tolls.orEmpty().take(100).mapNotNull { it.name?.takeIf { name -> name.length in 1..160 } }, end,
+            tolls.orEmpty().take(100).mapNotNull { it.domain() }, end,
             remainingM?.takeIf { it in 0.0..distance && progressAt != null }, progressAt, profile,
             drivenPolylines.orEmpty().takeIf { it.size <= 32 && it.sumOf(String::length) <= 42_000 }
-                .orEmpty().mapNotNull { runCatching { decodeRoute(it) }.getOrNull() })
+                .orEmpty().mapNotNull { runCatching { decodeRoute(it) }.getOrNull() },
+            provider?.takeIf { it in setOf("HERE", "GOOGLE") }, durationSec?.takeIf { it in 1..1_209_600 })
     }
 }
 

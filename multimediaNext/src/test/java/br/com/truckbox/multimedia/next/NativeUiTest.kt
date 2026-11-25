@@ -44,6 +44,38 @@ class NativeUiTest {
         compose.onNodeWithText("Média da viagem / etapa").assertExists()
         compose.onNodeWithTag("nav-HOME").assertIsNotDisplayed()
     }
+    @Test fun consumptionUsesEachSelectedDistanceAndShowsActiveTripTotals() {
+        val totals = LegConsumption("test-leg", LegKind.LOADED, 120.0, 60.0)
+        val trip = TripView("test-trip", totals.legId, "Origem teste", "Destino teste", totals.kind, totals)
+        val history = FuelHistory(120.0, now, "Teste do histórico", (0..119).map { km ->
+            FuelInterval(km.toDouble(), km + 1.0, 1.0, .5)
+        })
+        val state = AppState(trip = trip, fuelHistory = history, operationalExpiresAt = now.plusSeconds(60))
+        compose.setContent { TruckBoxApp(state, startingPage = Page.CONSUMPTION, nowOverride = now) }
+        for (distance in listOf(10, 50, 100)) {
+            compose.onNode(hasText("Últimos $distance km") and hasClickAction()).performScrollTo().performClick()
+            compose.onNodeWithText("Janela de $distance,0 km").assertExists()
+        }
+        compose.onNode(hasText("Viagem") and hasClickAction()).performScrollTo().performClick()
+        compose.onNodeWithText("Totais da operação atual", substring = true).assertExists()
+        compose.onNode(hasText("Blocos de 50 km") and hasClickAction()).performScrollTo().performClick()
+        compose.onNodeWithText("Próximo").performScrollTo().performClick()
+        compose.onNodeWithText("50–100 km").assertExists()
+    }
+    @Test fun updatedHereRouteAppearsWithoutReopeningTheTripPage() {
+        var state by mutableStateOf(AppState(operationalExpiresAt = now.plusSeconds(60)))
+        compose.setContent { TruckBoxApp(state, startingPage = Page.TRIP, nowOverride = now) }
+        compose.onNodeWithText("Traçado indisponível").assertExists()
+        compose.runOnIdle {
+            val start = RoutePosition(-25.0, -50.0)
+            state = state.copy(route = JourneyRoute("test-route", "test-trip", 1, 51_000.0,
+                listOf(start, RoutePosition(-25.3, -50.2)), listOf(RouteToll("Praça de teste", start)),
+                now.plusSeconds(60), provider = "HERE", durationSeconds = 3_600))
+        }
+        compose.onNodeWithText("Traçado indisponível").assertDoesNotExist()
+        compose.onNodeWithText("51,0 km no traçado · HERE").assertExists()
+        compose.onNodeWithText("Praça de teste").performScrollTo().assertIsDisplayed()
+    }
     @Test fun allFourPermissionMatricesAffectNativeCompositionIndependently() {
         var state by mutableStateOf(AppState())
         compose.setContent{TruckBoxApp(state,startingPage=Page.TRIP,nowOverride=now)}

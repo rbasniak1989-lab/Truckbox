@@ -60,9 +60,11 @@ class FuelIntelligenceTest {
         assertEquals(.2, first.rows.single().liters, .00001)
         assertEquals(1, first.between(0.0, 50.0).size)
         assertTrue(first.between(50.0, 100.0).isEmpty())
-        val missed = meter.observe(observation(70_000, 50.1, 20.5, 30_000))!!
-        assertEquals(1, missed.rows.size)
+        assertNull(meter.observe(observation(20_000, 49.2, 20.2, 20_000)))
+        assertNull(meter.observe(observation(70_000, 50.1, 20.5, 30_000)))
         val later = meter.observe(observation(80_000, 50.3, 20.8, 40_000))!!
+        assertEquals(2, later.rows.size)
+        assertTrue(later.rows.last().gapBefore)
         assertEquals(1, later.between(50.0, 100.0).size)
         assertTrue(meter.observe(observation(2_000, 0.0, 0.0, 1_000, boot = 2))!!.rows.isEmpty())
     }
@@ -70,9 +72,9 @@ class FuelIntelligenceTest {
     @Test fun closedFuelWindowUsesOnlyTheCoveredSpeedIntervalAndIgnoresDuplicateSlots() {
         val meter = WindowFuelHistory()
         for (second in 0..12) {
-            val at = now.plusSeconds(second.toLong())
+            val at = now.plusMillis(3_500 + second * 1_000L + second % 2 * 200L)
             val speed = Reading(72.0, "km/h", Origin.CORE, at, at, Quality.VALID, "J1587/MID:128/PID:84",
-                captureId = second + 1L, bootId = 42)
+                captureId = second + 1L, bootId = 42, sampleUptimeMs = second * 1_000L)
             meter.speedReading("core", speed, at)
         }
         val sample = LocalFuelWindow("core", now.plusSeconds(10), 10_000, 100_000, bootId = 42, slot = 1)
