@@ -18,20 +18,25 @@ data class Reading(
     val captureId: Long? = null,
     val bootId: Long? = null,
     val validation: String? = null,
+    val sampleUptimeMs: Long? = null,
+    val displayLabel: String? = null,
 ) {
     fun current(now: Instant, maxAgeSeconds: Long = 5): Double? {
         if(quality!=Quality.VALID) return null
-        return freshValue(now,maxAgeSeconds)
+        return freshValue(now,maxAgeSeconds * 1000)
     }
     /** Observação real com metadados, ainda em validação; nunca autoriza cálculos ou ações. */
     fun observed(now: Instant, maxAgeSeconds: Long = 5): Double? {
-        if(quality!=Quality.VALID && quality!=Quality.PROVISIONAL) return null
-        return freshValue(now,maxAgeSeconds)
+        return observedWithin(now,maxAgeSeconds * 1000)
     }
-    private fun freshValue(now: Instant, maxAgeSeconds: Long): Double? {
+    fun observedWithin(now: Instant, maxAgeMs: Long): Double? {
+        if(quality!=Quality.VALID && quality!=Quality.PROVISIONAL) return null
+        return freshValue(now,maxAgeMs)
+    }
+    private fun freshValue(now: Instant, maxAgeMs: Long): Double? {
         val at = sampledAt ?: return null
         if (sourceId.isNullOrBlank()) return null
-        if (at.isAfter(now) || java.time.Duration.between(at,now).toMillis()>maxAgeSeconds*1000) return null
+        if (at.isAfter(now) || java.time.Duration.between(at,now).toMillis()>maxAgeMs) return null
         return value?.takeIf { it.isFinite() }
     }
 }
@@ -134,6 +139,7 @@ fun isNight(at: Instant, appearance: Appearance): Boolean = when (appearance) {
 data class AppState(
     val demo: Boolean = false,
     val readings: Map<Instrument, InstrumentValue> = emptyMap(),
+    val localInstruments: Map<Instrument, InstrumentValue> = emptyMap(),
     val core: ConnectionState = ConnectionState.UNVERIFIED,
     val cloud: ConnectionState = ConnectionState.BLOCKED,
     val lastCoreResponse: Instant? = null,
@@ -169,6 +175,18 @@ data class AppState(
     val lastCloudResponse: Instant? = null,
     val series: Map<Instrument, List<TimeSample>> = emptyMap(),
 ) {
+    fun instrument(sensor: Instrument): InstrumentValue? {
+        if (demo) return readings[sensor]
+        val local = localInstruments[sensor]
+        val other = readings[sensor]
+        if (sensor == Instrument.GEAR || sensor == Instrument.TORQUE) {
+            return local ?: other?.takeIf {
+                it.first.source == Origin.CORE && it.first.sourceId?.startsWith("J1939/") == true
+            }
+        }
+        return other ?: local
+    }
+
     // Defesa final antes da composição, inclusive contra retorno tardio de requests.
     fun redacted(now: Instant=Instant.now()): AppState {
         val lease=demo || policyExpiresAt?.isAfter(now)==true

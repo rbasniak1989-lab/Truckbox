@@ -21,8 +21,8 @@ android {
         applicationId = "br.com.truckbox.multimedia.next"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.2.3-consumo"
+        versionCode = 7
+        versionName = "0.2.4-tempo-real"
         buildConfigField("String","CLOUD_URL","\"$cloudUrl\"")
         buildConfigField("String","CLOUD_PUBLISHABLE_KEY","\"$cloudPublishableKey\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -31,7 +31,7 @@ android {
     productFlavors {
         create("homolog") {
             dimension = "environment"
-            applicationIdSuffix = ".gps.consumo"
+            applicationIdSuffix = ".gps.consumo.tempo"
         }
         create("demo") {
             dimension = "environment"

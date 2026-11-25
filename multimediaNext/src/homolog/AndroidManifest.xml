@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
-    <application android:label="TruckBox Next · GPS" tools:replace="android:label">
+    <application android:label="TruckBox Next · Tempo real" tools:replace="android:label">
         <service
             android:name=".gps.GpsSharingService"
             android:exported="false"

@@ -174,7 +174,8 @@ class CloudCoordinator(
                         else -> "Módulos opcionais não liberados pela Cloud"
                     },cloudScope=identity,
                     vehicleLabel=dto.vehicleLabel,expectedCoreUid=dto.coreDeviceUid,lastCloudResponse=received,
-                    readings=if(changed) emptyMap() else previous.readings,coreDeviceUid=if(changed) null else previous.coreDeviceUid,coreInternetSharing=if(changed) null else previous.coreInternetSharing,
+                    readings=if(changed) emptyMap() else previous.readings,localInstruments=if(changed) emptyMap() else previous.localInstruments,
+                    coreDeviceUid=if(changed) null else previous.coreDeviceUid,coreInternetSharing=if(changed) null else previous.coreInternetSharing,
                     speed=if(changed) null else previous.speed,fuelRate=if(changed) null else previous.fuelRate)
             }
             mutableUi.update {it.copy(configured=true,authenticated=true,busy=false,deviceId=device.deviceId,message="Vínculo consultado na Cloud")}

@@ -74,7 +74,7 @@ import java.time.format.DateTimeFormatter
         SectionTitle("Sensores principais · ${system.title}",Icons.Outlined.Sensors)
         system.sensors.chunked(4).forEach { row ->
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                row.forEach { sensor -> InstrumentCard(sensor,state.readings[sensor],now,state.demo,1,Modifier.weight(1f).height(158.dp)) { selected=sensor } }
+                row.forEach { sensor -> InstrumentCard(sensor,state.instrument(sensor),now,state.demo,1,Modifier.weight(1f).height(158.dp)) { selected=sensor } }
                 repeat(4-row.size){Spacer(Modifier.weight(1f))}
             }
         }
@@ -108,7 +108,7 @@ import java.time.format.DateTimeFormatter
             Caption("Catálogo expandido e proveniência por ECU aguardam validação. Nenhum sinal extra foi inventado.")
         }
     }
-    selected?.let { sensor -> SensorDialog(sensor,state.readings[sensor],now,state.demo){selected=null} }
+    selected?.let { sensor -> SensorDialog(sensor,state.instrument(sensor),now,state.demo){selected=null} }
     selectedFault?.let {fault ->
         AlertDialog(onDismissRequest={selectedFault=null},
             title={Text(fault.technicalCode)},

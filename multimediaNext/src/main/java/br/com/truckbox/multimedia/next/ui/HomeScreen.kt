@@ -43,7 +43,7 @@ import java.time.Instant
             }
         }
     }
-    detail?.let { sensor -> SensorDialog(sensor,state.readings[sensor],now,state.demo) { detail=null } }
+    detail?.let { sensor -> SensorDialog(sensor,state.instrument(sensor),now,state.demo) { detail=null } }
 }
 @Composable private fun HomeInstruments(state: AppState,now: Instant,details: (Instrument)->Unit,modifier: Modifier) {
     Column(modifier,verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -55,7 +55,7 @@ import java.time.Instant
         rows.forEachIndexed { size,sensors ->
             Row(Modifier.weight(1f).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 sensors.forEach { sensor ->
-                    InstrumentCard(sensor,state.readings[sensor],now,state.demo,size,Modifier.weight(1f).fillMaxHeight().testTag("instrument-${sensor.name}")) { details(sensor) }
+                    InstrumentCard(sensor,state.instrument(sensor),now,state.demo,size,Modifier.weight(1f).fillMaxHeight().testTag("instrument-${sensor.name}")) { details(sensor) }
                 }
             }
         }
@@ -114,8 +114,11 @@ import java.time.Instant
 @Composable fun SensorDialog(sensor: Instrument,value: InstrumentValue?,now: Instant,demo: Boolean,onClose: ()->Unit) {
     AlertDialog(onDismissRequest=onClose,title={Text(sensor.label)},text={
         Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Text(instrumentDisplayValue(value?.first,now,demo)?.let { "${format(it)} ${sensor.unit}" } ?: "Sem leitura",fontWeight=FontWeight.Bold)
-            if(!demo && value?.first?.canBeLastInstrumentValue()==true && value.first.observed(now)==null) Caption("Última leitura recebida · ${instrumentAge(value.first,now)} · desatualizada")
+            val displayed = instrumentDisplayValue(sensor, value?.first, now, demo)
+            val unit = value?.first?.unit ?: sensor.unit
+            Text(displayed?.let { "${instrumentText(sensor, value?.first, it)} $unit".trim() } ?: "Sem leitura",fontWeight=FontWeight.Bold)
+            if(!demo && displayed != null && value?.first?.canBeLastInstrumentValue()==true && value.first.observed(now)==null &&
+                sensor !in listOf(Instrument.TORQUE, Instrument.GEAR)) Caption("Última leitura recebida · ${instrumentAge(value.first,now)} · desatualizada")
             value?.first?.takeIf { it.source==Origin.CORE && it.quality==Quality.UNVERIFIED && it.receivedAt!=null }?.value?.let {
                 Caption("Valor recebido, não verificado: ${format(it)} ${sensor.unit}")
             }
@@ -125,8 +128,8 @@ import java.time.Instant
             Caption("Recebimento: ${value?.first?.receivedAt ?: "Não informado"}")
             Caption("Qualidade: ${value?.first?.quality?.name ?: "MISSING"}")
             if(sensor==Instrument.TORQUE && value?.first?.validation=="DERIVADO_REFERENCIA_HISTORICA_EM_VALIDACAO")
-                Caption("Torque % derivado do PID 93 usando 2.643 Nm históricos; referência em validação.")
-            Caption("Últimos valores ficam identificados pela idade. Cálculos e ações continuam exigindo amostras atuais e válidas.")
+                Caption("Percentual do PID 93 calculado com a referência histórica de 2.643 N·m, em validação.")
+            value?.first?.sampleUptimeMs?.let { Caption("Amostra registrada aos ${it} ms do boot do Core") }
         }
     },confirmButton={TextButton(onClick=onClose){Text("Fechar")}})
 }

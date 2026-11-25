@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.Dp
 import br.com.truckbox.multimedia.next.R
 import br.com.truckbox.multimedia.next.domain.*
 import br.com.truckbox.multimedia.next.data.canBeLastInstrumentValue
+import br.com.truckbox.multimedia.next.data.LIVE_GEAR_TTL_MS
+import br.com.truckbox.multimedia.next.data.LIVE_TORQUE_TTL_MS
 import java.time.Instant
 import java.util.Locale
 
@@ -113,6 +115,31 @@ fun visibleValue(reading: Reading?, now: Instant, demo: Boolean): Double? =
     if(demo && reading?.source==Origin.DEMO) reading.value else reading?.observed(now)
 fun instrumentDisplayValue(reading: Reading?,now: Instant,demo: Boolean): Double? =
     visibleValue(reading,now,demo) ?: reading?.takeIf {it.canBeLastInstrumentValue() && it.sampledAt?.isAfter(now)==false}?.value
+
+private fun instrumentTtl(sensor: Instrument): Long = when (sensor) {
+    Instrument.TORQUE -> LIVE_TORQUE_TTL_MS
+    Instrument.GEAR -> LIVE_GEAR_TTL_MS
+    Instrument.FUEL_PRESSURE, Instrument.AIR -> 15_000L
+    else -> 40_000L
+}
+
+fun instrumentDisplayValue(sensor: Instrument, reading: Reading?, now: Instant, demo: Boolean): Double? {
+    if (demo && reading?.source == Origin.DEMO) return reading.value
+    val fresh = reading?.observedWithin(now, instrumentTtl(sensor))
+    if (sensor == Instrument.TORQUE || sensor == Instrument.GEAR) return fresh
+    return fresh ?: reading?.takeIf { it.canBeLastInstrumentValue() && it.sampledAt?.isAfter(now) == false }?.value
+}
+
+fun instrumentText(sensor: Instrument, reading: Reading?, value: Double?): String = when {
+    value == null -> "—"
+    sensor == Instrument.GEAR -> reading?.displayLabel ?: when {
+        value == 0.0 -> "N"
+        value == -1.0 -> "R"
+        value < 0 -> "R${-value.toInt()}"
+        else -> format(value, 0) ?: "—"
+    }
+    else -> format(value, if (sensor == Instrument.PEDAL || sensor == Instrument.TORQUE && reading?.unit == "%") 0 else 1) ?: "—"
+}
 fun instrumentAge(reading: Reading?,now: Instant): String {
     val at=reading?.sampledAt ?: return "idade desconhecida"
     val age=java.time.Duration.between(at,now).seconds.coerceAtLeast(0)
@@ -120,23 +147,14 @@ fun instrumentAge(reading: Reading?,now: Instant): String {
 }
 
 @Composable fun InstrumentCard(sensor: Instrument, value: InstrumentValue?, now: Instant, demo: Boolean, size: Int, modifier: Modifier = Modifier, onClick: ()->Unit) {
-    // Respeitar cadência efetiva do sinal: torque PID93 a 60 s, freios PID117/118 a 10 s.
-    val ttl=when(sensor) {
-        Instrument.TORQUE -> 65L
-        Instrument.FUEL_PRESSURE,Instrument.AIR -> 15L
-        Instrument.GEAR -> 5L
-        else -> 40L
-    }
-    fun display(reading: Reading?):Double? =
-        if(demo && reading?.source==Origin.DEMO) reading.value
-        else reading?.observed(now,ttl) ?:
-            reading?.takeIf {it.canBeLastInstrumentValue() && it.sampledAt?.isAfter(now)==false}?.value
-    val first = display(value?.first)
-    val second = display(value?.second)
-    val old=!demo && ((first!=null && value?.first?.observed(now,ttl)==null) ||
-        (second!=null && value?.second?.observed(now,ttl)==null))
+    val ttl = instrumentTtl(sensor)
+    val first = instrumentDisplayValue(sensor, value?.first, now, demo)
+    val second = instrumentDisplayValue(sensor, value?.second, now, demo)
+    val old=!demo && ((first!=null && value?.first?.observedWithin(now,ttl)==null) ||
+        (second!=null && value?.second?.observedWithin(now,ttl)==null))
     val oldest=listOfNotNull(value?.first,value?.second).filter {it.canBeLastInstrumentValue()}.minByOrNull {it.sampledAt!!}
-    val text = if(sensor==Instrument.AIR) "${format(first) ?: "—"} / ${format(second) ?: "—"}" else format(first,if(sensor in listOf(Instrument.GEAR,Instrument.PEDAL,Instrument.TORQUE)) 0 else 1) ?: "—"
+    val text = if(sensor==Instrument.AIR) "${format(first) ?: "—"} / ${format(second) ?: "—"}" else instrumentText(sensor, value?.first, first)
+    val unit = if (sensor == Instrument.TORQUE) value?.first?.unit ?: sensor.unit else sensor.unit
     Surface(modifier.clickable(onClick=onClick),shape=RoundedCornerShape(13.dp),border=BorderStroke(1.dp,Stroke),color=Panel) {
       BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact=maxHeight<150.dp
@@ -154,10 +172,20 @@ fun instrumentAge(reading: Reading?,now: Instant): String {
             Text(sensor.label,fontFamily=Inter,fontSize=(if(tight) 10 else if(size==2) 11 else if(compact) 12 else 14).sp,lineHeight=(if(tight) 12 else if(size==2) 13 else 16).sp,fontWeight=FontWeight.Bold,maxLines=2,overflow=TextOverflow.Ellipsis,minLines=if(tight) 1 else 2,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
             Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                 Text(text,color=if(old) Muted else Ink,fontFamily=Oxanium,fontStyle=FontStyle.Italic,fontWeight=FontWeight.ExtraBold,fontSize=digitSize.sp,lineHeight=(digitSize*1.12f).sp,maxLines=1,overflow=TextOverflow.Clip,softWrap=false,modifier=Modifier.weight(1f,false))
-                if(sensor!=Instrument.AIR) Text(sensor.unit,color=Color(0xFFD1A17D),fontSize=(if(tight || size==2) 9 else 12).sp,modifier=Modifier.padding(bottom=3.dp))
+                if(sensor!=Instrument.AIR && unit.isNotEmpty()) Text(unit,color=Color(0xFFD1A17D),fontSize=(if(tight || size==2) 9 else 12).sp,modifier=Modifier.padding(bottom=3.dp))
             }
             if(sensor==Instrument.AIR) Text("bar · circuitos 1/2",fontFamily=Inter,color=Muted,fontSize=9.sp,lineHeight=11.sp,maxLines=1)
-            Text(if(first==null && second==null) "Sem leitura" else if(demo) "Demonstração" else if(old) "Última · ${instrumentAge(oldest,now)}" else if(value?.first?.quality==Quality.PROVISIONAL || value?.second?.quality==Quality.PROVISIONAL) "Não verificado" else "Leitura validada",fontFamily=Inter,color=Muted,fontSize=(if(tight || size==2) 9 else 11).sp,lineHeight=(if(tight || size==2) 11 else 14).sp,maxLines=1)
+            val status = when {
+                first == null && second == null -> "Sem leitura"
+                demo -> "Demonstração"
+                old -> "Última · ${instrumentAge(oldest, now)}"
+                sensor == Instrument.TORQUE && value?.first?.quality == Quality.PROVISIONAL ->
+                    "Provisório · ${instrumentAge(value.first, now)}"
+                sensor == Instrument.TORQUE -> instrumentAge(value?.first, now)
+                value?.first?.quality == Quality.PROVISIONAL || value?.second?.quality == Quality.PROVISIONAL -> "Não verificado"
+                else -> "Leitura validada"
+            }
+            Text(status,fontFamily=Inter,color=Muted,fontSize=(if(tight || size==2) 9 else 11).sp,lineHeight=(if(tight || size==2) 11 else 14).sp,maxLines=1)
         }
       }
     }

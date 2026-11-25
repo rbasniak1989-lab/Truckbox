@@ -1,6 +1,7 @@
 package br.com.truckbox.multimedia.next
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -54,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 val hostChanged = local.value.coreHost != it.coreHost
                 local.value=it;preferencesStore.save(it)
                 if(hostChanged) {
-                    state.update {it.copy(readings=emptyMap(),speed=null,fuelRate=null,localFuel=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED,
+                    state.update {it.copy(readings=emptyMap(),localInstruments=emptyMap(),speed=null,fuelRate=null,localFuel=null,coreDeviceUid=null,coreInternetSharing=null,core=ConnectionState.UNVERIFIED,
                         coreFaults=emptyList(),faultUid=null,faultSnapshotAt=null,faultReadable=false,faultIncomplete=true,faultOverflow=0)}
                     coreRetry.value++
                 }
@@ -70,16 +71,12 @@ class MainActivity : ComponentActivity() {
               launch {
                 val localConnection=WifiCoreConnectionFactory(this@MainActivity)
                 val client = CoreSensorClient(localConnection)
-                val liveClient = CoreLiveClient(localConnection)
                 coreRetry.collectLatest {
                     var failures = 0
                     while (isActive) {
                         val host = local.value.coreHost
                         val expectedCore=state.value.expectedCoreUid
                         val fetch = withContext(Dispatchers.IO) { client.fetch(host,expectedCore) }
-                        val live = fetch.response?.physicalDeviceUid?.let {uid ->
-                            withContext(Dispatchers.IO) {liveClient.fetch(host,uid)}
-                        }.orEmpty()
                         ensureActive() // Não aplicar resposta de uma consulta cancelada por troca de host/reteste.
                         if(host != local.value.coreHost || expectedCore!=state.value.expectedCoreUid) continue
                         val result = fetch.response
@@ -89,18 +86,35 @@ class MainActivity : ComponentActivity() {
                                 faultReadable=false)}
                         } else {
                             failures=0
-                            val values=result.values.toMutableMap()
-                            for((sensor,entry) in live) {
-                                if(values[sensor]?.first?.observed(java.time.Instant.now())==null)values[sensor]=entry
-                            }
                             state.update {if(it.expectedCoreUid!=expectedCore)it else it.copy(core=if(fetch.diagnostics.sensorApi) ConnectionState.SENSORS_RECEIVED else ConnectionState.HTTP_RESPONDED,coreDiagnostics=fetch.diagnostics,
-                                readings=retainCoreReadings(it.readings.takeIf {_ -> result.physicalDeviceUid!=null && result.physicalDeviceUid==it.coreDeviceUid} ?: emptyMap(),values),
+                                readings=retainCoreReadings(it.readings.takeIf {_ -> result.physicalDeviceUid!=null && result.physicalDeviceUid==it.coreDeviceUid} ?: emptyMap(),result.values),
                                 coreDeviceUid=result.physicalDeviceUid,coreInternetSharing=result.internetSharing,speed=result.speed,fuelRate=result.flow,lastCoreResponse=result.receivedAt,
                                 coreFaults=it.coreFaults.takeIf {_ -> result.physicalDeviceUid==it.faultUid}.orEmpty(),
                                 faultUid=it.faultUid.takeIf {_ -> result.physicalDeviceUid==it.faultUid},
                                 faultReadable=it.faultReadable && result.physicalDeviceUid==it.faultUid)}
                         }
                         delay(((if(fetch.diagnostics.sensorApi && result!=null) 1000L else 4000L) shl failures.coerceAtMost(3)).coerceAtMost(30000L))
+                    }
+                }
+              }
+              launch {
+                val live = CoreLiveClient(WifiCoreConnectionFactory(this@MainActivity))
+                coreRetry.collectLatest {
+                    while (isActive) {
+                        val started = SystemClock.elapsedRealtime()
+                        val host = local.value.coreHost
+                        val current = state.value
+                        val uid = current.expectedCoreUid ?: current.coreDeviceUid
+                        val readings = uid?.let { withContext(Dispatchers.IO) { live.fetch(host, it) } }.orEmpty()
+                        ensureActive()
+                        if (host == local.value.coreHost) {
+                            state.update {
+                                if (uid == (it.expectedCoreUid ?: it.coreDeviceUid))
+                                    it.copy(localInstruments = readings)
+                                else it
+                            }
+                        }
+                        delay((1000L - (SystemClock.elapsedRealtime() - started)).coerceAtLeast(1L))
                     }
                 }
               }

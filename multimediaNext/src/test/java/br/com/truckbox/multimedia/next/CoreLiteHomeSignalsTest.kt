@@ -6,9 +6,12 @@ import br.com.truckbox.multimedia.next.data.CoreLiveClient
 import br.com.truckbox.multimedia.next.domain.Instrument
 import br.com.truckbox.multimedia.next.domain.Quality
 import br.com.truckbox.multimedia.next.domain.confirmedActive
+import br.com.truckbox.multimedia.next.ui.instrumentDisplayValue
+import br.com.truckbox.multimedia.next.ui.instrumentText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
@@ -37,7 +40,7 @@ class CoreLiteHomeSignalsTest {
             """{"device_uid":"$uid","boot_id":2,"live_contract":"TBX_CORE_LIVE_V1",
                 "gear":1,"actualTorquePct":2.0507,"live_readings":{
                   "gear":{"mid":130,"pid":163,"age_ms":500,"quality":"EM_VALIDACAO"},
-                  "torque":{"mid":128,"pid":93,"age_ms":10000,"reference_nm":2643,
+                  "torque":{"mid":128,"pid":93,"age_ms":500,"reference_nm":2643,
                     "quality":"DERIVADO_REFERENCIA_HISTORICA_EM_VALIDACAO"}
                 }}"""
         }, now = { now })
@@ -50,6 +53,59 @@ class CoreLiteHomeSignalsTest {
         assertEquals("J1587/MID:128/PID:93", torque.sourceId)
         assertEquals(Quality.PROVISIONAL, torque.quality)
         assertTrue(client.fetch(host, "different-core").isEmpty())
+    }
+
+    @Test fun neutralFromTheLocalCoreReplacesGearAtAnySpeed() {
+        var gear: Int? = 4
+        var label = "4"
+        var speed = 0
+        var uidTime = 100L
+        val client = CoreLiveClient(replies {
+            """{"device_uid":"$uid","boot_id":2,"live_contract":"TBX_CORE_LIVE_V1","speedKph":$speed,
+                "gear":$gear,"gear_text":"$label","live_sample_v1":{"gear_uptime_ms":$uidTime},
+                "live_readings":{"gear":{"mid":130,"pid":163,"age_ms":100,"quality":"EM_VALIDACAO"}}}"""
+        }, now = { now }, monotonic = { 0L })
+        fun shown(): String {
+            val reading = client.fetch(host, uid)[Instrument.GEAR]?.first
+            return instrumentText(Instrument.GEAR, reading, instrumentDisplayValue(Instrument.GEAR, reading, now, false))
+        }
+        assertEquals("4", shown())
+        gear = 0; label = "N"; uidTime++
+        assertEquals("N", shown())
+        speed = 30; uidTime++
+        assertEquals("N", shown())
+        gear = null; label = ""; uidTime++
+        assertEquals("—", shown())
+        gear = 0; label = "0"; uidTime++
+        assertEquals("—", shown())
+        gear = -2; label = "R2"; uidTime++
+        assertEquals("R2", shown())
+        gear = 3; label = "3"; uidTime++
+        assertEquals("3", shown())
+    }
+
+    @Test fun repeatedTorqueTimestampCannotRefreshTheSample() {
+        var clock = now
+        var stamp = 9_500L
+        var age = 0
+        val client = CoreLiveClient(replies {
+            """{"device_uid":"$uid","boot_id":2,"live_contract":"TBX_CORE_LIVE_V1",
+                "torqueNm":-27.1,"live_sample_v1":{"torque_uptime_ms":$stamp},
+                "live_readings":{"torque":{"mid":128,"pid":93,"age_ms":$age,"quality":"EM_VALIDACAO"}}}"""
+        }, now = { clock }, monotonic = { 0L })
+        val reading = client.fetch(host, uid).getValue(Instrument.TORQUE).first
+        assertEquals(-27.1, reading.value!!, 0.0)
+        assertEquals("N·m", reading.unit)
+        assertEquals(stamp, reading.sampleUptimeMs!!)
+        clock = now.plusMillis(2400)
+        assertEquals(now, client.fetch(host, uid).getValue(Instrument.TORQUE).first.sampledAt)
+        clock = now.plusMillis(2600)
+        assertNull(instrumentDisplayValue(Instrument.TORQUE, reading, clock, false))
+        assertNull(client.fetch(host, uid)[Instrument.TORQUE])
+        stamp += 1000
+        assertEquals(stamp, client.fetch(host, uid).getValue(Instrument.TORQUE).first.sampleUptimeMs!!)
+        age = 2800
+        assertNull(client.fetch(host, uid)[Instrument.TORQUE])
     }
 
     @Test fun liteDiagnosticsCanReportAnActiveDtcWithoutPersistentHistory() {
