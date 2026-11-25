@@ -21,6 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.Closeable
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -32,8 +33,9 @@ class UpgradeRetentionTest {
         assertTrue(Build.HARDWARE in setOf("ranchu", "goldfish"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val pkg = context.packageManager.getPackageInfo(context.packageName, 0)
+        val expectedVersion = requireNotNull(arguments.getString("expectedVersionCode")).toInt()
         @Suppress("DEPRECATION")
-        assertEquals(arguments.getString("expectedVersionCode")?.toInt(), pkg.versionCode)
+        assertEquals(expectedVersion, pkg.versionCode)
 
         val marker = File(context.noBackupFilesDir, "upgrade-test-state.json")
         val gps = GpsSettings(context)
@@ -47,10 +49,6 @@ class UpgradeRetentionTest {
             assertTrue(gps.save(GpsCredentials(gpsUid, gpsToken)))
             gps.enabled = true
             preferences.save(savedPreferences)
-            GpsOutbox(context).use { outbox ->
-                assertEquals(0L, outbox.pending(gpsUid))
-                assertTrue(outbox.enqueue(gpsUid, point))
-            }
         }
 
         val signer = AndroidDeviceSigner()
@@ -59,9 +57,17 @@ class UpgradeRetentionTest {
         assertEquals(gpsUid, gps.deviceUid)
         assertTrue(gps.enabled)
         assertEquals(savedPreferences, preferences.read())
-        GpsOutbox(context).use { outbox ->
+        val outbox = GpsOutbox(context)
+        try {
+            if (phase == "seed") {
+                assertEquals(0L, outbox.pending(gpsUid))
+                assertTrue(outbox.enqueue(gpsUid, point))
+            }
+            if (expectedVersion >= 9) assertTrue(Closeable::class.java.isInstance(outbox))
             assertEquals(1L, outbox.pending(gpsUid))
             assertEquals(point, outbox.oldest(gpsUid))
+        } finally {
+            outbox.close()
         }
         val encryptedCloud = context.getSharedPreferences("multimedia_next_cloud_secure_v1", Context.MODE_PRIVATE)
             .getString("refresh", null)

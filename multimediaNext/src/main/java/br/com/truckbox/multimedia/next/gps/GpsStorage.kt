@@ -11,6 +11,7 @@ import android.util.AtomicFile
 import android.util.Base64
 import androidx.core.database.sqlite.transaction
 import org.json.JSONObject
+import java.io.Closeable
 import java.io.File
 import java.security.KeyStore
 import java.util.UUID
@@ -83,7 +84,10 @@ internal class GpsSettings(context: Context) {
 
 internal class GpsOutbox(context: Context) : SQLiteOpenHelper(
     context, File(context.noBackupFilesDir, "gps-points.db").absolutePath, null, 1,
-) {
+), Closeable {
+    // Android 8 provides close(), but its SQLiteOpenHelper does not implement AutoCloseable.
+    override fun close() = super.close()
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""create table points (
             device_uid text not null, client_uid text not null, captured_ms integer not null, payload text not null,
