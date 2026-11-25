@@ -51,9 +51,14 @@ internal data class TripRoute(
     val validUntil: Instant?,
     val tollCoverage: String,
     val tolls: List<RouteToll>,
+    val mainRoads: List<String> = emptyList(),
+    val elevation: List<RouteElevation> = emptyList(),
+    val ascentM: Double? = null,
+    val descentM: Double? = null,
+    val forecast: TerrainRouteForecast? = null,
 )
 
-internal data class TripRoutes(val linked: TripRoute?, val options: List<RouteOption>)
+internal data class TripRoutes(val linked: TripRoute?, val options: List<RouteOption>, val acceptsWaypoints: Boolean = false)
 
 internal class TripRoutesClient(
     private val prefs: TruckBoxPreferences,
@@ -64,14 +69,33 @@ internal class TripRoutesClient(
         val options = result.getJSONArray("plans").objects(::option)
         require(result.has("route"))
         val linked = if (result.isNull("route")) null else route(result.getJSONObject("route"), trip)
-        return TripRoutes(linked, options)
+        val features = result.optJSONObject("capabilities")
+        return TripRoutes(linked, options, features?.optInt("version") == 1 && features.optBoolean("waypoints"))
     }
 
-    fun calculate(trip: TripRecord, profile: TruckRouteProfile, fromGps: Boolean): TripRoute {
+    fun calculate(trip: TripRecord, profile: TruckRouteProfile, fromGps: Boolean,
+                  waypoints: List<String> = emptyList(), tollPayer: String? = null): List<TripRoute> {
         require(profile.valid)
+        require(waypoints.size <= 5 && waypoints.all { it.isNotBlank() && it.length <= 160 })
+        require(tollPayer == null || tollPayer in setOf("CARRIER", "DRIVER", "UNKNOWN"))
         val payload = JSONObject()
             .put("clientId", UUID.randomUUID().toString()).put("useGps", fromGps).put("profile", profile.toJson())
-        return route(post("plan_truck", trip, payload).getJSONObject("route"), trip)
+            .put("alternatives", 3)
+        if (waypoints.isNotEmpty()) payload.put("waypoints", JSONArray(waypoints))
+        tollPayer?.let { payload.put("tollPayer", it) }
+        val result = post("plan_truck", trip, payload)
+        if (waypoints.isNotEmpty()) {
+            val accepted = result.optJSONArray("appliedWaypoints")
+            val same = accepted?.length() == waypoints.size &&
+                waypoints.indices.all { accepted?.optString(it) == waypoints[it] }
+            if (!same) throw DriverCloudException(409, "waypoints_unconfirmed")
+        }
+        val batch = result.optJSONArray("routes")
+        if (batch == null) return listOf(route(result.getJSONObject("route"), trip))
+        require(batch.length() in 1..4)
+        val routes = batch.objects { route(it, trip) }
+        require(routes.distinctBy { it.option.id }.size == routes.size)
+        return routes
     }
 
     fun attach(trip: TripRecord, selected: RouteOption) {
@@ -106,12 +130,17 @@ internal class TripRoutesClient(
         require(value.getString("tripId") == trip.cloudId)
         val polyline = value.getString("polyline")
         require(polyline.length in 4..42_000)
-        return TripRoute(option(value), polyline, cloudInstant(value.getString("createdAt")),
+        val options = option(value)
+        val roads = value.optJSONArray("mainRoads") ?: JSONArray()
+        val revision = value.optInt("revision", -1).takeIf { it > 0 }
+        return TripRoute(options, polyline, cloudInstant(value.getString("createdAt")),
             value.text("validUntil")?.let(::cloudInstant), value.getString("tollCoverage"),
             value.getJSONArray("tolls").objects { item ->
                 RouteToll(item.getString("name"), item.nonNegativeInt("atM"), item.optString("kind") == "FREE_FLOW",
                     item.nonNegativeInt("lowCents"), item.nonNegativeInt("highCents"))
-            })
+            }, (0 until minOf(roads.length(), 12)).mapNotNull { roads.optString(it).takeIf { l -> l.length in 1..120 } },
+            value.routeElevation(options.distanceM), value.number("ascentM")?.takeIf { it >= 0 },
+            value.number("descentM")?.takeIf { it >= 0 }, value.terrainForecast(options.id, requireNotNull(trip.cloudId), revision))
     }
 }
 

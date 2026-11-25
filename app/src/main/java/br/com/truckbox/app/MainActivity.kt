@@ -166,7 +166,7 @@ private fun DriverApp(
                     title = {
                         Column {
                             Text("TruckBox Motorista", fontWeight = FontWeight.Bold)
-                            Text("Cloud e GPS do celular • v0.6.7", fontSize = 11.sp)
+                            Text("Cloud e GPS do celular • v0.6.8", fontSize = 11.sp)
                         }
                     },
                     actions = {

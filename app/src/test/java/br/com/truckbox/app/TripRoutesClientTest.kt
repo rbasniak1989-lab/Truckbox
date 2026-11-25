@@ -43,6 +43,7 @@ class TripRoutesClientTest {
                     .put("plans", JSONArray().put(option(GOOGLE_ROUTE, "GOOGLE")).apply { if (calculated) put(route()) }).toString()
                 "plan_truck" -> {
                     assertTrue(payload.getBoolean("useGps"))
+                    assertEquals(3, payload.getInt("alternatives"))
                     val profile = payload.getJSONObject("profile")
                     assertEquals(2500, profile.getInt("lengthCm"))
                     assertEquals(9, profile.getInt("axles"))
@@ -68,7 +69,7 @@ class TripRoutesClientTest {
         assertNull(initial.linked)
         assertEquals(listOf(GOOGLE_ROUTE), initial.options.map { it.id })
         val profile = TruckRouteProfile.fromInput("4,25", "2,60", "74", "68,37")!!
-        val result = client.calculate(trip, profile, fromGps = true)
+        val result = client.calculate(trip, profile, fromGps = true).single()
         assertFalse(attached)
         assertTrue(result.option.remaining)
         assertEquals(1, result.tolls.size)
@@ -79,6 +80,46 @@ class TripRoutesClientTest {
         assertEquals(result, client.list(trip).linked)
         assertEquals(64.3, trip.distanceKm)
         assertEquals(25.0, trip.fuelLiters)
+    }
+
+    @Test fun comparesIndependentTerrainForecastsAndKeepsCostsIncompleteWhenNeeded() {
+        fun plan(id: String, liters: Double, method: String, complete: Boolean) = route().put("id", id).put("revision", 2)
+            .put("forecast", JSONObject().put("method", method)
+                .put("tripId", TRIP).put("routeId", id).put("routeRevision", 2)
+                .put("modelVersion", "terrain-test").put("confidence", "MEDIUM").put("historySamples", 140)
+                .put("fuelLiters", liters)
+                .put("cost", JSONObject().put("tollPayer", "CARRIER").put("fuelCents", 43_000)
+                    .put("operatingCents", 43_000).put("complete", complete)))
+        val fake = FakeCloud { _, request ->
+            val payload = request.getJSONObject("payload")
+            assertEquals(3, payload.getInt("alternatives"))
+            assertEquals("CARRIER", payload.getString("tollPayer"))
+            assertEquals("Cidade intermediária", payload.getJSONArray("waypoints").getString(0))
+            val plans = JSONArray()
+                .put(plan(ROUTE, 400.0, "TRUCK_TERRAIN_HISTORY_V1", false))
+                .put(plan(GOOGLE_ROUTE, 350.0, "TRUCK_TERRAIN_HISTORY_V1", true).put("distanceM", 815_000))
+                .put(plan(VEHICLE, 985.0, "ACTIVE_TRIP_AVERAGE", true))
+            200 to JSONObject().put("routes", plans)
+                .put("appliedWaypoints", JSONArray().put("Cidade intermediária")).toString()
+        }
+        val client = TripRoutesClient(prefs(context), fake.transport())
+        val results = client.calculate(trip.copy(averageKml = .8), TruckRouteProfile(420, 260, 74_000, 72_000),
+            true, listOf("Cidade intermediária"), "CARRIER")
+        assertEquals(3, results.size)
+        assertEquals(400.0, results[0].forecast?.liters)
+        assertEquals(350.0, results[1].forecast?.liters)
+        assertFalse(results[0].forecast!!.operatingCostComplete)
+        assertTrue(results[1].forecast!!.operatingCostComplete)
+        assertNull(results[2].forecast)
+    }
+
+    @Test fun requestedWaypointsAreNotSilentlyDiscardedByTheLegacyApi() {
+        val fake = FakeCloud { _, _ -> 200 to JSONObject().put("route", route()).toString() }
+        val client = TripRoutesClient(prefs(context), fake.transport())
+        val profile = TruckRouteProfile(420, 260, 74_000, 72_000)
+        assertEquals("waypoints_unconfirmed", assertThrows(DriverCloudException::class.java) {
+            client.calculate(trip, profile, fromGps = false, waypoints = listOf("Cidade intermediária"))
+        }.code)
     }
 
     @Test fun noGpsAndChangedTripProduceExplicitErrors() {
