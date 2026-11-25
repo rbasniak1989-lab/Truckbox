@@ -11,8 +11,8 @@ android {
         applicationId = "br.com.truckbox.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 65
-        versionName = "0.6.5-cloud-gps"
+        versionCode = 67
+        versionName = "0.6.7"
         resValue("string", "app_name", "TruckBox Motorista")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -24,9 +24,8 @@ android {
     buildTypes {
         create("cloudTest") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".cloud"
-            versionNameSuffix = "-teste"
-            resValue("string", "app_name", "TruckBox Motorista Cloud")
+            applicationIdSuffix = ".rotas"
+            resValue("string", "app_name", "TruckBox Motorista Rotas")
             matchingFallbacks += "debug"
             signingConfig = signingConfigs.getByName("debug")
         }

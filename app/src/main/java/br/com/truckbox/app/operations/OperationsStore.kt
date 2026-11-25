@@ -66,6 +66,10 @@ data class TripRecord(
     val plannedFuelHighL: Double? = null,
     val plannedForecastConfidence: String? = null,
     val plannedForecastBasisJson: String? = null,
+    val cloudId: String? = null,
+    val notes: String? = null,
+    val emptyBeforeDistanceKm: Double? = null,
+    val emptyBeforeFuelLiters: Double? = null,
 )
 
 data class FuelingRecord(
@@ -113,6 +117,17 @@ data class OperationsSnapshot(
     val emptyFuelLiters: Double? = null,
     val pendingCommands: List<PendingCloudCommand> = emptyList(),
 )
+
+internal data class CloudTripState(val trips: List<TripRecord>, val operation: JSONObject?) {
+    val mode = operation?.optString("mode")?.let { runCatching { OperationMode.valueOf(it) }.getOrNull() }
+    val activeTrip: TripRecord? = if (operation == null) {
+        trips.singleOrNull { it.status == "ACTIVE" }
+    } else {
+        val activeId = operation.optNullableString("active_trip_id")
+        trips.firstOrNull { mode == OperationMode.LOADED_TRIP && activeId != null && it.cloudId == activeId && it.status == "ACTIVE" }
+    }
+    val hasActiveTrip = mode == OperationMode.LOADED_TRIP || trips.any { it.status == "ACTIVE" }
+}
 
 /**
  * Persistência operacional local-first para a v0.4.1.
@@ -177,6 +192,7 @@ class OperationsStore private constructor(context: Context, private val prefs: T
 
     @Synchronized fun endActiveTrip(currentOdometerKm: Double?, currentFuelCounterL: Double?) {
         val current = _state.value.activeTrip ?: return
+        if (_state.value.pendingCommands.any { it.action == DriverAction.END_TRIP && it.entityUid == current.clientUid }) return
         val distance = if (current.startOdometerKm != null && currentOdometerKm != null) {
             (currentOdometerKm - current.startOdometerKm).takeIf {it>=0}
         } else null
@@ -186,9 +202,9 @@ class OperationsStore private constructor(context: Context, private val prefs: T
             endedAtMs = System.currentTimeMillis(),
             endOdometerKm = currentOdometerKm,
             endFuelCounterL = currentFuelCounterL,
-            distanceKm = distance,
-            fuelLiters = fuel,
-            averageKml = avg,
+            distanceKm = distance ?: current.distanceKm,
+            fuelLiters = fuel ?: current.fuelLiters,
+            averageKml = avg ?: current.averageKml,
             status = "COMPLETED",
         )
         update(_state.value.copy(
@@ -266,59 +282,42 @@ class OperationsStore private constructor(context: Context, private val prefs: T
      * estado operacional quando ele possui uma viagem ativa/remotamente encerrada,
      * mas registros locais ainda não enviados são preservados pelo clientUid.
      */
-    @Synchronized fun applyCloudSnapshot(root: JSONObject) {
-        if (!root.optBoolean("ok", false)) return
-
-        val cloudTrips = root.optJSONArray("trips").toList(::tripFromCloudJson)
+    @Synchronized internal fun applyCloudSnapshot(root: JSONObject): CloudTripState {
+        require(root.optBoolean("ok", false))
+        val cloud = CloudTripState(root.getJSONArray("trips").toList(::tripFromCloudJson), root.optJSONObject("operation"))
         val cloudFuelings = root.optJSONArray("fuelings").toList(::fuelingFromCloudJson)
         val cloudExpenses = root.optJSONArray("expenses").toList(::expenseFromCloudJson)
         val cloudMaintenance = root.optJSONArray("maintenance").toList(::maintenanceFromCloudJson)
-        val op = root.optJSONObject("operation")
+        val op = cloud.operation
 
-        val dirty=_state.value.pendingCommands.map {it.entityUid}.toSet()
+        val previous = _state.value
+        val dirty=previous.pendingCommands.map {it.entityUid}.toSet()
         fun <T> preservePending(cloud: List<T>,local: List<T>,id: (T)->String)=mergeByUid(local.filter {id(it) in dirty},mergeByUid(cloud,local,id),id)
-        val mergedTrips = preservePending(cloudTrips, _state.value.trips) { it.clientUid }
-        val mergedFuelings = preservePending(cloudFuelings, _state.value.fuelings) { it.clientUid }
-        val mergedExpenses = preservePending(cloudExpenses, _state.value.expenses) { it.clientUid }
-        val mergedMaintenance = preservePending(cloudMaintenance, _state.value.maintenance) { it.clientUid }
-
-        val cloudActive = cloudTrips.firstOrNull { it.status == "ACTIVE" }
-        val cloudMode = op?.optString("mode")?.let { runCatching { OperationMode.valueOf(it) }.getOrNull() }
-
-        // Se o Cloud conhece uma viagem ativa, ela vence imediatamente.
-        // Se o Cloud explicitamente encerrou a mesma viagem local, limpamos o ativo.
-        // Uma viagem local offline ainda inexistente no Cloud não é apagada por engano.
-        val localActive = _state.value.activeTrip
-        val cloudHasLocalActive = localActive?.let { a -> cloudTrips.any { it.clientUid == a.clientUid } } == true
-        val pendingTrip=_state.value.pendingCommands.any {it.action==DriverAction.UPSERT_TRIP||it.action==DriverAction.END_TRIP}
-        val active = when {
-            pendingTrip -> localActive
-            cloudActive != null -> cloudActive
-            localActive != null && !cloudHasLocalActive -> localActive
-            else -> null
+        val mergedTrips = mergeByUid(cloud.trips, previous.trips) { it.clientUid }
+        val pending = previous.pendingCommands.filterNot { it.awaitingTripReview }
+        val provisional = pending.lastOrNull { it.action == DriverAction.UPSERT_TRIP }?.trip?.takeIf { local ->
+            !cloud.hasActiveTrip && cloud.trips.none { it.clientUid == local.clientUid } &&
+                pending.none { it.action == DriverAction.END_TRIP && it.entityUid == local.clientUid }
         }
-        val mode = when {
-            pendingTrip -> _state.value.mode
-            active != null -> OperationMode.LOADED_TRIP
-            cloudMode != null -> cloudMode
-            else -> _state.value.mode
-        }
+        val active = cloud.activeTrip ?: provisional
+        val mode = if (active != null) OperationMode.LOADED_TRIP else cloud.mode ?: OperationMode.NO_TRIP
 
         update(
-            _state.value.copy(
+            previous.copy(
                 mode = mode,
                 activeTrip = active,
                 trips = mergedTrips,
-                fuelings = mergedFuelings,
-                expenses = mergedExpenses,
-                maintenance = mergedMaintenance,
-                emptyStartedAtMs = op?.optNullableIsoMs("empty_started_at") ?: _state.value.emptyStartedAtMs,
-                emptyStartOdometerKm = op?.optNullableDouble("empty_start_odometer_km") ?: _state.value.emptyStartOdometerKm,
-                emptyStartFuelCounterL = op?.optNullableDouble("empty_start_fuel_counter_l") ?: _state.value.emptyStartFuelCounterL,
-                emptyDistanceKm = op?.optNullableDouble("empty_distance_km") ?: _state.value.emptyDistanceKm,
-                emptyFuelLiters = op?.optNullableDouble("empty_fuel_liters") ?: _state.value.emptyFuelLiters,
+                fuelings = preservePending(cloudFuelings, previous.fuelings) { it.clientUid },
+                expenses = preservePending(cloudExpenses, previous.expenses) { it.clientUid },
+                maintenance = preservePending(cloudMaintenance, previous.maintenance) { it.clientUid },
+                emptyStartedAtMs = op?.optNullableIsoMs("empty_started_at"),
+                emptyStartOdometerKm = op?.optNullableDouble("empty_start_odometer_km"),
+                emptyStartFuelCounterL = op?.optNullableDouble("empty_start_fuel_counter_l"),
+                emptyDistanceKm = op?.optNullableDouble("empty_distance_km"),
+                emptyFuelLiters = op?.optNullableDouble("empty_fuel_liters"),
             )
         )
+        return cloud
     }
 
     private fun update(value: OperationsSnapshot) {
@@ -369,6 +368,11 @@ class OperationsStore private constructor(context: Context, private val prefs: T
     private fun currentScope(): String?=prefs.cloudCredentials().takeIf {it.configured}?.scope
     @Synchronized fun bindUnassignedCommands(scope: String) {update(_state.value.copy(pendingCommands=_state.value.pendingCommands.map {if(it.scope==null)it.copy(scope=scope) else it}))}
     @Synchronized fun acknowledgeCommand(id: String) {update(_state.value.copy(pendingCommands=_state.value.pendingCommands.filterNot {it.id==id}))}
+    @Synchronized internal fun holdTripCommand(id: String) {
+        update(_state.value.copy(pendingCommands = _state.value.pendingCommands.map {
+            if (it.id == id) it.copy(awaitingTripReview = true) else it
+        }))
+    }
 }
 
 private fun TripRecord.toJson() = JSONObject().apply {
@@ -382,6 +386,8 @@ private fun TripRecord.toJson() = JSONObject().apply {
     put("plannedAscentM", plannedAscentM); put("plannedDescentM", plannedDescentM); put("plannedExpectedKml", plannedExpectedKml)
     put("plannedFuelLiters", plannedFuelLiters); put("plannedFuelLowL", plannedFuelLowL); put("plannedFuelHighL", plannedFuelHighL)
     put("plannedForecastConfidence", plannedForecastConfidence); put("plannedForecastBasisJson", plannedForecastBasisJson)
+    put("cloudId", cloudId); put("notes", notes)
+    put("emptyBeforeDistanceKm", emptyBeforeDistanceKm); put("emptyBeforeFuelLiters", emptyBeforeFuelLiters)
 }
 private fun FuelingRecord.toJson() = JSONObject().apply {
     put("clientUid", clientUid); put("tsMs", tsMs); put("liters", liters); put("pricePerL", pricePerL); put("total", total)
@@ -407,7 +413,10 @@ private fun tripFromJson(o: JSONObject): TripRecord = TripRecord(
     plannedDescentM = o.optNullableDouble("plannedDescentM"), plannedExpectedKml = o.optNullableDouble("plannedExpectedKml"),
     plannedFuelLiters = o.optNullableDouble("plannedFuelLiters"), plannedFuelLowL = o.optNullableDouble("plannedFuelLowL"),
     plannedFuelHighL = o.optNullableDouble("plannedFuelHighL"), plannedForecastConfidence = o.optNullableString("plannedForecastConfidence"),
-    plannedForecastBasisJson = o.optNullableString("plannedForecastBasisJson")
+    plannedForecastBasisJson = o.optNullableString("plannedForecastBasisJson"),
+    cloudId = o.optNullableString("cloudId"), notes = o.optNullableString("notes"),
+    emptyBeforeDistanceKm = o.optNullableDouble("emptyBeforeDistanceKm"),
+    emptyBeforeFuelLiters = o.optNullableDouble("emptyBeforeFuelLiters"),
 )
 private fun fuelingFromJson(o: JSONObject): FuelingRecord = FuelingRecord(
     clientUid=o.optString("clientUid"), tsMs=o.optLong("tsMs"), liters=o.optDouble("liters"), pricePerL=o.optDouble("pricePerL"), total=o.optDouble("total"),
@@ -450,6 +459,10 @@ private fun tripFromCloudJson(o: JSONObject): TripRecord = TripRecord(
     plannedFuelHighL = o.optNullableDouble("planned_fuel_high_l"),
     plannedForecastConfidence = o.optNullableString("planned_forecast_confidence"),
     plannedForecastBasisJson = if (o.isNull("planned_forecast_basis") || !o.has("planned_forecast_basis")) null else o.opt("planned_forecast_basis")?.toString(),
+    cloudId = o.optNullableString("id"),
+    notes = o.optNullableString("notes"),
+    emptyBeforeDistanceKm = o.optNullableDouble("empty_before_distance_km"),
+    emptyBeforeFuelLiters = o.optNullableDouble("empty_before_fuel_liters"),
 )
 
 private fun fuelingFromCloudJson(o: JSONObject): FuelingRecord = FuelingRecord(

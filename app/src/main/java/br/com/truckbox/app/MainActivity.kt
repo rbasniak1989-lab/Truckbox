@@ -28,13 +28,16 @@ import androidx.lifecycle.lifecycleScope
 import br.com.truckbox.app.cloud.DriverOperationsSync
 import br.com.truckbox.app.gps.DriverGpsOutbox
 import br.com.truckbox.app.cloud.RoutePlannerClient
+import br.com.truckbox.app.cloud.TripRoutesClient
 import br.com.truckbox.app.gateway.GatewayStatus
 import br.com.truckbox.app.gateway.TruckBoxGatewayService
 import br.com.truckbox.app.operations.OperationsStore
 import br.com.truckbox.app.operations.OperationsSnapshot
+import br.com.truckbox.app.operations.DriverAction
 import br.com.truckbox.app.data.OperationMode
 import br.com.truckbox.app.operations.RoutePlanSnapshot
 import br.com.truckbox.app.preferences.TruckBoxPreferences
+import br.com.truckbox.app.ui.TripRoutePanel
 import br.com.truckbox.app.ui.theme.TruckBoxTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -88,10 +91,14 @@ class MainActivity : ComponentActivity() {
 
     private fun requestGatewayPermissions() {
         val permissions = buildList {
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-        }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                add(Manifest.permission.ACCESS_FINE_LOCATION)
+                add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
         if (permissions.isEmpty()) startGatewayServiceIfPossible() else permissionLauncher.launch(permissions.toTypedArray())
     }
 
@@ -129,6 +136,7 @@ private fun DriverApp(
     val prefs = remember { TruckBoxPreferences(context) }
     val store = remember { OperationsStore.get(context) }
     val routePlanner = remember { RoutePlannerClient(prefs) }
+    val tripRoutes = remember { TripRoutesClient(prefs) }
     val scope = rememberCoroutineScope()
     val gateway by GatewayStatus.state.collectAsState()
     val operations by store.state.collectAsState()
@@ -158,7 +166,7 @@ private fun DriverApp(
                     title = {
                         Column {
                             Text("TruckBox Motorista", fontWeight = FontWeight.Bold)
-                            Text("Cloud e GPS do celular • v0.6.5", fontSize = 11.sp)
+                            Text("Cloud e GPS do celular • v0.6.7", fontSize = 11.sp)
                         }
                     },
                     actions = {
@@ -192,6 +200,7 @@ private fun DriverApp(
                     DriverPage.STATUS -> StatusPage(gateway)
                     DriverPage.TRIP -> TripPage(
                         operations = operations,
+                        tripRoutes = tripRoutes,
                         routePlan = routePlan,
                         routePlanning = routePlanning,
                         routePlanError = routePlanError,
@@ -292,6 +301,7 @@ private fun StatusCard(title: String, value: String, ok: Boolean) {
 @Composable
 private fun TripPage(
     operations: OperationsSnapshot,
+    tripRoutes: TripRoutesClient,
     routePlan: RoutePlanSnapshot?,
     routePlanning: Boolean,
     routePlanError: String?,
@@ -316,7 +326,10 @@ private fun TripPage(
         }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Viagem", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Viagem Atual", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (operations.pendingCommands.any { it.awaitingTripReview }) {
+            Text("Há registros de viagem offline preservados para revisão.", color = MaterialTheme.colorScheme.error)
+        }
         if (active == null) {
             if (operations.mode == OperationMode.EMPTY_MODE) {
                 val distance = operations.emptyDistanceKm
@@ -381,6 +394,39 @@ private fun TripPage(
                 }
             }
         } else {
+            val ending = operations.pendingCommands.any { it.action == DriverAction.END_TRIP && it.entityUid == active.clientUid }
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${active.origin} → ${active.destination}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    val br = Locale.forLanguageTag("pt-BR")
+                    val money = java.text.NumberFormat.getCurrencyInstance(br)
+                    val start = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT, br)
+                    Text("Início · ${start.format(java.util.Date(active.startedAtMs))}")
+                    Text("Carga · ${active.weightT?.let { "${String.format(br, "%.1f", it)} t" } ?: "—"}")
+                    Text("Frete bruto · ${active.freightTotal?.let(money::format) ?: "—"}")
+                    active.ratePerT?.let { Text("Frete por tonelada · ${money.format(it)}") }
+                    active.startOdometerKm?.let { Text("Odômetro inicial · ${String.format(br, "%.1f", it)} km") }
+                    active.notes?.let { Text(it) }
+                    val distanceKm = active.distanceKm
+                    val tripFuelLiters = active.fuelLiters
+                    val averageKml = active.averageKml
+                    Text("Métricas da viagem recebidas da Cloud", fontSize = 12.sp)
+                    Text("Distância da viagem: ${distanceKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
+                    Text("Consumido na viagem: ${tripFuelLiters?.let { String.format(Locale.US, "%.1f L", it) } ?: "—"}")
+                    Text("Média geral: ${averageKml?.let { String.format(Locale.US, "%.2f km/L", it) } ?: "—"}")
+                    if (active.emptyBeforeDistanceKm != null || active.emptyBeforeFuelLiters != null) {
+                        val emptyDistance = active.emptyBeforeDistanceKm?.let { String.format(br, "%.1f km", it) }
+                        val emptyFuel = active.emptyBeforeFuelLiters?.let { String.format(br, "%.1f L", it) }
+                        Text("Trecho vazio anterior · ${listOfNotNull(emptyDistance, emptyFuel).joinToString(" · ")}")
+                    }
+                    if (active.plannedFuelLiters != null) {
+                        HorizontalDivider()
+                        Text("Previsto no início: ${String.format(Locale.US, "%.1f L", active.plannedFuelLiters)}", fontWeight = FontWeight.Bold)
+                        active.plannedDistanceKm?.let { Text("Rota planejada: ${String.format(Locale.US, "%.1f km", it)}") }
+                    }
+                }
+            }
+            key(active.cloudId ?: active.clientUid) { TripRoutePanel(active, tripRoutes, ending) }
             Button(onClick = { sharedLink = ""; showCalculate = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Route, null); Spacer(Modifier.width(8.dp)); Text("CALCULAR PRÓXIMA ROTA")
             }
@@ -404,26 +450,7 @@ private fun TripPage(
                     }
                 }
             }
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("${active.origin} → ${active.destination}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("Peso: ${active.weightT?.let { "$it t" } ?: "—"}")
-                    Text("Frete: ${active.freightTotal?.let { "R$ ${String.format(Locale.US, "%.2f", it)}" } ?: "—"}")
-                    val distanceKm = active.distanceKm
-                    val tripFuelLiters = active.fuelLiters
-                    val averageKml = active.averageKml
-                    Text("Métricas da viagem recebidas da Cloud", fontSize = 12.sp)
-                    Text("Distância da viagem: ${distanceKm?.let { String.format(Locale.US, "%.1f km", it) } ?: "—"}")
-                    Text("Consumido na viagem: ${tripFuelLiters?.let { String.format(Locale.US, "%.1f L", it) } ?: "—"}")
-                    Text("Média geral: ${averageKml?.let { String.format(Locale.US, "%.2f km/L", it) } ?: "—"}")
-                    if (active.plannedFuelLiters != null) {
-                        HorizontalDivider()
-                        Text("Previsto no início: ${String.format(Locale.US, "%.1f L", active.plannedFuelLiters)}", fontWeight = FontWeight.Bold)
-                        active.plannedDistanceKm?.let { Text("Rota planejada: ${String.format(Locale.US, "%.1f km", it)}") }
-                    }
-                }
-            }
-            Button(onClick = onEnd, modifier = Modifier.fillMaxWidth()) { Text("ENCERRAR VIAGEM") }
+            Button(onClick = onEnd, modifier = Modifier.fillMaxWidth(), enabled = !ending) { Text("ENCERRAR VIAGEM") }
         }
     }
     if (showStart) StartTripDialog(onDismiss = { showStart = false }) { o, d, w, r -> onStart(o, d, w, r); showStart = false }
@@ -555,7 +582,7 @@ internal fun SettingsPage(prefs: TruckBoxPreferences, store: OperationsStore, on
         Text(if (configured) "Acesso salvo neste celular. A validação acontece na Cloud." else "Cole o código privado do Motorista para configurar viagens e GPS.")
         OutlinedTextField(code, { code = it }, label = { Text("Código privado do Motorista") },
             visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("Use o código do celular fornecido com esta versão.") })
+            supportingText = { Text("Use o código privado já emitido para este Motorista.") })
         Button(onClick = {
             saving = true
             scope.launch {

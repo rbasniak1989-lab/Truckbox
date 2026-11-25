@@ -2,15 +2,16 @@ package br.com.truckbox.app.cloud
 
 import org.json.JSONObject
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 
-enum class DriverEndpoint(val path: String) { OPERATIONS("truckbox-app"),GPS("truckbox-gps") }
+enum class DriverEndpoint(val path: String) { OPERATIONS("truckbox-app"), GPS("truckbox-gps"), TRIP_ROUTES("truckbox-trip-v1") }
 fun interface DriverConnectionFactory {fun open(url: URL): HttpURLConnection}
-class DriverCloudException(val status: Int?=null): IOException("Cloud request unavailable")
+class DriverCloudException(val status: Int?=null, val code: String?=null): IOException("Cloud request unavailable")
 
 /** Only fixed HTTPS Cloud endpoints. No LAN, Wi-Fi binding, redirects or raw error payloads. */
 class DriverCloudTransport(private val connections: DriverConnectionFactory=DriverConnectionFactory {it.openConnection() as HttpURLConnection}) {
@@ -25,13 +26,29 @@ class DriverCloudTransport(private val connections: DriverConnectionFactory=Driv
             val bytes=body.toString().toByteArray(Charsets.UTF_8);c.setFixedLengthStreamingMode(bytes.size)
             c.outputStream.use {it.write(bytes)}
             val status=c.responseCode
-            if(status !in 200..299)throw DriverCloudException(status)
-            val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(4096)
-            c.inputStream.use {input->while(out.size()<=524288){val n=input.read(buffer);if(n<0)break;out.write(buffer,0,n)}}
-            if(out.size()==0||out.size()>524288)throw DriverCloudException(502)
-            return JSONObject(out.toString(Charsets.UTF_8.name())).also {if(!it.optBoolean("ok",false))throw DriverCloudException(502)}
+            if (status !in 200..299) {
+                val code = if (endpoint == DriverEndpoint.TRIP_ROUTES) runCatching {
+                    c.errorStream?.use { it.readJson(2_048).optString("error") }
+                }.getOrNull() else null
+                throw DriverCloudException(status, code)
+            }
+            return c.inputStream.use { it.readJson(524_288) }.also {
+                if (endpoint != DriverEndpoint.TRIP_ROUTES && !it.optBoolean("ok", false)) throw DriverCloudException(502)
+            }
         } finally {c.disconnect()}
     }
+}
+
+private fun InputStream.readJson(limit: Int): JSONObject {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(4_096)
+    while (out.size() <= limit) {
+        val count = read(buffer)
+        if (count < 0) break
+        out.write(buffer, 0, count)
+    }
+    if (out.size() !in 1..limit) throw DriverCloudException(502)
+    return JSONObject(out.toString(Charsets.UTF_8.name()))
 }
 
 /** OffsetDateTime supports PostgreSQL +00:00 on Android 8–13, unlike old Instant.parse. */

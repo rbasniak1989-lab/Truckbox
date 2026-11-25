@@ -32,7 +32,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: TruckBox-Motorista-v0.6.5-Cloud-GPS-CI
+          name: TruckBox-Motorista-v0.6.7-Rotas-CI
           path: |
             app/build/outputs/apk/
             app/build/reports/

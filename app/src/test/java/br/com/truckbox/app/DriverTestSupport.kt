@@ -45,6 +45,7 @@ internal class FakeCloud(var reply: (URL, JSONObject) -> Pair<Int, String>) : Dr
             return response!!.first
         }
         override fun getInputStream() = ByteArrayInputStream(response!!.second.toByteArray())
+        override fun getErrorStream() = ByteArrayInputStream(response!!.second.toByteArray())
     }.also { connections += it }
     fun transport() = DriverCloudTransport(this)
 }
